@@ -15,7 +15,7 @@ namespace MitosGate.Imports
 def check (dir : System.FilePath) (allowed : List String) : IO (Array String) := do
   let mut out := #[]
   for f in ← leanFiles dir do
-    let toks := Lint.tokenize (← IO.FS.readFile f)
+    let toks ← Lint.headerTokens (← IO.FS.readFile f)
     for h : k in [0:toks.size] do
       if toks[k].text == "import" then
         if let some m := toks[k+1]? then

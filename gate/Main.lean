@@ -30,9 +30,10 @@ partial def parseAccept (args : List String) (c : Accept.Config) : Except String
 def main (args : List String) : IO UInt32 := do
   match args with
   | "lint" :: files@(_ :: _) =>
+    let env ← Lint.syntaxEnv
     let mut bad := 0
     for f in files do
-      let vs := Lint.check Accept.pluginImports (← IO.FS.readFile f)
+      let vs ← Lint.check env Accept.pluginImports (← IO.FS.readFile f)
       for v in vs do IO.println (v.render f)
       bad := bad + vs.size
     IO.println s!"{bad} violation(s)"

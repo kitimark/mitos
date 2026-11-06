@@ -163,7 +163,7 @@ width is only 32 bits.)
 | Gate | What it checks | Implemented by |
 |---|---|---|
 | 0 provenance | toolchain pin matches; every model listed in `models.lock` with a matching hash; fresh judging directory with no `.lake` | `gate/MitosGate/Accept.lean` |
-| 1 lint | no `sorry`, `axiom`, `partial`, `unsafe`, `implemented_by`, `extern`, `csimp`, `native_decide`, notation, macros, instances, `#eval`, `debug.*` options, or imports outside `Init`/`Std`/`Mitos.Core`/`Models` | `gate/MitosGate/Lint.lean` |
+| 1 lint | the plugin parses with the toolchain's own `Init`/`Std` syntax, and its tokens (as Lean's parser produces them) include no `sorry`, `axiom`, `partial`, `unsafe`, `implemented_by`, `extern`, `csimp`, `native_decide`, notation, macros, instances, `#eval`, `debug.*` options, or imports outside `Init`/`Std`/`Mitos.Core`/`Models` | `gate/MitosGate/Lint.lean` |
 | 2 sandbox | the plugin is built inside bubblewrap; it can write only to the judging project's `.lake` | `lake comparator` |
 | 3 statements | the plugin's theorems and its extractor definition match the generated Challenge, compared as kernel terms | `lake comparator` |
 | 4 axioms | only `propext`, `Quot.sound`, `Classical.choice` | `lake comparator` |
@@ -193,8 +193,8 @@ record what the later gates catch on their own. Every full run must reject at th
 The comparator-only expectation is checked as well, so a change in what each layer catches is
 noticed and recorded on purpose.
 
-Three cases are expected to pass the comparator on its own: `implemented_by`, `extern` and
-`eval_command`. The kernel cannot see what code *runs*, only what is *proved*. Those cases are
+Five cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
+`eval_command`, and the two smuggling variants `char_literal_smuggle` and `raw_string_smuggle`. The kernel cannot see what code *runs*, only what is *proved*. Those cases are
 why the lint is a required gate rather than a nicety.
 
 ## 4. How to observe
@@ -285,6 +285,10 @@ eval/cheats/run.sh
   (`eval/cheats/env_hack`), confirming that elaboration-time tricks do not survive export.
 - Phase 0 spans are character offsets into `String.toList`. Checked UTF-8 byte positions are a
   Phase 1 task.
+- Gate 1 first scanned plugin source with a hand-written tokenizer. A char literal `'"'` or a
+  raw string `r"\"` desynchronised it from Lean's lexer and hid a following `implemented_by`,
+  which the comparator alone accepts. Lint now takes its tokens from Lean's own parser
+  (`eval/cheats/char_literal_smuggle`, `raw_string_smuggle`).
 - `statements.lock` initially listed every declaration, including those Lean generates for
   each inductive type (`sizeOf_spec`, `ctorIdx`, …). They follow from the locked types, so the
   lock now omits them to keep spec diffs reviewable.
