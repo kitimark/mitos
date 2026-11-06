@@ -2,9 +2,9 @@
   "plugin": "ToyRequire",
   "model": "Models.ToyRequire.model",
   "toolchain": "leanprover/lean4:v4.35.0",
-  "plugin_sha256": "b22b399400736fbbd2babdf3a47745d5fbef8930b1e1db4f0106653f21c9eabb",
-  "models_lock_sha256": "22f3be36d975970b3c7c20c48c290002c2f60c620ceaae067d5eedaf9c70b5be",
-  "core_sha256": "95f1ded01ab09b890d1865bf2b3efd53a69519d69eb8fe7ed35950253a372dee",
+  "plugin_sha256": "1ee148ae24df0da999629d69cea71bc7b4f74d3f62a4b648f5ceb8e6de6aef49",
+  "models_lock_sha256": "cafa1daaa203801669772771d9dab335621f238581be2e23ff52740feda6692d",
+  "core_sha256": "91d9826f2fa74c2c40678538e5c56b360c38db701ac03312d6fb556c5c03110d",
   "challenge_sha256": "cf0e404e45388c7dbba2d41ede3ae0cb8ddbfcef25107d0360a81065419bbfef",
   "paranoid": true
 }

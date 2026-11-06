@@ -37,12 +37,10 @@ theorem anchored : Anchored extractor := by
   simp only [extractor, honestRun] at hf
   obtain ⟨p, hp, hf⟩ := List.mem_filterMap.1 hf
   obtain ⟨name, hname, rfl⟩ := ofLine_eq hf
-  have hl := mem_lines (s := s.toList) (o := p.1) (l := p.2) hp
-  rw [hname] at hl
-  simp only [fact, Span.text, String.toList_ofList]
-  have := congrArg (List.drop prefixChars.length) hl
-  rw [List.drop_left, List.drop_take, List.drop_drop] at this
-  simpa [Nat.add_comm] using this
+  obtain ⟨pre, post, hs, ho, -⟩ := Span.text_eq_some.1 (mem_lines (o := p.1) (l := p.2) hp)
+  rw [hname] at hs
+  exact Span.text_eq_some.2
+    ⟨pre ++ prefixChars, post, by simp [fact, hs], by simp [fact, ho], by simp [fact]⟩
 
 theorem complete : CompleteWrt model extractor := by
   intro s f ⟨o, name, hmem, hf⟩

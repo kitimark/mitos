@@ -1,11 +1,13 @@
+import Mitos.Core.Obligations
 import Mitos.Core.Spec.Resolve
 
 /-!
 # The specification is not vacuous
 
-For each statement, an obviously wrong resolver fails it. If a later edit weakened a statement
-until one of these wrong resolvers satisfied it, the matching theorem here would stop proving,
-so these act as tripwires for the spec itself (gate 6, applied to Mitos's own statements).
+For each statement, an obviously wrong resolver or extractor fails it. If a later edit weakened
+a statement until one of these wrong implementations satisfied it, the matching theorem here
+would stop proving, so these act as tripwires for the spec itself (gate 6, applied to Mitos's own
+statements).
 -/
 
 namespace Mitos.Spec.Adequacy
@@ -86,5 +88,44 @@ theorem silent_impact_not_correct : ¬ ImpactCorrect (fun _ _ => []) := by
   intro h
   have := (h [goodEdge] "sdk" "web").2 (Affects.step (e := goodEdge) (by simp))
   simp at this
+
+/-! ## Anchoring
+
+`é` is two bytes in UTF-8, so in `accented` the key `sdk` starts at character 2 but at byte 3.
+Spans are byte offsets: the byte span is anchored, the character span is not, and a span that
+starts inside `é` has no text at all. -/
+
+/-- A file where character offsets and byte offsets differ. -/
+def accented : String := "é sdk"
+
+/-- A requirement of the npm package `key`, cited at `sp`. -/
+def cite (key : String) (sp : Span) : Fact :=
+  { kind := .requires, ident := { kind := "npm", key := key }, span := sp }
+
+/-- An extractor that emits `cite key sp` for `accented` and nothing for any other file. -/
+def citing (key : String) (sp : Span) : Extractor where
+  run s := if s = accented then [cite key sp] else []
+
+/-- The span of `sdk` in bytes is anchored. -/
+theorem byte_span_anchored : Anchored (citing "sdk" ⟨3, 3⟩) := by
+  intro s f hf
+  simp only [citing] at hf
+  split at hf
+  · subst s; simp only [List.mem_singleton] at hf; subst hf; decide
+  · simp at hf
+
+/-- The span of `sdk` in characters, as Phase 0 counted it, is not anchored. -/
+theorem char_span_not_anchored : ¬ Anchored (citing "sdk" ⟨2, 3⟩) := by
+  intro h
+  have := h accented (cite "sdk" ⟨2, 3⟩) (by simp [citing])
+  revert this
+  decide
+
+/-- A span that starts inside a character is not anchored, even for an empty key. -/
+theorem mid_char_span_not_anchored : ¬ Anchored (citing "" ⟨1, 0⟩) := by
+  intro h
+  have := h accented (cite "" ⟨1, 0⟩) (by simp [citing])
+  revert this
+  decide
 
 end Mitos.Spec.Adequacy
