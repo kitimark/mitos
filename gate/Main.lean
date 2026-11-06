@@ -5,6 +5,10 @@ import MitosGate.Accept
 
 open MitosGate
 
+def trustedCoreImports : List String := ["Init", "Std", "Mitos.Core", "Mitos.Impl", "Mitos.Proofs"]
+
+def lockedSpecImports : List String := ["Init", "Std", "Mitos.Core"]
+
 def usage : String := "usage:
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.*; spec never imports impl)
@@ -38,8 +42,8 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"{bad} violation(s)"
     return if bad == 0 then 0 else 1
   | ["imports"] =>
-    let vs ← Imports.check "core" ["Init", "Std", "Mitos.Core", "Mitos.Impl", "Mitos.Proofs"]
-    let vs := vs ++ (← Imports.check ("core" / "Mitos" / "Core") ["Init", "Std", "Mitos.Core"])
+    let vs ← Imports.check "core" trustedCoreImports
+    let vs := vs ++ (← Imports.check ("core" / "Mitos" / "Core") lockedSpecImports)
     for v in vs do IO.println v
     IO.println s!"{vs.size} import violation(s) in core/"
     return if vs.isEmpty then 0 else 1
