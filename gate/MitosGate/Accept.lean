@@ -93,6 +93,15 @@ def lint (c : Config) (pluginFile : System.FilePath) (src : String) : GateM Unit
   for v in vs do IO.println s!"  {v.render pluginFile.toString}"
   unless vs.isEmpty do throw (1, "lint")
 
+def failedGate (comparatorOutput : String) : Nat × String :=
+  let has (s : String) := (comparatorOutput.splitOn s).length > 1
+  if has "Illegal axiom" then (4, "axioms")
+  else if has "do not match" || has "does not match" || has "mismatch" || has "not found" then
+    (3, "statements")
+  else if has "kernel" && has "reject" then (5, "kernels")
+  else if has "error:" then (2, "sandbox build")
+  else (3, "statements")
+
 def buildAndJudge (c : Config) (src chal : String) : GateM Unit := do
   let judge ← IO.FS.createTempDir
   copyFile (c.mitosRoot / "lean-toolchain") (judge / "lean-toolchain")
@@ -113,14 +122,7 @@ def buildAndJudge (c : Config) (src chal : String) : GateM Unit := do
   let ok := code == 0 && (out.splitOn "Your solution is okay!").length > 1
   unless c.keep do IO.FS.removeDirAll judge
   if !ok then
-    let has (s : String) := (out.splitOn s).length > 1
-    let (g, name) :=
-      if has "Illegal axiom" then (4, "axioms")
-      else if has "do not match" || has "does not match" || has "mismatch" || has "not found" then
-        (3, "statements")
-      else if has "kernel" && has "reject" then (5, "kernels")
-      else if has "error:" then (2, "sandbox build")
-      else (3, "statements")
+    let (g, name) := failedGate out
     report g name false
     let lines := (out.splitOn "\n").filter (fun l => !(l.startsWith "✔") && !(l.startsWith "Exporting"))
     for l in lines.reverse.take 15 |>.reverse do IO.println s!"  | {l}"
