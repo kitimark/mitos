@@ -1,0 +1,16 @@
+{
+  "challenge_module": "Challenge.Resolver",
+  "solution_module": "Mitos.Proofs.Resolver",
+  "theorem_names": [
+    "Mitos.Proofs.resolve_sound",
+    "Mitos.Proofs.resolve_complete",
+    "Mitos.Proofs.resolve_unresolved_exact",
+    "Mitos.Proofs.resolve_total",
+    "Mitos.Proofs.resolve_assumptions_exact",
+    "Mitos.Proofs.resolve_status_honest",
+    "Mitos.Proofs.resolve_retract_exact",
+    "Mitos.Proofs.impact_correct"
+  ],
+  "definition_names": ["Mitos.Impl.resolve", "Mitos.Impl.impact"],
+  "permitted_axioms": ["propext", "Quot.sound", "Classical.choice"]
+}

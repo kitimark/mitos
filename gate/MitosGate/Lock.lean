@@ -25,6 +25,18 @@ def header : String :=
 private def digest (e : Expr) : IO String := do
   return ((← sha256 (toString e)).take 32).toString
 
+/-- Declarations Lean generates from an inductive type or a `deriving` clause. They follow from
+the locked type itself, so listing them only adds noise to spec diffs. -/
+def generatedSuffixes : List String :=
+  ["rec", "sizeOf_spec", "noConfusionType", "ctorIdx", "ofNat_ctorIdx", "toCtorIdx", "ofNat",
+   "ctorElim", "ctorElimType", "inj", "injEq", "repr", "decEq"]
+
+def isGenerated (n : Name) : Bool :=
+  match n with
+  | .str _ s => generatedSuffixes.contains s || s.startsWith "match_" || s.startsWith "eq_" ||
+                s.startsWith "proof_"
+  | _ => false
+
 /-- One line per locked declaration, sorted. -/
 def entries (root : Name) (prefixes : List Name) : IO (Array String) := do
   initSearchPath (← findSysroot)
@@ -34,7 +46,7 @@ def entries (root : Name) (prefixes : List Name) : IO (Array String) := do
     let some idx := env.getModuleIdxFor? n | continue
     let mod := env.header.moduleNames[idx.toNat]!
     unless prefixes.any (·.isPrefixOf mod) do continue
-    if n.isInternal || isAuxRecursor env n || isNoConfusion env n then continue
+    if n.isInternal || isAuxRecursor env n || isNoConfusion env n || isGenerated n then continue
     let ty ← digest ci.type
     let line ← match ci with
       | .defnInfo d => pure s!"def {n} type={ty} value={← digest d.value}"

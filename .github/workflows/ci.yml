@@ -3,6 +3,8 @@ name: ci
 on:
   push:
   pull_request:
+    # labeled/unlabeled: adding or removing `spec-approved` re-runs the label check.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   gate:
@@ -36,21 +38,21 @@ jobs:
       - name: Build core and gate
         run: lake build
 
-      - name: Import rule (core imports Init, Std, Mitos.Core only)
+      - name: Import rule (core imports Init, Std, Mitos.*; the spec never imports implementations)
         run: lake exe mitos-gate imports
 
       - name: statements.lock matches the compiled core
         run: lake exe mitos-gate lock --check
 
-      - name: Lock-file changes need the spec-approved label
-        if: github.event_name == 'pull_request'
-        env:
-          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'spec-approved') }}
+      - name: Core has no sorry and only standard axioms (sandboxed kernel replay)
+        run: cd core && lake check
+
+      - name: Core implementation proves the approved Challenge
         run: |
-          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-            | grep -E '(^|/)(statements|models)\.lock$' || true)
-          if [ -n "$changed" ] && [ "$APPROVED" != "true" ]; then
-            echo "These lock files changed without the spec-approved label:"; echo "$changed"; exit 1
+          if [ -f core/Mitos/Proofs/Resolver.lean ]; then
+            cd core && lake comparator
+          else
+            echo "No implementation yet (core/Mitos/Proofs/Resolver.lean); Challenge not judged."
           fi
 
       - name: Example workspace builds
@@ -63,6 +65,18 @@ jobs:
 
       - name: Cheat corpus is rejected
         run: eval/cheats/run.sh
+
+      # Last, so a missing label never hides the result of the checks above.
+      - name: Spec changes need the spec-approved label
+        if: github.event_name == 'pull_request'
+        env:
+          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'spec-approved') }}
+        run: |
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+            | grep -E '(^|/)(statements|models)\.lock$|^core/Challenge/|^core/comparator\.json$' || true)
+          if [ -n "$changed" ] && [ "$APPROVED" != "true" ]; then
+            echo "These spec files changed without the spec-approved label:"; echo "$changed"; exit 1
+          fi
 
       - name: Upload cheat logs
         if: always()

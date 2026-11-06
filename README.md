@@ -7,7 +7,7 @@ graph in which every edge carries its evidence and the assumptions it rests on. 
 is written in Lean 4, and extractors, including ones AI agents write for your own conventions,
 are accepted only with machine-checked proofs of Mitos-owned obligations.
 
-**Status:** Phase 0 (foundations and red team) complete. See `plan/phase-0.md`.
+**Status:** Phase 0 complete (`plan/phase-0.md`); Phase 1, the trusted resolver, in progress (`plan/phase-1.md`).
 
 | Path | What it is |
 |---|---|

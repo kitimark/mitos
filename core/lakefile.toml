@@ -1,7 +1,21 @@
 # mitos-core: the trusted core. Imports Init and Std only (enforced by `mitos-gate imports`).
+#
+#   Mitos.Core.*    vocabulary and specification: locked by statements.lock
+#   Mitos.Impl.*    implementations (e.g. the resolver): not locked
+#   Mitos.Proofs.*  proofs that the implementations meet Challenge/: not locked
+#   Challenge.*     what the implementations must prove: owner-approved, contains `sorry` holes,
+#                   so it is not a default target (`lake check` would reject it)
 name = "mitos-core"
-defaultTargets = ["MitosCore"]
+defaultTargets = ["MitosCore", "MitosImpl"]
 
 [[lean_lib]]
 name = "MitosCore"
 globs = ["Mitos.Core", "Mitos.Core.+"]
+
+[[lean_lib]]
+name = "MitosImpl"
+globs = ["Mitos.Impl.+", "Mitos.Proofs.+"]
+
+[[lean_lib]]
+name = "MitosChallenge"
+globs = ["Challenge.+"]

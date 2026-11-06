@@ -16,6 +16,15 @@ inductive FactKind where
   | requires
   deriving DecidableEq, Repr
 
+/-- When a requirement applies. A dev or test dependency must never be reported as a runtime one,
+so the resolver carries the scope of the requiring fact onto its edges unchanged. -/
+inductive Scope where
+  | runtime
+  | dev
+  | test
+  | build
+  deriving DecidableEq, Repr
+
 /-- A global identity, e.g. `{ kind := "npm", key := "@jellyfin/sdk" }`. -/
 structure Identity where
   kind : String
@@ -37,6 +46,7 @@ structure Fact where
   kind  : FactKind
   ident : Identity
   span  : Span
+  scope : Scope := .runtime
   deriving DecidableEq, Repr
 
 end Mitos
