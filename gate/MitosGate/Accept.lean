@@ -49,6 +49,10 @@ def judgeLakefile : String :=
   "name = \"judge\"\n[[lean_lib]]\nname = \"Judge\"\n" ++
   "globs = [\"Mitos.Core\", \"Mitos.Core.+\", \"Models.+\", \"Plugins.+\", \"Challenge.+\"]\n"
 
+def judgeManifest : String :=
+  "{\"version\": \"1.3.0\", \"packagesDir\": \".lake/packages\", \"packages\": [], " ++
+  "\"name\": \"judge\", \"lakeDir\": \".lake\", \"fixedToolchain\": false}\n"
+
 def report (gate : Nat) (name : String) (ok : Bool) (detail : String := "") : IO Unit := do
   let status := if ok then "PASS" else "FAIL"
   IO.println s!"GATE {gate} {name}: {status}{if detail.isEmpty then "" else " — " ++ detail}"
@@ -113,10 +117,7 @@ def buildAndJudge (c : Config) (src chal : String) : GateM Unit := do
   IO.FS.writeFile (judge / "Challenge" / s!"{c.plugin}.lean") chal
   IO.FS.writeFile (judge / "comparator.json") (comparatorJson c.plugin)
   IO.FS.writeFile (judge / "lakefile.toml") judgeLakefile
-  let (uc, uout) ← run "lake" #["update"] judge
-  if uc != 0 then
-    report 2 "sandbox" false s!"lake update failed: {trim uout}"
-    throw (2, "sandbox")
+  IO.FS.writeFile (judge / "lake-manifest.json") judgeManifest
   let args := if c.paranoid then #["comparator", "--paranoid"] else #["comparator"]
   let (code, out) ← run "lake" args judge
   let ok := code == 0 && (out.splitOn "Your solution is okay!").length > 1
