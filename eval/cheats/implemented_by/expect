@@ -1,0 +1,3 @@
+full=1
+comparator_only=accept
+why=Proofs are about one function; `implemented_by` makes a different one run. The kernel cannot see this.

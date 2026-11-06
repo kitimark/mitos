@@ -1,0 +1,7 @@
+# mitos-core: the trusted core. Imports Init and Std only (enforced by `mitos-gate imports`).
+name = "mitos-core"
+defaultTargets = ["MitosCore"]
+
+[[lean_lib]]
+name = "MitosCore"
+globs = ["Mitos.Core", "Mitos.Core.+"]

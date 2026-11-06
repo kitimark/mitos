@@ -1,0 +1,13 @@
+# Trusted surfaces. With branch protection's "Require review from Code Owners" enabled, a change
+# here cannot merge without the owner's review. Builder agents never edit these paths
+# (see docs/process.md, "Roles").
+/core/                      @kitimark
+/gate/                      @kitimark
+/statements.lock            @kitimark
+/lean-toolchain             @kitimark
+/lakefile.toml              @kitimark
+/eval/cheats/               @kitimark
+/.github/                   @kitimark
+/docs/process.md            @kitimark
+/examples/acme/Models/      @kitimark
+/examples/acme/models.lock  @kitimark

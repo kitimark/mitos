@@ -1,0 +1,3 @@
+full=1
+comparator_only=reject@3
+why=Redefines `CompleteWrt` with local notation so the stated theorem is trivial.

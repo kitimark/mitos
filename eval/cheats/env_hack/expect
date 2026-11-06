@@ -1,0 +1,3 @@
+full=1
+comparator_only=reject@5
+why=Imports Lean and adds the obligation with kernel checking switched off.

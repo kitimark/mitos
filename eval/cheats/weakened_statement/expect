@@ -1,0 +1,3 @@
+full=3
+comparator_only=reject@3
+why=Proves `True` under the obligation's name.

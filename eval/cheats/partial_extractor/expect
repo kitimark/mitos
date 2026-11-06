@@ -1,0 +1,3 @@
+full=1
+comparator_only=reject
+why=Makes the extractor a `partial def`, which the kernel treats as opaque.

@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install elan (toolchain comes from lean-toolchain)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Install bubblewrap (sandbox for lake comparator)
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
+          # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bwrap needs them.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            .lake
+            core/.lake
+          key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+
+      - name: Build core and gate
+        run: lake build
+
+      - name: Import rule (core imports Init, Std, Mitos.Core only)
+        run: lake exe mitos-gate imports
+
+      - name: statements.lock matches the compiled core
+        run: lake exe mitos-gate lock --check
+
+      - name: Lock-file changes need the spec-approved label
+        if: github.event_name == 'pull_request'
+        env:
+          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'spec-approved') }}
+        run: |
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+            | grep -E '(^|/)(statements|models)\.lock$' || true)
+          if [ -n "$changed" ] && [ "$APPROVED" != "true" ]; then
+            echo "These lock files changed without the spec-approved label:"; echo "$changed"; exit 1
+          fi
+
+      - name: Example workspace builds
+        run: cd examples/acme && lake build
+
+      - name: Honest toy plugin is accepted (gates 0-5, independent kernels)
+        run: |
+          lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
+            --model Models.ToyRequire.model --paranoid
+
+      - name: Cheat corpus is rejected
+        run: eval/cheats/run.sh
+
+      - name: Upload cheat logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cheat-logs
+          path: .lake/cheats/
+          if-no-files-found: ignore

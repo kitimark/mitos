@@ -1,0 +1,15 @@
+# Example user workspace. Models/ are human-reviewed; Plugins/ are agent-written.
+name = "acme"
+defaultTargets = ["Models", "Plugins"]
+
+[[require]]
+name = "mitos-core"
+path = "../../core"
+
+[[lean_lib]]
+name = "Models"
+globs = ["Models.+"]
+
+[[lean_lib]]
+name = "Plugins"
+globs = ["Plugins.+"]

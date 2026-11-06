@@ -1,0 +1,3 @@
+full=0
+comparator_only=reject@0
+why=Weakens the human-reviewed model (everything trivially complete) without updating models.lock.
