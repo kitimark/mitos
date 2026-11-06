@@ -143,10 +143,10 @@ width is only 32 bits.)
 | Check | Command | L1 local | L2 PR | L3 nightly | Blocks merge |
 |---|---|---|---|---|---|
 | Build core and gate | `lake build` | ✓ | ✓ | ✓ | yes |
-| Core imports only `Init`, `Std`, `Mitos.*`; the spec never imports implementations | `lake exe mitos-gate imports` | ✓ | ✓ | | yes |
-| Lock matches the compiled core | `lake exe mitos-gate lock --check` | ✓ | ✓ | | yes |
-| Core: no `sorry`, standard axioms only | `cd core && lake check` | ✓ | ✓ | | yes |
-| Core implementation proves the Challenge | `cd core && lake comparator --paranoid` | ✓ | ✓ | | yes |
+| Core imports only `Init`, `Std`, `Mitos.*`; the spec never imports implementations | `lake exe mitos-gate imports` | ✓ | ✓ | ✓ | yes |
+| Lock matches the compiled core | `lake exe mitos-gate lock --check` | ✓ | ✓ | ✓ | yes |
+| Core: no `sorry`, standard axioms only | `cd core && lake check` | ✓ | ✓ | ✓ | yes |
+| Core implementation proves the Challenge | `cd core && lake comparator --paranoid` | ✓ | ✓ | ✓ | yes |
 | Spec changes carry `spec-approved` | CI step | | ✓ | | yes |
 | Plugin lint (gate 1) | `lake exe mitos-gate lint <file>` | ✓ | ✓ | | yes |
 | Honest plugin accepted, gates 0–5 | `lake exe mitos-gate accept … --paranoid` | ✓ | ✓ | ✓ | yes |
@@ -154,7 +154,7 @@ width is only 32 bits.)
 | Full evaluation scorecard | Phase 1 | | | ✓ | — |
 | Differential tests against real tools | Phase 2 | | | ✓ | — |
 | Mutation testing of our own theorems | Phase 1 | | | ✓ | — |
-| Next Lean release-candidate canary | Phase 1 | | | ✓ | — |
+| Next Lean release-candidate canary (`nightly.yml`, job `canary`) | Phase 1 | | | ✓ | — |
 
 ### The acceptance gate
 
@@ -248,7 +248,7 @@ At the end of each phase the owner reviews the scorecard trend and the run logs:
 | L1 parallel builders | separate cloud sessions or worktree-isolated agents, one task each |
 | L2 | GitHub Actions (`.github/workflows/ci.yml`), protected `main`, CODEOWNERS, the `spec-approved` label |
 | L2 CI fixes | a session subscribed to the PR, fixing failures inside the task's `touches` |
-| L3 | a scheduled task running the nightly checks and posting the scorecard |
+| L3 | `.github/workflows/nightly.yml` (full checks, `--paranoid` comparator, next-toolchain canary), plus a scheduled task posting the scorecard |
 | L4 | the scorecard trend plus a short retrospective in `plan/` |
 
 ## 6. Local setup
