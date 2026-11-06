@@ -25,8 +25,9 @@ This file says how much to decide alone while following it.
 ## What stays with the user
 
 - **Spec approval.** The `spec-approved` label on PRs that change `statements.lock`,
-  `models.lock`, `core/Challenge/` or `core/comparator.json`. Never add the label, and never
-  route around it (moving statements out of the lock, editing the CI check).
+  `models.lock`, `core/Mitos/Core/`, `core/Challenge/` or `core/comparator.json`. Everything in
+  `core/Mitos/Core/` is spec, even a change the lock does not show. Never add the label, and
+  never route around it (moving statements out of the lock, editing the CI check).
 - **Trust infrastructure and plans.** PRs touching `gate/`, `eval/cheats/`, `.github/`,
   `plan/`, `CLAUDE.md` or `.claude/` are merged by the user. Status updates to a task's own row
   in `plan/phase-N.md` are the exception. Open them, get CI green, say so.
