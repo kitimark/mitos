@@ -283,8 +283,12 @@ eval/cheats/run.sh
   such as `Mitos.lines` are written with structural recursion.
 - Kernel replay rejects an ill-typed theorem injected with `debug.skipKernelTC`
   (`eval/cheats/env_hack`), confirming that elaboration-time tricks do not survive export.
-- Phase 0 spans are character offsets into `String.toList`. Checked UTF-8 byte positions are a
-  Phase 1 task.
+- Phase 0 spans were character offsets into `String.toList`, wrong for any file with a non-ASCII
+  character. Since P1-005 they are UTF-8 byte offsets read over `String.toList` with
+  `Char.utf8Size`: `Span.text` is `none` unless both ends sit on character boundaries, and
+  bridge theorems tie each span to the bytes of `s.toByteArray` and to valid `String.Pos.Raw`
+  positions. On Lean 4.35, `decide` also evaluates `String` and `ByteArray` operations on small
+  literals; spans stay on `List Char` so proofs stay list algebra.
 - Gate 1 first scanned plugin source with a hand-written tokenizer. A char literal `'"'` or a
   raw string `r"\"` desynchronised it from Lean's lexer and hid a following `implemented_by`,
   which the comparator alone accepts. Lint now takes its tokens from Lean's own parser
