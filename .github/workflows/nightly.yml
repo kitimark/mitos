@@ -51,6 +51,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: pick
+        # bash, not the default `bash -e`, adds pipefail: a failed API call must fail the job, not
+        # resolve to an empty list that silently skips the canary.
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -58,7 +61,7 @@ jobs:
           releases=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" \
             "https://api.github.com/repos/leanprover/lean4/releases?per_page=100" \
             | jq -r '.[] | select(.draft | not) | .tag_name')
-          stable=$(echo "$releases" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          stable=$(echo "$releases" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
           rc=$(echo "$releases" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$' | sort -V | tail -n1 || true)
           # An rc only counts when its release is newer than the newest stable.
           if [ -n "$rc" ] && [ "$(printf '%s\n%s\n' "$stable" "${rc%-rc*}" | sort -V | tail -n1)" = "$stable" ]; then
