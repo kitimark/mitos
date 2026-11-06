@@ -16,7 +16,7 @@
 | P0-008 | Gate 1 lint | done |
 | P0-009 | `mitos-gate accept`: gates 0–5 via generated Challenge + `lake comparator` | done |
 | P0-010 | Example workspace `examples/acme` with a reviewed model, `models.lock`, toy plugin | done |
-| P0-011 | Cheat corpus (13 cases) and runner | done |
+| P0-011 | Cheat corpus (13 cases, 15 after the lint fix) and runner | done |
 | P0-012 | CI workflow, CODEOWNERS, `spec-approved` label check | done (not yet run on GitHub) |
 | P0-013 | Process doc, task template, run-log schema | done |
 | P0-014 | Scorer and PR scorecard comment on the fixture | moved to Phase 1 (needs the resolver) |
@@ -34,7 +34,7 @@ Cheat corpus, full gate and comparator alone (lint skipped):
 | weakened_statement, swapped_model | rejected at 3 | rejected at 3 |
 | env_hack (`debug.skipKernelTC` + `addDecl`) | rejected at 1 | rejected at 5 (kernel replay) |
 | model_tamper | rejected at 0 (`models.lock`) | rejected at 0 |
-| implemented_by, extern, eval_command | rejected at 1 | **accepted**: only the lint stops these |
+| implemented_by, extern, eval_command, char_literal_smuggle, raw_string_smuggle | rejected at 1 | **accepted**: only the lint stops these |
 
 Honest toy plugin with `--paranoid`: accepted in about 32 s (5 independent kernels).
 

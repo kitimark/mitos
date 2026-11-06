@@ -116,7 +116,7 @@ def runAccept (c : Config) : IO UInt32 := do
   if c.skipLint then
     IO.println "GATE 1 lint: SKIPPED (--skip-lint: measuring the later gates only)"
   else
-    let vs := Lint.check pluginImports src
+    let vs ← Lint.check (← Lint.syntaxEnv) pluginImports src
     report 1 "lint" vs.isEmpty s!"{vs.size} violation(s)"
     for v in vs do IO.println s!"  {v.render pluginFile.toString}"
     unless vs.isEmpty do return ← reject 1 "lint"

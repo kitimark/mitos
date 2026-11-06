@@ -1,15 +1,19 @@
+import Lean
+
 /-!
 # Gate 1: source lint
 
-A conservative token scan of plugin source. It runs *before* the sandboxed build and blocks the
-constructs that kernel checking cannot see (`implemented_by`, `extern`, `csimp` change what runs,
-not what is proved) and the ones that let elaboration run code (`#eval`, `macro`, `elab`, …).
+A token scan of plugin source, over the tokens Lean's own parser produces. It runs *before* the
+sandboxed build and blocks the constructs that kernel checking cannot see (`implemented_by`,
+`extern`, `csimp` change what runs, not what is proved) and the ones that let elaboration run code
+(`#eval`, `macro`, `elab`, …).
 
 It is defence in depth: `lake comparator` independently rejects `sorry`, foreign axioms and
 statement edits. The cheat corpus (`eval/cheats/`) records which layer catches each cheat.
 -/
 
 namespace MitosGate.Lint
+open Lean
 
 structure Token where
   text : String
@@ -25,58 +29,58 @@ structure Violation where
 def Violation.render (file : String) (v : Violation) : String :=
   s!"{file}:{v.line}:{v.col}: {v.msg}"
 
-private def isIdStart (c : Char) : Bool :=
-  c.isAlpha || c == '_' || c == '«' || c == '#' || c.toNat > 127
+/-- The syntax plugins are parsed with: the toolchain's `Init` and `Std`, the only imports a plugin
+may use that can declare notation. Lean's own parser decides what is a literal, a comment or a
+token, so the lint sees exactly the tokens Lean will elaborate. -/
+def syntaxEnv : IO Environment := do
+  unsafe enableInitializersExecution
+  initSearchPath (← findSysroot)
+  importModules #[{ module := `Init }, { module := `Std }] {} (loadExts := true)
 
-private def isIdChar (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '.' || c == '\'' || c == '!' || c == '?' ||
-  c == '«' || c == '»' || (c.toNat > 127 && c != '»' && c != '«' && !c.isWhitespace)
+/-- Literals and doc comments: text, not code. -/
+private def isText (k : SyntaxNodeKind) : Bool :=
+  k == strLitKind || k == charLitKind || k == interpolatedStrLitKind || k == nameLitKind ||
+  k == numLitKind || k == scientificLitKind ||
+  k == ``Parser.Command.docComment || k == ``Parser.Command.moduleDoc
 
-/-- Split source into identifier-like tokens, skipping comments and string/char literals.
-Guillemets are removed, so `«sorry»` is seen as `sorry`. -/
-def tokenize (src : String) : Array Token := Id.run do
-  let cs := src.toList.toArray
-  let n := cs.size
-  let mut i := 0
-  let mut line := 1
-  let mut col := 1
-  let mut depth := 0
-  let mut out : Array Token := #[]
-  -- Every iteration consumes at least one character, so `n + 1` iterations suffice.
-  for _ in [0:n+1] do
-    if i ≥ n then break
-    let c := cs[i]!
-    let next := if i + 1 < n then cs[i+1]! else ' '
-    if depth > 0 then
-      if c == '/' && next == '-' then depth := depth + 1; i := i + 2; col := col + 2
-      else if c == '-' && next == '/' then depth := depth - 1; i := i + 2; col := col + 2
-      else
-        if c == '\n' then line := line + 1; col := 1 else col := col + 1
-        i := i + 1
-    else if c == '/' && next == '-' then
-      depth := 1; i := i + 2; col := col + 2
-    else if c == '-' && next == '-' then
-      while i < n && cs[i]! != '\n' do i := i + 1
-    else if c == '"' then
-      i := i + 1; col := col + 1
-      while i < n && cs[i]! != '"' do
-        if cs[i]! == '\\' then i := i + 2; col := col + 2
-        else
-          if cs[i]! == '\n' then line := line + 1; col := 1 else col := col + 1
-          i := i + 1
-      i := i + 1; col := col + 1
-    else if isIdStart c then
-      let start := i
-      let startCol := col
-      i := i + 1; col := col + 1
-      while i < n && isIdChar cs[i]! do i := i + 1; col := col + 1
-      let raw := String.ofList (cs.extract start i).toList
-      let text := String.ofList (raw.toList.filter (fun ch => ch != '«' && ch != '»'))
-      out := out.push { text, line, col := startCol }
-    else
-      if c == '\n' then line := line + 1; col := 1 else col := col + 1
-      i := i + 1
-  return out
+/-- Atoms and identifiers of `stx`, in source order. Literals and doc comments contribute nothing; identifiers are
+rendered without guillemets, so `«sorry»` is seen as `sorry`. -/
+partial def tokensOf (fm : FileMap) (stx : Syntax) (acc : Array Token) : Array Token :=
+  let push (text : String) : Array Token :=
+    let pos := fm.toPosition (stx.getPos?.getD 0)
+    acc.push { text, line := pos.line, col := pos.column + 1 }
+  match stx with
+  | .node _ k args => if isText k then acc else args.foldl (fun a s => tokensOf fm s a) acc
+  | .atom _ v => push v
+  | .ident _ _ n _ => push (n.toString (escape := false))
+  | .missing => acc
+
+/-- Tokens of the module header (`module`, `import …`). Needs no environment. -/
+def headerTokens (src : String) : IO (Array Token) := do
+  let ictx := Parser.mkInputContext src "<source>"
+  let (header, _, _) ← Parser.parseHeader ictx
+  return tokensOf ictx.fileMap header #[]
+
+/-- Every token Lean's parser produces for `src`, or the first parse error with its position. -/
+def tokenize (env : Environment) (src : String) : IO (Except Violation (Array Token)) := do
+  let ictx := Parser.mkInputContext src "<source>"
+  let (header, st, msgs) ← Parser.parseHeader ictx
+  let pctx : Parser.ParserModuleContext := { env, options := {} }
+  let mut toks := tokensOf ictx.fileMap header #[]
+  let mut st := st
+  let mut msgs := msgs
+  repeat
+    let (cmd, st', msgs') := Parser.parseCommand ictx pctx st msgs
+    st := st'
+    msgs := msgs'
+    toks := tokensOf ictx.fileMap cmd toks
+    if Parser.isTerminalCommand cmd then break
+  match msgs.toList.find? (·.severity == .error) with
+  | some m =>
+    let text ← m.data.toString
+    return .error { line := m.pos.line, col := m.pos.column + 1,
+                    msg := s!"does not parse with the toolchain's syntax ({text.trimAscii}); plugins may not declare notation" }
+  | none => return .ok toks
 
 /-- Identifiers and keywords a plugin may not use anywhere (checked per dotted component). -/
 def banned : List String :=
@@ -101,9 +105,13 @@ def components (t : String) : List String :=
 def moduleAllowed (allowed : List String) (mod : String) : Bool :=
   allowed.any fun p => mod == p || mod.startsWith (p ++ ".")
 
-/-- Check a plugin's source. `allowedImports` lists module prefixes it may import. -/
-def check (allowedImports : List String) (src : String) : Array Violation := Id.run do
-  let toks := tokenize src
+/-- Check a plugin's source, parsed in `env` (see `syntaxEnv`). `allowedImports` lists module
+prefixes it may import. -/
+def check (env : Environment) (allowedImports : List String) (src : String) :
+    IO (Array Violation) := do
+  let toks ← match ← tokenize env src with
+    | .ok toks => pure toks
+    | .error v => return #[v]
   let mut vs : Array Violation := #[]
   for h : k in [0:toks.size] do
     let t := toks[k]

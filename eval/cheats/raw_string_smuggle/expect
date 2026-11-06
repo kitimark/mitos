@@ -1,0 +1,3 @@
+full=1
+comparator_only=accept
+why=In the raw string r"\" the backslash is not an escape; the old tokenizer treated it as one, never closed the string, and skipped the `implemented_by` after it. Lint now uses Lean's own parser.
