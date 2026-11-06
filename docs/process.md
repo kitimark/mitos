@@ -99,6 +99,10 @@ budget: 40 iterations · 2h wall · 1.5M tokens
 | Evaluator | CI and nightly job | scorecards, logs | — |
 | Reviewer | agent, advisory only | PR comments, on code with comments stripped | approvals |
 
+Agents pick tasks, open PRs and merge implementation PRs on their own once CI is green. What
+stays with the owner (spec approval, trust infrastructure, plans) is listed in
+`.claude/skills/kitimark-mode/SKILL.md`, which `CLAUDE.md` loads in every session.
+
 `CODEOWNERS` marks the trusted paths, so GitHub asks the owner to review any PR touching them.
 While the owner is the only person on the repository, "Require review from Code Owners" stays
 off: PRs opened by agents appear under the owner's account, and GitHub never lets an author
@@ -205,7 +209,7 @@ Stored as NDJSON in `ops/runs/` (or as CI artifacts); schema in `ops/runs/README
  "lint_hits":["sorry"],"escalations":["hint","grind"],"outcome":"merged"}
 ```
 
-`outcome` is one of `merged`, `stuck`, `counterexample`, `abandoned`.
+`outcome` is one of `in-review`, `merged`, `stuck`, `counterexample`, `abandoned`.
 
 ### Scorecard (one per nightly run, from Phase 1)
 
