@@ -21,9 +21,10 @@ structure Extractor where
 structure Model where
   Holds : String → Fact → Prop
 
-/-- **Anchoring.** Every emitted fact cites a span whose text is exactly its identity key. -/
+/-- **Anchoring.** Every emitted fact cites a span of the file, in UTF-8 bytes, that starts and
+ends on character boundaries and whose text is exactly its identity key. -/
 def Anchored (x : Extractor) : Prop :=
-  ∀ s, ∀ f ∈ x.run s, f.span.text s.toList = f.ident.key.toList
+  ∀ s, ∀ f ∈ x.run s, f.span.text s.toList = some f.ident.key.toList
 
 /-- **Soundness.** Every emitted fact holds according to the model. -/
 def SoundWrt (M : Model) (x : Extractor) : Prop :=

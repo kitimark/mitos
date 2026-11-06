@@ -23,7 +23,7 @@ ctor Mitos.Scope.test type=7e254569b1189d5f0fa1629bda80dda0
 ctor Mitos.Span.mk type=5927f2f35762cd7d15b71685d6d4cdc3
 ctor Mitos.Status.confirmed type=9b379a347e9ae0965382b8beef62db26
 ctor Mitos.Status.inferred type=9b379a347e9ae0965382b8beef62db26
-def Mitos.Anchored type=5f37ab0fdca6ee61c8c958286fbcb6f7 value=2418f0dbba33dcb551c32ba58bcb7c7e
+def Mitos.Anchored type=5f37ab0fdca6ee61c8c958286fbcb6f7 value=8ce67d263ffc9ab756d6b4d3423638fd
 def Mitos.Assumption.isAI type=1b82bb9ae705af0891b2e0028a578218 value=2072b96d8d782170c175c0bf610a27de
 def Mitos.CompleteWrt type=b0d00086393363a35205678690aa7baf value=559ec78af0fd5be86c7736dd356ef800
 def Mitos.Edge.assumes type=32d96a363d169d2f0bc1b3d6d9c15511 value=7aa9ebca2f21bbee53782d2192ed9243
@@ -55,7 +55,10 @@ def Mitos.Resolver type=baaddf70fb5d432b8bd948ef91d6f910 value=85970da4845fc30d3
 def Mitos.SoundWrt type=b0d00086393363a35205678690aa7baf value=bbe8a7dc247c4d8d8e194749b3946979
 def Mitos.Span.len type=322d822da49af0bcdda12ce5be24a9f3 value=e1654564dbb5041928b3ef9488de6e18
 def Mitos.Span.start type=322d822da49af0bcdda12ce5be24a9f3 value=3fa0edf26fa1561e38a31f4f677cf7ba
-def Mitos.Span.text type=1dab5ceed3e15602b91b9ee70bc8158d value=6c641511196b4948781f559a9f0c849c
+def Mitos.Span.text type=4d8da13d1a9490ddb5d500deefefaeb6 value=540d0fb1737583858a387fdc34eaf408
+def Mitos.Spec.Adequacy.accented type=b2ef230e7f4f315a28cdcc863028da31 value=9d39c3984753d37b139ffe687ba14a69
+def Mitos.Spec.Adequacy.cite type=8cd8a794c128f388a6364bc27f389cbf value=5494647129586cf424dbd82943ebf339
+def Mitos.Spec.Adequacy.citing type=601ba74b4146a8760e6720ca0694f24c value=3f8aca76df9718e25174cbfb64258d99
 def Mitos.Spec.Adequacy.goodEdge type=3f966cfbcc0d8dc49a55341a8537a2b9 value=868ee3609806b9accfceb8131ce8dc80
 def Mitos.Spec.Adequacy.prov type=54a88dae190b5f6ad399679f838f8f86 value=b8b9781193b798253fb069ef5584660e
 def Mitos.Spec.Adequacy.provAI type=54a88dae190b5f6ad399679f838f8f86 value=3e5d3e3664e4d287b221af81644a59a5
@@ -92,6 +95,8 @@ def Mitos.lines type=ed6bcc3b664a6ee4bc19fd3107e2ff3f value=5b361eefe14551b61982
 def Mitos.lines.go type=83444af3a46360fd9a2d822fcd66e8b7 value=bdce89cbc85dea62e0bf27dfc8e8d877
 def Mitos.matchesB type=dfa7e0c1ad08d4d51b7083647dabbe05 value=0bc3a7aa1e5c3d54d5f47cdbac33a8dc
 def Mitos.retract type=7cfe652311d229da24548c1dd4528b21 value=33e28a3db826eb288a01689867b3433b
+def Mitos.splitBytes type=cc60360ffe916768248afb6155bd4998 value=1e3efae580f8c6e84c91a2131d41d223
+def Mitos.utf8Len type=e5f81f1420063534f021d95d7b3a52c1 value=a91d6fc5457b0c989abbee7a8a75d18d
 inductive Mitos.Affects type=9f8079ac770ed27ffb6de7ca78493b58
 inductive Mitos.Affects.below type=1bd715154210beb3b47b7f16f47342bb
 inductive Mitos.Assumption type=baaddf70fb5d432b8bd948ef91d6f910
@@ -107,9 +112,15 @@ inductive Mitos.Scope type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.Span type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.Status type=baaddf70fb5d432b8bd948ef91d6f910
 theorem Mitos.Affects.brecOn type=c86b1dd99145c1312168462ad3e1f128
+theorem Mitos.Span.text_eq_some type=7223a0d785d5c817d638632bf1057f0e
+theorem Mitos.Span.text_isValid type=1efe22f2042eea9eb6d15e95e92a77f9
+theorem Mitos.Span.text_toByteArray type=d4e7aa9b2c94b56f04b65192be1a321c
 theorem Mitos.Spec.Adequacy.backwards_not_sound type=0b63078fc0131570480e5bdca2698380
+theorem Mitos.Spec.Adequacy.byte_span_anchored type=7849bf3d2daa0cc3808ff90a6f68cdbd
+theorem Mitos.Spec.Adequacy.char_span_not_anchored type=f1b085110cc50be34911a4bcfc46b290
 theorem Mitos.Spec.Adequacy.dropping_not_total type=ac7c4606e1c70fe93cc2fa0aa476efe8
 theorem Mitos.Spec.Adequacy.forgetful_not_exact type=f11c14cdb29141824d16e55403b0d829
+theorem Mitos.Spec.Adequacy.mid_char_span_not_anchored type=4e3275e8bc5b7e2efe56e96d83713664
 theorem Mitos.Spec.Adequacy.nothing_not_complete type=9c54b00ed76013fe398ca0ce7cd31f43
 theorem Mitos.Spec.Adequacy.nothing_unresolved_not_exact type=2eafe7935d307440032f39621aa4d5c7
 theorem Mitos.Spec.Adequacy.silent_impact_not_correct type=9cd9f3b8f68bdcebc125ee8712bba0cc
@@ -118,5 +129,11 @@ theorem Mitos.Spec.Adequacy.trusting_ai_not_honest type=0df0cc02f38145d8d42ddddb
 theorem Mitos.Spec.Adequacy.wf type=afd748883fa6cd26900e2c7627296bcc
 theorem Mitos.Spec.Adequacy.wf1 type=9c12b3a6895a085c181c627606c98505
 theorem Mitos.Spec.Adequacy.wfAI type=e102f81640db5f1013421c53a7df425d
-theorem Mitos.lines.go_anchor type=26c3c27de42a8f11369758e884bd1b18
-theorem Mitos.mem_lines type=fb74133b2ea3a697528d1bcb38baab00
+theorem Mitos.lines.go_anchor type=fca9b4904dd6230629dfe0c7bafd49b3
+theorem Mitos.mem_lines type=351a76ecd0655b936fc55af28e10ce65
+theorem Mitos.splitBytes_eq_some type=c877b2613b3339ddb62fb2f0e1ef8bf5
+theorem Mitos.utf8ByteSize_ofList type=dc425d652c2d15e0507f57e2ce46287a
+theorem Mitos.utf8Len_append type=fee8ac5ddea9f0c699781bfbc48fad7f
+theorem Mitos.utf8Len_cons type=f569e0aad58d37c90de8a56db5b39296
+theorem Mitos.utf8Len_nil type=4c47a930632e69da893153dcf5fc083d
+theorem Mitos.utf8Len_reverse type=0d241ede163e05ccae1ec408a5351595
