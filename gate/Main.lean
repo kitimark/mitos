@@ -1,4 +1,4 @@
-import Mitos.Core  -- builds the core with the gate; `lock` reads its compiled .olean files
+import Mitos.Core
 import MitosGate.Lint
 import MitosGate.Imports
 import MitosGate.Lock
@@ -39,8 +39,6 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"{bad} violation(s)"
     return if bad == 0 then 0 else 1
   | ["imports"] =>
-    -- The core package may import only Init, Std and itself; the locked spec (Mitos.Core.*)
-    -- may not import implementations or proofs.
     let vs ← Imports.check "core" ["Init", "Std", "Mitos.Core", "Mitos.Impl", "Mitos.Proofs"]
     let vs := vs ++ (← Imports.check ("core" / "Mitos" / "Core") ["Init", "Std", "Mitos.Core"])
     for v in vs do IO.println v

@@ -1,5 +1,3 @@
-# Root workspace. The trusted core is its own package (core/) and imports Init and Std only.
-# The gate (gate/) imports the Lean frontend because it inspects compiled environments.
 name = "mitos"
 defaultTargets = ["mitos-gate"]
 

@@ -1,33 +1,16 @@
 import MitosGate.Lint
 import MitosGate.Util
 
-/-!
-# `mitos-gate accept`: gates 0–5 for one plugin
-
-| Gate | Check |
-|---|---|
-| 0 provenance | toolchain pin matches; `models.lock` matches every model; fresh judge dir with no `.lake` |
-| 1 lint | `Lint.check` on the plugin source |
-| 2 sandbox | `lake comparator` builds the untrusted code inside bubblewrap |
-| 3 statements | comparator matches the plugin's theorems and definition hole against the Challenge |
-| 4 axioms | only `propext`, `Quot.sound`, `Classical.choice` |
-| 5 kernels | with `--paranoid`: also lean4lean, nanoda, con-leche, con-ron, paranoid kernel |
-
-The Challenge is generated here from Mitos-owned obligations; the agent never writes it.
-The judge directory is self-contained: the trusted core is copied in as source, because the
-sandbox can only read the project and write to its `.lake`.
--/
-
 namespace MitosGate.Accept
 
 structure Config where
   mitosRoot  : System.FilePath := "."
   workspace  : System.FilePath
   plugin     : String
-  model      : String              -- e.g. `Models.ToyRequire.model`
+  model      : String
   pluginFile : Option System.FilePath := none
   paranoid   : Bool := false
-  skipLint   : Bool := false       -- cheat-corpus measurement only
+  skipLint   : Bool := false
   record     : Bool := false
   keep       : Bool := false
 
@@ -38,7 +21,6 @@ def pluginImports : List String := ["Init", "Std", "Mitos.Core", "Models"]
 def obligationNames (p : String) : List String :=
   [s!"{p}.anchored", s!"{p}.sound", s!"{p}.complete"]
 
-/-- The Challenge module. Mitos owns every statement in it. -/
 def challenge (p model : String) : String :=
   let modelModule := String.intercalate "." ((model.splitOn ".").dropLast)
   s!"import Mitos.Core
@@ -78,7 +60,6 @@ def reject (gate : Nat) (name : String) : IO UInt32 := do
 private def validIdent (s : String) : Bool :=
   !s.isEmpty && s.toList.all (fun c => c.isAlphanum || c == '_') && (s.toList.head!).isAlpha
 
-/-- Gate 0. Returns the problems found (empty = pass). -/
 def provenance (c : Config) (pluginFile : System.FilePath) : IO (Array String) := do
   let mut errs := #[]
   unless validIdent c.plugin do errs := errs.push s!"plugin name `{c.plugin}` is not a plain identifier"
@@ -90,7 +71,6 @@ def provenance (c : Config) (pluginFile : System.FilePath) : IO (Array String) :
   if !(← pluginFile.pathExists) then errs := errs.push s!"plugin file {pluginFile} not found"
   let modelFile := (c.model.splitOn ".").dropLast.foldl (· / ·) c.workspace |>.addExtension "lean"
   if !(← modelFile.pathExists) then errs := errs.push s!"model module file {modelFile} not found"
-  -- models.lock: every model file listed, every listed hash matches.
   let lockFile := c.workspace / "models.lock"
   if !(← lockFile.pathExists) then errs := errs.push "workspace has no models.lock"
   else
@@ -107,11 +87,9 @@ def provenance (c : Config) (pluginFile : System.FilePath) : IO (Array String) :
 
 def runAccept (c : Config) : IO UInt32 := do
   let pluginFile := c.pluginFile.getD (c.workspace / "Plugins" / s!"{c.plugin}.lean")
-  -- Gate 0
   let errs ← provenance c pluginFile
   report 0 "provenance" errs.isEmpty (String.intercalate "; " errs.toList)
   unless errs.isEmpty do return ← reject 0 "provenance"
-  -- Gate 1
   let src ← IO.FS.readFile pluginFile
   if c.skipLint then
     IO.println "GATE 1 lint: SKIPPED (--skip-lint: measuring the later gates only)"
@@ -120,7 +98,6 @@ def runAccept (c : Config) : IO UInt32 := do
     report 1 "lint" vs.isEmpty s!"{vs.size} violation(s)"
     for v in vs do IO.println s!"  {v.render pluginFile.toString}"
     unless vs.isEmpty do return ← reject 1 "lint"
-  -- Gates 2–5: fresh judge dir, generated Challenge, sandboxed comparator.
   let judge ← IO.FS.createTempDir
   copyFile (c.mitosRoot / "lean-toolchain") (judge / "lean-toolchain")
   copyLeanTree (c.mitosRoot / "core" / "Mitos") (judge / "Mitos")
@@ -132,7 +109,6 @@ def runAccept (c : Config) : IO UInt32 := do
   IO.FS.writeFile (judge / "Challenge" / s!"{c.plugin}.lean") chal
   IO.FS.writeFile (judge / "comparator.json") (comparatorJson c.plugin)
   IO.FS.writeFile (judge / "lakefile.toml") judgeLakefile
-  -- Writes lake-manifest.json; evaluates only the generated lakefile, builds nothing.
   let (uc, uout) ← run "lake" #["update"] judge
   if uc != 0 then
     report 2 "sandbox" false s!"lake update failed: {trim uout}"
@@ -142,7 +118,6 @@ def runAccept (c : Config) : IO UInt32 := do
   let ok := code == 0 && (out.splitOn "Your solution is okay!").length > 1
   unless c.keep do IO.FS.removeDirAll judge
   if !ok then
-    -- Attribute the failure to the gate whose message appears in the comparator output.
     let has (s : String) := (out.splitOn s).length > 1
     let (g, name) :=
       if has "Illegal axiom" then (4, "axioms")
