@@ -21,6 +21,6 @@ escalation: hint → automation → stronger model → pair → split → revisi
   names, and confirm `cd core && lake comparator` accepts.
 
 ## Done when
-- [ ] `impact_correct` proven, statement exactly as in the Challenge
-- [ ] `cd core && lake check` passes
-- [ ] run-log record written (ops/runs/)
+- [x] `impact_correct` proven, statement exactly as in the Challenge
+- [x] `cd core && lake check` passes
+- [x] run-log record written (ops/runs/)

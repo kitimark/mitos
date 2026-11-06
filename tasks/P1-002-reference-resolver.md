@@ -23,6 +23,6 @@ escalation: hint â†’ automation (grind, simp lemmas for List.filter / flatMap) â
   merges last. CI judges the Challenge as soon as it exists.
 
 ## Done when
-- [ ] the four theorems are proven, statements exactly as in the Challenge
-- [ ] `cd core && lake check` passes (no `sorry`, standard axioms only)
-- [ ] run-log record written (ops/runs/)
+- [x] the four theorems are proven, statements exactly as in the Challenge
+- [x] `cd core && lake check` passes (no `sorry`, standard axioms only)
+- [x] run-log record written (ops/runs/)

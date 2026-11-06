@@ -31,10 +31,10 @@ later phase relies on.
 
 | # | Task | Kind | Status |
 |---|---|---|---|
-| P1-001 | Resolver vocabulary, statements, adequacy theorems, Challenge; spec-PR mechanics; docs for solo-owner review | spec | in review |
-| P1-002 | Reference resolver: `Mitos.Impl.resolve`; prove sound, complete, unresolved-exact, total | impl | waiting on P1-001 |
-| P1-003 | Prove assumptions-exact, status-honest, retract-exact | impl | waiting on P1-002 |
-| P1-004 | Impact analysis `Mitos.Impl.impact` (worklist reverse reachability); prove impact-correct | impl | waiting on P1-001 |
+| P1-001 | Resolver vocabulary, statements, adequacy theorems, Challenge; spec-PR mechanics; docs for solo-owner review | spec | done ([#1](https://github.com/kitimark/mitos/pull/1)) |
+| P1-002 | Reference resolver: `Mitos.Impl.resolve`; prove sound, complete, unresolved-exact, total | impl | in review |
+| P1-003 | Prove assumptions-exact, status-honest, retract-exact | impl | in review |
+| P1-004 | Impact analysis `Mitos.Impl.impact` (worklist reverse reachability); prove impact-correct | impl | in review |
 | P1-005 | Checked UTF-8 byte spans in `Span` and the line layer; migrate obligations and the toy plugin | spec, then impl | not started |
 | P1-006 | Mutation testing: `eval/mutants/` + runner; each mutant must break a theorem | tooling | not started |
 | P1-007 | Fixture repos + hand labels; scorer; PR scorecard comment | tooling | not started |
@@ -42,4 +42,6 @@ later phase relies on.
 | P1-009 | Gate 6 for models: examples, vacuity checks (empty / emit-everything extractors) | gate | not started |
 
 P1-002 and P1-004 can run in parallel; P1-003 follows P1-002 because both edit
-`Mitos/Impl/Resolve.lean`.
+`Mitos/Impl/Resolve.lean`. In practice P1-002, P1-003 and P1-004 landed in one implementation PR,
+which also added the solution module `Mitos/Proofs/Resolver.lean`; exit criteria 1 and 2 are met
+there (`lake comparator --paranoid` accepts; `lake check` passes).

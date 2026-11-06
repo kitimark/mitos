@@ -142,7 +142,7 @@ width is only 32 bits.)
 | Core imports only `Init`, `Std`, `Mitos.*`; the spec never imports implementations | `lake exe mitos-gate imports` | ✓ | ✓ | | yes |
 | Lock matches the compiled core | `lake exe mitos-gate lock --check` | ✓ | ✓ | | yes |
 | Core: no `sorry`, standard axioms only | `cd core && lake check` | ✓ | ✓ | | yes |
-| Core implementation proves the Challenge | `cd core && lake comparator` | ✓ | ✓ | | yes |
+| Core implementation proves the Challenge | `cd core && lake comparator --paranoid` | ✓ | ✓ | | yes |
 | Spec changes carry `spec-approved` | CI step | | ✓ | | yes |
 | Plugin lint (gate 1) | `lake exe mitos-gate lint <file>` | ✓ | ✓ | | yes |
 | Honest plugin accepted, gates 0–5 | `lake exe mitos-gate accept … --paranoid` | ✓ | ✓ | ✓ | yes |

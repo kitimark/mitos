@@ -50,7 +50,7 @@ jobs:
       - name: Core implementation proves the approved Challenge
         run: |
           if [ -f core/Mitos/Proofs/Resolver.lean ]; then
-            cd core && lake comparator
+            cd core && lake comparator --paranoid
           else
             echo "No implementation yet (core/Mitos/Proofs/Resolver.lean); Challenge not judged."
           fi
