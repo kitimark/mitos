@@ -53,14 +53,12 @@ def report (gate : Nat) (name : String) (ok : Bool) (detail : String := "") : IO
   let status := if ok then "PASS" else "FAIL"
   IO.println s!"GATE {gate} {name}: {status}{if detail.isEmpty then "" else " — " ++ detail}"
 
-def reject (gate : Nat) (name : String) : IO UInt32 := do
-  IO.println s!"VERDICT: REJECTED (gate {gate}: {name})"
-  return 1
-
 private def validIdent (s : String) : Bool :=
   !s.isEmpty && s.toList.all (fun c => c.isAlphanum || c == '_') && (s.toList.head!).isAlpha
 
-def provenance (c : Config) (pluginFile : System.FilePath) : IO (Array String) := do
+abbrev GateM := ExceptT (Nat × String) IO
+
+def provenance (c : Config) (pluginFile : System.FilePath) : GateM Unit := do
   let mut errs := #[]
   unless validIdent c.plugin do errs := errs.push s!"plugin name `{c.plugin}` is not a plain identifier"
   let wsTc := c.workspace / "lean-toolchain"
@@ -83,28 +81,25 @@ def provenance (c : Config) (pluginFile : System.FilePath) : IO (Array String) :
     for f in ← leanFiles (c.workspace / "Models") do
       let rel := (f.toString.drop (c.workspace.toString.length + 1)).toString
       unless listed.contains rel do errs := errs.push s!"model {rel} is not in models.lock"
-  return errs
-
-def runAccept (c : Config) : IO UInt32 := do
-  let pluginFile := c.pluginFile.getD (c.workspace / "Plugins" / s!"{c.plugin}.lean")
-  let errs ← provenance c pluginFile
   report 0 "provenance" errs.isEmpty (String.intercalate "; " errs.toList)
-  unless errs.isEmpty do return ← reject 0 "provenance"
-  let src ← IO.FS.readFile pluginFile
+  unless errs.isEmpty do throw (0, "provenance")
+
+def lint (c : Config) (pluginFile : System.FilePath) (src : String) : GateM Unit := do
   if c.skipLint then
     IO.println "GATE 1 lint: SKIPPED (--skip-lint: measuring the later gates only)"
-  else
-    let vs ← Lint.check (← Lint.syntaxEnv) pluginImports src
-    report 1 "lint" vs.isEmpty s!"{vs.size} violation(s)"
-    for v in vs do IO.println s!"  {v.render pluginFile.toString}"
-    unless vs.isEmpty do return ← reject 1 "lint"
+    return
+  let vs ← Lint.check (← Lint.syntaxEnv) pluginImports src
+  report 1 "lint" vs.isEmpty s!"{vs.size} violation(s)"
+  for v in vs do IO.println s!"  {v.render pluginFile.toString}"
+  unless vs.isEmpty do throw (1, "lint")
+
+def buildAndJudge (c : Config) (src chal : String) : GateM Unit := do
   let judge ← IO.FS.createTempDir
   copyFile (c.mitosRoot / "lean-toolchain") (judge / "lean-toolchain")
   copyLeanTree (c.mitosRoot / "core" / "Mitos") (judge / "Mitos")
   copyLeanTree (c.workspace / "Models") (judge / "Models")
   IO.FS.createDirAll (judge / "Plugins")
   IO.FS.writeFile (judge / "Plugins" / s!"{c.plugin}.lean") src
-  let chal := challenge c.plugin c.model
   IO.FS.createDirAll (judge / "Challenge")
   IO.FS.writeFile (judge / "Challenge" / s!"{c.plugin}.lean") chal
   IO.FS.writeFile (judge / "comparator.json") (comparatorJson c.plugin)
@@ -112,7 +107,7 @@ def runAccept (c : Config) : IO UInt32 := do
   let (uc, uout) ← run "lake" #["update"] judge
   if uc != 0 then
     report 2 "sandbox" false s!"lake update failed: {trim uout}"
-    return ← reject 2 "sandbox"
+    throw (2, "sandbox")
   let args := if c.paranoid then #["comparator", "--paranoid"] else #["comparator"]
   let (code, out) ← run "lake" args judge
   let ok := code == 0 && (out.splitOn "Your solution is okay!").length > 1
@@ -129,16 +124,17 @@ def runAccept (c : Config) : IO UInt32 := do
     report g name false
     let lines := (out.splitOn "\n").filter (fun l => !(l.startsWith "✔") && !(l.startsWith "Exporting"))
     for l in lines.reverse.take 15 |>.reverse do IO.println s!"  | {l}"
-    return ← reject g name
+    throw (g, name)
   report 2 "sandbox build" true
   report 3 "statements" true
   report 4 "axioms" true (String.intercalate ", " permittedAxioms)
   report 5 "kernels" true (if c.paranoid then "lean4lean, nanoda, con-leche, con-ron, paranoid" else "Lean kernel only (use --paranoid for independent kernels)")
-  if c.record then
-    let coreFiles ← leanFiles (c.mitosRoot / "core" / "Mitos")
-    let mut coreCat := ""
-    for f in coreFiles do coreCat := coreCat ++ f.toString ++ "\n" ++ (← IO.FS.readFile f)
-    let rec_ := s!"\{
+
+def writeRecord (c : Config) (src chal : String) : IO Unit := do
+  let coreFiles ← leanFiles (c.mitosRoot / "core" / "Mitos")
+  let mut coreCat := ""
+  for f in coreFiles do coreCat := coreCat ++ f.toString ++ "\n" ++ (← IO.FS.readFile f)
+  let rec_ := s!"\{
   \"plugin\": \"{c.plugin}\",
   \"model\": \"{c.model}\",
   \"toolchain\": \"{trim (← IO.FS.readFile (c.mitosRoot / "lean-toolchain"))}\",
@@ -149,10 +145,25 @@ def runAccept (c : Config) : IO UInt32 := do
   \"paranoid\": {c.paranoid}
 }
 "
-    IO.FS.createDirAll (c.workspace / "accepted")
-    IO.FS.writeFile (c.workspace / "accepted" / s!"{c.plugin}.json") rec_
-    IO.println s!"recorded {c.workspace / "accepted" / s!"{c.plugin}.json"}"
-  IO.println "VERDICT: ACCEPTED"
-  return 0
+  IO.FS.createDirAll (c.workspace / "accepted")
+  IO.FS.writeFile (c.workspace / "accepted" / s!"{c.plugin}.json") rec_
+  IO.println s!"recorded {c.workspace / "accepted" / s!"{c.plugin}.json"}"
+
+def runAccept (c : Config) : IO UInt32 := do
+  let pluginFile := c.pluginFile.getD (c.workspace / "Plugins" / s!"{c.plugin}.lean")
+  let gates : GateM Unit := do
+    provenance c pluginFile
+    let src ← IO.FS.readFile pluginFile
+    lint c pluginFile src
+    let chal := challenge c.plugin c.model
+    buildAndJudge c src chal
+    if c.record then writeRecord c src chal
+  match ← gates.run with
+  | .ok () =>
+    IO.println "VERDICT: ACCEPTED"
+    return 0
+  | .error (g, name) =>
+    IO.println s!"VERDICT: REJECTED (gate {g}: {name})"
+    return 1
 
 end MitosGate.Accept
