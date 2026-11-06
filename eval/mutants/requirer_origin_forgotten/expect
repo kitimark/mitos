@@ -1,0 +1,2 @@
+breaks=resolve_assumptions_exact resolve_retract_exact
+why=Records only the provider's origin, so retracting the requirement's declaration leaves its edge in place.

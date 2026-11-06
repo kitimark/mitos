@@ -1,0 +1,2 @@
+breaks=resolve_unresolved_exact
+why=Forgets to keep only requirements, so a provision nobody uses is reported as unresolved.

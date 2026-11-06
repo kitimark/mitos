@@ -1,0 +1,2 @@
+breaks=impact_correct
+why=Seeds the visited list with the changed repo, so it reports itself as affected without a cycle.

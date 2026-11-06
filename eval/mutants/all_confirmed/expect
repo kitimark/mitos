@@ -1,0 +1,2 @@
+breaks=resolve_status_honest
+why=Marks every edge confirmed, so an ambiguous or AI-proposed edge looks certain.

@@ -1,0 +1,2 @@
+breaks=impact_correct
+why=Walks edges forward, so it reports what the changed repo depends on instead of what depends on it.

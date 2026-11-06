@@ -1,0 +1,2 @@
+breaks=resolve_complete
+why=Keeps only the first provider, so the other candidates vanish instead of making the edge inferred.
