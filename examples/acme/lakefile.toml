@@ -1,4 +1,3 @@
-# Example user workspace. Models/ are human-reviewed; Plugins/ are agent-written.
 name = "acme"
 defaultTargets = ["Models", "Plugins"]
 

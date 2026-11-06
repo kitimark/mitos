@@ -1,17 +1,5 @@
 import Lean
 
-/-!
-# Gate 1: source lint
-
-A token scan of plugin source, over the tokens Lean's own parser produces. It runs *before* the
-sandboxed build and blocks the constructs that kernel checking cannot see (`implemented_by`,
-`extern`, `csimp` change what runs, not what is proved) and the ones that let elaboration run code
-(`#eval`, `macro`, `elab`, …).
-
-It is defence in depth: `lake comparator` independently rejects `sorry`, foreign axioms and
-statement edits. The cheat corpus (`eval/cheats/`) records which layer catches each cheat.
--/
-
 namespace MitosGate.Lint
 open Lean
 
@@ -37,14 +25,12 @@ def syntaxEnv : IO Environment := do
   initSearchPath (← findSysroot)
   importModules #[{ module := `Init }, { module := `Std }] {} (loadExts := true)
 
-/-- Literals and doc comments: text, not code. -/
 private def isText (k : SyntaxNodeKind) : Bool :=
   k == strLitKind || k == charLitKind || k == interpolatedStrLitKind || k == nameLitKind ||
   k == numLitKind || k == scientificLitKind ||
   k == ``Parser.Command.docComment || k == ``Parser.Command.moduleDoc
 
-/-- Atoms and identifiers of `stx`, in source order. Literals and doc comments contribute nothing; identifiers are
-rendered without guillemets, so `«sorry»` is seen as `sorry`. -/
+/-- Identifiers are rendered without guillemets, so `«sorry»` is seen as `sorry`. -/
 partial def tokensOf (fm : FileMap) (stx : Syntax) (acc : Array Token) : Array Token :=
   let push (text : String) : Array Token :=
     let pos := fm.toPosition (stx.getPos?.getD 0)
@@ -55,7 +41,6 @@ partial def tokensOf (fm : FileMap) (stx : Syntax) (acc : Array Token) : Array T
   | .ident _ _ n _ => push (n.toString (escape := false))
   | .missing => acc
 
-/-- Tokens of the module header (`module`, `import …`). Needs no environment. -/
 def headerTokens (src : String) : IO (Array Token) := do
   let ictx := Parser.mkInputContext src "<source>"
   let (header, _, _) ← Parser.parseHeader ictx
@@ -82,7 +67,6 @@ def tokenize (env : Environment) (src : String) : IO (Except Violation (Array To
                     msg := s!"does not parse with the toolchain's syntax ({text.trimAscii}); plugins may not declare notation" }
   | none => return .ok toks
 
-/-- Identifiers and keywords a plugin may not use anywhere (checked per dotted component). -/
 def banned : List String :=
   [ "sorry", "admit", "axiom", "unsafe", "partial", "opaque", "noncomputable",
     "implemented_by", "extern", "export", "csimp", "init", "builtin_init", "never_extract",
@@ -92,16 +76,13 @@ def banned : List String :=
     "instance", "scoped", "meta", "initialize", "builtin_initialize",
     "run_cmd", "run_elab", "run_meta", "debug", "Lean" ]
 
-/-- `#` commands a plugin may use; all others (notably `#eval`) are rejected. -/
 def allowedHashCommands : List String := ["#check", "#print"]
 
-/-- Options a plugin may set; everything else (notably `debug.*`) is rejected. -/
 def allowedOptionPrefixes : List String := ["maxHeartbeats", "maxRecDepth", "linter."]
 
 def components (t : String) : List String :=
   (t.splitOn ".").filter (· != "")
 
-/-- Is `mod` allowed by one of the prefixes? `"Models"` allows `Models` and `Models.X`. -/
 def moduleAllowed (allowed : List String) (mod : String) : Bool :=
   allowed.any fun p => mod == p || mod.startsWith (p ++ ".")
 

@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# Cheat corpus: every case must be REJECTED by the full gate at its expected gate.
-# Each case is also run with --skip-lint to record what the later gates catch on their own
-# (defence in depth). A case whose comparator-only result differs from `expect` also fails:
-# it means our understanding of the gate changed, and the corpus must be updated on purpose.
-#
-# usage: eval/cheats/run.sh [case...]      (run from the repository root)
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -13,7 +7,7 @@ GATE="$ROOT/.lake/build/bin/mitos-gate"
 cases=("$@")
 [ ${#cases[@]} -eq 0 ] && cases=($(ls -d eval/cheats/*/ | xargs -n1 basename))
 
-verdict() {  # prints ACCEPTED or REJECTED@N
+verdict() {
   local out; out="$("$GATE" accept --workspace "$1" --plugin ToyRequire \
     --model Models.ToyRequire.model --mitos-root "$ROOT" $2 2>&1)"
   echo "$out" > "$3"

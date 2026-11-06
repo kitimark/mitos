@@ -1,18 +1,10 @@
 import Mitos.Core
 import Models.ToyRequire
 
-/-!
-# Plugin: toy `require` lines  (AGENT-WRITTEN — code and proofs only)
-
-The names below must match the Challenge that `mitos-gate` generates:
-`ToyRequire.extractor`, `ToyRequire.anchored`, `ToyRequire.sound`, `ToyRequire.complete`.
--/
-
 open Mitos Models.ToyRequire
 
 namespace ToyRequire
 
-/-- The fact for one line, if the line is a requirement. -/
 def ofLine (p : Nat × List Char) : Option Fact :=
   if prefixChars.isPrefixOf p.2 then some (fact p.1 (p.2.drop prefixChars.length)) else none
 
