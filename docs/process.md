@@ -46,14 +46,32 @@ people approve what those proofs mean.
 ```
  Spec PR  (small, owner-reviewed)            Impl PR  (large, machine-checked)
  ─────────────────────────────────           ──────────────────────────────────
- • theorem statements (proof = sorry)  ──►   • code + proofs that fill them
- • models + examples                         • must NOT change any statement
- • regenerated statements.lock               • owner skims; Lean checks
- • task file with a budget
+ • statements as Prop definitions      ──►   • Mitos.Impl.*: the implementation
+   in Mitos.Core.Spec                        • Mitos.Proofs.*: theorems whose
+ • adequacy theorems: wrong                    statements match the Challenge
+   implementations fail them                 • must NOT change any spec file
+ • core/Challenge/*: the exact theorems      • owner skims; Lean and the
+   the implementation must prove               comparator check
+ • regenerated statements.lock
+ • task files with budgets
 ```
 
-A spec PR changes `statements.lock` (or a `models.lock`) and therefore needs the
-`spec-approved` label from the owner. An impl PR that changes a lock file fails CI.
+How the pieces fit:
+
+- **Statements are definitions, not theorems with `sorry`.** `Mitos.Spec.Sound : Resolver → Prop`
+  says what any resolver must satisfy. The spec PR merges with no `sorry` anywhere on `main`.
+- **Adequacy theorems** (`Mitos.Core.Spec.Adequacy`) prove that obviously wrong implementations
+  fail each statement. If a later edit weakens a statement, one of them stops proving.
+- **The Challenge** (`core/Challenge/*.lean`) names the definitions the implementation must
+  provide and states each theorem it must prove, with `sorry` holes. It is not a default build
+  target, so `lake check` never sees its `sorry`s.
+- **The implementation** lives in `Mitos.Impl.*` and `Mitos.Proofs.*`, outside the locked
+  namespace, so an impl PR does not touch `statements.lock`. CI runs `lake comparator` in
+  `core/` to check the proofs state exactly what the Challenge states.
+
+A spec PR changes `statements.lock`, a `models.lock`, `core/Challenge/` or
+`core/comparator.json`, and therefore needs the `spec-approved` label from the owner. An impl PR
+that touches any of them fails CI.
 
 ### The task file
 
@@ -81,8 +99,11 @@ budget: 40 iterations · 2h wall · 1.5M tokens
 | Evaluator | CI and nightly job | scorecards, logs | — |
 | Reviewer | agent, advisory only | PR comments, on code with comments stripped | approvals |
 
-`CODEOWNERS` marks the trusted paths. Turn on branch protection with "Require review from Code
-Owners" so only the owner can approve them.
+`CODEOWNERS` marks the trusted paths, so GitHub asks the owner to review any PR touching them.
+While the owner is the only person on the repository, "Require review from Code Owners" stays
+off: PRs opened by agents appear under the owner's account, and GitHub never lets an author
+approve their own PR. The `spec-approved` label is the owner's sign-off on spec changes, and CI
+enforces it. `main` is protected: changes arrive by pull request with the `gate` check green.
 
 ### Rules for the inner loops (L0, L1)
 
@@ -103,8 +124,9 @@ Owners" so only the owner can approve them.
 
 | File | Pins | Regenerate with | Changing it needs |
 |---|---|---|---|
-| `statements.lock` | every declaration in `Mitos.Core`: SHA-256 of its type, and of its value for definitions | `lake exe mitos-gate lock` | `spec-approved` label |
+| `statements.lock` | every declaration in `Mitos.Core.*` (not `Mitos.Impl`/`Mitos.Proofs`): SHA-256 of its type, and of its value for definitions; generated declarations are omitted | `lake exe mitos-gate lock` | `spec-approved` label |
 | `<workspace>/models.lock` | the SHA-256 of every human-reviewed model file | `sha256sum Models/*.lean > models.lock` | `spec-approved` label |
+| `core/Challenge/`, `core/comparator.json` | the theorems the core implementation must prove | edited by hand in a spec PR | `spec-approved` label |
 
 `statements.lock` is computed from the compiled environment, not from source text, so a
 formatting or notation trick cannot hide a change. Definition *values* are locked too, because a
@@ -117,9 +139,11 @@ width is only 32 bits.)
 | Check | Command | L1 local | L2 PR | L3 nightly | Blocks merge |
 |---|---|---|---|---|---|
 | Build core and gate | `lake build` | ✓ | ✓ | ✓ | yes |
-| Core imports only `Init`, `Std`, `Mitos.Core` | `lake exe mitos-gate imports` | ✓ | ✓ | | yes |
+| Core imports only `Init`, `Std`, `Mitos.*`; the spec never imports implementations | `lake exe mitos-gate imports` | ✓ | ✓ | | yes |
 | Lock matches the compiled core | `lake exe mitos-gate lock --check` | ✓ | ✓ | | yes |
-| Lock changes carry `spec-approved` | CI step | | ✓ | | yes |
+| Core: no `sorry`, standard axioms only | `cd core && lake check` | ✓ | ✓ | | yes |
+| Core implementation proves the Challenge | `cd core && lake comparator` | ✓ | ✓ | | yes |
+| Spec changes carry `spec-approved` | CI step | | ✓ | | yes |
 | Plugin lint (gate 1) | `lake exe mitos-gate lint <file>` | ✓ | ✓ | | yes |
 | Honest plugin accepted, gates 0–5 | `lake exe mitos-gate accept … --paranoid` | ✓ | ✓ | ✓ | yes |
 | Cheat corpus rejected | `eval/cheats/run.sh` | when touching `gate/` | ✓ | ✓ | yes |
@@ -218,7 +242,7 @@ At the end of each phase the owner reviews the scorecard trend and the run logs:
 |---|---|
 | L0 | Claude Code with lean-lsp-mcp |
 | L1 parallel builders | separate cloud sessions or worktree-isolated agents, one task each |
-| L2 | GitHub Actions (`.github/workflows/ci.yml`), CODEOWNERS, the `spec-approved` label |
+| L2 | GitHub Actions (`.github/workflows/ci.yml`), protected `main`, CODEOWNERS, the `spec-approved` label |
 | L2 CI fixes | a session subscribed to the PR, fixing failures inside the task's `touches` |
 | L3 | a scheduled task running the nightly checks and posting the scorecard |
 | L4 | the scorecard trend plus a short retrospective in `plan/` |
@@ -257,3 +281,6 @@ eval/cheats/run.sh
   (`eval/cheats/env_hack`), confirming that elaboration-time tricks do not survive export.
 - Phase 0 spans are character offsets into `String.toList`. Checked UTF-8 byte positions are a
   Phase 1 task.
+- `statements.lock` initially listed every declaration, including those Lean generates for
+  each inductive type (`sizeOf_spec`, `ctorIdx`, …). They follow from the locked types, so the
+  lock now omits them to keep spec diffs reviewable.

@@ -42,15 +42,26 @@ jobs:
       - name: statements.lock matches the compiled core
         run: lake exe mitos-gate lock --check
 
-      - name: Lock-file changes need the spec-approved label
+      - name: Core has no sorry and only standard axioms (sandboxed kernel replay)
+        run: cd core && lake check
+
+      - name: Core implementation proves the approved Challenge
+        run: |
+          if [ -f core/Mitos/Proofs/Resolver.lean ]; then
+            cd core && lake comparator
+          else
+            echo "No implementation yet (core/Mitos/Proofs/Resolver.lean); Challenge not judged."
+          fi
+
+      - name: Spec changes need the spec-approved label
         if: github.event_name == 'pull_request'
         env:
           APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'spec-approved') }}
         run: |
           changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-            | grep -E '(^|/)(statements|models)\.lock$' || true)
+            | grep -E '(^|/)(statements|models)\.lock$|^core/Challenge/|^core/comparator\.json$' || true)
           if [ -n "$changed" ] && [ "$APPROVED" != "true" ]; then
-            echo "These lock files changed without the spec-approved label:"; echo "$changed"; exit 1
+            echo "These spec files changed without the spec-approved label:"; echo "$changed"; exit 1
           fi
 
       - name: Example workspace builds
