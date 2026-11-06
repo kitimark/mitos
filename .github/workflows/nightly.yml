@@ -1,0 +1,112 @@
+name: nightly
+
+on:
+  schedule:
+    # 03:17 UTC: after the US evening and before the European morning, and off the :00 mark
+    # where scheduled runs queue up.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - run: lake build
+      - run: lake exe mitos-gate imports
+      - run: lake exe mitos-gate lock --check
+      - run: cd core && lake check
+
+      - name: Core implementation proves the approved Challenge (paranoid)
+        run: |
+          if [ -f core/Mitos/Proofs/Resolver.lean ]; then
+            cd core && lake comparator --paranoid
+          else
+            echo "No implementation yet (core/Mitos/Proofs/Resolver.lean); Challenge not judged."
+          fi
+
+      - run: cd examples/acme && lake build
+      - name: Honest toy plugin is accepted
+        run: |
+          lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
+            --model Models.ToyRequire.model --paranoid
+      - run: eval/cheats/run.sh
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cheat-logs
+          path: .lake/cheats/
+          if-no-files-found: ignore
+
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      versions: ${{ steps.pick.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pinned=$(sed 's|.*:||' lean-toolchain)
+          releases=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/leanprover/lean4/releases?per_page=100" \
+            | jq -r '.[] | select(.draft | not) | .tag_name')
+          stable=$(echo "$releases" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          rc=$(echo "$releases" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$' | sort -V | tail -n1 || true)
+          # An rc only counts when its release is newer than the newest stable.
+          if [ -n "$rc" ] && [ "$(printf '%s\n%s\n' "$stable" "${rc%-rc*}" | sort -V | tail -n1)" = "$stable" ]; then
+            rc=""
+          fi
+          versions=$(printf '%s\n%s\n' "$stable" "$rc" | { grep -v -e '^$' -e "^$pinned\$" || true; } | jq -R . | jq -sc .)
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Toolchain canary: versions to try"
+            echo "- pinned: \`$pinned\`"
+            echo "- newest stable: \`${stable:-none}\`"
+            echo "- newest rc: \`${rc:-none}\`"
+            echo "- trying: \`$versions\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  canary:
+    name: canary (early warning) ${{ matrix.version }}
+    needs: resolve
+    if: needs.resolve.outputs.versions != '[]'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(needs.resolve.outputs.versions) }}
+    env:
+      VERSION: ${{ matrix.version }}
+    steps:
+      - uses: actions/checkout@v4
+      # A cached build of the pinned toolchain would be stale here.
+      - uses: ./.github/actions/setup
+        with:
+          cache: "false"
+
+      - name: Point both lean-toolchain files at the candidate (this checkout only)
+        run: |
+          for f in lean-toolchain examples/acme/lean-toolchain; do
+            echo "leanprover/lean4:$VERSION" > "$f"
+          done
+          git diff
+
+      - name: Run the checks on the candidate toolchain
+        run: |
+          set -e
+          trap 'printf "### canary %s: FAILED\nEarly warning, not a failure of main: an upgrade to %s breaks a check. Schedule the bump (docs/process.md, tripwires).\n" "$VERSION" "$VERSION" >> "$GITHUB_STEP_SUMMARY"' ERR
+          lake build
+          (cd core && lake check)
+          if [ -f core/Mitos/Proofs/Resolver.lean ]; then (cd core && lake comparator); fi
+          lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
+            --model Models.ToyRequire.model --paranoid
+          eval/cheats/run.sh
+          echo "### canary $VERSION: passed" >> "$GITHUB_STEP_SUMMARY"
