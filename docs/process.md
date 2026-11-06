@@ -69,9 +69,9 @@ How the pieces fit:
   namespace, so an impl PR does not touch `statements.lock`. CI runs `lake comparator` in
   `core/` to check the proofs state exactly what the Challenge states.
 
-A spec PR changes `statements.lock`, a `models.lock`, `core/Challenge/` or
-`core/comparator.json`, and therefore needs the `spec-approved` label from the owner. An impl PR
-that touches any of them fails CI.
+A spec PR changes `statements.lock`, a `models.lock`, `core/Challenge/`, `core/comparator.json`
+or the locked spec's sources (`core/Mitos/Core.lean`, `core/Mitos/Core/`), and therefore needs
+the `spec-approved` label from the owner. An impl PR that touches any of them fails CI.
 
 ### The task file
 
@@ -128,7 +128,7 @@ enforces it. `main` is protected: changes arrive by pull request with the `gate`
 
 | File | Pins | Regenerate with | Changing it needs |
 |---|---|---|---|
-| `statements.lock` | every declaration in `Mitos.Core.*` (not `Mitos.Impl`/`Mitos.Proofs`): SHA-256 of its type, and of its value for definitions; generated declarations are omitted | `lake exe mitos-gate lock` | `spec-approved` label |
+| `statements.lock` | every declaration in `Mitos.Core.*` (not `Mitos.Impl`/`Mitos.Proofs`): SHA-256 of its type, of its value for definitions, and (`aux=`) of every generated declaration it reaches; generated declarations get no line of their own | `lake exe mitos-gate lock` | `spec-approved` label |
 | `<workspace>/models.lock` | the SHA-256 of every human-reviewed model file | `sha256sum Models/*.lean > models.lock` | `spec-approved` label |
 | `core/Challenge/`, `core/comparator.json` | the theorems the core implementation must prove | edited by hand in a spec PR | `spec-approved` label |
 
@@ -137,6 +137,14 @@ formatting or notation trick cannot hide a change. Definition *values* are locke
 definition such as `Mitos.Anchored` is a statement of meaning. Theorem *proofs* are not locked:
 re-proving is fine, changing what is proved is not. (`Expr.hash` is not used: its effective
 width is only 32 bits.)
+
+A definition's meaning can live in declarations Lean generates for it: a structurally recursive
+`f` compiles to `List.brecOn … f._f`, and a `match`'s patterns live in `f.match_1`. So a line's
+`aux=` hashes, in name order, the type (and value, for definitions) of every unlisted `Mitos.Core`
+declaration its own type or value references, transitively. The walk stops at declarations that
+have their own line and at anything outside `Mitos.Core` (pinned by `lean-toolchain`); it never
+enters theorem proofs. CI also requires `spec-approved` for any change under `core/Mitos/Core/`,
+which covers what no kernel term references, such as a structure field's default value.
 
 ### What runs where
 
@@ -296,3 +304,7 @@ eval/cheats/run.sh
 - `statements.lock` initially listed every declaration, including those Lean generates for
   each inductive type (`sizeOf_spec`, `ctorIdx`, …). They follow from the locked types, so the
   lock now omits them to keep spec diffs reviewable.
+- Omitting generated declarations hid real meaning: the body of `Mitos.lines.go` lives in
+  `lines.go._f` and `lines.go.match_1`, so changing it left the lock unchanged, and so did the
+  spec-approved check, which looked only at lock and Challenge paths. Each lock line now hashes
+  the generated declarations it reaches (`aux=`), and the label check covers `core/Mitos/Core/`.
