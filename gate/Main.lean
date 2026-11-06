@@ -1,4 +1,3 @@
-import Mitos.Core
 import MitosGate.Lint
 import MitosGate.Imports
 import MitosGate.Lock

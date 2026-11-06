@@ -14,3 +14,4 @@ name = "mitos-gate"
 srcDir = "gate"
 root = "Main"
 supportInterpreter = true
+needs = ["mitos-core/+Mitos.Core:olean"]
