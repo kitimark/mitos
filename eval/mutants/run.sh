@@ -25,7 +25,7 @@ judge() {  # prints CAUGHT, SURVIVED, BROKEN (the mutant does not build) or INVA
   local d="$1" out="$2" breaks w f b t
   breaks=$(grep '^breaks=' "$d/expect" 2>/dev/null | cut -d= -f2)
   [ -n "$breaks" ] && [ -f "$d/Refute.lean" ] || { echo "needs Refute.lean and expect with breaks=" >"$out"; echo INVALID; return; }
-  w=$(mktemp -d); cp -r "$CORE/." "$w/"
+  w=$(mktemp -d); cp -r "$CORE/." "$w/"; cp "$ROOT/lean-toolchain" "$w/"
   for f in "$d"/*; do
     b=$(basename "$f")
     case "$b" in
