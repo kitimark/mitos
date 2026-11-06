@@ -54,6 +54,9 @@ jobs:
             echo "No implementation yet (core/Mitos/Proofs/Resolver.lean); Challenge not judged."
           fi
 
+      - name: Every resolver mutant is refuted by a theorem
+        run: eval/mutants/run.sh
+
       - name: Example workspace builds
         run: cd examples/acme && lake build
 
@@ -82,4 +85,12 @@ jobs:
         with:
           name: cheat-logs
           path: .lake/cheats/
+          if-no-files-found: ignore
+
+      - name: Upload mutant logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutant-logs
+          path: .lake/mutants/
           if-no-files-found: ignore

@@ -153,7 +153,7 @@ width is only 32 bits.)
 | Cheat corpus rejected | `eval/cheats/run.sh` | when touching `gate/` | ✓ | ✓ | yes |
 | Full evaluation scorecard | Phase 1 | | | ✓ | — |
 | Differential tests against real tools | Phase 2 | | | ✓ | — |
-| Mutation testing of our own theorems | Phase 1 | | | ✓ | — |
+| Every resolver mutant is refuted by a theorem | `eval/mutants/run.sh` | when touching `core/` | ✓ | ✓ | yes |
 | Next Lean release-candidate canary (`nightly.yml`, job `canary`) | Phase 1 | | | ✓ | — |
 
 ### The acceptance gate
@@ -196,6 +196,15 @@ noticed and recorded on purpose.
 Five cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
 `eval_command`, and the two smuggling variants `char_literal_smuggle` and `raw_string_smuggle`. The kernel cannot see what code *runs*, only what is *proved*. Those cases are
 why the lint is a required gate rather than a nicety.
+
+### The mutant corpus
+
+`eval/mutants/<mutant>/` holds a copy of `core/Mitos/Impl/Resolve.lean` or `Impact.lean` with one
+plausible bug, a `Refute.lean`, and an `expect` file (`breaks=` the Challenge theorems it must
+break, `why=` the bug). `Refute.lean` proves each named statement false for the mutant, and
+`eval/mutants/run.sh` judges it with `lake comparator` against the Challenge with those theorems
+negated. A failing proof build is not enough, because a correct refactor fails it too. A
+refutation cannot be proved for a mutant that still meets the statement.
 
 ## 4. How to observe
 
