@@ -91,7 +91,7 @@ jobs:
           name: scorecard
           path: ${{ runner.temp }}/scorecard.md
 
-      - name: Honest toy plugin is accepted (gates 0-5, independent kernels)
+      - name: Honest toy plugin is accepted (gates 0-6, independent kernels)
         run: |
           lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
             --model Models.ToyRequire.model --paranoid
