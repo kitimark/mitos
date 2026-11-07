@@ -179,7 +179,7 @@ which covers what no kernel term references, such as a structure field's default
 | Gate | What it checks | Implemented by |
 |---|---|---|
 | 0 provenance | toolchain pin matches; every model listed in `models.lock` with a matching hash; fresh judging directory with no `.lake` | `gate/MitosGate/Accept.lean` |
-| 1 lint | the plugin parses with the toolchain's own `Init`/`Std` syntax, and its tokens (as Lean's parser produces them) include no `sorry`, `axiom`, `partial`, `unsafe`, `implemented_by`, `extern`, `csimp`, `native_decide`, notation, macros, instances, `#eval`, `debug.*` options, or imports outside `Init`/`Std`/`Mitos.Core`/`Models` | `gate/MitosGate/Lint.lean` |
+| 1 lint | the plugin parses with the toolchain's own `Init`/`Std` syntax, and its tokens (as Lean's parser produces them) include no `sorry`, `axiom`, `partial`, `unsafe`, `implemented_by`, `extern`, `csimp`, `native_decide`, notation, macros, instances, `#eval`, `debug.*` options, or imports outside `Init`/`Std`/`Mitos.Core`/`Models`. Identifiers are matched by name, so `«sorry»` counts as `sorry`. The workspace's models declare no syntax (notation, macros, `syntax`, `elab`, `Lean`) and import nothing outside those four, so `Init`/`Std` syntax is all the plugin's syntax | `gate/MitosGate/Lint.lean` |
 | 2 sandbox | the plugin is built inside bubblewrap; it can write only to the judging project's `.lake` | `lake comparator` |
 | 3 statements | the plugin's theorems and its extractor definition match the generated Challenge, compared as kernel terms | `lake comparator` |
 | 4 axioms | only `propext`, `Quot.sound`, `Classical.choice` | `lake comparator` |
@@ -204,13 +204,18 @@ comparator_only=reject@4    # with lint skipped, the later gates must still reje
 why=Leaves the completeness proof as `sorry`.
 ```
 
+A case whose `expect` also has the line `models=reviewed` stands for models the owner approved:
+the runner re-pins `models.lock` to the case's `Models/`, so gate 0 passes and the later gates
+are what is tested.
+
 `eval/cheats/run.sh` runs every case twice: through the full gate, and with `--skip-lint`, to
 record what the later gates catch on their own. Every full run must reject at the expected gate.
 The comparator-only expectation is checked as well, so a change in what each layer catches is
 noticed and recorded on purpose.
 
-Five cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
-`eval_command`, and the two smuggling variants `char_literal_smuggle` and `raw_string_smuggle`. The kernel cannot see what code *runs*, only what is *proved*. Those cases are
+Seven cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
+`eval_command`, the smuggling variants `char_literal_smuggle`, `raw_string_smuggle` and
+`escaped_attr_smuggle`, and `model_notation`. The kernel cannot see what code *runs*, only what is *proved*. Those cases are
 why the lint is a required gate rather than a nicety.
 
 ## 4. How to observe
