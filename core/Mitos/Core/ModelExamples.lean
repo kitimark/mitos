@@ -1,59 +1,57 @@
 import Mitos.Core.Obligations
 
-/-!
-# Model examples and adequacy (gate 6)
-
-A model is a human-reviewed predicate, and gates 0–5 take it as given: a plugin passes them by
-emitting exactly the facts the model says hold. Against a model that says nothing holds, the
-extractor that emits nothing passes; against a model that says too much holds, an extractor that
-emits too much passes. So every model ships reviewed examples next to it, pinned in `models.lock`,
-and proves it agrees with them.
-
-The two vacuity theorems below are what the examples buy: against an adequate model, the extractor
-that emits nothing is not complete, and the extractor that emits every example fact on every file is
-not sound.
--/
-
 namespace Mitos
 
-/-- Reviewed examples for a model. `holds` pairs a file with a fact the model must say holds there;
-`nearMisses` pairs a file with a fact the model must reject. -/
-structure ModelExamples where
-  holds      : List (String × Fact)
-  nearMisses : List (String × Fact)
+/-- A reviewed file and every fact the model must say holds in it, and no other. -/
+structure GoldenFile where
+  file  : String
+  facts : List Fact
 
-/-- **Model adequacy.** There is at least one example and one near miss; every example's fact holds
-and cites the bytes of its key in its file; no near miss's fact holds. -/
+/-- Reviewed examples for a model: files whose facts are known exactly. -/
+structure ModelExamples where
+  golden : List GoldenFile
+
+/-- **Model adequacy.** On each golden file a fact holds exactly when it is listed, and every listed
+fact cites the bytes of its key in its file. Some golden file lists a fact that another golden file
+does not. -/
 def Model.Adequate (M : Model) (ex : ModelExamples) : Prop :=
-  ex.holds ≠ [] ∧ ex.nearMisses ≠ [] ∧
-  (∀ e ∈ ex.holds, M.Holds e.1 e.2 ∧ e.2.span.text e.1.toList = some e.2.ident.key.toList) ∧
-  (∀ e ∈ ex.nearMisses, ¬ M.Holds e.1 e.2)
+  (∀ g ∈ ex.golden, ∀ f, M.Holds g.file f ↔ f ∈ g.facts) ∧
+  (∀ g ∈ ex.golden, ∀ f ∈ g.facts, f.span.text g.file.toList = some f.ident.key.toList) ∧
+  (∃ g ∈ ex.golden, ∃ g' ∈ ex.golden, ∃ f ∈ g.facts, f ∉ g'.facts)
+
+/-- Against an adequate model, a sound extractor emits on each golden file only listed facts. -/
+theorem Model.Adequate.sound_on_golden {M : Model} {ex : ModelExamples} {x : Extractor}
+    (h : M.Adequate ex) (hs : SoundWrt M x) : ∀ g ∈ ex.golden, ∀ f ∈ x.run g.file, f ∈ g.facts :=
+  fun g hg f hf => (h.1 g hg f).1 (hs g.file f hf)
+
+/-- Against an adequate model, a complete extractor emits on each golden file a fact with the kind
+and identity of each listed fact. -/
+theorem Model.Adequate.complete_on_golden {M : Model} {ex : ModelExamples} {x : Extractor}
+    (h : M.Adequate ex) (hc : CompleteWrt M x) :
+    ∀ g ∈ ex.golden, ∀ f ∈ g.facts, ∃ e ∈ x.run g.file, e.kind = f.kind ∧ e.ident = f.ident :=
+  fun g hg f hf => hc g.file f ((h.1 g hg f).2 hf)
 
 /-- The extractor that emits nothing. -/
 def Extractor.empty : Extractor := ⟨fun _ => []⟩
 
-/-- The extractor that emits every example fact, held or not, on every file. -/
+/-- The extractor that emits every listed fact of every golden file, on every file. -/
 def ModelExamples.everything (ex : ModelExamples) : Extractor :=
-  ⟨fun _ => (ex.holds ++ ex.nearMisses).map (·.2)⟩
+  ⟨fun _ => ex.golden.flatMap (·.facts)⟩
 
 /-- **Vacuity: emitting nothing is not enough.** Against an adequate model, the extractor that
 emits nothing is not complete. -/
 theorem Model.Adequate.empty_not_complete {M : Model} {ex : ModelExamples} (h : M.Adequate ex) :
-    ¬ CompleteWrt M Extractor.empty := by
-  intro hc
-  obtain ⟨hne, -, hholds, -⟩ := h
-  obtain ⟨e, he⟩ := List.exists_mem_of_ne_nil _ hne
-  obtain ⟨g, hg, -⟩ := hc e.1 e.2 (hholds e he).1
-  simp [Extractor.empty] at hg
+    ¬ CompleteWrt M Extractor.empty := fun hc => by
+  obtain ⟨g, hg, -, -, f, hf, -⟩ := h.2.2
+  obtain ⟨e, he, -⟩ := h.complete_on_golden hc g hg f hf
+  simp [Extractor.empty] at he
 
 /-- **Vacuity: emitting everything is too much.** Against an adequate model, the extractor that
-emits every example fact on every file is not sound. -/
+emits every listed fact on every file is not sound. -/
 theorem Model.Adequate.everything_not_sound {M : Model} {ex : ModelExamples} (h : M.Adequate ex) :
-    ¬ SoundWrt M ex.everything := by
-  intro hs
-  obtain ⟨-, hne, -, hmiss⟩ := h
-  obtain ⟨e, he⟩ := List.exists_mem_of_ne_nil _ hne
-  exact hmiss e he (hs e.1 e.2 (List.mem_map.2 ⟨e, List.mem_append_right _ he, rfl⟩))
+    ¬ SoundWrt M ex.everything := fun hs => by
+  obtain ⟨g, hg, g', hg', f, hf, hf'⟩ := h.2.2
+  exact hf' (h.sound_on_golden hs g' hg' f (List.mem_flatMap.2 ⟨g, hg, hf⟩))
 
 /-- A model under which no fact holds is never adequate. -/
 theorem Model.nothing_holds_not_adequate (ex : ModelExamples) :

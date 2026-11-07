@@ -12,10 +12,11 @@ ctor Mitos.Extractor.mk type=cf4d1630b412b7571d6d1117389d77bc
 ctor Mitos.Fact.mk type=2889b0b51084f4ecab33b44442ef9bbc
 ctor Mitos.FactKind.provides type=adf4a417bcb5d7030916ad14fbbb07a3
 ctor Mitos.FactKind.requires type=adf4a417bcb5d7030916ad14fbbb07a3
+ctor Mitos.GoldenFile.mk type=fb86e9c6e35a7817d8319be36930f8ce
 ctor Mitos.Identity.mk type=fe04112b5cadfca780d1c3c6968124d6
 ctor Mitos.Located.mk type=afa921d7902a9e11db8e3a37dd6d169e
 ctor Mitos.Model.mk type=ac89b9c8c2797ac1d43e15e3d2d4e840
-ctor Mitos.ModelExamples.mk type=ba1f9a1a9f03f3fe3922be1ae6bc7903
+ctor Mitos.ModelExamples.mk type=ec42a3f09a39eadbb7e69d3dbb652faa
 ctor Mitos.Resolution.mk type=426da115fae69a563afb02e992b83c80
 ctor Mitos.Scope.build type=7e254569b1189d5f0fa1629bda80dda0
 ctor Mitos.Scope.dev type=7e254569b1189d5f0fa1629bda80dda0
@@ -42,6 +43,8 @@ def Mitos.Fact.ident type=2e8caec881083440a8be4ae08a90c923 value=cbce95aebe79fff
 def Mitos.Fact.kind type=5d0fbf9b2ed7ab396dd95e5c4f3ed10f value=fb04d4ae2809c0bc8afa349fcedd9da2
 def Mitos.Fact.scope type=bd208b9e6835e73fa8bd4d0fb9e7a8d9 value=ddfc80e21687070fe9dc4a43207e4480
 def Mitos.Fact.span type=3eab81d3c5f415d34c7357cf30ea6e22 value=47ca407d6ce96105d0e1cfcee36f01d1
+def Mitos.GoldenFile.facts type=b0fb8cf1ea9b777ff3c60d874f3313b4 value=cd27dee1e9dead6895096c1315c394ec
+def Mitos.GoldenFile.file type=adb47774f7e521528b5ab5b4ec8ce25e value=fc3f50abb0f04d028cc4f3780985b878
 def Mitos.Identity.key type=ba6816417a2748f90a395fc24c4c931e value=6f4be170f9e5b671f039b9db110c60ed
 def Mitos.Identity.kind type=ba6816417a2748f90a395fc24c4c931e value=1fb16bcf99d64923f6960f9bac097266
 def Mitos.Located.fact type=cfe0bd8698fad56fc08e0c9af740b9fc value=9d6ec73fe44857d18e29a83a2823860d
@@ -50,11 +53,10 @@ def Mitos.Located.origin type=08f2df5176a6bac2e7ce63c35008e735 value=fd657e8a2ed
 def Mitos.Located.path type=bf60835527f0872167187184e5feb888 value=93caae0fca8c454531c4042b0cb37493
 def Mitos.Located.repo type=bf60835527f0872167187184e5feb888 value=80dde04cc1bbbe5abc63fa746bc3f3fe
 def Mitos.Located.rev type=bf60835527f0872167187184e5feb888 value=9787ada10124addf11c2e1e8f4ef0a6f
-def Mitos.Model.Adequate type=48360400647318a6d274589ac23e3154 value=37282e50d56f592e02641b8561fc4021
+def Mitos.Model.Adequate type=48360400647318a6d274589ac23e3154 value=3ba4b1f04469f7e7bfd9e03ad10a2b95
 def Mitos.Model.Holds type=7915113e149e535348fbf6a297bf678d value=a0f678540ba09c83f9fd585c8c664e11
-def Mitos.ModelExamples.everything type=87dca0b5f51b7d21bf55586c5f033d97 value=26428df7804da9f7a4de2d3e7dced57e
-def Mitos.ModelExamples.holds type=72dfa5e9a5ce240d60b29a943cf354bf value=cb8424e1e08b1c45f4dd63d44edb3962
-def Mitos.ModelExamples.nearMisses type=72dfa5e9a5ce240d60b29a943cf354bf value=7d5c2f6d5256bcab4e9454cc681d37b3
+def Mitos.ModelExamples.everything type=87dca0b5f51b7d21bf55586c5f033d97 value=dfdf9ee0d4aab03dd702e098cb8f2b67
+def Mitos.ModelExamples.golden type=ae0404a18ce1e04e5c6fdad6db80192a value=cb8424e1e08b1c45f4dd63d44edb3962
 def Mitos.Resolution.edges type=eeef32aad1a506f77096716637a87f0b value=c5a1d19d387088b3eb28cd3da0f8b4a1
 def Mitos.Resolution.unresolved type=efb1a29e7e24244437b743844f4e40c4 value=c72814e58bd4eb59df68fc4a3744bde9
 def Mitos.Resolver type=baaddf70fb5d432b8bd948ef91d6f910 value=85970da4845fc30d3786d7f6b735485d
@@ -110,6 +112,7 @@ inductive Mitos.Edge type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.Extractor type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.Fact type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.FactKind type=baaddf70fb5d432b8bd948ef91d6f910
+inductive Mitos.GoldenFile type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.Identity type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.Located type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.Model type=baaddf70fb5d432b8bd948ef91d6f910
@@ -119,8 +122,10 @@ inductive Mitos.Scope type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.Span type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.Status type=baaddf70fb5d432b8bd948ef91d6f910
 theorem Mitos.Affects.brecOn type=c86b1dd99145c1312168462ad3e1f128
+theorem Mitos.Model.Adequate.complete_on_golden type=2252426021d1c5cb8563867c462e94b3
 theorem Mitos.Model.Adequate.empty_not_complete type=3bf9e2c86879c1a14acae9fdefa7b255
 theorem Mitos.Model.Adequate.everything_not_sound type=5eced5376bdb7dd21673d38891ce3200
+theorem Mitos.Model.Adequate.sound_on_golden type=2efb24e20fa9cba66f6110c4c001e378
 theorem Mitos.Model.everything_holds_not_adequate type=4e25b4de7beec49e08d379393df49205
 theorem Mitos.Model.nothing_holds_not_adequate type=3534f8f94ac50f8ccc9fd52758a62a3a
 theorem Mitos.Span.text_eq_some type=7223a0d785d5c817d638632bf1057f0e
