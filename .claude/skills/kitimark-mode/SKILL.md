@@ -113,9 +113,10 @@ directive, the last report and the branch.
 - A verdict covers one head. A later head that only rebases, with the same `git patch-id`, keeps
   it. Any other new head needs a new verifier.
 - When the verifier passes, `gate` is green at that head, no review comment from the user is
-  unanswered, and the PR touches nothing the user owns (below), the root merges it with rebase
-  and merge, pinned to that head (`gh pr merge <pr> --rebase --match-head-commit <sha>`). A failed
-  verdict goes to a fresh PR owner with the findings.
+  unanswered, and the PR touches nothing the user owns (below), the PR merges with rebase and
+  merge, pinned to that head (`gh pr merge <pr> --rebase --match-head-commit <sha>`). A PR owner
+  that is still running merges it, as in Autopilot-full step 5. Otherwise the root runs that one
+  command. A failed verdict goes to a fresh PR owner with the findings.
 
 ## Done means verified
 
