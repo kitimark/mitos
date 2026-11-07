@@ -263,7 +263,7 @@ At the end of each phase the owner reviews the scorecard trend and the run logs:
 | Need | Tool |
 |---|---|
 | L0 | Claude Code with lean-lsp-mcp |
-| L1 parallel builders | separate cloud sessions or worktree-isolated agents, one task each |
+| L1 parallel builders | separate Claude Code sessions or worktree-isolated agents, one task each |
 | L2 | GitHub Actions (`.github/workflows/ci.yml`), protected `main`, CODEOWNERS, the `spec-approved` label |
 | L2 CI fixes | the agent that owns the PR, watching it and fixing failures inside the task's `touches` |
 | L3 | `.github/workflows/nightly.yml` (full checks, `--paranoid` comparator, next-toolchain canary), plus a scheduled task posting the scorecard |
