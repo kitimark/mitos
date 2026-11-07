@@ -1,9 +1,5 @@
 import Mitos.Proofs.Resolve.Basic
 
-/-!
-# P1-003: assumptions are exact, status is honest, retraction is exact
--/
-
 namespace Mitos.Proofs
 open Mitos Mitos.Impl
 
@@ -24,7 +20,6 @@ theorem resolve_status_honest : Spec.StatusHonest resolve := by
     Bool.not_eq_true', beq_iff_eq]
   split <;> simp_all
 
-/-- The keys of the resolver's edges are exactly the matching (requirement, provision) id pairs. -/
 theorem mem_keys {fs : List Located} {k : Nat × Nat} {P : Edge → Bool} :
     k ∈ ((resolve fs).edges.filter P).map Edge.key ↔
       ∃ r ∈ fs, ∃ p ∈ fs, matchesB r p = true ∧ P (mkEdge fs r p) = true ∧ k = (r.id, p.id) := by

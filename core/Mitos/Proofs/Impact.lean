@@ -1,14 +1,5 @@
 import Mitos.Impl.Impact
 
-/-!
-# P1-004: impact analysis is exactly reverse reachability
-
-* Soundness: every repo the worklist marks is reachable, because each marking step follows an
-  edge out of `x` or out of a repo already marked.
-* Completeness: when the worklist stops, every edge out of `x` or a marked repo has been used
-  (no remaining edge fires), so the marked set is closed under `Affects`.
--/
-
 namespace Mitos.Proofs
 open Mitos Mitos.Impl
 
@@ -35,7 +26,6 @@ theorem impactGo_sound (es : List Edge) (x : String) :
         · exact .trans (hseen _ hd) hstep
       · exact hseen y hy
 
-/-- No edge out of `x` or out of an output repo leads outside the output. -/
 def Closed (es : List Edge) (x : String) (out : List String) : Prop :=
   ∀ e ∈ es, (e.dst = x ∨ e.dst ∈ out) → e.src ∈ out
 

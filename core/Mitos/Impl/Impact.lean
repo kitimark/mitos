@@ -1,18 +1,7 @@
 import Mitos.Core
 
-/-!
-# Impact analysis  (IMPLEMENTATION — not in the lock; correctness is `impact_correct`)
-
-Reverse reachability with a worklist of unused edges. Each step takes one edge whose provider is
-`x` or already affected, marks its requirer affected, and drops the edge. Every edge is used at
-most once, so the recursion is on the number of remaining edges.
-
-The result may repeat a repo name; membership is what the specification constrains.
--/
-
 namespace Mitos.Impl
 
-/-- Can edge `e` propagate a change to `x` given the repos already known to be affected? -/
 def fires (x : String) (seen : List String) (e : Edge) : Bool :=
   e.dst == x || seen.contains e.dst
 

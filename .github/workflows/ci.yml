@@ -97,9 +97,7 @@ jobs:
           path: .lake/cheats/
           if-no-files-found: ignore
 
-  # Posts the gate job's scorecard on the PR. This job runs no code from the PR, so it alone gets
-  # write access to PR comments. A fork's token cannot comment; its scorecard stays in the gate
-  # job's summary.
+  # A fork's token cannot comment; its scorecard stays in the gate job's summary.
   scorecard-comment:
     needs: gate
     if: >-
@@ -116,8 +114,6 @@ jobs:
           name: scorecard
 
       - name: Post the scorecard, or update the one posted earlier
-        # bash, not the default `bash -e`, adds pipefail: a failed listing must fail the step, not
-        # read as "no earlier comment".
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

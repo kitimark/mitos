@@ -1,9 +1,5 @@
 import Mitos.Proofs.Resolve.Basic
 
-/-!
-# P1-002: the reference resolver is sound, complete, unresolved-exact and total
--/
-
 namespace Mitos.Proofs
 open Mitos Mitos.Impl
 

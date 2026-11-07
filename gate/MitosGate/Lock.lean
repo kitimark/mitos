@@ -4,21 +4,13 @@ import MitosGate.Util
 /-!
 # `statements.lock`
 
-Pins what the trusted core *means*. For every declaration in the locked modules we record a
-structural hash of its type, and for definitions also of its value (a definition's body is part
-of its meaning: `Anchored` is a definition). Theorem proofs are not locked: re-proving a statement
-is fine, changing it is not.
-
 Declarations Lean generates (`match_*`, `_f`, `decEq`, `casesOn`, …) are not listed, but a
 listed declaration can keep its meaning in them: a structurally recursive definition's value is
 `List.brecOn … f._f`, and a `match`'s patterns live in its `match_1`. So each line also hashes, in
 `aux=`, every unlisted core declaration its type or value reaches, transitively, hashed the same
-way. The walk stops at listed declarations (they have their own line) and at declarations outside
-the locked modules (pinned by `lean-toolchain`).
+way.
 
-Hashes are computed from the compiled environment, not source text, so notation or formatting
-tricks cannot hide a change. Each hash is the SHA-256 (first 128 bits) of the term's full debug
-serialization. (`Expr.hash` is not used: its effective width is 32 bits.)
+(`Expr.hash` is not used: its effective width is 32 bits.)
 -/
 
 open Lean
@@ -44,7 +36,6 @@ def isGenerated (n : Name) : Bool :=
                 s.startsWith "proof_"
   | _ => false
 
-/-- The terms the lock pins for a declaration: its type, and its value if it is a definition. -/
 def pinned : ConstantInfo → List Expr
   | .defnInfo d => [d.type, d.value]
   | ci => [ci.type]

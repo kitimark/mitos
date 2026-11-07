@@ -5,15 +5,6 @@ import Plugins.ToyRequire
 /-!
 # Fixture scorer
 
-Runs the pipeline on a fixture (extract facts, check their spans, resolve) and compares the
-edges with hand labels. Measurement only: nothing here is trusted, and nothing here is proved.
-The proofs say the extractor agrees with its model and the resolver with its spec; the labels
-say whether the model agrees with what a person reading the repos sees.
-
-A fixture is `repos/<repo>/<files>` plus `labels.tsv`. Every file goes through the accepted toy
-plugin (`ToyRequire`). A file named `PROVIDES` also yields human-declared provisions, one per
-line `provide <name>`, with origin `.declaration`: no accepted plugin provides toy packages yet.
-
 Edges are compared at repo level: `(src, dst, kind, key, scope)`. The edge type is
 `kind/scope`. An edge's trust level is its `Status`; a repo-level edge is `inferred` when any
 fact-level edge under it is.
@@ -40,13 +31,11 @@ def statusName : Status → String
   | .confirmed => "confirmed"
   | .inferred => "inferred"
 
-/-- One file of a fixture repo. -/
 structure SourceFile where
   repo : String
   path : String
   text : String
 
-/-- The line prefix of a declared provision. -/
 def provideChars : List Char := "provide ".toList
 
 /-- Provisions declared in a `PROVIDES` file, one per line `provide <name>`. -/
@@ -58,7 +47,6 @@ def declared (src : String) : List Fact :=
              span := { start := o + utf8Len provideChars, len := utf8Len name } }
     else none
 
-/-- The facts of one file with their origins. -/
 def factsOf (f : SourceFile) : List (Fact × Assumption) :=
   let fromPlugin := (ToyRequire.extractor.run f.text).map (·, .extractor "ToyRequire")
   let fromDecl :=
@@ -77,7 +65,6 @@ def ingest (files : List SourceFile) : Except String (List Located) := do
       out := out.push { id := out.size, repo := f.repo, rev := "fixture", path := f.path, fact, origin }
   return out.toList
 
-/-- A repo-level edge, the unit hand labels are written in. -/
 structure RepoEdge where
   src   : String
   dst   : String

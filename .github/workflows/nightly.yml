@@ -2,8 +2,6 @@ name: nightly
 
 on:
   schedule:
-    # 03:17 UTC: after the US evening and before the European morning, and off the :00 mark
-    # where scheduled runs queue up.
     - cron: "17 3 * * *"
   workflow_dispatch:
 
@@ -63,7 +61,6 @@ jobs:
             | jq -r '.[] | select(.draft | not) | .tag_name')
           stable=$(echo "$releases" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
           rc=$(echo "$releases" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$' | sort -V | tail -n1 || true)
-          # An rc only counts when its release is newer than the newest stable.
           if [ -n "$rc" ] && [ "$(printf '%s\n%s\n' "$stable" "${rc%-rc*}" | sort -V | tail -n1)" = "$stable" ]; then
             rc=""
           fi
@@ -90,7 +87,6 @@ jobs:
       VERSION: ${{ matrix.version }}
     steps:
       - uses: actions/checkout@v4
-      # A cached build of the pinned toolchain would be stale here.
       - uses: ./.github/actions/setup
         with:
           cache: "false"

@@ -9,7 +9,6 @@ globs = ["Mitos.Core", "Mitos.Core.+"]
 name = "MitosImpl"
 globs = ["Mitos.Impl.+", "Mitos.Proofs.+"]
 
-# Not a default target: its `sorry` holes would fail `lake check`.
 [[lean_lib]]
 name = "MitosChallenge"
 globs = ["Challenge.+"]
