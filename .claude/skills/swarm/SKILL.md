@@ -26,7 +26,7 @@ Open a todolist with one entry per phase before launching anything.
 
 Spawn all N workers in one message with `subagent_type: "general-purpose"`, `isolation: "worktree"`, `run_in_background: true`, and the step 3 model. Leave out `isolation` only when the worker needs the main checkout, such as a running app or state that exists only there.
 
-When a worker must start from a non-default pushed branch, tell it to fetch and check out that branch first.
+An isolated worktree starts from the default branch. When a worker must start from anything else, give it the exact commit and tell it to check that commit out first. Worktrees share the repository's objects, so an unpushed commit works too.
 
 Every brief stands alone. Include the goal, scope, exact slice or race arm, how to verify, and what to report. Reports use `PASS`, `ISSUES`, or `BLOCKED` with evidence. A worker that can prove a defect reports `ISSUES` and lists every issue it can prove, not only the first.
 
