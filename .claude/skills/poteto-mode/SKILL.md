@@ -22,7 +22,7 @@ Remaining triggers:
 - Parallel fan-out → the **swarm** skill for coverage matrices, races, gauntlets, and exploration partitions. Use **arena** for design or code bakeoffs with base selection and grafting.
 - Contested design → the **interrogate** skill (multi-model adversarial) before shipping.
 - Nontrivial multi-step → write the throughput checkpoint (Feature step 3).
-- Any prose surface, your reply to the user included → the **unslop** skill. Write the reply per **Writing the reply**. Agent-facing prose also follows the `skill-creator` skill (Anthropic's skill for authoring SKILL.md files).
+- Any prose surface, your reply to the user included → the **unslop** skill. Write the reply per **Writing the reply**. Agent-facing prose also follows the `skill-creator` skill (Anthropic's skill for authoring SKILL.md files) when it is installed; without it, match the structure of the skills already in `.claude/skills/`.
 - Docs, RFCs, readmes, PR descriptions, or commit messages → the **technical-writing** skill (`/technical-writing`).
 - Before commit → the slop strip. Read the diff against the base and remove the slop it adds: comments that narrate or clash with local style, defensive checks or try/catch on trusted paths, casts that only silence the type checker, and nesting an early return would flatten. Keep behavior unchanged. Make minimal edits.
 - Before review → the **no-comments** skill (`/no-comments`).

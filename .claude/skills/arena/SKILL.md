@@ -19,7 +19,7 @@ Every candidate gets the same prompt, so the prompt is the contract.
 
 ## Phase B: Fan out
 
-Spawn all N subagents in one message with `subagent_type: "general-purpose"`, `isolation: "worktree"` when the candidate writes into the repository, and `run_in_background: true`, each with the task, the path to the shared grounding, its own output path, and instructions to produce the artifact and a short rationale naming the alternatives it considered and what it rejected.
+Spawn all N subagents in one message with `subagent_type: "general-purpose"`, `isolation: "worktree"` when the candidate writes into the repository, and `run_in_background: true`, each with the task, the path to the shared grounding, its own output path, and instructions to produce the artifact and a short rationale naming the alternatives it considered and what it rejected. An isolated worktree starts from the default branch, not your `HEAD`, so give each candidate the commit to start from and tell it to check that commit out first, then copy in any uncommitted changes it needs.
 
 If a candidate produces no output, proceed with N-1 and note the dropout.
 
