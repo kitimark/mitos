@@ -19,7 +19,8 @@ verdict() {
 fail=0
 printf '%-20s %-14s %-14s %-22s %s\n' CASE FULL EXPECT COMPARATOR-ONLY EXPECT
 for c in "${cases[@]}"; do
-  d="eval/cheats/$c"; [ -f "$d/expect" ] || continue
+  d="eval/cheats/$c"
+  if [ ! -f "$d/expect" ]; then printf '%-20s no expect file  <-- FAIL\n' "$c"; fail=1; continue; fi
   full_exp=$(grep '^full=' "$d/expect" | cut -d= -f2)
   comp_exp=$(grep '^comparator_only=' "$d/expect" | cut -d= -f2)
   ws=$(mktemp -d)
