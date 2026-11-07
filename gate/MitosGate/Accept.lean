@@ -86,9 +86,14 @@ def judgeManifest : String :=
   "{\"version\": \"1.3.0\", \"packagesDir\": \".lake/packages\", \"packages\": [], " ++
   "\"name\": \"judge\", \"lakeDir\": \".lake\", \"fixedToolchain\": false}\n"
 
+/-- Text from the workspace or an error, made safe to print on one line: a file name with a
+newline must not start a line of its own, such as a forged `VERDICT:`. -/
+def oneLine (s : String) : String :=
+  s.map fun c => if c.toNat < 32 || c.toNat == 127 then '?' else c
+
 def report (gate : Nat) (name : String) (ok : Bool) (detail : String := "") : IO Unit := do
   let status := if ok then "PASS" else "FAIL"
-  IO.println s!"GATE {gate} {name}: {status}{if detail.isEmpty then "" else " — " ++ detail}"
+  IO.println s!"GATE {gate} {name}: {status}{if detail.isEmpty then "" else " — " ++ oneLine detail}"
 
 private def validIdent (s : String) : Bool :=
   !s.isEmpty && s.toList.all (fun c => c.isAlphanum || c == '_') && (s.toList.head!).isAlpha
@@ -156,7 +161,7 @@ def lint (c : Config) (pluginFile : System.FilePath) (src : String) (m : LockedM
     for v in ← Lint.checkModel env pluginImports txt do
       shown := shown.push (v.render (c.workspace / rel).toString)
   report 1 "lint" shown.isEmpty s!"{shown.size} violation(s)"
-  for v in shown do IO.println s!"  {v}"
+  for v in shown do IO.println s!"  {oneLine v}"
   unless shown.isEmpty do throw (1, "lint")
 
 def statementMarkers : List String :=
@@ -213,7 +218,7 @@ def showComparatorTail (out : String) : IO Unit := do
   let frame (l : String) := l == "backtrace:" || (l.startsWith "/" && (l.splitOn " [0x").length > 1)
   let lines := (out.splitOn "\n").filter fun l =>
     !(l.startsWith "✔") && !(l.startsWith "Exporting") && !frame l
-  for l in lines.reverse.take 15 |>.reverse do IO.println s!"  | {l}"
+  for l in lines.reverse.take 15 |>.reverse do IO.println s!"  | {oneLine l}"
 
 def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
   if !j.accepted then
@@ -283,7 +288,7 @@ def runAccept (c : Config) : IO UInt32 := do
   | .ok record =>
     if c.record then
       try record catch e =>
-        IO.println s!"VERDICT: REJECTED (record: {e})"
+        IO.println s!"VERDICT: REJECTED (record: {oneLine (toString e)})"
         return 1
     IO.println "VERDICT: ACCEPTED"
     return 0

@@ -2,8 +2,9 @@
 
 phase: 1
 goal: A plugin is accepted only if its model ships reviewed examples and proves it agrees with
-  them, so neither the extractor that emits nothing nor the one that emits everything can pass
-  against it.
+  them. Against such a model the extractor that emits nothing is not complete, and the one that
+  emits every example fact is not sound. Whether a model that holds too much is caught depends on
+  the reviewed examples: one whose examples agree with it is adequate.
 statement: Mitos.ModelExamples, Mitos.Model.Adequate, Mitos.Extractor.empty,
   Mitos.ModelExamples.everything, Mitos.Model.Adequate.{empty_not_complete, everything_not_sound},
   Mitos.Model.{nothing_holds_not_adequate, everything_holds_not_adequate} (new)
@@ -86,8 +87,9 @@ If a later edit dropped the non-emptiness conjuncts, both would stop proving.
   - the whole line `require left-pad` as the package
 - Near misses are proved by `decide` through `holds_iff`, a decidable restatement of `Holds`.
 
-**Cheats** (all `model_approved=yes`, so the runner pins their model; each is accepted by today's
-gates 0–5 and rejected at gate 6, full and comparator-only):
+**Cheats** (all `model_approved=yes`, so the runner pins their model). Round 1's three cases are
+accepted by gates 0–5 and rejected at gate 6, full and comparator-only. `judge_dir_model` is
+rejected at gate 1 in full runs and at gate 6 without lint:
 
 | Case | Model | Extractor | Gate 6 says |
 |---|---|---|---|
@@ -122,7 +124,8 @@ workspace. Without it, a case's own model is rejected at gate 0 (`model_tamper`,
 - [x] all `checks` pass locally
 - [x] no `sorry`, no new axioms
 - [x] every existing cheat case fails at its expected gate, comparator-only results unchanged
-- [x] each new cheat is accepted by today's gates 0–5 and rejected at gate 6
+- [x] each new cheat was accepted, or rejected at the wrong gate, before its fix, and is rejected
+  at its expected gate after it
 - [ ] owner adds `spec-approved` to the spec PR and merges it
 - [ ] owner merges the gate PR
 - [x] run-log record written (ops/runs/)
