@@ -104,8 +104,9 @@ budget: 40 iterations · 2h wall · 1.5M tokens
 | Evaluator | CI and nightly job | scorecards, logs | — |
 | Reviewer | agent, advisory only | PR comments, on code with comments stripped | approvals |
 
-Agents pick tasks, open PRs and merge implementation PRs on their own once CI is green and a
-verifier has passed the PR's head. Which agent does what, on which model and effort, and what
+Agents pick tasks, open PRs and merge implementation PRs on their own once CI is green on the
+PR's head and a verifier has passed its change. A rebase that leaves the `git patch-id` unchanged
+keeps that verdict. Which agent does what, on which model and effort, and what
 stays with the owner (spec approval, trust infrastructure, plans) are listed in
 `.claude/skills/kitimark-mode/SKILL.md`, which `CLAUDE.md` loads in every session.
 
