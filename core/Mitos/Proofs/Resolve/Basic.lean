@@ -1,12 +1,5 @@
 import Mitos.Impl.Resolve
 
-/-!
-# Lemmas about the reference resolver
-
-`mem_edges` turns edge membership into "some (requirement, provider) pair built it";
-`WellFormed.eq_of_id` turns "same id" into "same fact". The spec proofs are built on these two.
--/
-
 namespace Mitos.Proofs
 open Mitos Mitos.Impl
 
@@ -26,7 +19,6 @@ theorem matchesB_requires {r p : Located} (h : matchesB r p = true) :
   simp only [matchesB, Bool.and_eq_true, beq_iff_eq] at h
   exact h.1.1
 
-/-- Under `WellFormed`, a fact is determined by its id. -/
 theorem WellFormed.eq_of_id {fs : List Located} (wf : WellFormed fs) :
     ∀ {a b : Located}, a ∈ fs → b ∈ fs → a.id = b.id → a = b := by
   unfold WellFormed at wf

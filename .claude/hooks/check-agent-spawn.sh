@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# PreToolUse hook for the Agent tool. The kitimark-mode skill asks every spawn for `model` and
-# `effort`, and a fork ignores both. This warns on a miss and never blocks the spawn.
 
 command -v jq >/dev/null || exit 0
 

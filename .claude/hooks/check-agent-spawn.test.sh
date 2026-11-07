@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Runs check-agent-spawn.sh on sample PreToolUse inputs. Exits non-zero on the first wrong result.
 set -u
 hook="$(dirname "$0")/check-agent-spawn.sh"
 failed=0
