@@ -96,17 +96,17 @@ budget: 40 iterations · 2h wall · 1.5M tokens
 | Role | Who | May write | May not write |
 |---|---|---|---|
 | Owner | person | statements, models, lock files, phase plans; merges trusted paths | — |
-| Orchestrator | agent, the session the owner talks to | task choice, agent briefs, merges of verified PRs, catch-ups | code and proofs, which it hands to other agents |
+| Orchestrator | agent, the session the owner talks to | task choice, agent briefs, merges of verified PRs, catch-ups | any repository file, which it hands to other agents |
 | Planner | agent | task files; draft statements, submitted as a spec PR | proofs, gate, eval |
 | Builder | agent (a few in parallel) | code and proofs inside the task's `touches` | statements, lock files, `gate/`, `eval/`, models |
 | Red team | agent | new cases in `eval/cheats/`, counterexamples | anything merged into trusted code |
-| Verifier | agent that did not write the PR, on another model | a pass or fail verdict on one PR head | the code it checks |
+| Verifier | agent that did not write the PR, on another model, plus an `opus` one on a trust-critical PR | a pass or fail verdict on one PR head | the code it checks |
 | Evaluator | CI and nightly job | scorecards, logs | — |
 | Reviewer | agent, advisory only | PR comments, on code with comments stripped | approvals |
 
 Agents pick tasks, open PRs and merge implementation PRs on their own once CI is green on the
-PR's head and a verifier has passed its change. A wording-only change needs no verifier. A rebase that leaves the `git patch-id --verbatim` unchanged
-keeps that verdict. Which agent does what, on which model and effort, and what
+PR's head and a verifier has passed its change. A wording-only change needs no verifier. A rebase that leaves the
+`git patch-id --verbatim` unchanged keeps that verdict. Which agent does what, on which model and effort, and what
 stays with the owner (spec approval, trust infrastructure, plans) are listed in
 `.claude/skills/kitimark-mode/SKILL.md`, which `CLAUDE.md` loads in every session.
 
