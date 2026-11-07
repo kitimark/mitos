@@ -35,10 +35,10 @@ later phase relies on.
 | P1-002 | Reference resolver: `Mitos.Impl.resolve`; prove sound, complete, unresolved-exact, total | impl | done ([#2](https://github.com/kitimark/mitos/pull/2)) |
 | P1-003 | Prove assumptions-exact, status-honest, retract-exact | impl | done ([#2](https://github.com/kitimark/mitos/pull/2)) |
 | P1-004 | Impact analysis `Mitos.Impl.impact` (worklist reverse reachability); prove impact-correct | impl | done ([#2](https://github.com/kitimark/mitos/pull/2)) |
-| P1-005 | Checked UTF-8 byte spans in `Span` and the line layer; migrate obligations and the toy plugin | spec, then impl | spec in review |
+| P1-005 | Checked UTF-8 byte spans in `Span` and the line layer; migrate obligations and the toy plugin | spec, then impl | done ([#7](https://github.com/kitimark/mitos/pull/7)) |
 | P1-006 | Mutation testing: `eval/mutants/` + runner; each mutant must break a theorem | tooling | not started |
-| P1-007 | Fixture repos + hand labels; scorer; PR scorecard comment | tooling | not started |
-| P1-008 | Nightly scheduled job; next-toolchain canary | tooling | in review |
+| P1-007 | Fixture repos + hand labels; scorer; PR scorecard comment | tooling | in review |
+| P1-008 | Nightly scheduled job; next-toolchain canary | tooling | done ([#5](https://github.com/kitimark/mitos/pull/5)) |
 | P1-009 | Gate 6 for models: examples, vacuity checks (empty / emit-everything extractors) | gate | not started |
 
 P1-002 and P1-004 can run in parallel; P1-003 follows P1-002 because both edit

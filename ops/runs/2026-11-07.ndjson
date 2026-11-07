@@ -1,0 +1,1 @@
+{"task":"P1-007","role":"builder","model":"claude-opus-5-5","attempt":1,"iterations":3,"wall_min":40,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"tokens not metered in this session; Lean scorer built first try; the fixture has one wrong inferred provider and one CRLF file on purpose so the numbers are not all 1.00"}
