@@ -37,7 +37,10 @@ This file says how much to decide alone while following it.
 
 ## PR loop
 
-1. Branch from the latest `main`. One task, or a few tightly coupled ones, per PR.
+1. Branch from the latest `main`. One task, or a few tightly coupled ones, per PR. Keep the
+   branch current by rebasing onto `main`, not by merging `main` in. A `needs-rebase` label
+   (set by `.github/workflows/update-prs.yml` when an automatic rebase conflicts) is yours to
+   resolve: rebase, resolve, rerun the checks, force-push with a lease.
 2. Before pushing, run locally every check in the `docs/process.md` check matrix that the change
    can affect. For Lean work that includes `cd core && lake check` and
    `lake comparator --paranoid`.
@@ -45,7 +48,7 @@ This file says how much to decide alone while following it.
 4. CI red: reproduce locally, fix, push. Never weaken a theorem, gate or cheat expectation to
    get green; that is a spec change and goes to the user.
 5. When `gate` is green, there are no unanswered review comments from the user, and the PR
-   touches nothing the user owns (above): merge it with a merge commit. Then restart the branch
+   touches nothing the user owns (above): merge it with rebase and merge. Then restart the branch
    from `main` and start the next task.
 6. Update the task file, `plan/phase-N.md` and the run log (`ops/runs/`) in the same PR.
 

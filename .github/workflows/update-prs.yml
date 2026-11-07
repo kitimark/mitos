@@ -1,0 +1,43 @@
+name: Keep PR branches up to date
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-prs
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    runs-on: ubuntu-24.04
+    steps:
+      # Pushes made with GITHUB_TOKEN do not start CI, so rebased PRs would never get a `gate`
+      # check. The updater pushes with a token from a person or app instead.
+      - name: Check the updater token
+        id: token
+        env:
+          TOKEN: ${{ secrets.PR_UPDATER_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::PR_UPDATER_TOKEN is not set; PR branches were not updated."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.ok == 'true'
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PR_UPDATER_TOKEN }}
+
+      - name: Rebase open PRs onto main
+        if: steps.token.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PR_UPDATER_TOKEN }}
+        run: .github/scripts/rebase-prs.sh
