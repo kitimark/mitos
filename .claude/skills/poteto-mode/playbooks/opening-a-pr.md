@@ -23,9 +23,19 @@ After the sections, attach videos or screenshots when they prove a claim. Full S
 
 **Forge.** Pick the GitHub path before the first PR operation and keep that choice for create, edit, view, watch, and merge. GitHub CLI (`gh`) is the default. When `gh` is missing or not signed in, use the GitHub MCP tools and record the fallback. Do not require Graphite (`gt`).
 
-**Size and stacks.** Prefer five narrow PRs to one large PR. A stack is a base-branch chain. The root PR targets trunk. Each child branch rebases onto its parent's exact tip and its PR targets the parent branch. As a parent merges, move its child onto trunk per `playbooks/shipping.md` step 4. Create a child with `gh pr create --base <parent-branch>` and retarget one with `gh pr edit <pr> --base <parent-branch>`, or make the same calls through the GitHub MCP tools. Branch from trunk only for independent work. Rebase on trunk before substantial stack work.
+Claude Code sessions block GitHub GraphQL with HTTP 403. So `gh pr view`, `gh pr checks`, `gh pr merge` and `gh api graphql` fail there, and other `gh pr` subcommands may too. Use these REST routes through `gh api`, or the matching GitHub MCP tools.
 
-**Readiness.** Open every PR ready, never as a draft. With `gh`, omit `--draft`. Through the GitHub MCP tools, set `draft: false`. If a PR still opens as a draft, run `gh pr ready <number>` or mark it ready through the MCP tools. Run `gh pr view <number>`, or read the PR through the MCP tools, before you refer to PR status.
+- PR state. `GET repos/{owner}/{repo}/pulls/<pr>` returns `state`, `draft`, `merged`, `mergeable_state`, `head.sha` and `base.ref`.
+- Checks. `GET repos/{owner}/{repo}/commits/<sha>/check-runs`.
+- Review threads. `GET repos/{owner}/{repo}/pulls/<pr>/ccr/review_threads` returns `resolved`, `outdated` and `comment_ids` per thread. Resolve one with `POST repos/{owner}/{repo}/pulls/<pr>/ccr/comments/<id>/resolve`.
+- Merge, pinned to a head. `gh api -X PUT repos/{owner}/{repo}/pulls/<pr>/merge -f merge_method=rebase -f sha=<head>`, or the MCP merge tool with `expectedHeadSha`.
+- Auto-merge. `PUT` or `DELETE repos/{owner}/{repo}/pulls/<pr>/ccr/auto_merge`.
+- Ready for review. `POST repos/{owner}/{repo}/pulls/<pr>/ccr/ready_for_review`.
+- Create or retarget. `POST repos/{owner}/{repo}/pulls`, or `PATCH repos/{owner}/{repo}/pulls/<pr>` with `-f base=<branch>`.
+
+**Size and stacks.** Prefer five narrow PRs to one large PR. A stack is a base-branch chain. The root PR targets trunk. Each child branch rebases onto its parent's exact tip and its PR targets the parent branch. As a parent merges, move its child onto trunk per `playbooks/shipping.md` step 4. Create a child with `gh pr create --base <parent-branch>` and retarget one with `gh pr edit <pr> --base <parent-branch>`, or make the same calls through the **Forge** REST routes or the GitHub MCP tools. Branch from trunk only for independent work. Rebase on trunk before substantial stack work.
+
+**Readiness.** Open every PR ready, never as a draft. With `gh`, omit `--draft`. Through the GitHub MCP tools, set `draft: false`. If a PR still opens as a draft, mark it ready through a **Forge** route or the MCP tools. Read the PR through a **Forge** route or the MCP tools before you refer to PR status.
 
 **Babysit.** Opening a PR does not start a babysit. Post the URL and keep building. Finish the phase or stack first. Run a separate babysit pass only when the user asks for one after the whole stack exists. A babysit for each new PR stalls the build and spends checks on commits later waves restart. Push back when feedback drifts from intent.
 

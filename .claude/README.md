@@ -79,7 +79,7 @@ does with it.
 | `references/bugbot-triage.md` | ported | unchanged |
 | `scripts/check-plan.mjs` | ported | unchanged; Node only, reads one file, writes nothing; the Multi-phase plan playbook runs it |
 | `scripts/check-plan.test.ts`, `package.json`, `bun.lock` | dropped | Bun test harness for the script above |
-| `scripts/watch-pr/` (TypeScript), `scripts/bootstrap.ts` | dropped | about 2,500 lines of TypeScript that run `bun install` at first use; Babysit and Shipping now read the same `gh` facts directly (`gh pr view`, `gh pr checks`, the `reviewThreads` GraphQL query), with GitHub's merge-queue verdicts left out |
+| `scripts/watch-pr/` (TypeScript), `scripts/bootstrap.ts` | dropped | about 2,500 lines of TypeScript that run `bun install` at first use; Babysit and Shipping now read the same facts through `gh api` REST routes or the GitHub MCP tools (**Forge** in `playbooks/opening-a-pr.md`, because Claude Code sessions block GraphQL), with GitHub's merge-queue verdicts left out |
 | `scripts/worktree-audit.sh` | dropped | with its playbook |
 | `principle-*` (24) | ported | unchanged, except `principle-type-system-discipline` loses its pointer to `typescript-best-practices` |
 | `typescript-best-practices` | dropped | only that pointer named it; this repo is Lean |
@@ -92,7 +92,8 @@ does with it.
 | `ketchup` | ported | `/visualize` (Cursor) → Mermaid diagrams and charts |
 | `show-me-your-work` (+ template, `scripts/log.sh`) | ported | transcript path; `log.sh` only appends one row to a TSV file |
 | `reflect` (+4 references) | ported | transcript path, `general-purpose`, models, `skill-creator` |
-| `how`, `why`, `no-comments`, `unslop` | already ported in PR #3 | unchanged |
+| `how`, `why` | already ported in PR #3 | `how` explorers run on `sonnet`; both pick each spawn's `effort` per poteto-mode's Subagents section |
+| `no-comments`, `unslop` | already ported in PR #3 | unchanged |
 | `poteto-agent` (agent) | ported | finds poteto-mode under `.claude/skills/` or `~/.claude/skills/`; `is_background` dropped, callers pass `run_in_background` |
 | `create-skill` (Cursor built-in) | replaced | `skill-creator` |
 | `deslop` (`cursor-team-kit`) | replaced | "the slop strip", one inline step in poteto-mode's Non-negotiables |
