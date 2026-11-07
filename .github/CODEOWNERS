@@ -12,3 +12,5 @@
 /docs/process.md            @kitimark
 /examples/acme/Models/      @kitimark
 /examples/acme/models.lock  @kitimark
+/CLAUDE.md                  @kitimark
+/.claude/                   @kitimark
