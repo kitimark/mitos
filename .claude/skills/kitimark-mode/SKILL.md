@@ -111,10 +111,11 @@ directive, the last report and the branch.
   `opus` verifier at `xhigh` or above, so an `opus`-owned one gets two. Trust-critical means the
   PR needs `spec-approved` or touches `gate/`, `eval/cheats/` or `.github/workflows/`.
 - A verdict covers one head. A later head that only rebases, with the same `git patch-id`, keeps
-  it. Any other new head needs a new verifier.
-- When the verifier passes, `gate` is green at that head, no review comment from the user is
-  unanswered, and the PR touches nothing the user owns (below), the PR merges with rebase and
-  merge, pinned to that head (`gh pr merge <pr> --rebase --match-head-commit <sha>`). A PR owner
+  it because the change is the same, but still needs its own green `gate` because the base is
+  not. Any other new head needs a new verifier.
+- When the current head holds a passing verdict and a green `gate`, no review comment from the
+  user is unanswered, and the PR touches nothing the user owns (below), the PR merges with rebase
+  and merge, pinned to that head (`gh pr merge <pr> --rebase --match-head-commit <sha>`). A PR owner
   that is still running merges it, as in Autopilot-full step 5. Otherwise the root runs that one
   command. A failed verdict goes to a fresh PR owner with the findings.
 
