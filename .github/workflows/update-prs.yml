@@ -17,27 +17,37 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       # Pushes made with GITHUB_TOKEN do not start CI, so rebased PRs would never get a `gate`
-      # check. The updater pushes with a token from a person or app instead.
-      - name: Check the updater token
-        id: token
+      # check. The updater pushes with a short-lived installation token of a GitHub App that is
+      # installed on this repository only (contents and pull requests: write).
+      - name: Check the updater app is configured
+        id: cfg
         env:
-          TOKEN: ${{ secrets.PR_UPDATER_TOKEN }}
+          APP_ID: ${{ vars.PR_UPDATER_APP_ID }}
+          APP_KEY: ${{ secrets.PR_UPDATER_APP_KEY }}
         run: |
-          if [ -z "$TOKEN" ]; then
-            echo "::warning::PR_UPDATER_TOKEN is not set; PR branches were not updated."
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::warning::PR_UPDATER_APP_ID (variable) or PR_UPDATER_APP_KEY (secret) is not set; PR branches were not updated."
             echo "ok=false" >> "$GITHUB_OUTPUT"
           else
             echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Mint a short-lived app token
+        id: app
+        if: steps.cfg.outputs.ok == 'true'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.PR_UPDATER_APP_ID }}
+          private-key: ${{ secrets.PR_UPDATER_APP_KEY }}
+
       - uses: actions/checkout@v4
-        if: steps.token.outputs.ok == 'true'
+        if: steps.cfg.outputs.ok == 'true'
         with:
           fetch-depth: 0
-          token: ${{ secrets.PR_UPDATER_TOKEN }}
+          token: ${{ steps.app.outputs.token }}
 
       - name: Rebase open PRs onto main
-        if: steps.token.outputs.ok == 'true'
+        if: steps.cfg.outputs.ok == 'true'
         env:
-          GH_TOKEN: ${{ secrets.PR_UPDATER_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: .github/scripts/rebase-prs.sh
