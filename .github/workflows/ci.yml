@@ -57,6 +57,18 @@ jobs:
       - name: Example workspace builds
         run: cd examples/acme && lake build
 
+      - name: Scorecard on the fixture (precision and recall per edge type against hand labels)
+        run: |
+          lake --dir eval/score build
+          lake --dir eval/score exe mitos-score eval/fixtures/toy > "$RUNNER_TEMP/scorecard.md"
+          cat "$RUNNER_TEMP/scorecard.md"
+          cat "$RUNNER_TEMP/scorecard.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scorecard
+          path: ${{ runner.temp }}/scorecard.md
+
       - name: Honest toy plugin is accepted (gates 0-5, independent kernels)
         run: |
           lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
@@ -84,3 +96,44 @@ jobs:
           name: cheat-logs
           path: .lake/cheats/
           if-no-files-found: ignore
+
+  # Posts the gate job's scorecard on the PR. This job runs no code from the PR, so it alone gets
+  # write access to PR comments. A fork's token cannot comment; its scorecard stays in the gate
+  # job's summary.
+  scorecard-comment:
+    needs: gate
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+    concurrency:
+      group: scorecard-comment-${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: scorecard
+
+      - name: Post the scorecard, or update the one posted earlier
+        # bash, not the default `bash -e`, adds pipefail: a failed listing must fail the step, not
+        # read as "no earlier comment".
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          marker='<!-- mitos-scorecard -->'
+          { echo "$marker"; cat scorecard.md; echo; echo "_Head ${SHA}, from the \`gate\` job._"; } > body.md
+          ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id")
+          id=${ids%%$'\n'*}
+          if [ -n "$id" ]; then
+            jq -n --rawfile body body.md '{body: $body}' \
+              | gh api -X PATCH "repos/$REPO/issues/comments/$id" --input - --jq .html_url
+          else
+            jq -n --rawfile body body.md '{body: $body}' \
+              | gh api -X POST "repos/$REPO/issues/$PR/comments" --input - --jq .html_url
+          fi

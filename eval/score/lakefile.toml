@@ -1,0 +1,14 @@
+name = "mitos-score"
+defaultTargets = ["mitos-score"]
+
+# The example workspace brings the toy plugin and, through it, the core and the resolver.
+[[require]]
+name = "acme"
+path = "../../examples/acme"
+
+[[lean_lib]]
+name = "Score"
+
+[[lean_exe]]
+name = "mitos-score"
+root = "Main"

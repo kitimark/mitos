@@ -162,6 +162,7 @@ which covers what no kernel term references, such as a structure field's default
 | Plugin lint (gate 1) | `lake exe mitos-gate lint <file>` | ✓ | ✓ | | yes |
 | Honest plugin accepted, gates 0–5 | `lake exe mitos-gate accept … --paranoid` | ✓ | ✓ | ✓ | yes |
 | Cheat corpus rejected | `eval/cheats/run.sh` | when touching `gate/` | ✓ | ✓ | yes |
+| Fixture scorecard: precision and recall per edge type against hand labels | `lake --dir eval/score exe mitos-score eval/fixtures/toy` | when touching the resolver, a plugin, the fixture or the scorer | ✓, posted on the PR | | the numbers no; a scorer error yes |
 | Full evaluation scorecard | Phase 1 | | | ✓ | — |
 | Differential tests against real tools | Phase 2 | | | ✓ | — |
 | Mutation testing of our own theorems | Phase 1 | | | ✓ | — |
@@ -232,7 +233,9 @@ Stored as NDJSON in `ops/runs/` (or as CI artifacts); schema in `ops/runs/README
   hours per toolchain bump.
 - **Bug ledger:** for each bug, whether proofs, differential tests, evaluation or users found it.
 
-PRs get the scorecard diff as a comment.
+PRs get the fixture scorecard (`eval/fixtures/toy`, hand labels in its `labels.tsv`) as a
+comment from the `scorecard-comment` job in `ci.yml`. The diff against `main`'s scorecard comes
+with the nightly scorecard.
 
 ### Tripwires: stop and fix first
 
