@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Rebase every open, same-repository, non-draft PR based on $BASE onto it. A PR that does not
 # rebase cleanly is left untouched and labelled `needs-rebase`. Label a PR `no-auto-rebase` to
-# opt out. Needs GH_TOKEN (gh) and a checkout whose pushes use a token that triggers CI.
+# opt out. Needs GH_TOKEN (gh) and a checkout whose pushes use a token that starts CI
+# (a GitHub App installation token, not GITHUB_TOKEN).
 set -euo pipefail
 BASE="${BASE:-main}"
 git config user.name "mitos-pr-updater"
