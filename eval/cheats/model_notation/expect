@@ -1,4 +1,4 @@
 full=1
 comparator_only=accept
-models=reviewed
-why=A reviewed model declares the token `req--`. Lean reads it as one token; lint, parsing with Init/Std syntax only, read the rest of the line as a comment and missed the `@[implemented_by]` there. Gate 1 now rejects models that declare syntax.
+model_approved=yes
+why=An approved model declares the token `req--`. Lean reads it as one token; lint, parsing with Init/Std syntax only, read the rest of the line as a comment and missed the `@[implemented_by]` there. Gate 1 now rejects models that declare syntax.

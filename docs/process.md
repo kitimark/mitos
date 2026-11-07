@@ -204,7 +204,7 @@ comparator_only=reject@4    # with lint skipped, the later gates must still reje
 why=Leaves the completeness proof as `sorry`.
 ```
 
-A case whose `expect` also has the line `models=reviewed` stands for models the owner approved:
+A case whose `expect` also has the line `model_approved=yes` stands for models the owner approved:
 the runner re-pins `models.lock` to the case's `Models/`, so gate 0 passes and the later gates
 are what is tested.
 
