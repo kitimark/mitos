@@ -1,0 +1,3 @@
+full=3
+comparator_only=reject@3
+why=Declares `ToyRequire.Mitos.CompleteWrt := True`, so inside `namespace ToyRequire` the completeness statement of the extractor that emits nothing is `True`. The Challenge does not import the plugin and names `_root_.Mitos.CompleteWrt`, so the statements differ.
