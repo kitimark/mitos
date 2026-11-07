@@ -6,6 +6,7 @@ lake build -q mitos-gate >/dev/null || { echo "gate build failed"; exit 2; }
 GATE="$ROOT/.lake/build/bin/mitos-gate"
 cases=("$@")
 [ ${#cases[@]} -eq 0 ] && cases=($(ls -d eval/cheats/*/ | xargs -n1 basename))
+[ ${#cases[@]} -gt 0 ] || { echo "no cheat cases found in eval/cheats/"; exit 2; }
 
 verdict() {
   local out; out="$("$GATE" accept --workspace "$1" --plugin ToyRequire \
