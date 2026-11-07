@@ -1,0 +1,3 @@
+full=3
+comparator_only=reject@3
+why=The plugin proves `anchored` and `sound` but declares no `complete`, so the empty extractor would pass if the gate judged only what the plugin proves. The comparator panics exporting the missing constant, and the gate reports that as gate 3, not as a build failure.
