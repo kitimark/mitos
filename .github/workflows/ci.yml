@@ -70,8 +70,9 @@ jobs:
         env:
           APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'spec-approved') }}
         run: |
-          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-            | grep -E '(^|/)(statements|models)\.lock$|^core/Challenge/|^core/comparator\.json$' || true)
+          changed=$(git diff --no-renames --name-only -z "origin/${{ github.base_ref }}...HEAD" \
+            | grep -zE '(^|/)(statements|models)\.lock$|^core/Challenge/|^core/comparator\.json$|^core/Mitos/Core(/|\.lean$|$)' \
+            | tr '\0' '\n' || true)
           if [ -n "$changed" ] && [ "$APPROVED" != "true" ]; then
             echo "These spec files changed without the spec-approved label:"; echo "$changed"; exit 1
           fi
