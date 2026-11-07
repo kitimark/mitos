@@ -23,7 +23,7 @@ After the sections, attach videos or screenshots when they prove a claim. Full S
 
 **Forge.** Pick the GitHub path before the first PR operation and keep that choice for create, edit, view, watch, and merge. GitHub CLI (`gh`) is the default. When `gh` is missing or not signed in, use the GitHub MCP tools and record the fallback. Do not require Graphite (`gt`).
 
-Claude Code sessions block GitHub GraphQL with HTTP 403. So `gh pr view`, `gh pr checks`, `gh pr merge` and `gh api graphql` fail there, and other `gh pr` subcommands may too. Use these REST routes through `gh api`, or the matching GitHub MCP tools.
+Claude Code cloud sessions block GitHub GraphQL with HTTP 403. So `gh pr view`, `gh pr checks`, `gh pr merge` and `gh api graphql` fail there, and other `gh pr` subcommands may too. In such a session, use these REST routes through `gh api`, or the matching GitHub MCP tools. The `ccr/` routes exist only behind that session's proxy, so outside it use `gh pr`, GraphQL or the MCP tools for threads, auto-merge and readiness.
 
 - PR state. `GET repos/{owner}/{repo}/pulls/<pr>` returns `state`, `draft`, `merged`, `mergeable_state`, `head.sha` and `base.ref`.
 - Checks. `GET repos/{owner}/{repo}/commits/<sha>/check-runs`.
