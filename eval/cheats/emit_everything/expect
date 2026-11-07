@@ -1,0 +1,4 @@
+full=6
+comparator_only=reject@6
+model_approved=yes
+why=The approved model says every line of a file is a requirement, so the extractor that emits every line passes gates 0-5. The model's adequacy proof is `sorry`: its reviewed near miss, the whole line `require left-pad` as a package, holds under it.

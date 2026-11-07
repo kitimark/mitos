@@ -1,0 +1,4 @@
+full=6
+comparator_only=reject@6
+model_approved=yes
+why=The approved model says no fact holds, and the extractor emits nothing. The model proves only that its near misses fail and names that `model.adequate`; gate 6 compares it with `Mitos.Model.Adequate` as a kernel term.

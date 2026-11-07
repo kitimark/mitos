@@ -1,0 +1,4 @@
+full=6
+comparator_only=reject@6
+model_approved=yes
+why=The approved model says no fact ever holds, so the extractor that emits nothing passes gates 0-5. The model ships no examples and no adequacy proof, and none can exist (`Mitos.Model.nothing_holds_not_adequate`).
