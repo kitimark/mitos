@@ -25,8 +25,17 @@ gh pr list --base "$BASE" --state open --limit 100 \
       fi
       git checkout -q --detach "$oid"
       if git rebase -q "origin/$BASE" >/dev/null 2>&1; then
-        if ! git push -q --force-with-lease="refs/heads/$ref:$oid" origin "HEAD:refs/heads/$ref"; then
-          echo "#$n ($ref): branch moved during this run; left for the next run"
+        if ! out=$(git push -q --force-with-lease="refs/heads/$ref:$oid" origin "HEAD:refs/heads/$ref" 2>&1); then
+          if grep -q "stale info" <<<"$out"; then
+            echo "#$n ($ref): branch moved during this run; left for the next run"
+          else
+            echo "#$n ($ref): push refused; labelled needs-rebase"
+            echo "$out"
+            if [ "$flagged" != true ]; then
+              gh pr edit "$n" --add-label needs-rebase >/dev/null
+              gh pr comment "$n" --body "The rebase onto \`$BASE\` succeeded but the push was refused, so this branch was left unchanged and labelled \`needs-rebase\`. The run log of \`update-prs.yml\` has the reason." >/dev/null
+            fi
+          fi
           continue
         fi
         echo "#$n ($ref): rebased $oid -> $(git rev-parse HEAD)"

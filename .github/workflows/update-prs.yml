@@ -18,7 +18,8 @@ jobs:
     steps:
       # Pushes made with GITHUB_TOKEN do not start CI, so rebased PRs would never get a `gate`
       # check. The updater pushes with a short-lived installation token of a GitHub App that is
-      # installed on this repository only (contents and pull requests: write).
+      # installed on this repository only (contents, pull requests and workflows: write; workflows
+      # because a rebase onto a main that changed .github/workflows pushes those files too).
       - name: Check the updater app is configured
         id: cfg
         env:
