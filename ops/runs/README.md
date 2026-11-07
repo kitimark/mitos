@@ -14,7 +14,7 @@ One NDJSON record per agent task attempt, one file per day: `ops/runs/YYYY-MM-DD
 | `errors_by_kind` | object | Lean error counts by kind (`type_mismatch`, `unsolved_goals`, `timeout`, …) |
 | `lint_hits` | array | gate-1 violations the agent produced along the way |
 | `escalations` | array | escalation steps used (`hint`, `grind`, `stronger-model`, `pair`, `split`, `spec`) |
-| `outcome` | string | `merged`, `stuck`, `counterexample`, `abandoned` |
+| `outcome` | string | `in-review`, `merged`, `stuck`, `counterexample`, `abandoned` |
 
 Lint hits are expected while an agent works; a spike for one task usually means the task or its
 statement is wrong.
