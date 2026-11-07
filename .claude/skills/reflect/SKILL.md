@@ -19,7 +19,7 @@ d="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<slug>"
 ls -t "$d"/*.jsonl "$d"/*/subagents/*.jsonl 2>/dev/null | head -10
 ```
 
-That covers the session (`<session>.jsonl`) and subagent (`<session>/subagents/<child>.jsonl`) layouts. For each candidate, read the first line whose `type` is `user`. Take the file whose message contains the conversation's opening user prompt and whose `cwd` field is this workspace's path, because two workspaces can share a slug. If none matches, pass a tight digest of the session instead.
+That covers the session (`<session>.jsonl`) and subagent (`<session>/subagents/<child>.jsonl`) layouts. For each candidate, read the first line whose `type` is `user`. Take the file whose message contains the conversation's opening user prompt and whose `cwd` field is this workspace's path, because two workspaces can share a slug. If none matches, or more than one does, pass a tight digest of the session instead.
 
 ## 2. Spawn three reviewers in parallel
 
