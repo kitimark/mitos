@@ -1,0 +1,133 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit is an advisory reviewer here (docs/process.md, "Roles"). What decides a merge is
+# CI: the kernel-checked proofs, the acceptance gate, the cheat and mutant corpora, and the
+# owner's `spec-approved` label on spec changes.
+
+language: en-US
+tone_instructions: >-
+  Be concise and concrete. Name the file, the line and the input that fails. No praise and no
+  summary of what the code does.
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: false
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  suggested_reviewers: false
+  poem: false
+  abort_on_close: true
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    # Stacked PRs target another PR's branch.
+    base_branches:
+      - "claude/.*"
+
+  path_filters:
+    - "!**/.lake/**"
+    - "!**/lake-manifest.json"
+    - "!reports/**"
+    - "!research_notes/**"
+
+  path_instructions:
+    - path: "**/*.lean"
+      instructions: >-
+        Lean 4 v4.35.0 with Lake, no Mathlib. Never suggest `sorry`, `admit`, `axiom`,
+        `native_decide`, `partial`, `unsafe`, `implemented_by` or `extern` in core or plugin
+        code. Trusted syntax layers stay structurally recursive so `decide` can evaluate them.
+        Do not comment on proof style; the kernel checks proofs.
+    - path: "core/Mitos/Core/**"
+      instructions: >-
+        Locked specification, pinned by statements.lock and approved by the owner with the
+        `spec-approved` label. Check that each docstring states exactly what its definition or
+        theorem says, flag any statement that became weaker or vacuous (for example a `Prop`
+        that any resolver satisfies), and check that the adequacy theorems in Spec/Adequacy.lean
+        still rule out the obvious wrong implementations.
+    - path: "core/Challenge/**"
+      instructions: >-
+        The theorems an implementation must prove, judged by `lake comparator`. A change here is
+        a spec change. Flag anything that makes a statement easier to prove than the matching
+        Prop in core/Mitos/Core/Spec.
+    - path: "core/Mitos/{Impl,Proofs}/**"
+      instructions: >-
+        Implementation and proofs, outside the lock. Correctness is the kernel's job. Review for
+        clarity and for anything that would make `lake comparator --paranoid` or the mutant
+        corpus (eval/mutants) pass for the wrong reason.
+    - path: "gate/**"
+      instructions: >-
+        Trust infrastructure: the acceptance gate for untrusted, AI-written plugins. Review as
+        an attacker. Look for any input that makes a gate accept what it should reject: lint
+        bypasses (the lint must see what Lean's parser sees), sandbox escapes, failure paths
+        that do not end in REJECTED, attribution to the wrong gate, and anything that fails
+        open. Checks must fail closed.
+    - path: "eval/**"
+      instructions: >-
+        Cheat corpus and mutant corpus. An `expect` file must never be weakened. Each cheat
+        must still be rejected by the full gate at its expected gate, and each mutant must be
+        refuted by the theorem its `expect` names.
+    - path: ".github/**"
+      instructions: >-
+        CI is the merge gate. Flag anything that skips, weakens or reorders a check, loosens
+        the `spec-approved` label check or its path list, widens workflow permissions, uses
+        untrusted input in a `run:` script, or pushes with a token that would not start CI.
+    - path: "{CLAUDE.md,.claude/**}"
+      instructions: >-
+        Rules for AI agents working in this repository. Flag any change that lets an agent act
+        on something docs/process.md reserves for the owner: spec approval, trust
+        infrastructure, plans, anything outside the repository. Text under .claude/skills that
+        is ported from pstack is upstream text; review only the adaptations.
+    - path: "{docs,plan,tasks}/**"
+      instructions: >-
+        Process documentation. Flag statements that no longer match the code, CI or the lock
+        files.
+
+  tools:
+    actionlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    yamllint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    github-checks:
+      enabled: true
+      timeout_ms: 90000
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+    issue_assessment:
+      mode: "off"
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: local
+  issues:
+    scope: local
+  pull_requests:
+    scope: local
