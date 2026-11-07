@@ -71,8 +71,10 @@ How the pieces fit:
 
 A spec PR changes `statements.lock`, a `models.lock`, `core/Challenge/`, `core/comparator.json`
 or the locked spec's sources (`core/Mitos/Core.lean`, `core/Mitos/Core/`), and therefore needs
-the `spec-approved` label from the owner. An impl PR that touches any of them fails CI. A file moved
-out of one of these paths counts as a change to it, and so does a path with non-ASCII characters.
+the `spec-approved` label from the owner. CI fails any PR that touches one of them without that label;
+CI cannot tell a spec PR from an impl PR, so keeping spec changes out of impl PRs is a review rule.
+A file moved out of one of these paths counts as a change to it, and so does a path with non-ASCII
+characters.
 
 ### The task file
 
