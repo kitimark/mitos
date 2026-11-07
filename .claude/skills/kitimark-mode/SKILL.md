@@ -107,13 +107,18 @@ directive, the last report and the branch.
 - The root spawns a verifier at the head each PR owner reports, except for a wording-only change.
   Only an agent that did not write the code gives a verdict. CI, bot reviews and the root's own
   reading are inputs to one.
+- A wording-only change alters no behavior. It edits prose, comments or typos, and no code,
+  script, spec, lock, workflow, skill rule or hook. The root confirms that from the diff. Such a
+  change needs no verdict, and a green `gate` at its head stands in for one in the merge rule below.
 - The verifier runs on the model the PR owner did not use. A trust-critical PR also gets an
   `opus` verifier at `xhigh` or above, so an `opus`-owned one gets two. Trust-critical means the
   PR needs `spec-approved` or touches `gate/`, `eval/cheats/` or `.github/workflows/`.
-- A verdict covers one head. A later head that only rebases, with the same `git patch-id`, keeps
-  it because the change is the same, but still needs its own green `gate` because the base is
-  not. Any other new head needs a new verifier.
-- When the current head holds a passing verdict and a green `gate`, no review comment from the
+- A verdict covers one head. A later head that only rebases, with the same `git patch-id --verbatim`,
+  keeps it because the change is the same, but still needs its own green `gate` because the base
+  is not. The default `git patch-id` ignores whitespace, and Lean reads indentation, so the flag
+  is required. Any other new head needs a new verifier.
+- When the current head holds a passing verdict, or is a wording-only change, and holds a green
+  `gate`, no review comment from the
   user is unanswered, and the PR touches nothing the user owns (below), the PR merges with rebase
   and merge, pinned to that head (`gh pr merge <pr> --rebase --match-head-commit <sha>`). A PR owner
   that is still running merges it, as in Autopilot-full step 5. Otherwise the root runs that one
@@ -164,7 +169,7 @@ This is the root's main job between spawns.
 - While a PR waits on the user (a label, a merge, a setting only they can change), post one
   catch-up comment on the PR, then carry on with an independent task. The comment has:
   - **Status:** each check and verdict at the current head, with its evidence. A verdict names
-    the head it covers, says whether later heads only rebase (same `git patch-id`) or change
+    the head it covers, says whether later heads only rebase (same `git patch-id --verbatim`) or change
     content, and names who gave it: a verifier agent and its model, a bot, or the root itself.
     Never call a bot's verdict or your own independent.
   - **Next steps:** numbered, with a `gh` command (one per code block) wherever one exists; say
