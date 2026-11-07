@@ -33,7 +33,14 @@ This file says how much to decide alone while following it.
   in `plan/phase-N.md` are the exception. Open them, get CI green, say so.
 - **Outside the repo.** GitHub settings, branch protection, environment network access,
   anything that sends messages or costs money.
-- While a PR waits on the user: one line with the link, then carry on with an independent task.
+- While a PR waits on the user (a label, a merge, a setting only they can change), post one
+  catch-up comment on the PR, then carry on with an independent task. The comment has:
+  - **Status:** CI and verification results at the current head, each with its evidence.
+  - **Next steps:** numbered, with a `gh` command (one per code block) wherever one exists; say
+    "browser only" where none does.
+  - **Expected result** of each step, and what to do if it differs.
+  Nothing confidential: no IDs, keys, tokens, codes, emails or private URLs. When the state
+  changes, post a new catch-up rather than editing an old one, so the user is notified.
 
 ## PR loop
 
