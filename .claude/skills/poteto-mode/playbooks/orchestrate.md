@@ -2,7 +2,7 @@
 
 **You run the program, never the code. Decide which agent does each piece of work, then check what each one produces.** For a standing project handed to one coordinator chat: multi-day, many stacked PRs, dozens to hundreds of subagents, few human turns. One task driven to a predicate is Autonomous run. One ambitious run that needs a bespoke workflow is figure-it-out. Work that one agent could finish inside the session's budget is not a program.
 
-Run it with your own tools. Spawn workers with the Agent tool. Keep the program's state in a tracker file (`notes.md`) in a directory outside every worktree. Watch each PR with PR and CI event subscriptions when your harness has them. Call no scripts, run no polling loops, and never relay messages or status between agents.
+Run it with your own tools. Spawn workers with the Agent tool. Keep the program's state in a tracker file (`notes.md`) in a directory outside every worktree. Leave each PR's events to its owner or a watcher per the **kitimark-mode** skill, because a PR subscription wakes you on every event. Call no scripts, run no polling loops, and never relay messages or status between agents.
 
 #### Topology
 

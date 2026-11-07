@@ -49,7 +49,7 @@ Present the synthesizer's full Accepted / Rejected / Backlog output and wait for
 
 File each Backlog item to your team's devex or backlog tracker without waiting, unless the **kitimark-mode** skill applies: there, filing outside the repository is the owner's call, so list each item in the reply instead. Only the Accepted list waits for approval.
 
-Never edit a skill under `~/.claude/plugins/`. Before approval, show its destination, `.claude/skills/<skill>/` or `~/.claude/skills/<skill>/`. After approval, copy the skill folder there and edit the copy. Never open a PR or push.
+Never edit a skill under `~/.claude/plugins/`. Before approval, show its destination, `.claude/skills/<skill>/` or `~/.claude/skills/<skill>/`. After approval, copy the skill folder there and edit the copy. Never open a PR or push, unless the **kitimark-mode** skill applies. There the skills are this repository's files, so the parent hands the approved rows to a PR owner, which makes the edits below on a branch and opens a PR for the user to merge.
 
 Follow each approved row's Routing exactly:
 

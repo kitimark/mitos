@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Explore the codebase to answer "how does X work?" questions. Produce architectural explanations at the level of a senior engineer onboarding onto a subsystem, enough to build a working mental model, not so much that it reads like annotated source code.
 
-Every spawn is an Agent call with `subagent_type: "Explore"` (read-only), with `run_in_background: true` when several run at once. Explorers run on the Explore agent's own model. Every explainer gets `model: "opus"`. Tell each spawn not to edit files.
+Every spawn is an Agent call with `subagent_type: "Explore"` (read-only), with `run_in_background: true` when several run at once. Every explorer gets `model: "sonnet"` and every explainer gets `model: "opus"`. Pick each subagent's reasoning level for the job, per the Subagents section of the **poteto-mode** skill. Tell each spawn not to edit files.
 
 ## 1. Assess complexity
 

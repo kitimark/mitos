@@ -5,7 +5,7 @@ pstack (MIT); see `THIRD_PARTY_NOTICES.md`.
 
 | Name | Kind | How it runs | What it does |
 |---|---|---|---|
-| `kitimark-mode` | skill | always: `CLAUDE.md` imports it (added in PR #2) | how much agents decide alone in this repo |
+| `kitimark-mode` | skill | always: `CLAUDE.md` imports it (added in PR #2) | the session delegates to agents with a model and effort per role; how much agents decide alone in this repo |
 | `/automate-me` | skill | you type it | mines past sessions and drafts or updates a `<handle>-mode` skill |
 | `/no-comments` | skill | you type it, or poteto-mode runs it before review | spawns `comment-sicko` on a scope, reviews its report, fixes accepted flags |
 | `comment-sicko` | agent | spawned by `/no-comments` | deletes comments outside a short keep-list; flags code to reshape |
@@ -38,12 +38,13 @@ which works regardless of that flag.
 - Cursor's `Task` tool → the Agent tool; `readonly: true` → `subagent_type: "Explore"`;
   `generalPurpose` → `general-purpose`; `AskQuestion` → `AskUserQuestion` (2–4 options per
   question).
-- Model slugs and the `pstack-models.mdc` rule → fixed aliases. In the PR #3 skills, explorers run
-  on `Explore`'s own model, investigators on `sonnet`, and the explainer, synthesizer and
-  `comment-sicko` on `opus`. In poteto-mode and its closure, code delegates and swarm workers run
-  on `sonnet`, and judgment, prose and the hardest changes run on `opus`. The reasoning level goes
-  through the Agent tool's `effort`, starting at `xhigh`. Cursor's fast mode has no counterpart and
-  is dropped.
+- Model slugs and the `pstack-models.mdc` rule → fixed aliases. In the PR #3 skills, explorers and
+  investigators run on `sonnet`, and the explainer, synthesizer and `comment-sicko` on `opus`. In
+  poteto-mode and its closure, code delegates and swarm workers run on `sonnet`, and judgment,
+  prose and the hardest changes run on `opus`. A verifier runs on the model its author did not
+  use. The reasoning level goes through the Agent tool's `effort`, starting at `xhigh`. In this
+  repository the `kitimark-mode` role table sets both for each role. Cursor's fast mode has no
+  counterpart and is dropped.
 - pstack pairs a Claude model with a Grok model for a second opinion (arena runners and
   cross-judge, architect runners, interrogate adversaries, reflect reviewers, the
   show-me-your-work reviewer, an Orchestrate verifier). Claude Code offers only Claude models, so
@@ -83,7 +84,7 @@ does with it.
 | `typescript-best-practices` | dropped | only that pointer named it; this repo is Lean |
 | `architect` (+3 references) | ported | runners `opus` and `sonnet` |
 | `arena` | ported | runners `opus` and `sonnet`; the judge runs on whichever the parent does not |
-| `swarm` | ported | workers `general-purpose` on `sonnet` in a worktree |
+| `swarm` | ported | workers `general-purpose` on `sonnet` in a worktree; a verifying worker runs on the model its author did not use |
 | `interrogate` | ported | adversaries `general-purpose` in a worktree |
 | `in-your-own-words`, `benchmark-checklist`, `tdd`, `technical-writing`, `bro` | ported | unchanged |
 | `figure-it-out` | ported | drops the fast-mode clause, like every file that picks a reasoning level |
