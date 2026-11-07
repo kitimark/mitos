@@ -1,0 +1,3 @@
+full=1
+comparator_only=reject@2
+why=Writes `«sorry»` for the proof. That is an identifier named `sorry`, not the keyword, so Lean rejects it as unknown; lint must match identifiers by name, not by spelling.

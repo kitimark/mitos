@@ -17,9 +17,6 @@ structure Violation where
 def Violation.render (file : String) (v : Violation) : String :=
   s!"{file}:{v.line}:{v.col}: {v.msg}"
 
-/-- The syntax plugins are parsed with: the toolchain's `Init` and `Std`, the only imports a plugin
-may use that can declare notation. Lean's own parser decides what is a literal, a comment or a
-token, so the lint sees exactly the tokens Lean will elaborate. -/
 def syntaxEnv : IO Environment := do
   unsafe enableInitializersExecution
   initSearchPath (← findSysroot)
@@ -30,7 +27,9 @@ private def isText (k : SyntaxNodeKind) : Bool :=
   k == numLitKind || k == scientificLitKind ||
   k == ``Parser.Command.docComment || k == ``Parser.Command.moduleDoc
 
-/-- Identifiers are rendered without guillemets, so `«sorry»` is seen as `sorry`. -/
+def deEscapeIdent (n : Name) : String :=
+  n.toString (escape := false)
+
 partial def tokensOf (fm : FileMap) (stx : Syntax) (acc : Array Token) : Array Token :=
   let push (text : String) : Array Token :=
     let pos := fm.toPosition (stx.getPos?.getD 0)
@@ -38,7 +37,7 @@ partial def tokensOf (fm : FileMap) (stx : Syntax) (acc : Array Token) : Array T
   match stx with
   | .node _ k args => if isText k then acc else args.foldl (fun a s => tokensOf fm s a) acc
   | .atom _ v => push v
-  | .ident _ _ n _ => push (n.toString (escape := false))
+  | .ident _ _ n _ => push (deEscapeIdent n)
   | .missing => acc
 
 def headerTokens (src : String) : IO (Array Token) := do
@@ -117,6 +116,31 @@ def check (env : Environment) (allowedImports : List String) (src : String) :
       for c in components t.text do
         if banned.contains c then
           vs := vs.push { line := t.line, col := t.col, msg := s!"`{c}` is not allowed in plugins" }
+  return vs
+
+def syntaxDeclaring : List String :=
+  [ "notation", "infix", "infixl", "infixr", "prefix", "postfix",
+    "macro", "macro_rules", "syntax", "elab", "elab_rules", "declare_syntax_cat",
+    "binder_predicate", "Lean", "initialize", "builtin_initialize" ]
+
+/-- Check a model's source, parsed in `env`. Plugins are parsed in `env` alone, so a model may not
+change their syntax: it may not declare syntax or import beyond `allowedImports`. -/
+def checkModel (env : Environment) (allowedImports : List String) (src : String) :
+    IO (Array Violation) := do
+  let toks ← match ← tokenize env src with
+    | .ok toks => pure toks
+    | .error v => return #[v]
+  let mut vs : Array Violation := #[]
+  for h : k in [0:toks.size] do
+    let t := toks[k]
+    if t.text == "import" then
+      if let some m := toks[k+1]? then
+        unless moduleAllowed allowedImports m.text do
+          vs := vs.push { line := m.line, col := m.col, msg := s!"import `{m.text}` is not allowed" }
+    else
+      for c in components t.text do
+        if syntaxDeclaring.contains c then
+          vs := vs.push { line := t.line, col := t.col, msg := s!"`{c}` is not allowed in models" }
   return vs
 
 end MitosGate.Lint

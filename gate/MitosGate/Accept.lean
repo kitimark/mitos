@@ -92,9 +92,12 @@ def lint (c : Config) (pluginFile : System.FilePath) (src : String) : GateM Unit
   if c.skipLint then
     IO.println "GATE 1 lint: SKIPPED (--skip-lint: measuring the later gates only)"
     return
-  let vs ← Lint.check (← Lint.syntaxEnv) pluginImports src
+  let env ← Lint.syntaxEnv
+  let mut vs := (← Lint.check env pluginImports src).map (·.render pluginFile.toString)
+  for f in ← leanFiles (c.workspace / "Models") do
+    vs := vs ++ (← Lint.checkModel env pluginImports (← IO.FS.readFile f)).map (·.render f.toString)
   report 1 "lint" vs.isEmpty s!"{vs.size} violation(s)"
-  for v in vs do IO.println s!"  {v.render pluginFile.toString}"
+  for v in vs do IO.println s!"  {v}"
   unless vs.isEmpty do throw (1, "lint")
 
 def statementMarkers : List String :=
