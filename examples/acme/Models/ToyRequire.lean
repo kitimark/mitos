@@ -38,15 +38,18 @@ def model.examples : Mitos.ModelExamples where
         { kind := .requires, ident := { kind := "toy", key := "require left-pad" },
           span := { start := 0, len := 16 } }) ]
 
-/-- Whether a fact holds is decidable line by line: some line starts with `require ` and the fact
-is the one it yields. -/
+/-- Whether a fact holds is decidable line by line: some line starts with `require `, the fact
+starts right after that prefix, and it is the fact the line yields. The start is implied by the
+last part but compared first, so `decide` rejects a fact at the wrong offset without building the
+line's `String`; that comparison overflowed nanoda's stack under `--paranoid`. -/
 theorem holds_iff {s : String} {f : Mitos.Fact} :
-    model.Holds s f ↔ ∃ p ∈ Mitos.lines s.toList,
-      prefixChars.isPrefixOf p.2 ∧ f = fact p.1 (p.2.drop prefixChars.length) := by
+    model.Holds s f ↔ ∃ p ∈ Mitos.lines s.toList, prefixChars.isPrefixOf p.2 ∧
+      f.span.start = p.1 + Mitos.utf8Len prefixChars ∧
+      f = fact p.1 (p.2.drop prefixChars.length) := by
   constructor
   · rintro ⟨o, name, h, rfl⟩
-    exact ⟨_, h, by simp [List.isPrefixOf_iff_prefix], by simp⟩
-  · rintro ⟨p, h, hp, rfl⟩
+    exact ⟨_, h, by simp [List.isPrefixOf_iff_prefix], rfl, by simp⟩
+  · rintro ⟨p, h, hp, -, rfl⟩
     have := (List.prefix_iff_eq_append).1 ((List.isPrefixOf_iff_prefix).1 hp)
     exact ⟨p.1, _, by rw [this]; exact h, rfl⟩
 
