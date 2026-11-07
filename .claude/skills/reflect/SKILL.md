@@ -12,13 +12,14 @@ Invoke when the user says "reflect" or "/reflect". Skip when the conversation is
 
 ## 1. Locate the active transcript
 
-Before fanning out, find this conversation's transcript in `~/.claude/projects/<slug>/`, where `<slug>` is the workspace path with every character other than a letter or digit changed to `-`. Do not glob across `~/.claude/projects/*/`. That crosses workspace boundaries and reads private chats from unrelated projects.
+Before fanning out, find this conversation's transcript in `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<slug>/`, where `<slug>` is the workspace path with every character other than a letter or digit changed to `-`. Do not glob across `~/.claude/projects/*/`. That crosses workspace boundaries and reads private chats from unrelated projects.
 
 ```bash
-ls -t ~/.claude/projects/<slug>/*.jsonl ~/.claude/projects/<slug>/*/subagents/*.jsonl 2>/dev/null | head -10
+d="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<slug>"
+ls -t "$d"/*.jsonl "$d"/*/subagents/*.jsonl 2>/dev/null | head -10
 ```
 
-That covers the session (`<session>.jsonl`) and subagent (`<session>/subagents/<child>.jsonl`) layouts. For each candidate, read the first line whose `type` is `user`. Take the file whose message contains the conversation's opening user prompt. If none matches, pass a tight digest of the session instead.
+That covers the session (`<session>.jsonl`) and subagent (`<session>/subagents/<child>.jsonl`) layouts. For each candidate, read the first line whose `type` is `user`. Take the file whose message contains the conversation's opening user prompt and whose `cwd` field is this workspace's path, because two workspaces can share a slug. If none matches, pass a tight digest of the session instead.
 
 ## 2. Spawn three reviewers in parallel
 
@@ -56,6 +57,7 @@ Follow each approved row's Routing exactly:
 - Substantive existing-skill edit (a new section, a new pattern table, more than ~10 lines): hand to the `skill-creator` skill and run its draft / test / iterate loop.
 - `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `skill-creator` and run its description-optimization loop.
 - `new skill via skill-creator: <kebab-name>`: hand creation to `skill-creator`. Do not invent the shape ad hoc.
+- Without `skill-creator` installed, make the three edits above directly, following `poteto-mode/playbooks/authoring-a-skill.md` and the structure of the skills already in `.claude/skills/`.
 
 If your environment ships a SKILL.md validator, run it on every touched skill before declaring done.
 
