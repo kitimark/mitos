@@ -1,0 +1,3 @@
+full=2
+comparator_only=reject@2
+why=A plugin that does not compile (a type mismatch) is a sandbox build failure, not a statement mismatch.

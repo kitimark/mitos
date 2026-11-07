@@ -97,11 +97,17 @@ def lint (c : Config) (pluginFile : System.FilePath) (src : String) : GateM Unit
   for v in vs do IO.println s!"  {v.render pluginFile.toString}"
   unless vs.isEmpty do throw (1, "lint")
 
+def statementMarkers : List String :=
+  [ "Const not found in challenge", "Const not found in solution",
+    "Const does not match between challenge and target",
+    "Challenge and solution constant kind don't match",
+    "Challenge and solution theorem statement do not match",
+    "Challenge constant is not a definition", "Solution constant is not a definition" ]
+
 def failedGate (comparatorOutput : String) : Nat × String :=
   let has (s : String) := (comparatorOutput.splitOn s).length > 1
   if has "Illegal axiom" then (4, "axioms")
-  else if has "do not match" || has "does not match" || has "mismatch" || has "not found" then
-    (3, "statements")
+  else if statementMarkers.any has then (3, "statements")
   else if has "kernel" && has "reject" then (5, "kernels")
   else if has "error:" then (2, "sandbox build")
   else (3, "statements")
