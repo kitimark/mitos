@@ -63,6 +63,9 @@ Agent tool needs before it takes `effort`. Run every spawn in the background
   superseded heads, the session's own replies echoed back, and bot edits to threads already
   resolved. Nobody subscribes to PR activity, because subscription events land in the root.
 
+`.claude/hooks/check-agent-spawn.sh` warns when an Agent call leaves out `model` or `effort`, or
+when a fork sets either.
+
 ## Decide, don't ask
 
 - When there is a recommended next step, take it and report what you did. Do not end a turn with

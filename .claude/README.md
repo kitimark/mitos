@@ -1,11 +1,12 @@
 # Claude Code skills and agents
 
-Project skills (`skills/`) and subagents (`agents/`) for this repository. Most are adapted from
+Project skills (`skills/`), subagents (`agents/`) and hooks (`hooks/`) for this repository. Most are adapted from
 pstack (MIT); see `THIRD_PARTY_NOTICES.md`.
 
 | Name | Kind | How it runs | What it does |
 |---|---|---|---|
 | `kitimark-mode` | skill | always: `CLAUDE.md` imports it (added in PR #2) | the session delegates to agents with a model and effort per role; how much agents decide alone in this repo |
+| `hooks/check-agent-spawn.sh` | hook | before every Agent call, from `settings.json` | warns when a spawn leaves out `model` or `effort`, or a fork sets either; `hooks/check-agent-spawn.test.sh` tests it |
 | `/automate-me` | skill | you type it | mines past sessions and drafts or updates a `<handle>-mode` skill |
 | `/no-comments` | skill | you type it, or poteto-mode runs it before review | spawns `comment-sicko` on a scope, reviews its report, fixes accepted flags |
 | `comment-sicko` | agent | spawned by `/no-comments` | deletes comments outside a short keep-list; flags code to reshape |
