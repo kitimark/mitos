@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Investigate the motivation and intent behind code. The companion `how` skill answers what the code does and how it works. `why` answers what forces led to its shape.
 
-Each spawn below names its model: investigators `sonnet`, the synthesizer `opus`.
+Each spawn below names its model: investigators `sonnet`, the synthesizer `opus`. Pick each subagent's reasoning level for the job, per the Subagents section of the **poteto-mode** skill.
 
 Every spawn is an Agent call with `subagent_type: "general-purpose"`, so it keeps MCP access for the MCP-backed investigators and the synthesizer's citation spot-checks. **Do not use `Explore`** for these: it cannot reach every MCP tool. Investigators still shouldn't write anything; say so in each prompt.
 
