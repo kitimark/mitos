@@ -19,6 +19,7 @@ CORE="$ROOT/core"
 (cd "$CORE" && lake build -q >/dev/null) || { echo "core build failed"; exit 2; }
 mutants=("$@")
 [ ${#mutants[@]} -eq 0 ] && mutants=($(ls -d "$ROOT"/eval/mutants/*/ | xargs -n1 basename))
+[ ${#mutants[@]} -gt 0 ] || { echo "no mutants found in eval/mutants/"; exit 2; }
 log="$ROOT/.lake/mutants"; mkdir -p "$log"
 
 judge() {  # prints CAUGHT, SURVIVED, BROKEN (the mutant does not build) or INVALID
