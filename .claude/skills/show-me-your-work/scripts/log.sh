@@ -14,19 +14,28 @@ if [ -n "$logdir" ] && [ "$logdir" != "." ] && [ ! -d "$logdir" ]; then
 	mkdir -p "$logdir"
 fi
 
+append_row() {
+	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$@" >> "$logfile"
+}
+
+flatten_to_one_line() {
+	printf '%s' "$1" | tr '\t\n\r' '   '
+}
+
+defuse_formula() {
+	case "$1" in
+		=*|+*|-*|@*) printf "'%s" "$1" ;;
+		*) printf '%s' "$1" ;;
+	esac
+}
+
+cell() {
+	defuse_formula "$(flatten_to_one_line "$1")"
+}
+
 if [ ! -s "$logfile" ]; then
-	printf 'ts\tphase\tdecision\twhy\tevidence\tresult\n' >> "$logfile"
+	append_row ts phase decision why evidence result
 fi
 
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-clean() {
-	local v
-	v=$(printf '%s' "$1" | tr '\t\n\r' '   ')
-	case "$v" in
-		=*|+*|-*|@*) printf "'%s" "$v" ;;
-		*) printf '%s' "$v" ;;
-	esac
-}
-printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-	"$ts" "$(clean "$1")" "$(clean "$2")" "$(clean "$3")" "$(clean "$4")" "$(clean "$5")" \
-	>> "$logfile"
+append_row "$ts" "$(cell "$1")" "$(cell "$2")" "$(cell "$3")" "$(cell "$4")" "$(cell "$5")"
