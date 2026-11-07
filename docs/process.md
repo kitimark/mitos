@@ -96,14 +96,17 @@ budget: 40 iterations · 2h wall · 1.5M tokens
 | Role | Who | May write | May not write |
 |---|---|---|---|
 | Owner | person | statements, models, lock files, phase plans; merges trusted paths | — |
+| Orchestrator | agent, the session the owner talks to | task choice, agent briefs, merges of verified PRs, catch-ups | code and proofs, which it hands to other agents |
 | Planner | agent | task files; draft statements, submitted as a spec PR | proofs, gate, eval |
 | Builder | agent (a few in parallel) | code and proofs inside the task's `touches` | statements, lock files, `gate/`, `eval/`, models |
 | Red team | agent | new cases in `eval/cheats/`, counterexamples | anything merged into trusted code |
+| Verifier | agent that did not write the PR, on another model | a pass or fail verdict on one PR head | the code it checks |
 | Evaluator | CI and nightly job | scorecards, logs | — |
 | Reviewer | agent, advisory only | PR comments, on code with comments stripped | approvals |
 
-Agents pick tasks, open PRs and merge implementation PRs on their own once CI is green. What
-stays with the owner (spec approval, trust infrastructure, plans) is listed in
+Agents pick tasks, open PRs and merge implementation PRs on their own once CI is green and a
+verifier has passed the PR's head. Which agent does what, on which model and effort, and what
+stays with the owner (spec approval, trust infrastructure, plans) are listed in
 `.claude/skills/kitimark-mode/SKILL.md`, which `CLAUDE.md` loads in every session.
 
 `CODEOWNERS` marks the trusted paths, so GitHub asks the owner to review any PR touching them.
@@ -261,7 +264,7 @@ At the end of each phase the owner reviews the scorecard trend and the run logs:
 | L0 | Claude Code with lean-lsp-mcp |
 | L1 parallel builders | separate cloud sessions or worktree-isolated agents, one task each |
 | L2 | GitHub Actions (`.github/workflows/ci.yml`), protected `main`, CODEOWNERS, the `spec-approved` label |
-| L2 CI fixes | a session subscribed to the PR, fixing failures inside the task's `touches` |
+| L2 CI fixes | the agent that owns the PR, watching it and fixing failures inside the task's `touches` |
 | L3 | `.github/workflows/nightly.yml` (full checks, `--paranoid` comparator, next-toolchain canary), plus a scheduled task posting the scorecard |
 | L4 | the scorecard trend plus a short retrospective in `plan/` |
 
