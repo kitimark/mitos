@@ -274,10 +274,10 @@ email or a private URL. The routes are in **Forge**.
   action needed from the user changes on an item already assigned to them, post a new catch-up,
   then unassign and assign them again so the ping carries it. Assignment starts no CI. Never
   label a PR to show the user its state, because any label change re-runs the full `gate`.
-- **PR state comes from REST.** Before any message, catch-up or dashboard edit that says a PR is
-  waiting, open or not merged, the root reads that PR over REST in the same turn. An agent's
-  report is never the source for PR state: the user merged #29 and #44 while the root still
-  called them waiting.
+- **State comes from REST.** Before any message, catch-up, assignment or dashboard edit that says
+  an issue or PR is waiting, open or not merged, the root reads that item over REST in the same
+  turn. An agent's report is never the source for its state: the user merged #29 and #44 while
+  the root still called them waiting.
 - **Milestones and issues.** Each phase is a milestone. Each open row of its `plan/phase-N.md` is
   an issue in that milestone, titled with the task id, and the plan's Issue column links it. The
   task's status lives only in that issue and its PRs. Work found during a task is an issue
