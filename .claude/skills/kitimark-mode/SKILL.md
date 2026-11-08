@@ -83,7 +83,7 @@ when a fork sets either.
 - When there is a recommended next step, take it and report what you did. Do not end a turn with
   "Should I…?". The user has answered every such question with "yes" or "what's next?".
 - Pick the next task yourself: the first row in the current `plan/phase-N.md` whose issue is
-  open with no PR yet and whose dependencies are met. Prefer work that strengthens the checks
+  open with no open PR and whose dependencies are met. Prefer work that strengthens the checks
   (mutants, fixtures, scorer) before new features. When a phase's exit criteria are met, draft
   the next phase's plan together with its spec PR; plans are the user's, so both wait for the
   user.
@@ -269,8 +269,8 @@ email or a private URL. The routes are in **Forge**.
   `is:open assignee:kitimark`. Before saying that something waits on the user, read its current
   state over REST, not an old report. Agents act through the user's account, and GitHub never
   notifies a user of their own actions. So `.github/workflows/owner-ping.yml` comments
-  `@kitimark this needs you: <line>` as `github-actions[bot]` on each such assignment, with the
-  first line of the item's latest catch-up, or its title. Assignment starts no CI. Never label a
+  `@kitimark this needs you: <line>` as `github-actions[bot]` on each such assignment, where the
+  line is the first line of the item's latest catch-up. Assignment starts no CI. Never label a
   PR to show the user its state, because any label change re-runs the full `gate`.
 - **Milestones and issues.** Each phase is a milestone. Each open row of its `plan/phase-N.md` is
   an issue in that milestone, titled with the task id, and the plan's Issue column links it. The
@@ -284,8 +284,10 @@ email or a private URL. The routes are in **Forge**.
   happened, then what you are doing next.
 - For "why" questions: the idea first, then one concrete example from this repo.
 - While a PR waits on the user (a label, a merge, a setting only they can change), post one
-  catch-up comment on the PR, then assign the user, so the ping quotes the new catch-up. Add
-  the PR to the dashboard's Needs you, then carry on with an independent task. The comment has:
+  catch-up comment on the PR, then assign the user. Add the PR to the dashboard's Needs you, then
+  carry on with an independent task. The comment's first line is
+  `## Catch-up: <what the user must do>`, because the ping quotes the latest such line. Then the
+  comment has:
   - **Status:** each check and verdict at the current head, with its evidence. A verdict names
     the head it covers, says whether later heads only rebase (same `git patch-id --verbatim`) or change
     content, and names who gave it: a verifier agent and its model, a bot, or the root itself.
