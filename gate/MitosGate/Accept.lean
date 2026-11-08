@@ -41,6 +41,26 @@ structure LockedModels where
   files : Array (String × String)
   lock  : String
 
+/-- Everything the gate judges and records, as gate 0 read it. Only `provenance` builds one: the
+judging directory, every later gate and the record use these bytes, so the record hashes what was
+judged and nothing is read twice. -/
+structure Inputs where
+  private mk ::
+  /-- Mitos's `lean-toolchain`, which the workspace's must match. -/
+  toolchain : String
+  /-- Every `.lean` file under `core/Mitos/`, by its path relative to `core/`, such as
+  `Mitos/Core.lean`. -/
+  core      : Array (String × String)
+  models    : LockedModels
+  pluginSrc : String
+
+/-- The core's files by their paths relative to `core/`: their paths in the judging directory,
+however `--mitos-root` is spelled. -/
+def coreFiles (mitosRoot : System.FilePath) : IO (Array (String × String)) := do
+  let core := mitosRoot / "core"
+  (← leanFiles (core / "Mitos")).mapM fun f => do
+    return ((f.toString.drop (core.toString.length + 1)).toString, ← IO.FS.readFile f)
+
 def challenge (p model : String) : String :=
   s!"import Mitos.Core
 import {modelModule model}
@@ -225,7 +245,7 @@ def lockEntries (lock : String) : Except String (List (String × String)) := do
     if (entries.filter (·.1 == path)).length > 1 then .error s!"models.lock lists {path} twice"
   return entries
 
-def provenance (c : Config) (pluginFile : System.FilePath) : GateM LockedModels := do
+def provenance (c : Config) (pluginFile : System.FilePath) : GateM Inputs := do
   let mut errs := #[]
   unless validIdent c.plugin do errs := errs.push s!"plugin name `{c.plugin}` is not a plain identifier"
   let parts := c.model.splitOn "."
@@ -236,7 +256,10 @@ def provenance (c : Config) (pluginFile : System.FilePath) : GateM LockedModels 
   if !(← wsTc.pathExists) then errs := errs.push "workspace has no lean-toolchain"
   else if trim (← IO.FS.readFile wsTc) != trim tc then
     errs := errs.push s!"workspace toolchain differs from Mitos pin {trim tc}"
-  if !(← pluginFile.pathExists) then errs := errs.push s!"plugin file {pluginFile} not found"
+  let core ← coreFiles c.mitosRoot
+  let mut pluginSrc := ""
+  if ← pluginFile.pathExists then pluginSrc ← IO.FS.readFile pluginFile
+  else errs := errs.push s!"plugin file {pluginFile} not found"
   let mut files := #[]
   for f in ← leanFiles (c.workspace / "Models") do
     files := files.push ((f.toString.drop (c.workspace.toString.length + 1)).toString, ← IO.FS.readFile f)
@@ -259,17 +282,16 @@ def provenance (c : Config) (pluginFile : System.FilePath) : GateM LockedModels 
           errs := errs.push s!"models.lock lists {path}, which is not a model file"
   report .provenance errs.isEmpty (String.intercalate "; " errs.toList)
   unless errs.isEmpty do throw (.provenance, "")
-  return { model := c.model, files, lock }
+  return { toolchain := tc, core, models := { model := c.model, files, lock }, pluginSrc }
 
-def lint (c : Config) (pluginFile : System.FilePath) (src : String) (m : LockedModels) :
-    GateM Unit := do
+def lint (c : Config) (pluginFile : System.FilePath) (i : Inputs) : GateM Unit := do
   if c.skipLint then
     IO.println s!"{GateId.lint.label}: SKIPPED (--skip-lint: measuring the later gates only)"
     return
   let env ← Lint.syntaxEnv
   let mut shown := #[]
-  for v in ← Lint.check env pluginImports src do shown := shown.push (v.render pluginFile.toString)
-  for (rel, txt) in m.files do
+  for v in ← Lint.check env pluginImports i.pluginSrc do shown := shown.push (v.render pluginFile.toString)
+  for (rel, txt) in i.models.files do
     for v in ← Lint.checkModel env pluginImports txt do
       shown := shown.push (v.render (c.workspace / rel).toString)
   report .lint shown.isEmpty s!"{shown.size} violation(s)"
@@ -525,16 +547,19 @@ run must then reuse every output gate 6's run built: a module that runs code whi
 could otherwise make Lake rebuild the model, and gate 3 would judge a different elaboration from
 gate 6's. Writing and removing the directory is gate 2's; gate 6's runs and the hashing of their
 outputs are gate 6's. Gates 2–5 are reported before gate 6. -/
-def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : GateM Unit := do
+def judge (c : Config) (i : Inputs) (chal adequacyChal : String) : GateM Unit := do
+  let m := i.models
   let generated : List (System.FilePath × String) :=
-    [ ("Plugins" / s!"{c.plugin}.lean", src), ("Challenge" / s!"{c.plugin}.lean", chal),
+    [ ("Plugins" / s!"{c.plugin}.lean", i.pluginSrc), ("Challenge" / s!"{c.plugin}.lean", chal),
       ("comparator.json", comparatorJson c.plugin),
       ("Challenge" / "Mitos" / "ModelAdequacy.lean", adequacyChal),
       ("examples.json", examplesComparatorJson m),
       ("adequacy.json", adequacyComparatorJson m),
       ("lakefile.toml", judgeLakefile), ("lake-manifest.json", judgeManifest) ]
-  let files := m.files.toList.map (fun (r, t) => ((⟨r⟩ : System.FilePath), t)) ++ generated
-  -- The core is copied to `Mitos/`; every other file needs a path of its own.
+  let paths (fs : Array (String × String)) : List (System.FilePath × String) :=
+    fs.toList.map fun (r, t) => (⟨r⟩, t)
+  let files := paths m.files ++ generated
+  -- The core is written to `Mitos/`; every other file needs a path of its own.
   let rels := files.map (·.1.toString)
   let dir ← atGate .sandbox do
     if let some r := rels.find? fun r => r.startsWith "Mitos/" || (rels.filter (· == r)).length > 1 then
@@ -542,9 +567,8 @@ def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : Gat
     IO.FS.createTempDir
   let gates : GateM Unit := do
     atGate .sandbox do
-      copyFile (c.mitosRoot / "lean-toolchain") (dir / "lean-toolchain")
-      copyLeanTree (c.mitosRoot / "core" / "Mitos") (dir / "Mitos")
-      for (rel, txt) in files do
+      IO.FS.writeFile (dir / "lean-toolchain") i.toolchain
+      for (rel, txt) in paths i.core ++ files do
         if let some p := (dir / rel).parent then IO.FS.createDirAll p
         IO.FS.writeFile (dir / rel) txt
     let model ← atGate .adequacy (judgeModel c m dir)
@@ -573,38 +597,40 @@ def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : Gat
     if passed?.isSome then atGate .sandbox close
     else tryCatchThe IO.Error close fun e => report .sandbox false s!"I/O error: {e}"
 
-def writeRecord (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO Unit := do
-  let coreFiles ← leanFiles (c.mitosRoot / "core" / "Mitos")
+/-- The record of an accepted plugin, written to a file of its own in `accepted/` and renamed over
+the old record, so a reader sees the old record or the new one, never part of one. -/
+def writeRecord (c : Config) (i : Inputs) (chal adequacyChal : String) : IO Unit := do
   let mut coreCat := ""
-  for f in coreFiles do coreCat := coreCat ++ f.toString ++ "\n" ++ (← IO.FS.readFile f)
+  for (rel, txt) in i.core do coreCat := coreCat ++ rel ++ "\n" ++ txt
   let rec_ := s!"\{
   \"plugin\": \"{c.plugin}\",
-  \"model\": \"{m.model}\",
-  \"toolchain\": \"{trim (← IO.FS.readFile (c.mitosRoot / "lean-toolchain"))}\",
-  \"plugin_sha256\": \"{← sha256 src}\",
-  \"models_lock_sha256\": \"{← sha256 m.lock}\",
+  \"model\": \"{i.models.model}\",
+  \"toolchain\": \"{trim i.toolchain}\",
+  \"plugin_sha256\": \"{← sha256 i.pluginSrc}\",
+  \"models_lock_sha256\": \"{← sha256 i.models.lock}\",
   \"core_sha256\": \"{← sha256 coreCat}\",
   \"challenge_sha256\": \"{← sha256 chal}\",
   \"adequacy_challenge_sha256\": \"{← sha256 adequacyChal}\",
   \"paranoid\": {c.paranoid}
 }
 "
-  IO.FS.createDirAll (c.workspace / "accepted")
-  IO.FS.writeFile (c.workspace / "accepted" / s!"{c.plugin}.json") rec_
-  IO.println s!"recorded {oneLine (c.workspace / "accepted" / s!"{c.plugin}.json").toString}"
+  let dir := c.workspace / "accepted"
+  let file := dir / s!"{c.plugin}.json"
+  let tmp := dir / s!".{c.plugin}.json.{← IO.Process.getPID}.tmp"
+  IO.FS.createDirAll dir
+  IO.FS.writeFile tmp rec_
+  IO.FS.rename tmp file
+  IO.println s!"recorded {oneLine file.toString}"
 
 def runAccept (c : Config) : IO UInt32 := do
   let pluginFile := c.pluginFile.getD (c.workspace / "Plugins" / s!"{c.plugin}.lean")
   let gates : GateM (IO Unit) := do
-    let m ← atGate .provenance (provenance c pluginFile)
-    let src ← atGate .lint do
-      let src ← IO.FS.readFile pluginFile
-      lint c pluginFile src m
-      pure src
-    let chal := challenge c.plugin m.model
-    let adequacyChal := adequacyChallenge m
-    judge c m src chal adequacyChal
-    return writeRecord c m src chal adequacyChal
+    let i ← atGate .provenance (provenance c pluginFile)
+    atGate .lint (lint c pluginFile i)
+    let chal := challenge c.plugin i.models.model
+    let adequacyChal := adequacyChallenge i.models
+    judge c i chal adequacyChal
+    return writeRecord c i chal adequacyChal
   match ← gates.run with
   | .ok record =>
     if c.record then

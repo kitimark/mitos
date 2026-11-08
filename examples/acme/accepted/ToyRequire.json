@@ -4,7 +4,7 @@
   "toolchain": "leanprover/lean4:v4.35.0",
   "plugin_sha256": "fe8fcb5b617bd7b24beb69d1ae1f078e11bda8e4dfc19b871cf6661b305309a7",
   "models_lock_sha256": "a49b2facf66cfd030488a17efdc976ceb402f5b6c8545630a7bd462ffe329e66",
-  "core_sha256": "9703a942542ed01ffe3aa78d8e29e9edcae210f5d537d319aae8d0b22b4dfc3a",
+  "core_sha256": "257d10f84d4def1c2bbae4f5841214e4a2ecee4ad83f1849846928e9fd4f8d6f",
   "challenge_sha256": "f255d3577d8296f468db6ef0f309174ce40fcd80ad402299fd905a4681ff91ce",
   "adequacy_challenge_sha256": "d2d207b20eebe568b54c2eb8ac9c289330ce31805788c33ea0980b382fea7242",
   "paranoid": true
