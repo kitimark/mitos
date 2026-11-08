@@ -33,7 +33,7 @@ def Rule.id : Rule → String
   | .importSyntax => "import:syntax"
   | .hash => "hash"
   | .setOption => "set_option"
-  | .banned t => s!"banned:{t}"
+  | .banned t => "banned:" ++ t
   | .modelCommand => "model:command"
   | .modelSection => "model:section"
   | .modelModifier => "model:modifier"
@@ -49,6 +49,17 @@ def Rule.fixed : List Rule :=
     .importComponent, .importRoot, .importSyntax, .hash, .setOption, .modelCommand, .modelSection,
     .modelModifier, .modelDeclaration, .modelClass, .modelAttribute, .modelComputedFields,
     .modelDeriving ]
+
+/-- Every rule but a ban is in `Rule.fixed`, so `mitos-lint-test` can require a rule case for
+each. -/
+theorem Rule.banned_or_fixed (r : Rule) : (∃ t, r = .banned t) ∨ r ∈ Rule.fixed := by
+  cases r <;> simp [Rule.fixed]
+
+/-- Two rules never share an id, so a violation's id names its rule. -/
+theorem Rule.id_injective : Function.Injective Rule.id := by
+  intro a b h
+  cases a <;> cases b <;> simp_all [Rule.id] <;>
+    (have := congrArg String.toList h; simp [String.toList_append] at this)
 
 /-- Whether a cheat case may guard the rule. A parse rule may not: when one fires, no other rule
 runs, so without it the others would run and could report more. -/
