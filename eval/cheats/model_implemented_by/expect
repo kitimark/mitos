@@ -1,0 +1,4 @@
+full=1
+comparator_only=accept
+model_approved=yes
+why=An approved model carries `@[implemented_by evilRun]` on `honestRun`, and the plugin, with no banned token of its own, sets `run := honestRun`. Gate 1 checked models only for syntax-declaring tokens, so this passed gates 0-5 with --paranoid and the compiled extractor returned the backdoor. Models now pass every plugin rule as well as the model command allowlist.

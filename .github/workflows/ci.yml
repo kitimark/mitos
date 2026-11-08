@@ -74,6 +74,9 @@ jobs:
           lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
             --model Models.ToyRequire.model --paranoid
 
+      - name: Model lint allowlist accepts and rejects each command kind
+        run: lake exe mitos-lint-test
+
       - name: Cheat corpus is rejected
         run: eval/cheats/run.sh
 

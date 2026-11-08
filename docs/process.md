@@ -164,6 +164,7 @@ which covers what no kernel term references, such as a structure field's default
 | Core implementation proves the Challenge | `cd core && lake comparator --paranoid` | ✓ | ✓ | ✓ | yes |
 | Spec changes carry `spec-approved` | CI step | | ✓ | | yes |
 | Plugin lint (gate 1) | `lake exe mitos-gate lint <file>` | ✓ | ✓ | | yes |
+| Model lint allowlist accepts and rejects each command kind | `lake exe mitos-lint-test` | when touching `gate/` | ✓ | | yes |
 | Honest plugin accepted, gates 0–5 | `lake exe mitos-gate accept … --paranoid` | ✓ | ✓ | ✓ | yes |
 | Cheat corpus rejected | `eval/cheats/run.sh` | when touching `gate/` | ✓ | ✓ | yes |
 | Fixture scorecard: precision and recall per edge type against hand labels | `lake --dir eval/score exe mitos-score eval/fixtures/toy` | when touching the resolver, a plugin, the fixture or the scorer | ✓, posted on the PR | | the numbers no; a scorer error yes |
@@ -179,7 +180,7 @@ which covers what no kernel term references, such as a structure field's default
 | Gate | What it checks | Implemented by |
 |---|---|---|
 | 0 provenance | toolchain pin matches; every model listed in `models.lock` with a matching hash; fresh judging directory with no `.lake` | `gate/MitosGate/Accept.lean` |
-| 1 lint | the plugin parses with the toolchain's own `Init`/`Std` syntax, and its tokens (as Lean's parser produces them) include no `sorry`, `axiom`, `partial`, `unsafe`, `implemented_by`, `extern`, `csimp`, `native_decide`, notation, macros, instances, `#eval`, `debug.*` options, or imports outside `Init`/`Std`/`Mitos.Core`/`Models`. Identifiers are matched by name, so `«sorry»` counts as `sorry`. The workspace's models declare no syntax (notation, macros, `syntax`, `elab`, `Lean`) and import nothing outside those four, so `Init`/`Std` syntax is all the plugin's syntax | `gate/MitosGate/Lint.lean` |
+| 1 lint | the plugin parses with the toolchain's own `Init`/`Std` syntax, and its tokens (as Lean's parser produces them) include no `sorry`, `axiom`, `partial`, `unsafe`, `implemented_by`, `extern`, `csimp`, `native_decide`, notation, macros, instances, `#eval`, `debug.*` options, or imports outside `Init`/`Std`/`Mitos.Core`/`Models`. Identifiers are matched by name, so `«sorry»` counts as `sorry`. Every model in the workspace passes the same rules, since a plugin may use what a model defines (`eval/cheats/model_implemented_by`). On top, a model may contain only allowlisted commands, so it declares no syntax by construction and `Init`/`Std` syntax is all the plugin's syntax. The allowed top-level commands are a module doc, `namespace`, a plain `section`, `end`, `open`, and declarations. The allowed declarations are `def`, `theorem`, `abbrev`, `example`, `structure` and `inductive`, with no modifier but a doc comment and attributes. The only allowed attribute is `simp`, wherever it appears. `instance`, `class`, `axiom` and `opaque` are left out because they change instance search or add unproved constants. `private`, `protected`, `noncomputable`, `unsafe`, `partial`, `nonrec` and `meta` are left out because a reviewed model needs none of them. `deriving` and computed fields are left out because they generate instances or replace compiled code. Every other attribute is left out because attributes are how a `def` becomes a parser, macro, elaborator or compiler override. `set_option`, `variable`, `attribute`, `mutual`, `… in` and `#`-commands are left out too. Any other command is a violation, reported with its file, line and kind. The lint does not also compare the parser's token table before and after the model, because the lint parses without elaborating, so the table never changes during the run. A real before-and-after comparison would have to elaborate the model or load its compiled `.olean`, which runs the model's code. That check would cost more than the allowlist, and it would be less robust. `lake exe mitos-lint-test` checks each allowed and rejected kind | `gate/MitosGate/Lint.lean`, `gate/LintTest.lean` |
 | 2 sandbox | the plugin is built inside bubblewrap; it can write only to the judging project's `.lake` | `lake comparator` |
 | 3 statements | the plugin's theorems and its extractor definition match the generated Challenge, compared as kernel terms | `lake comparator` |
 | 4 axioms | only `propext`, `Quot.sound`, `Classical.choice` | `lake comparator` |
@@ -205,7 +206,8 @@ why=Leaves the completeness proof as `sorry`.
 ```
 
 A case whose `expect` also has the line `model_approved=yes` stands for models the owner approved:
-the runner re-pins `models.lock` to the case's `Models/`, so gate 0 passes and the later gates
+the runner re-pins `models.lock` to every model under the workspace's `Models/`, recursively as
+gate 0 walks it, so gate 0 passes and the later gates
 are what is tested.
 
 `eval/cheats/run.sh` runs every case twice: through the full gate, and with `--skip-lint`, to
@@ -213,9 +215,9 @@ record what the later gates catch on their own. Every full run must reject at th
 The comparator-only expectation is checked as well, so a change in what each layer catches is
 noticed and recorded on purpose.
 
-Seven cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
+Eight cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
 `eval_command`, the smuggling variants `char_literal_smuggle`, `raw_string_smuggle` and
-`escaped_attr_smuggle`, and `model_notation`. The kernel cannot see what code *runs*, only what is *proved*. Those cases are
+`escaped_attr_smuggle`, and the model cases `model_notation` and `model_implemented_by`. The kernel cannot see what code *runs*, only what is *proved*. Those cases are
 why the lint is a required gate rather than a nicety.
 
 ## 4. How to observe
@@ -323,3 +325,8 @@ eval/cheats/run.sh
   `lines.go._f` and `lines.go.match_1`, so changing it left the lock unchanged, and so did the
   spec-approved check, which looked only at lock and Challenge paths. Each lock line now hashes
   the generated declarations it reaches (`aux=`), and the label check covers `core/Mitos/Core/`.
+- Gate 1 first checked models against a hand-written list of syntax-declaring keywords, which
+  did not cover every such command, and it ran none of the plugin rules on them. An approved
+  model's `@[implemented_by evilRun] def honestRun`, used by a clean plugin, passed gates 0–5
+  with `--paranoid` (`eval/cheats/model_implemented_by`). Models now pass every plugin rule and
+  a command allowlist, and `gate/LintTest.lean` checks each kind.

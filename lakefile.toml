@@ -15,3 +15,9 @@ srcDir = "gate"
 root = "Main"
 supportInterpreter = true
 needs = ["mitos-core/+Mitos.Core:olean"]
+
+[[lean_exe]]
+name = "mitos-lint-test"
+srcDir = "gate"
+root = "LintTest"
+supportInterpreter = true
