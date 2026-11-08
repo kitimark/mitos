@@ -70,9 +70,13 @@ theorem _root_.{m.model}.adequate :
     _root_.Mitos.Model.Adequate _root_.{m.model} _root_.{m.model}.examples := sorry
 "
 
+/-- Gate 6's Challenge module. A plugin name is a plain identifier, so `Challenge.{p}` is never
+this module and `Challenge/{p}.lean` never its file. -/
+def adequacyModule : String := "Challenge.Mitos.ModelAdequacy"
+
 def adequacyComparatorJson (m : LockedModels) : String :=
   let axs := String.intercalate ", " (permittedAxioms.map quote)
-  s!"\{\"challenge_module\": \"Challenge.ModelAdequacy\", \"solution_module\": \"{modelModule m.model}\",
+  s!"\{\"challenge_module\": \"{adequacyModule}\", \"solution_module\": \"{modelModule m.model}\",
  \"theorem_names\": [{quote s!"{m.model}.adequate"}],
  \"definition_names\": [{quote m.model}, {quote s!"{m.model}.examples"}],
  \"permitted_axioms\": [{axs}]}
@@ -85,11 +89,6 @@ def judgeLakefile : String :=
 def judgeManifest : String :=
   "{\"version\": \"1.3.0\", \"packagesDir\": \".lake/packages\", \"packages\": [], " ++
   "\"name\": \"judge\", \"lakeDir\": \".lake\", \"fixedToolchain\": false}\n"
-
-/-- Text from the workspace or an error, made safe to print on one line: a file name with a
-newline must not start a line of its own, such as a forged `VERDICT:`. -/
-def oneLine (s : String) : String :=
-  s.map fun c => if c.toNat < 32 || c.toNat == 127 then '?' else c
 
 def report (gate : Nat) (name : String) (ok : Bool) (detail : String := "") : IO Unit := do
   let status := if ok then "PASS" else "FAIL"
@@ -179,8 +178,8 @@ def failedGate (comparatorOutput : String) : Nat × String :=
   if has "Illegal axiom" then (4, "axioms")
   else if statementMarkers.any has || has "not found in environment" then (3, "statements")
   else if has "kernel" && has "reject" then (5, "kernels")
-  else if has "error:" then (2, "sandbox build")
-  else (3, "statements")
+  -- No judgment at all: a build error, or `lake` did not run.
+  else (2, "sandbox build")
 
 structure Judgment where
   accepted : Bool
@@ -193,29 +192,81 @@ def runComparator (c : Config) (dir : System.FilePath) (config : String) : IO Ju
     return { accepted := code == 0 && (out.splitOn "Your solution is okay!").length > 1, output := out }
   catch e => return { accepted := false, output := s!"error: could not run lake comparator: {e}" }
 
+/-- The regular files under `dir`, recursively, relative to it and sorted. Anything else there, such
+as a symlink or a device, is an error: reading it could follow it out of the judging directory or
+never end, and Lake writes only regular files. -/
+partial def regularFiles (dir : System.FilePath) (rel : String := "") :
+    ExceptT String IO (Array String) := do
+  let mut out := #[]
+  for e in ← dir.readDir do
+    let r := if rel.isEmpty then e.fileName else rel ++ "/" ++ e.fileName
+    match (← e.path.symlinkMetadata).type with
+    | .dir => out := out ++ (← regularFiles e.path r)
+    | .file => out := out.push r
+    | _ => throw s!"{r} is neither a regular file nor a directory"
+  return out.qsort (· < ·)
+
+/-- The build outputs in the judging directory (`.lake/build/lib/lean/`) and the SHA-256 of each,
+read by the gate process after a comparator run, when nothing in the sandbox is running. -/
+def buildOutputs (dir : System.FilePath) : ExceptT String IO (Array (String × String)) := do
+  let lib := dir / ".lake" / "build" / "lib" / "lean"
+  if !(← lib.isDir) then return #[]
+  let files ← regularFiles lib
+  if files.isEmpty then return #[]
+  let (code, out) ← run "sha256sum" (#["--"] ++ files) lib
+  let lines := (out.splitOn "\n").filter (!·.isEmpty)
+  unless code == 0 && lines.length == files.size do throw s!"sha256sum failed: {out}"
+  return files.zip lines.toArray
+
+/-- Every build output of `before` that `after` lacks or holds with other bytes. -/
+def changedOutputs (before after : Array (String × String)) : Array String :=
+  before.filterMap fun (f, h) => if after.contains (f, h) then none else some f
+
+/-- The judgments of one judging directory. -/
+structure Judgments where
+  /-- Gates 2–5: the plugin against the generated Challenge. -/
+  plugin  : Judgment
+  /-- Gate 6: the model module against the adequacy Challenge. -/
+  model   : Judgment
+  /-- Build outputs that gate 6's run left and the plugin's run changed or removed, or why they could
+  not be compared. Empty when gates 3 and 6 judged one elaboration of the model. -/
+  rebuilt : Array String
+
 /-- One judging directory, so gates 3 and 6 see one elaboration of the model. Gate 6 is judged
-first, before the plugin is built, so nothing the plugin's build writes can reach it. Returns the
-plugin's judgment (gates 2–5), then the model's (gate 6). -/
-def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) :
-    IO (Judgment × Judgment) := do
+first, before the plugin is built, so nothing the plugin's build writes can reach it. The plugin's
+run must then reuse every output gate 6's run built: a module that runs code while it elaborates
+could otherwise make Lake rebuild the model, and gate 3 would judge a different elaboration from
+gate 6's. -/
+def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO Judgments := do
+  let generated : List (System.FilePath × String) :=
+    [ ("Plugins" / s!"{c.plugin}.lean", src), ("Challenge" / s!"{c.plugin}.lean", chal),
+      ("comparator.json", comparatorJson c.plugin),
+      ("Challenge" / "Mitos" / "ModelAdequacy.lean", adequacyChal),
+      ("adequacy.json", adequacyComparatorJson m),
+      ("lakefile.toml", judgeLakefile), ("lake-manifest.json", judgeManifest) ]
+  let files := m.files.toList.map (fun (r, t) => ((⟨r⟩ : System.FilePath), t)) ++ generated
+  -- The core is copied to `Mitos/`; every other file needs a path of its own.
+  let rels := files.map (·.1.toString)
+  if let some r := rels.find? fun r => r.startsWith "Mitos/" || (rels.filter (· == r)).length > 1 then
+    throw <| IO.userError s!"two files of the judging directory would share the path {r}"
   let dir ← IO.FS.createTempDir
   try
     copyFile (c.mitosRoot / "lean-toolchain") (dir / "lean-toolchain")
     copyLeanTree (c.mitosRoot / "core" / "Mitos") (dir / "Mitos")
-    let generated : List (System.FilePath × String) :=
-      [ ("Plugins" / s!"{c.plugin}.lean", src), ("Challenge" / s!"{c.plugin}.lean", chal),
-        ("comparator.json", comparatorJson c.plugin),
-        ("Challenge" / "ModelAdequacy.lean", adequacyChal),
-        ("adequacy.json", adequacyComparatorJson m),
-        ("lakefile.toml", judgeLakefile), ("lake-manifest.json", judgeManifest) ]
-    for (rel, txt) in m.files.toList.map (fun (r, t) => (⟨r⟩, t)) ++ generated do
+    for (rel, txt) in files do
       if let some p := (dir / rel).parent then IO.FS.createDirAll p
       IO.FS.writeFile (dir / rel) txt
     let model ← runComparator c dir "adequacy.json"
+    let before ← buildOutputs dir
     let plugin ← runComparator c dir "comparator.json"
-    return (plugin, model)
+    let after ← buildOutputs dir
+    let rebuilt := match before, after with
+      | .ok b, .ok a => changedOutputs b a
+      | .error e, _ | _, .error e => #[e]
+    return { plugin, model, rebuilt }
   finally
-    if c.keep then IO.println s!"  (judging directory kept: {dir})" else IO.FS.removeDirAll dir
+    if c.keep then IO.println s!"  (judging directory kept: {oneLine dir.toString})"
+    else IO.FS.removeDirAll dir
 
 def showComparatorTail (out : String) : IO Unit := do
   let frame (l : String) := l == "backtrace:" || (l.startsWith "/" && (l.splitOn " [0x").length > 1)
@@ -245,10 +296,15 @@ def adequacyFailure (model out : String) : String :=
   else if has "kernel" && has "reject" then s!"a kernel rejected `{model}.adequate`"
   else "the adequacy proof could not be judged"
 
-def adequacyGate (m : LockedModels) (j : Judgment) : GateM Unit := do
+def adequacyGate (m : LockedModels) (j : Judgment) (rebuilt : Array String) : GateM Unit := do
   if !j.accepted then
     report 6 "model adequacy" false (adequacyFailure m.model j.output)
     showComparatorTail j.output
+    throw (6, "model adequacy")
+  unless rebuilt.isEmpty do
+    report 6 "model adequacy" false <|
+      "the plugin's run changed the build outputs of gate 6's run, so gates 3 and 6 did not judge " ++
+      s!"one elaboration of the model: {", ".intercalate (rebuilt.toList.take 5)}"
     throw (6, "model adequacy")
   report 6 "model adequacy" true
     s!"{m.model}.adequate : Mitos.Model.Adequate {m.model} {m.model}.examples"
@@ -271,7 +327,7 @@ def writeRecord (c : Config) (m : LockedModels) (src chal adequacyChal : String)
 "
   IO.FS.createDirAll (c.workspace / "accepted")
   IO.FS.writeFile (c.workspace / "accepted" / s!"{c.plugin}.json") rec_
-  IO.println s!"recorded {c.workspace / "accepted" / s!"{c.plugin}.json"}"
+  IO.println s!"recorded {oneLine (c.workspace / "accepted" / s!"{c.plugin}.json").toString}"
 
 def runAccept (c : Config) : IO UInt32 := do
   let pluginFile := c.pluginFile.getD (c.workspace / "Plugins" / s!"{c.plugin}.lean")
@@ -283,9 +339,9 @@ def runAccept (c : Config) : IO UInt32 := do
       pure src
     let chal := challenge c.plugin m.model
     let adequacyChal := adequacyChallenge m
-    let (plugin, model) ← atGate 2 "sandbox build" (judge c m src chal adequacyChal)
-    pluginGates c plugin
-    adequacyGate m model
+    let j ← atGate 2 "sandbox build" (judge c m src chal adequacyChal)
+    pluginGates c j.plugin
+    adequacyGate m j.model j.rebuilt
     return writeRecord c m src chal adequacyChal
   match ← gates.run with
   | .ok record =>
