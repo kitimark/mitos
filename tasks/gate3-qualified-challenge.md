@@ -26,11 +26,12 @@ escalation: hint → automation → stronger model → pair → split → revisi
 - Not in this task: `core/Challenge/Resolver.lean` uses the same dotted form, but its only import
   is the locked `Mitos.Core`.
 
-## Model-side cheat cases: pending `model_approved=yes`
+## Model-side cheat cases (added by #21)
 A model-side case brings its own `Models/ToyRequire.lean`, so `eval/cheats/run.sh` must re-pin
-`models.lock` for it. On `main` it cannot (the case would stop at gate 0); #21 (P1-009) adds
-`model_approved=yes`. When that is on `main`, these cases join the corpus, each with
-`full=3`, `comparator_only=reject@3` and `model_approved=yes`. Each model is the honest
+`models.lock` for it (`model_approved=yes`). #21 (P1-009, round 3) adds these cases to the corpus
+with `model_approved=yes`. The four without `export` expect `full=3`, `comparator_only=reject@3`.
+`shadow_root_export` and `shadow_export_model` expect `full=1`, `comparator_only=reject@3`:
+#24's model allowlist bans `export`, so gate 1 rejects them first. Each model is the honest
 `examples/acme/Models/ToyRequire.lean` plus the declaration below; each plugin is the toy with an
 extractor that emits nothing (or, for the extractor shadow, one false fact), spelling the
 shadowed name as the Challenge spells it.
@@ -59,9 +60,12 @@ accepted at the round-1 head; all are rejected at gate 3 with this fix, in both 
 - [x] `shadow_obligation` is rejected at gate 3 in both modes
 - [x] the honest toy is accepted with `--paranoid`, and the record is regenerated
 - [x] every existing cheat case behaves as its `expect` says
-- [ ] the six model-side cases above (`shadow_model`, `shadow_obligation_model`, `shadow_extractor_model`,
-  `shadow_root_component`, `shadow_root_export`, `shadow_export_model`) join `eval/cheats/` once
-  `model_approved=yes` is on `main`
+- [x] the six model-side cases above (`shadow_model`, `shadow_obligation_model`, `shadow_extractor_model`,
+  `shadow_root_component`, `shadow_root_export`, `shadow_export_model`) join `eval/cheats/` (#21
+  round 3). Each was accepted without the check that stops it: the four plain ones by the gate with
+  the Challenge written without `_root_` (gates 0–6) and by `main` before #25 (`beb6f01`, gates
+  0–5); the two `_root_`-component ones by the gate with #25's round-1 Challenge. The `export` ones
+  were accepted only without lint, since #24 rejects `export` at gate 1
 - [x] run-log record written (ops/runs/)
 
 ## Pending follow-ups

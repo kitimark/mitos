@@ -6,6 +6,6 @@
   "models_lock_sha256": "825ce92268aa7370b89f07b01cf5ed874cb2f6ed0f391797694eae33627bb5c0",
   "core_sha256": "8ac8a2f35151536ca46a59bffedfc242a5804b8da90a184e41f305e8f4ecd31d",
   "challenge_sha256": "f255d3577d8296f468db6ef0f309174ce40fcd80ad402299fd905a4681ff91ce",
-  "adequacy_challenge_sha256": "e4863ab3942fffa4cc4ddfa9da3dd3be3eb3f3bcfee14f3720e07448866ed480",
+  "adequacy_challenge_sha256": "d2d207b20eebe568b54c2eb8ac9c289330ce31805788c33ea0980b382fea7242",
   "paranoid": true
 }
