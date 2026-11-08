@@ -3,7 +3,7 @@
 phase: 1
 goal: CI fails a PR that edits or deletes a run-log line, and fails any tree with two records for one `(task, role, attempt)`, by a check whose algorithm is proved in Lean.
 statement: none (tooling task); theorems in `gate/MitosGate/RunLog.lean`, outside the lock
-touches: gate/MitosGate/RunLog.lean, gate/Main.lean (the `runlog` subcommand only), gate/runlog-test.sh, .github/workflows/ci.yml (one step in the `gate` job), ops/runs/README.md, ops/runs/2026-11-08.ndjson (one line)
+touches: gate/MitosGate/RunLog.lean, gate/MitosGate/Util.lean (the `oneLine` allowlist and `unsafeSamples` only; #55 PR 3), gate/Main.lean (the `runlog` subcommand only), gate/runlog-test.sh, .github/workflows/ci.yml (one step in the `gate` job), ops/runs/README.md, ops/runs/2026-11-08.ndjson (appended lines only), tasks/run-log-check.md
 must_not_touch: statements.lock, models.lock, core/, eval/cheats/, models
 checks: build, imports, lock, core check, core comparator --paranoid, example build, scorer, accept-toy --paranoid, lint test, cheats, runlog on main's data, gate/runlog-test.sh, actionlint, shellcheck
 budget: 20 iterations · 3h wall · 1M tokens
@@ -45,11 +45,15 @@ escalation: hint → automation → stronger model → pair → split → revisi
   check fails at `2026-11-08.ndjson` line 2, so that edit would have been caught on its own PR.
 - **Only one problem per kind.** The check reports the first missing line of each file and the
   first duplicate key; fixing one and rerunning shows the next.
-- **Printing (#55, PR 3).** Every line the check prints that holds a file name, a field value or a
-  message passes through `oneLine` (`gate/MitosGate/Util.lean`), the gate's one sanitizer for
-  untrusted text; `quote` only quotes. The earlier denylist here (`unsafeChar`, `clean`) let the
-  zero-width space and joiner, the soft hyphen and blank fillers through. `escapeData` and
-  `escapeProperty` map one character at a time, so `example`s pin what `Problem.render` prints.
+- **Printing (#55, PR 3).** Every line `mitos-gate runlog` prints that holds a file name, a field
+  value, a message or an I/O error passes through `oneLine` (`gate/MitosGate/Util.lean`), the
+  gate's one sanitizer for untrusted text; `quote` only quotes. The earlier denylist here
+  (`unsafeChar`, `clean`) let the zero-width space and joiner, the soft hyphen and blank fillers
+  through. `cli` catches the I/O errors `check` throws, since they name the path they failed on and
+  the Lean runtime would print them raw: a file name with a newline and a byte that is not UTF-8
+  made it print a forged `::warning::` line. `escapeData` and `escapeProperty` map one character at
+  a time, so `example`s pin what `Problem.render` prints; `gate/runlog-test.sh` pins the
+  missing-directory line, the argument error and the I/O error.
 
 ## Theorems (`gate/MitosGate/RunLog.lean`)
 - `appendOnly_iff_count`, `appendOnly_iff_subperm`, `appendOnly_iff_perm_append`

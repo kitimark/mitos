@@ -166,18 +166,38 @@ fi
 if grep -v '^::error ' "$out" | grep -qv '^[0-9]* run-log problem(s)'; then
   echo "FAIL hostile: a line that is not an annotation or the summary"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
 fi
-raw() { if grep -qF -- "$2" "$out"; then echo "FAIL hostile: raw $1 in output"; fail=$((fail + 1)); fi; }
-raw "bidi override U+202E" $'\xe2\x80\xae'
-raw "zero-width space U+200B" $'\xe2\x80\x8b'
-raw "zero-width joiner U+200D" $'\xe2\x80\x8d'
-raw "soft hyphen U+00AD" $'\xc2\xad'
-raw "braille blank U+2800" $'\xe2\xa0\x80'
+# raw <case> <what> <bytes>: the case fails if <bytes> occur in the output.
+raw() { if grep -qF -- "$3" "$out"; then echo "FAIL $1: raw $2 in output"; fail=$((fail + 1)); fi; }
+raw hostile "bidi override U+202E" $'\xe2\x80\xae'
+raw hostile "zero-width space U+200B" $'\xe2\x80\x8b'
+raw hostile "zero-width joiner U+200D" $'\xe2\x80\x8d'
+raw hostile "soft hyphen U+00AD" $'\xc2\xad'
+raw hostile "braille blank U+2800" $'\xe2\xa0\x80'
+
+# A file name with a newline, a workflow command and a byte that is not UTF-8. Lean reads the name
+# back with U+FFFD for that byte, so reading the file throws an I/O error that names the path. The
+# error must be one `::error::` line, through oneLine, not printed raw by the Lean runtime.
+fresh ioerror
+rec A 1 >"$h/"$'z\n::warning::injected\xff.ndjson'
+expect "an I/O error prints safely" 1 '^::error::the run-log check stopped on an I/O error: .*/z\\u\{000A\}::warning::injected\\u\{FFFD\}\.ndjson$' --head "$h"
+if grep -qv '^::error::' "$out"; then
+  echo "FAIL ioerror: a line that is not an annotation"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
+fi
+raw ioerror "U+FFFD" $'\xef\xbf\xbd'
 
 fresh args
 expect "--head is required" 2 'runlog needs --head' --base "$b"
 expect "an unknown argument is refused" 2 'unknown or incomplete argument' --head "$h" --bogus
+expect "an unknown argument prints safely" 2 '^unknown or incomplete argument "--x\\u\{000A\}::warning::injected\\u\{200B\}"$' --head "$h" $'--x\n::warning::injected\xe2\x80\x8b'
+if grep -qE '^[[:space:]]*::' "$out"; then
+  echo "FAIL args: a line starts a workflow command"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
+fi
+raw args "zero-width space U+200B" $'\xe2\x80\x8b'
 expect "a missing directory fails" 1 '^::error::run-log directory .* is missing' --head "$tmp/nope"
 expect "a missing base directory fails" 1 '^::error::run-log directory .* is missing' --base "$tmp/nope" --head "$h"
+# A relative name, so that the 60 characters `quote` keeps hold all of it.
+expect "a missing directory's name prints safely" 1 '^::error::run-log directory "nope\\u\{000A\}::warning::injected\\u\{200B\}" is missing' --head $'nope\n::warning::injected\xe2\x80\x8b'
+raw missingdir "zero-width space U+200B" $'\xe2\x80\x8b'
 
 # Replay: the base ends with record B; the PR corrects B in place; main appends C. With the
 # repository's .gitattributes, the rebase of the PR onto main succeeds without a conflict, and
