@@ -257,7 +257,10 @@ The comparator-only expectation is checked as well, so a change in what each lay
 noticed and recorded on purpose.
 
 A case with its own model is judged against the example workspace's `models.lock`, so gate 0
-rejects it (`model_tamper`), unless its `expect` has `model_approved=yes`. `empty_extractor`,
+rejects it (`model_tamper`), unless its `expect` has `model_approved=yes`. Each `lock_append=`
+line of an `expect` is appended to the case's `models.lock` (a case keeps no `models.lock` of its
+own, since CI reads every `models.lock` path as spec): `lock_duplicate_path` lists the toy model a
+second time with a wrong hash, and gate 0 rejects it as `sha256sum --check` would. `empty_extractor`,
 `emit_everything` and `weakened_adequacy` stand for a weak model the owner approved by mistake:
 gates 0–5 accept all three and gate 6 rejects them. In a full run gate 1 already rejects
 `emit_everything`, whose unprovable adequacy theorem is `sorry`.

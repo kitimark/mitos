@@ -26,10 +26,12 @@ for c in "${cases[@]}"; do
   ws=$(mktemp -d)
   cp examples/acme/lakefile.toml examples/acme/lean-toolchain examples/acme/models.lock "$ws/"
   cp -r examples/acme/Models examples/acme/Plugins "$ws/"
-  cp -r "$d/Plugins" "$ws/"; [ -d "$d/Models" ] && cp -r "$d/Models" "$ws/"
+  [ -d "$d/Plugins" ] && cp -r "$d/Plugins" "$ws/"; [ -d "$d/Models" ] && cp -r "$d/Models" "$ws/"
   # Re-pin every model, recursively, as gate 0 walks Models/.
   grep -qx 'model_approved=yes' "$d/expect" && (cd "$ws" &&
     find Models -name '*.lean' ! -type d -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > models.lock)
+  # Lines to append to the workspace's models.lock, to test how gate 0 reads it.
+  grep '^lock_append=' "$d/expect" | cut -d= -f2- >> "$ws/models.lock"
   log="$ROOT/.lake/cheats"; mkdir -p "$log"
   full=$(verdict "$ws" "" "$log/$c.full.log")
   comp=$(verdict "$ws" "--skip-lint" "$log/$c.comparator.log")

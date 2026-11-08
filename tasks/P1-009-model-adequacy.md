@@ -10,8 +10,9 @@ statement: Mitos.ModelExamples, Mitos.Model.Adequate, Mitos.Extractor.empty,
   Mitos.Model.{nothing_holds_not_adequate, everything_holds_not_adequate} (new)
 touches: spec PR: core/Mitos/Core/ModelExamples.lean, core/Mitos/Core.lean, statements.lock,
   examples/acme/{Models/ToyRequire.lean, models.lock, accepted/ToyRequire.json};
-  gate PR: gate/MitosGate/{Accept.lean, Util.lean}, gate/Main.lean, eval/cheats/{empty_extractor,
-  emit_everything, weakened_adequacy, judge_dir_model, missing_obligation, double_elaboration}/,
+  gate PR: gate/MitosGate/{Accept.lean, Util.lean}, gate/Main.lean, eval/cheats/run.sh (`lock_append=`
+  lines), eval/cheats/{empty_extractor, emit_everything, weakened_adequacy, judge_dir_model,
+  missing_obligation, double_elaboration, lock_duplicate_path}/,
   eval/cheats/shadow_{model, obligation_model, extractor_model, root_component, root_export,
   export_model}/ (deferred by tasks/gate3-qualified-challenge.md),
   eval/cheats/{model_notation, model_implemented_by, model_dotdot_import}/Models/, docs/process.md,
@@ -111,6 +112,14 @@ rejected at gate 1 in full runs and at gate 6 without lint:
 
 `missing_obligation` is the honest model with a plugin that declares no `complete`; it is rejected at
 gate 3 in both modes.
+
+`lock_duplicate_path` (round 3, for round 2's CodeRabbit finding) lists `Models/ToyRequire.lean`
+twice in `models.lock`, first with the model's hash and then with a wrong one; `sha256sum --check`
+fails it. The case has only an `expect` file: its `lock_append=` line is appended to the example
+workspace's lock by the runner. A committed `models.lock` under `eval/cheats/` would have made CI's
+`spec-approved` step read the case as a spec change, which its first push did. With gate 0's
+duplicate check removed, gates 0–6 accept it with the honest plugin in both modes; with the check,
+it is rejected at gate 0 in both modes.
 
 The six model-side shadow cases that #25 deferred until `model_approved=yes` existed
 (`tasks/gate3-qualified-challenge.md`) join the corpus here. Each model is the honest toy model plus

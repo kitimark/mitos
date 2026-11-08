@@ -1,0 +1,4 @@
+full=0
+comparator_only=reject@0
+lock_append=0000000000000000000000000000000000000000000000000000000000000000  Models/ToyRequire.lean
+why=`models.lock` lists `Models/ToyRequire.lean` twice: the example workspace's line has the model's hash, and the line the runner appends (`lock_append`) a wrong one, so `sha256sum --check` fails the lock. Gate 0 reads the lock itself, and while it looked up only a path's first line it passed this lock and the honest plugin was accepted. Gate 0 now rejects a path listed twice. The case has no plugin or model of its own; they are the example workspace's.
