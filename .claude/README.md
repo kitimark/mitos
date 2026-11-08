@@ -1,13 +1,14 @@
 # Claude Code skills and agents
 
-Project skills (`skills/`), subagents (`agents/`) and hooks (`hooks/`) for this repository. Most are adapted from
-pstack (MIT); see `THIRD_PARTY_NOTICES.md`.
+Project skills (`skills/`), subagents (`agents/`), hooks (`hooks/`) and scripts (`scripts/`) for
+this repository. Most are adapted from pstack (MIT); see `THIRD_PARTY_NOTICES.md`.
 
 | Name | Kind | How it runs | What it does |
 |---|---|---|---|
 | `kitimark-mode` | skill | always: `CLAUDE.md` imports it (added in PR #2) | the session delegates to agents with a model and effort per role; how much agents decide alone in this repo |
 | `hooks/check-agent-spawn.sh` | hook | before every Agent call, from `settings.json` | warns when a spawn leaves out `model` or `effort`, or a fork sets either; `hooks/check-agent-spawn.test.sh` tests it |
 | `hooks/pr-state.sh` | hook | at session start and before every prompt, from `settings.json` | prints live GitHub PR state (open PRs, closes in the last 24h, main and its latest `ci` run) from read-only `gh api` calls, so the root reads state instead of recalling it; every GitHub string is sanitized, and any failure or odd answer prints one `GitHub state unavailable` line; `hooks/pr-state.test.sh` tests it |
+| `scripts/watch-github.sh` | script | the root's Monitor runs it, re-armed every 30 minutes (`kitimark-mode`, Watchers) | polls GitHub REST every 60 s and prints one line per merge, close, new PR, head, finished check, label, assignee, `main` move or comment from the owner, and nothing otherwise; `scripts/watch-github.test.sh` tests it offline |
 | `/automate-me` | skill | you type it | mines past sessions and drafts or updates a `<handle>-mode` skill |
 | `/no-comments` | skill | you type it, or poteto-mode runs it before review | spawns `comment-sicko` on a scope, reviews its report, fixes accepted flags |
 | `comment-sicko` | agent | spawned by `/no-comments` | deletes comments outside a short keep-list; flags code to reshape |
@@ -24,7 +25,7 @@ pstack (MIT); see `THIRD_PARTY_NOTICES.md`.
 | `/in-your-own-words` | skill | you type it, or `/interrogate` follows it | restates the user's goal |
 | `/benchmark-checklist` | skill | you type it, or a playbook follows it | vets a perf number before you report or act on it |
 | `/figure-it-out` | skill | you type it, or poteto-mode routes to it | designs a bespoke playbook for large or unattended work |
-| `/ketchup` | skill | you type it, or the Autopilot playbooks follow it | catches the user up and lists the calls waiting on them |
+| `/ketchup` | skill | you type it; the Autopilot playbooks name it, but here their catch-ups go to the Owner dashboard issue (`kitimark-mode`) | catches the user up in chat and lists the calls waiting on them |
 | `/bro` | skill | you type it; `/ketchup` borrows its voice | restates the last message in plain words |
 | `/tdd` | skill | you type it, or the Bug fix playbook follows it | failing regression test first, then the fix |
 | `/show-me-your-work` | skill | you type it, or poteto-mode follows it on long or unattended work | a TSV decision trail plus a cross-model review of it |
