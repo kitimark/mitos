@@ -24,6 +24,15 @@ def obligationNames (p : String) : List String :=
 def modelModule (model : String) : String :=
   String.intercalate "." ((model.splitOn ".").dropLast)
 
+/-- The module that must declare `<model>.examples`: `Models.X.Examples` for `Models.X.model`. -/
+def examplesModule (model : String) : String := modelModule model ++ ".Examples"
+
+/-- The module that must prove `<model>.adequate`: `Models.X.Adequacy` for `Models.X.model`. -/
+def adequacyModule (model : String) : String := modelModule model ++ ".Adequacy"
+
+def moduleFile (mod : String) : String :=
+  ((System.mkFilePath (mod.splitOn ".")).addExtension "lean").toString
+
 /-- The models and `models.lock` exactly as gate 0 read and checked them. Only `provenance` builds
 one, and every later gate and the record use these bytes instead of the workspace. -/
 structure LockedModels where
@@ -72,15 +81,77 @@ theorem _root_.{m.model}.adequate :
 
 /-- Gate 6's Challenge module. A plugin name is a plain identifier, so `Challenge.{p}` is never
 this module and `Challenge/{p}.lean` never its file. -/
-def adequacyModule : String := "Challenge.Mitos.ModelAdequacy"
+def adequacyChallengeModule : String := "Challenge.Mitos.ModelAdequacy"
 
-def adequacyComparatorJson (m : LockedModels) : String :=
+/-- A comparator configuration against gate 6's Challenge. -/
+def gate6ComparatorJson (solution : String) (theorems definitions : List String) : String :=
   let axs := String.intercalate ", " (permittedAxioms.map quote)
-  s!"\{\"challenge_module\": \"{adequacyModule}\", \"solution_module\": \"{modelModule m.model}\",
- \"theorem_names\": [{quote s!"{m.model}.adequate"}],
- \"definition_names\": [{quote m.model}, {quote s!"{m.model}.examples"}],
+  let names (xs : List String) := String.intercalate ", " (xs.map quote)
+  s!"\{\"challenge_module\": \"{adequacyChallengeModule}\", \"solution_module\": \"{solution}\",
+ \"theorem_names\": [{names theorems}],
+ \"definition_names\": [{names definitions}],
  \"permitted_axioms\": [{axs}]}
 "
+
+/-- Gate 6's first run: the examples module on its own declares `<model>.examples`, a
+`Mitos.ModelExamples`. -/
+def examplesComparatorJson (m : LockedModels) : String :=
+  gate6ComparatorJson (examplesModule m.model) [] [s!"{m.model}.examples"]
+
+/-- Gate 6's second run: the adequacy module proves `<model>.adequate` of the model and the examples
+it imports. -/
+def adequacyComparatorJson (m : LockedModels) : String :=
+  gate6ComparatorJson (adequacyModule m.model) [s!"{m.model}.adequate"]
+    [m.model, s!"{m.model}.examples"]
+
+/-- The modules a source file's header imports, as Lean's own parser reads them. -/
+def headerImports (src : String) : IO (Except String (Array Lean.Name)) := do
+  let (imports, _, msgs) ← Lean.Elab.parseImports src
+  if msgs.hasErrors then return .error "its header does not parse"
+  return .ok (imports.map (·.module))
+
+def underAny (prefixes : List Lean.Name) (n : Lean.Name) : Bool :=
+  prefixes.any (·.isPrefixOf n)
+
+/-- Gate 6's check, on the locked headers, that the golden facts and the model share no
+definition outside `Mitos.Core`. For `Models.X.model`:
+- the examples module `Models.X.Examples` imports only `Mitos.Core` (and `Init`);
+- the adequacy module `Models.X.Adequacy` imports `Models.X` and `Models.X.Examples`;
+- no other model module imports the examples module, and none imports the adequacy module, so the
+  model module cannot reach anything the examples module declares;
+- model modules import only `Init`, `Std`, `Mitos.Core` and `Models` modules, so every import path
+  stays in the locked files.
+
+The examples run then checks that the examples module declares `<model>.examples`. Since the
+adequacy module imports it, no other module can declare that name for the adequacy run. -/
+def examplesLayout (m : LockedModels) : IO (Except String Unit) := do
+  let model := modelModule m.model
+  let ex := examplesModule m.model
+  let adq := adequacyModule m.model
+  let mut headers : Array (String × Array Lean.Name) := #[]
+  for (rel, txt) in m.files do
+    match ← headerImports txt with
+    | .error e => return .error s!"{rel}: {e}"
+    | .ok imports => headers := headers.push (rel, imports)
+  let importsOf (mod : String) := (headers.find? (·.1 == moduleFile mod)).map (·.2)
+  let some exImports := importsOf ex
+    | return .error s!"the examples must be in their own module {ex} ({moduleFile ex})"
+  let some adqImports := importsOf adq
+    | return .error s!"the adequacy proof must be in its own module {adq} ({moduleFile adq})"
+  for n in exImports do
+    unless underAny [`Init, `Mitos.Core] n do
+      return .error s!"{ex} imports {n}; the examples module may import only Mitos.Core"
+  unless adqImports.contains model.toName && adqImports.contains ex.toName do
+    return .error s!"{adq} must import {model} and {ex}"
+  for (rel, imports) in headers do
+    for n in imports do
+      unless underAny [`Init, `Std, `Mitos.Core, `Models] n do
+        return .error s!"{rel} imports {n}; model modules may import only Init, Std, Mitos.Core and Models"
+      if n == ex.toName && rel != moduleFile adq then
+        return .error s!"{rel} imports {ex}; only {adq} may, so the model cannot reach the examples"
+      if n == adq.toName then
+        return .error s!"{rel} imports {adq}; no model module may"
+  return .ok ()
 
 def judgeLakefile : String :=
   "name = \"judge\"\n[[lean_lib]]\nname = \"Judge\"\n" ++
@@ -226,11 +297,49 @@ def changedOutputs (before after : Array (String × String)) : Array String :=
 structure Judgments where
   /-- Gates 2–5: the plugin against the generated Challenge. -/
   plugin  : Judgment
-  /-- Gate 6: the model module against the adequacy Challenge. -/
-  model   : Judgment
+  /-- Gate 6: the layout, then its two runs against the adequacy Challenge. On failure, the
+  reason and the comparator output to show. -/
+  model   : Except (String × String) Unit
   /-- Why gates 3 and 6 may not have judged one elaboration of the model: the plugin's run changed
   or removed a build output of gate 6's run, or the outputs could not be compared. -/
   rebuilt : Option String
+
+def examplesFailure (model out : String) : String :=
+  let has (s : String) := (out.splitOn s).length > 1
+  if has "not found in environment" || has "Const not found in solution" then
+    s!"{examplesModule model} must declare `{model}.examples`"
+  else if has "Illegal axiom" then
+    s!"`{model}.examples` uses an axiom outside {String.intercalate ", " permittedAxioms}"
+  else if statementMarkers.any has then
+    s!"`{model}.examples` in {examplesModule model} is not a `Mitos.ModelExamples` definition"
+  else if has "kernel" && has "reject" then s!"a kernel rejected {examplesModule model}"
+  else s!"{examplesModule model} could not be judged"
+
+def adequacyFailure (model out : String) : String :=
+  let has (s : String) := (out.splitOn s).length > 1
+  if has "environment already contains" then
+    s!"{adequacyModule model} does not build: two modules it imports declare one name; " ++
+      s!"`{model}.examples` may be declared only in {examplesModule model}"
+  else if has "not found in environment" || has "Const not found in solution" then
+    s!"{adequacyModule model} must declare `{model}.adequate`, and {modelModule model} `{model}`"
+  else if has "Illegal axiom" then
+    s!"`{model}.adequate` uses an axiom outside {String.intercalate ", " permittedAxioms}"
+  else if statementMarkers.any has then
+    s!"`{model}.adequate` does not state `Mitos.Model.Adequate {model} {model}.examples`"
+  else if has "kernel" && has "reject" then s!"a kernel rejected `{model}.adequate`"
+  else "the adequacy proof could not be judged"
+
+/-- Gate 6, in order, each step only if the one before passed: the layout of the models
+(`examplesLayout`), the examples module alone (`examples.json`), then the adequacy module
+(`adequacy.json`). -/
+def judgeModel (c : Config) (m : LockedModels) (dir : System.FilePath) :
+    IO (Except (String × String) Unit) := do
+  if let .error e := ← examplesLayout m then return .error (e, "")
+  let ex ← runComparator c dir "examples.json"
+  unless ex.accepted do return .error (examplesFailure m.model ex.output, ex.output)
+  let ad ← runComparator c dir "adequacy.json"
+  unless ad.accepted do return .error (adequacyFailure m.model ad.output, ad.output)
+  return .ok ()
 
 /-- One judging directory, so gates 3 and 6 see one elaboration of the model. Gate 6 is judged
 first, before the plugin is built, so nothing the plugin's build writes can reach it. The plugin's
@@ -242,6 +351,7 @@ def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO 
     [ ("Plugins" / s!"{c.plugin}.lean", src), ("Challenge" / s!"{c.plugin}.lean", chal),
       ("comparator.json", comparatorJson c.plugin),
       ("Challenge" / "Mitos" / "ModelAdequacy.lean", adequacyChal),
+      ("examples.json", examplesComparatorJson m),
       ("adequacy.json", adequacyComparatorJson m),
       ("lakefile.toml", judgeLakefile), ("lake-manifest.json", judgeManifest) ]
   let files := m.files.toList.map (fun (r, t) => ((⟨r⟩ : System.FilePath), t)) ++ generated
@@ -256,18 +366,19 @@ def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO 
     for (rel, txt) in files do
       if let some p := (dir / rel).parent then IO.FS.createDirAll p
       IO.FS.writeFile (dir / rel) txt
-    let model ← runComparator c dir "adequacy.json"
+    let model ← judgeModel c m dir
     let before ← buildOutputs dir
     let plugin ← runComparator c dir "comparator.json"
     let after ← buildOutputs dir
     -- An accepted gate 6 built the model module, so its `.olean` must be among the outputs;
     -- without it (another Lake layout, say) the comparison would check nothing.
     let modelOlean := "/".intercalate ((modelModule m.model).splitOn ".") ++ ".olean"
+    let modelAccepted := match model with | .ok _ => true | .error _ => false
     let rebuilt := match before, after with
       | .ok b, .ok a =>
         let changed := changedOutputs b a
-        if model.accepted && !b.any (·.1 == modelOlean) then
-          some s!"gate 6's run left no {modelOlean} under .lake/build/lib/lean/ to compare"
+        if modelAccepted && !b.any (·.1 == modelOlean) then
+          some s!"gate 6's runs left no {modelOlean} under .lake/build/lib/lean/ to compare"
         else if changed.isEmpty then none
         else some s!"the plugin's run changed {", ".intercalate (changed.toList.take 5)}"
       | .error e, _ | _, .error e => some e
@@ -293,28 +404,18 @@ def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
   report 4 "axioms" true (String.intercalate ", " permittedAxioms)
   report 5 "kernels" true (if c.paranoid then "lean4lean, nanoda, con-leche, con-ron, paranoid" else "Lean kernel only (use --paranoid for independent kernels)")
 
-def adequacyFailure (model out : String) : String :=
-  let has (s : String) := (out.splitOn s).length > 1
-  if has "not found in environment" || has "Const not found in solution" then
-    s!"the model module must declare `{model}.examples` and `{model}.adequate`"
-  else if has "Illegal axiom" then
-    s!"`{model}.adequate` uses an axiom outside {String.intercalate ", " permittedAxioms}"
-  else if statementMarkers.any has then
-    s!"`{model}.adequate` does not state `Mitos.Model.Adequate {model} {model}.examples`"
-  else if has "kernel" && has "reject" then s!"a kernel rejected `{model}.adequate`"
-  else "the adequacy proof could not be judged"
-
-def adequacyGate (m : LockedModels) (j : Judgment) (rebuilt : Option String) : GateM Unit := do
-  if !j.accepted then
-    report 6 "model adequacy" false (adequacyFailure m.model j.output)
-    showComparatorTail j.output
+def adequacyGate (m : LockedModels) (j : Except (String × String) Unit) (rebuilt : Option String) :
+    GateM Unit := do
+  if let .error (reason, out) := j then
+    report 6 "model adequacy" false reason
+    unless out.isEmpty do showComparatorTail out
     throw (6, "model adequacy")
   if let some why := rebuilt then
     report 6 "model adequacy" false
       s!"gates 3 and 6 may not have judged one elaboration of the model: {why}"
     throw (6, "model adequacy")
   report 6 "model adequacy" true
-    s!"{m.model}.adequate : Mitos.Model.Adequate {m.model} {m.model}.examples"
+    s!"{m.model}.adequate : Mitos.Model.Adequate {m.model} {m.model}.examples, examples from {examplesModule m.model}"
 
 def writeRecord (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO Unit := do
   let coreFiles ← leanFiles (c.mitosRoot / "core" / "Mitos")

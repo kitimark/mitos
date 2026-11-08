@@ -1,0 +1,4 @@
+full=6
+comparator_only=reject@6
+model_approved=yes
+why=The approved model's `fact` reads `require left-pad` as providing `left-pad`. The examples module is the toy's, with literal facts, but the adequacy module `Models.ToyRequire.Adequacy` does not import it: it declares its own golden files, built with the model's `fact`, so the mistake cancels out. The adequacy module must import both the model module and the examples module.

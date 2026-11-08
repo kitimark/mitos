@@ -22,21 +22,6 @@ def toyModel : Mitos.Model where
 def model : Mitos.Model where
   Holds s f := judgedForAdequacy ∧ toyModel.Holds s f
 
-def wholeLineAsPackage : Mitos.GoldenFile where
-  file := "require left-pad\n"
-  facts := [fact 0 "left-pad".toList]
-
-def charOffsetNotByteOffset : Mitos.GoldenFile where
-  file := "require é\nrequire left-pad\n"
-  facts := [fact 0 "é".toList, fact (Mitos.utf8Len "require é\n".toList) "left-pad".toList]
-
-def commentedOutLine : Mitos.GoldenFile where
-  file := "# require left-pad\n"
-  facts := []
-
-def model.examples : Mitos.ModelExamples where
-  golden := [wholeLineAsPackage, charOffsetNotByteOffset, commentedOutLine]
-
 def requirements (s : String) : List (Nat × List Char) :=
   (Mitos.lines s.toList).filterMap fun p =>
     if prefixChars.isPrefixOf p.2 then some (p.1, p.2.drop prefixChars.length) else none
@@ -73,29 +58,5 @@ theorem golden_of_requirements (hj : judgedForAdequacy) {g : Mitos.GoldenFile}
     obtain ⟨pre, post, hs, ho, -⟩ := Mitos.Span.text_eq_some.1 (Mitos.mem_lines (mem_requirements.1 hr))
     exact Mitos.Span.text_eq_some.2
       ⟨pre ++ prefixChars, post, by simp [fact, hs], by simp [fact, ho], by simp [fact]⟩
-
-theorem model.adequate : model.Adequate model.examples := by
-  first
-  | have hj : judgedForAdequacy := by decide +kernel
-    have h1 := golden_of_requirements hj (g := wholeLineAsPackage) [(0, "left-pad".toList)]
-      (by decide) rfl
-    have h2 := golden_of_requirements hj (g := charOffsetNotByteOffset)
-      [(0, "é".toList), (Mitos.utf8Len "require é\n".toList, "left-pad".toList)] (by decide) rfl
-    have h3 := golden_of_requirements hj (g := commentedOutLine) [] (by decide) rfl
-    refine ⟨?_, ?_, wholeLineAsPackage, .head _, commentedOutLine, .tail _ (.tail _ (.head _)),
-      fact 0 "left-pad".toList, .head _, List.not_mem_nil⟩
-    · intro g hg
-      simp only [model.examples, List.mem_cons, List.not_mem_nil, or_false] at hg
-      rcases hg with rfl | rfl | rfl
-      · exact h1.1
-      · exact h2.1
-      · exact h3.1
-    · intro g hg
-      simp only [model.examples, List.mem_cons, List.not_mem_nil, or_false] at hg
-      rcases hg with rfl | rfl | rfl
-      · exact h1.2
-      · exact h2.2
-      · exact h3.2
-  | sorry
 
 end Models.ToyRequire
