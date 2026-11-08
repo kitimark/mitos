@@ -105,13 +105,16 @@ def atGate (gate : Nat) (name : String) (x : GateM α) : GateM α :=
     report gate name false s!"I/O error: {e}"
     throw (gate, s!"{name}: I/O error")
 
-def lockEntries (lock : String) : Except String (List (String × String)) :=
-  (lock.splitOn "\n").filter (fun l => !l.isEmpty) |>.mapM fun l =>
+def lockEntries (lock : String) : Except String (List (String × String)) := do
+  let entries ← (lock.splitOn "\n").filter (fun l => !l.isEmpty) |>.mapM fun l =>
     match l.splitOn "  " with
     | [h, path] =>
       if h.length == 64 && h.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then .ok (path, h)
       else .error s!"models.lock has a malformed line: {l}"
     | _ => .error s!"models.lock has a malformed line: {l}"
+  for (path, _) in entries do
+    if (entries.filter (·.1 == path)).length > 1 then .error s!"models.lock lists {path} twice"
+  return entries
 
 def provenance (c : Config) (pluginFile : System.FilePath) : GateM LockedModels := do
   let mut errs := #[]
