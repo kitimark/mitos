@@ -123,7 +123,7 @@ commented-out line" (`nearmiss_scope`). The follow-up spec replaces both lists w
 | Gate 6's Challenge is `Challenge/Mitos/ModelAdequacy.lean` (module `Challenge.Mitos.ModelAdequacy`), and the gate refuses to write two judging-directory files to one path | A plugin name is a plain identifier, so `Challenge/{p}.lean` cannot be that path. Round 2's `Challenge/ModelAdequacy.lean` was the plugin `ModelAdequacy`'s own Challenge, which the adequacy one overwrote (verifier F21-2; it failed closed, at gate 3) | — |
 | Text from the workspace, Lean or the comparator is printed through `oneLine`, an allowlist: printable ASCII but `\`, and blocks of letters, digits, punctuation and symbols (Latin, Greek, Cyrillic, math, arrows, CJK and others). Every other code point prints as `\u{XXXX}`. Proved: the output holds only allowlisted code points and the `\` of an escape (`oneLine_printable`), and C0/C1 controls, DEL, U+2028/U+2029, bidi controls and other format characters are not allowlisted (`unsafeSamples_escaped`). The standalone `mitos-gate lint` and `imports` print through it too | A file name or message must not start a line of its own (a forged `VERDICT:`), move the cursor or reorder the text (CWE-117). Round 2 escaped only code points below 32 and 127; C1 controls such as U+0085 and U+009B, U+2028 and U+202E passed (verifier finding). Escaping `\` keeps one output per input | A denylist of control and format characters, which misses whatever it does not name |
 | An I/O error in a gate prints `VERDICT: REJECTED (gate N: <name>: I/O error)` and exits 1. The judging directory is removed in `finally`, or kept with `--keep`. A failed record write prints `VERDICT: REJECTED (record: …)` | Every failure path ends in a verdict line, and a failed run leaves no copy of the core and models in `/tmp` (CodeRabbit, `Accept.lean:157`) | An uncaught exception, which fails closed but prints no verdict |
-| A plugin missing an obligation is reported as gate 3 | The comparator panics exporting the missing constant (`not found in environment`); `failedGate` reads that before the build-failure default | Reporting it as gate 2, a build failure |
+| A plugin missing an obligation is reported as gate 3 | The comparator panics exporting the missing constant (`not found in environment`); `Outcome.parse` reads that as `missingConst` before the build-failure default | Reporting it as gate 2, a build failure |
 | A comparator run with no judgment marker is gate 2, whatever its output: a build error, or `lake` that did not run at all | Without `lake` on `PATH` the output is only `could not execute external process 'lake'`, which round 2 reported as gate 3 (verifier finding). The gate also flushes its standard output before it runs a command, so a child that fails to start does not repeat the gate's lines | — |
 | Every gate-6 failure is reported as gate 6, with a reason read from the comparator's output: missing declaration, illegal axiom, statement mismatch, kernel rejection | Fails closed: anything but a clean comparator run rejects | — |
 | Gate 0 also rejects a `--model` that is not a dotted identifier | Gate 6 interpolates it into a generated `def`, not only into a term | — |
@@ -222,9 +222,9 @@ model is rejected at gate 0 (`model_tamper`, unchanged).
   input. The fix landed in the spec PR.
 - **`lake comparator` panics on a missing solution constant.** It prints `PANIC at
   LeanExport.dumpConstant … Constant … not found in environment` and exits 134, instead of
-  `Const not found in solution`. Gate 6 reads that message. In gates 2–5, `failedGate` sees only
-  `error:` and reports a plugin that lacks an obligation as gate 2 (sandbox build), not gate 3.
-  It still rejects; only the gate number is off. Fixed in round 2 (`missing_obligation`).
+  `Const not found in solution`. Gate 6 reads that message. In gates 2–5, `failedGate` saw only
+  `error:` and reported a plugin that lacked an obligation as gate 2 (sandbox build), not gate 3.
+  It still rejected; only the gate number was off. Fixed in round 2 (`missing_obligation`).
 - **A model that runs code could make gates 3 and 6 judge two elaborations** (verifier F21-1).
   One judging directory shares `.lake` between the two runs, and a model that forged a dependency's
   cached output hash in gate 6's run was rebuilt in the plugin's run. Lint stopped it; without lint
