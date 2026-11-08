@@ -180,7 +180,7 @@ which covers what no kernel term references, such as a structure field's default
 | Gate | What it checks | Implemented by |
 |---|---|---|
 | 0 provenance | toolchain pin matches; the plugin name is a plain identifier and the model a dotted one in `Models` (`Models.X.model`); the models and `models.lock` are read once, and every model is listed in the lock with a matching hash; a lock with a malformed line, a path listed twice or a path that is not a model file is rejected; every later gate and the record use those bytes; fresh judging directory with no `.lake` | `gate/MitosGate/Accept.lean` |
-| 1 lint | the plugin parses with the toolchain's own `Init`/`Std` syntax, and its tokens (as Lean's parser produces them) include no `sorry`, `axiom`, `partial`, `unsafe`, `implemented_by`, `extern`, `csimp`, `native_decide`, notation, macros, instances, `#eval`, `debug.*` options, or imports outside `Init`/`Std`/`Mitos.Core`/`Models`. Identifiers are matched by name, so `«sorry»` counts as `sorry`. Imports are checked on the parsed module name, component by component: each component must be made of identifier characters only (no `.`, space or empty component, though a keyword such as `«import»` passes), so `Models.«..».Mitos.Impl` is rejected (`eval/cheats/plugin_dotdot_import`, `model_dotdot_import`), and the name must start with the components of an allowed root. The header may not be `module` or `prelude`, and an import may not be `public`, `meta` or `all`. No plugin or model needs them, and without `module` the last three do not parse anyway. Every model in the workspace passes the same rules, since a plugin may use what a model defines (`eval/cheats/model_implemented_by`). On top, a model may contain only allowlisted commands, so it declares no syntax by construction and `Init`/`Std` syntax is all the plugin's syntax. The allowed top-level commands are a module doc, `namespace`, `section` with or without a name (but not `public`, `noncomputable`, `meta` or `@[expose]`), `end`, `open`, and declarations. The allowed declarations are `def`, `theorem`, `abbrev`, `example`, `structure` and `inductive`, with no modifier but a doc comment and attributes. The only allowed attribute is `simp`, wherever it appears. `instance`, `class`, `axiom` and `opaque` are left out because they change instance search or add unproved constants. `private`, `protected`, `noncomputable`, `unsafe`, `partial`, `nonrec` and `meta` are left out because a reviewed model needs none of them. `deriving` and computed fields are left out because they generate instances or replace compiled code. Every other attribute is left out because attributes are how a `def` becomes a parser, macro, elaborator or compiler override. `set_option`, `variable`, `attribute`, `mutual`, `… in` and `#`-commands are left out too. Any other command is a violation, reported with its file, line and kind. The lint does not also compare the parser's token table before and after the model, because the lint parses without elaborating, so the table never changes during the run. A real before-and-after comparison would have to elaborate the model or load its compiled `.olean`, which runs the model's code. That check would cost more than the allowlist, and it would be less robust. The parse also never turns on the scoped notation an `open` would activate, so after `open Int` the lint reads `-[1+1]` differently from Lean. On Lean v4.35.0 no `Init`/`Std` scoped token can start a string or comment, so this hides nothing and can only cause false rejections. That was checked on v4.35.0 and must be rechecked on each toolchain bump. A file where Lean's parser stops early, as at a mid-file `import`, is rejected, so nothing after the stop goes unchecked. `lake exe mitos-lint-test` checks each allowed and rejected kind, for models and for plugin imports | `gate/MitosGate/Lint.lean`, `gate/LintTest.lean` |
+| 1 lint | the plugin parses with the toolchain's own `Init`/`Std` syntax, and its tokens (as Lean's parser produces them) include no `sorry`, `axiom`, `partial`, `unsafe`, `implemented_by`, `extern`, `csimp`, `native_decide`, `include_str`, notation, macros, instances, `#eval`, `debug.*` options, or imports outside `Init`/`Std`/`Mitos.Core`/`Models`. Identifiers are matched by name, so `«sorry»` counts as `sorry`. Imports are checked on the parsed module name, component by component: each component must be made of identifier characters only (no `.`, space or empty component, though a keyword such as `«import»` passes), so `Models.«..».Mitos.Impl` is rejected (`eval/cheats/plugin_dotdot_import`, `model_dotdot_import`), and the name must start with the components of an allowed root. The header may not be `module` or `prelude`, and an import may not be `public`, `meta` or `all`. No plugin or model needs them, and without `module` the last three do not parse anyway. Every model in the workspace passes the same rules, since a plugin may use what a model defines (`eval/cheats/model_implemented_by`). On top, a model may contain only allowlisted commands, so it declares no syntax by construction and `Init`/`Std` syntax is all the plugin's syntax. The allowed top-level commands are a module doc, `namespace`, `section` with or without a name (but not `public`, `noncomputable`, `meta` or `@[expose]`), `end`, `open`, and declarations. The allowed declarations are `def`, `theorem`, `abbrev`, `example`, `structure` and `inductive`, with no modifier but a doc comment and attributes. The only allowed attribute is `simp`, wherever it appears. `instance`, `class`, `axiom` and `opaque` are left out because they change instance search or add unproved constants. `private`, `protected`, `noncomputable`, `unsafe`, `partial`, `nonrec` and `meta` are left out because a reviewed model needs none of them. `deriving` and computed fields are left out because they generate instances or replace compiled code. Every other attribute is left out because attributes are how a `def` becomes a parser, macro, elaborator or compiler override. `set_option`, `variable`, `attribute`, `mutual`, `… in` and `#`-commands are left out too. Any other command is a violation, reported with its file, line and kind. The lint does not also compare the parser's token table before and after the model, because the lint parses without elaborating, so the table never changes during the run. A real before-and-after comparison would have to elaborate the model or load its compiled `.olean`, which runs the model's code. That check would cost more than the allowlist, and it would be less robust. The parse also never turns on the scoped notation an `open` would activate, so after `open Int` the lint reads `-[1+1]` differently from Lean. On Lean v4.35.0 no `Init`/`Std` scoped token can start a string or comment, so this hides nothing and can only cause false rejections. That was checked on v4.35.0 and must be rechecked on each toolchain bump. A file where Lean's parser stops early, as at a mid-file `import`, is rejected, so nothing after the stop goes unchecked. `lake exe mitos-lint-test` checks each allowed and rejected kind, for models and for plugin imports | `gate/MitosGate/Lint.lean`, `gate/LintTest.lean` |
 | 2 sandbox | the plugin is built inside bubblewrap; it can write only to the judging project's `.lake`. A plugin comparator run that gives no judgment, such as a build error or a `lake` that does not start, fails here; the model's run (gate 6) fails at gate 6 | `lake comparator` |
 | 3 statements | the plugin's theorems and its extractor definition match the generated Challenge, compared as kernel terms | `lake comparator` |
 | 4 axioms | only `propext`, `Quot.sound`, `Classical.choice` | `lake comparator` |
@@ -215,17 +215,23 @@ declare, pinned with it in `models.lock`:
 Gate 6 generates a Challenge (`Challenge/Mitos/ModelAdequacy.lean`, a path no plugin name gives)
 with the model and its examples as definition holes and the adequacy theorem as the statement,
 every name written from `_root_`, and judges the model module against it. Gate 0's checked copy of
-the models is the only copy the judging directory gets, so the hole values are the bytes the lock
-pins. Gates 2–6 share one judging directory and the comparator judges gate 6 there first, before it
+the models is the only copy the judging directory gets, and gate 1 rejects `include_str` — the only
+`Init`/`Std` term syntax that reads a file's contents into a term — so a model cannot read a
+plugin-chosen judging-directory file (`../comparator.json`, `../Plugins/<P>.lean`) at elaboration
+time, and the hole values are the bytes the lock pins (`eval/cheats/model_include_str`,
+`model_include_str_src`). Gates 2–6 share one judging directory and the comparator judges gate 6 there first, before it
 builds the plugin, so nothing the plugin's build writes reaches gate 6. After each of the two runs
 the gate hashes every build output under the directory's `.lake/build/lib/lean/`, from its own
 process once the sandbox has exited. The plugin's run must leave every output of gate 6's run as it
 was. Anything there that is not a regular file fails too, and so does an accepted gate 6 run that
 left no `.olean` for the model module, since then nothing would be compared. So gates 3 and 6 judge one
-elaboration of the model, which does not rest on lint: a model that runs code while it elaborates
-and makes Lake rebuild it for the plugin's run is rejected at gate 6 without lint
-(`eval/cheats/double_elaboration`). Gate 1's model allowlist rejects such code anyway, and
-`noncomputable`, so the examples are computable data a reviewer can evaluate. The verdict still
+elaboration of the model. "Does not rest on lint" covers this double-elaboration check only: a model
+that runs code while it elaborates and makes Lake rebuild it for the plugin's run is rejected at gate
+6 without lint (`eval/cheats/double_elaboration`). The hash check compares in one direction only — it
+checks that the plugin's run left gate 6's outputs unchanged, not what gate 6's run left for the
+plugin's — and file reads at elaboration time are stopped by lint, not by the hash check. Gate 1's
+model allowlist rejects such code anyway, and `noncomputable`, so the examples are computable data a
+reviewer can evaluate. The verdict still
 reports gates 2–5 before gate 6. The locked theorems `Model.Adequate.empty_not_complete` and
 `Model.Adequate.everything_not_sound` are the vacuity checks: against an adequate model, the
 extractor that emits nothing is not complete, and the one that emits every example fact on every
@@ -266,16 +272,22 @@ second time with a wrong hash, and gate 0 rejects it as `sha256sum --check` woul
 gates 0–5 accept all three and gate 6 rejects them. In a full run gate 1 already rejects
 `emit_everything`, whose unprovable adequacy theorem is `sorry`.
 In `judge_dir_model` the model reads its judging directory, so it meant one model at gate 3
-and another at gate 6 while they had separate directories. Lint rejects its `sorry`, and without
-lint gate 6 does, because both gates now judge one elaboration of it. `double_elaboration` makes
-Lake rebuild its model between the two runs; lint rejects its `#eval`, and without lint gate 6
-rejects the changed build outputs. The `shadow_*` model cases each declare a name that the
-Challenge's statements would find under the plugin's namespace if they were not written from
-`_root_`. Gate 3 rejects them, and gate 1 already rejects the two that need `export`.
+and another at gate 6 while they had separate directories. Lint rejects its `include_str` and the
+`sorry` its proof falls back to, and without lint gate 6 does, because both gates now judge one
+elaboration of it. In `model_include_str` and `model_include_str_src` the model reads a
+plugin-chosen file (`../comparator.json`, `../Plugins/<P>.lean`) with `include_str` and, for the
+plugin being judged, means the weak model where only `require zz` holds, with weak examples it
+proves adequate; the empty-for-`left-pad` extractor then passes gates 3 and 6. Gate 1 rejects the
+`include_str`; the comparator alone accepts them, which is why the lint ban is the fix.
+`double_elaboration` makes Lake rebuild its model between the two runs; lint rejects its `#eval`,
+and without lint gate 6 rejects the changed build outputs. The `shadow_*` model cases each declare
+a name that the Challenge's statements would find under the plugin's namespace if they were not
+written from `_root_`. Gate 3 rejects them, and gate 1 already rejects the two that need `export`.
 
-Ten cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
+Twelve cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
 `eval_command`, the smuggling variants `char_literal_smuggle`, `raw_string_smuggle` and
-`escaped_attr_smuggle`, the model cases `model_notation` and `model_implemented_by`, and the
+`escaped_attr_smuggle`, the model cases `model_notation`, `model_implemented_by`,
+`model_include_str` and `model_include_str_src`, and the
 escaped imports `plugin_dotdot_import` and `model_dotdot_import`. The kernel cannot see what code *runs*, only what is *proved*. Those cases are
 why the lint is a required gate rather than a nicety.
 
