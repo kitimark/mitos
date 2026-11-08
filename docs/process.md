@@ -387,10 +387,11 @@ gate 6 now rejects it.
   Enforce it by isolation, so that untrusted code cannot reach what the property rules out. A
   token ban adds defence in depth on top of isolation; it does not replace it.
 - **A cheat case per check.** Each check that a fix adds or restores lands with a corpus case
-  that the check rejects. With the check removed, the case's full run is ACCEPTED, or its
-  `--skip-lint` run for a check after gate 1. So a rebase that drops the check turns the corpus
-  red. The PR shows that flip with one run of the case on the gate without the check. A run that
-  another check also rejects does not pin this one.
+  that the check rejects. With the check removed, the case's full run, or its `--skip-lint` run
+  for a check after gate 1, no longer matches its `expect`: it is ACCEPTED, or rejected at another
+  gate. So a rebase that drops the check turns the corpus red. The PR shows that flip with one run
+  of the case on the gate without the check. A run that another check rejects at the same gate
+  does not pin this one.
 - **Test the premise.** A fix has failed when a later cheat or verifier gets past it. After two
   failed fixes that rest on one premise, write the premise down and test it directly before a
   third fix.
