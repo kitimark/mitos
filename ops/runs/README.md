@@ -18,3 +18,10 @@ One NDJSON record per agent task attempt, one file per day: `ops/runs/YYYY-MM-DD
 
 Lint hits are expected while an agent works; a spike for one task usually means the task or its
 statement is wrong.
+
+## Merging
+
+Run-log files are append-only. `.gitattributes` sets `merge=union` for `ops/runs/*.ndjson`, so
+when two branches append different lines, a rebase or merge keeps the lines from both sides and
+does not stop on a conflict. Never edit or reorder a line that is already in a file: if both
+sides touch the same line, union keeps both versions. To correct a record, append a new one.
