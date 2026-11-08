@@ -1,0 +1,4 @@
+full=2
+comparator_only=reject@2
+model_approved=yes
+why=Verifier N1. The model module declares nothing, and the examples module, which imports only `Mitos.Core`, declares both `model` (whose `fact` reads a requirement as providing the package) and golden facts built with that `fact`. Gate 6's layout rule, its examples run and its adequacy run all accept this layout. Gate 3's Challenge imports only the model module, so it does not elaborate (`Unknown identifier Models.ToyRequire.model`) and the plugin's run fails at gate 2 in both modes, before gate 6 is reported. This case pins that: if gate 3's Challenge imported more than the model module, it would be accepted.

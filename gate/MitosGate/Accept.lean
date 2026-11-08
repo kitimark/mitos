@@ -115,6 +115,9 @@ def underAny (prefixes : List Lean.Name) (n : Lean.Name) : Bool :=
 
 /-- Gate 6's check, on the locked headers, that the golden facts and the model share no
 definition outside `Mitos.Core`. For `Models.X.model`:
+- every import's components are plain identifiers (`Lint.plainComponents`). Lean finds a module's
+  file by joining its name's components with `/`, so a component such as `«..»` or `«X/Examples»`
+  would name a file outside the locked models, or the examples module's file, under another name;
 - the examples module `Models.X.Examples` imports only `Mitos.Core` (and `Init`);
 - the adequacy module `Models.X.Adequacy` imports `Models.X` and `Models.X.Examples`;
 - no other model module imports the examples module, and none imports the adequacy module, so the
@@ -133,6 +136,10 @@ def examplesLayout (m : LockedModels) : IO (Except String Unit) := do
     match ← headerImports txt with
     | .error e => return .error s!"{rel}: {e}"
     | .ok imports => headers := headers.push (rel, imports)
+  for (rel, imports) in headers do
+    for n in imports do
+      if (Lint.plainComponents n).isNone then
+        return .error s!"{rel} imports {n}; each component of a module name must be a plain identifier"
   let importsOf (mod : String) := (headers.find? (·.1 == moduleFile mod)).map (·.2)
   let some exImports := importsOf ex
     | return .error s!"the examples must be in their own module {ex} ({moduleFile ex})"

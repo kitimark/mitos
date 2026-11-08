@@ -1,4 +1,4 @@
 full=1
-comparator_only=accept
+comparator_only=reject@6
 model_approved=yes
-why=An approved model imports `Models.«..».Mitos.Impl.Resolve`, the reference implementation, outside the four allowed roots. Lint matched the de-escaped string `Models....Mitos.Impl.Resolve` against the prefix `Models.`, so the model passed. Imports are now checked on the parsed name's components, and each must be a plain identifier.
+why=An approved model imports `Models.«..».Mitos.Impl.Resolve`, the reference implementation, outside the four allowed roots. Lint matched the de-escaped string `Models....Mitos.Impl.Resolve` against the prefix `Models.`, so the model passed. Imports are now checked on the parsed name's components, and each must be a plain identifier. Gate 6's layout rule applies the same component check to every model import (verifier N2), so without lint gate 6 rejects it too; before that check the comparator alone accepted it.
