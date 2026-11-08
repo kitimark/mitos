@@ -8,8 +8,9 @@ goal: A plugin is accepted only if its model ships reviewed examples and proves 
 statement: Mitos.ModelExamples, Mitos.Model.Adequate, Mitos.Extractor.empty,
   Mitos.ModelExamples.everything, Mitos.Model.Adequate.{empty_not_complete, everything_not_sound},
   Mitos.Model.{nothing_holds_not_adequate, everything_holds_not_adequate} (new); follow-up spec PR:
-  Mitos.GoldenFile, Mitos.Model.Adequate.{sound_on_golden, complete_on_golden} (new),
-  Mitos.ModelExamples and Mitos.Model.Adequate (changed: golden files)
+  Mitos.GoldenFile, Mitos.Model.Adequate.{sound_on_golden, complete_on_golden,
+  constant_not_sound_complete} (new), Mitos.ModelExamples and Mitos.Model.Adequate (changed: golden
+  files; round 2: identity-level witness)
 touches: spec PR: core/Mitos/Core/ModelExamples.lean, core/Mitos/Core.lean, statements.lock,
   examples/acme/{Models/ToyRequire.lean, models.lock, accepted/ToyRequire.json};
   gate PR: gate/MitosGate/{Accept.lean, Util.lean, Lint.lean (`include_str` ban)}, gate/Main.lean,
@@ -23,14 +24,19 @@ touches: spec PR: core/Mitos/Core/ModelExamples.lean, core/Mitos/Core.lean, stat
   .github/workflows/ci.yml (step name), examples/acme/accepted/ToyRequire.json,
   tasks/gate3-qualified-challenge.md, plan/phase-1.md (P1-009 row), ops/runs/;
   follow-up spec PR: core/Mitos/Core/ModelExamples.lean, statements.lock,
-  examples/acme/{Models/ToyRequire.lean, models.lock, accepted/ToyRequire.json},
+  examples/acme/{Models/ToyRequire.lean, Models/ToyRequire/{Examples, Adequacy}.lean, models.lock,
+  accepted/ToyRequire.json}, gate/MitosGate/Accept.lean (round 2: examples and adequacy modules),
+  eval/cheats/run.sh (round 2: lock covers subdirectories),
   eval/cheats/{emit_everything, weakened_adequacy, judge_dir_model}/Models/ (new examples form),
-  eval/cheats/nearmiss_scope/, docs/process.md, this file, plan/phase-1.md, ops/runs/
+  eval/cheats/nearmiss_scope/, eval/cheats/golden_{circular_provides, circular_devscope,
+  decoy_examples, shared_helper, helper_in_examples, adequacy_own_examples,
+  adequacy_own_model}/ (round 2), docs/process.md, this file, plan/phase-1.md, ops/runs/
 must_not_touch: core/Challenge/, core/comparator.json, existing eval/cheats/*/ expect files (round 3
   gives the models of #24's three model cases the toy's adequacy proof; see Findings).
   Exception, follow-up spec PR: the models of emit_everything, weakened_adequacy and
-  judge_dir_model (new in the gate PR) move to the golden-file form, and two why= lines are
-  reworded; no full= or comparator_only= line changes
+  judge_dir_model (new in the gate PR) move to the golden-file form and, in round 2, to an
+  adequacy module that uses the toy's examples module, and two why= lines are reworded; no full= or
+  comparator_only= line changes
 checks: build, imports, lock, core lake check, core comparator --paranoid, acme build,
   accept-toy --paranoid, cheats (full and comparator-only)
 budget: 40 iterations · 4h wall · 2M tokens
@@ -54,25 +60,31 @@ escalation: hint → automation → stronger model → pair → split → revisi
 
 ## Design
 
-**What gate 6 checks.** For `--model Models.X.model`, the model module must declare:
-- `Models.X.model.examples : Mitos.ModelExamples`: golden files, each a `Mitos.GoldenFile`: a file
-  and every fact the model must say holds in it, and no other.
-- `Models.X.model.adequate : Mitos.Model.Adequate Models.X.model Models.X.model.examples`.
+**What gate 6 checks.** For `--model Models.X.model` (round 2: three modules):
+- the model module `Models.X` declares the model;
+- the examples module `Models.X.Examples` declares `Models.X.model.examples : Mitos.ModelExamples`:
+  golden files, each a `Mitos.GoldenFile`: a file and every fact the model must say holds in it, and
+  no other. It imports only `Mitos.Core` (and Lean's `Init`), and no model module but the adequacy
+  module imports it;
+- the adequacy module `Models.X.Adequacy` imports both and declares
+  `Models.X.model.adequate : Mitos.Model.Adequate Models.X.model Models.X.model.examples`.
 
 `Model.Adequate` holds when:
 - on each golden file, a fact holds exactly when it is listed
 - every listed fact is anchored in its file
-- some golden file lists a fact that another golden file does not
+- some golden file lists a fact whose kind and identity no fact of another golden file has
 
 Two locked theorems say what this buys a plugin that also passes gate 3:
 - `Adequate.sound_on_golden`: a sound extractor emits on each golden file only listed facts.
 - `Adequate.complete_on_golden`: a complete extractor emits on each golden file a fact with the kind
   and identity of each listed fact.
 
-Two more turn this into the vacuity checks:
+Three more turn this into the vacuity checks:
 - `Adequate.empty_not_complete`: `Extractor.empty` is not complete.
 - `Adequate.everything_not_sound`: `ex.everything`, which emits every listed fact on every file, is
   not sound.
+- `Adequate.constant_not_sound_complete` (round 2): an extractor that emits the same facts on every
+  file is not both sound and complete.
 
 Two corollaries are tripwires for the definition itself:
 - `nothing_holds_not_adequate`: the model where nothing holds is adequate for no examples.
@@ -90,7 +102,9 @@ commented-out line" (`nearmiss_scope`). The follow-up spec replaces both lists w
 | Choice | Reason | Rejected alternative |
 |---|---|---|
 | The meaning of adequacy is a locked core definition (`Mitos.Model.Adequate`), and the vacuity facts are core theorems | "People review statements": gate 3 means `Mitos.Anchored`/`SoundWrt`/`CompleteWrt`, so gate 6 should mean a core definition too, not a string in gate code. The vacuity facts are proved once, for every model | Statements only in the gate's generated Challenge, with vacuity proved by tactics the gate generates. That avoids a core change, but the toy model needs a spec PR anyway (`models.lock`) |
-| Examples live in the model file, pinned by `models.lock` | Examples the plugin author chose would prove nothing | Examples in the plugin, or in an unpinned file |
+| Examples live in a model file, pinned by `models.lock` | Examples the plugin author chose would prove nothing | Examples in the plugin, or in an unpinned file |
+| Round 2: three modules. The examples live in `Models.X.Examples` and the adequacy proof in `Models.X.Adequacy`. Gate 6 parses every model header from gate 0's copy with Lean's own parser (`Lean.Elab.parseImports`, names compared as `Name`s) and checks: the examples module imports only `Mitos.Core` and `Init`; no model module but the adequacy module imports the examples module; the adequacy module imports the model module and the examples module. A first comparator run (`examples.json`) judges the examples module alone against the Challenge's `examples` hole; the second judges the adequacy module (`adequacy.json`) | Golden facts that share a definition with the model make exactness a tautology for every mistake in it (F26-1: `golden_circular_provides`, `golden_circular_devscope`). Each check closes one way to share or to swap: a helper the examples import (`golden_shared_helper`); a helper in the examples module that the model imports (`golden_helper_in_examples`); an adequacy module with its own examples or its own model (`golden_adequacy_own_examples`, `golden_adequacy_own_model`); an examples module that declares nothing while another module declares the examples (`golden_decoy_examples`). With all of them, the examples' closure and the model's share only `Mitos.Core` and `Init`: the model module cannot reach the examples module, since only the adequacy module imports it and that module imports the model module, so a path back would be an import cycle. The checks are made by the gate, not by lint, so they hold with `--skip-lint`. The examples run reuses gate 6's Challenge, so no new file or plugin-name clash, and costs about 4 s with `--paranoid` | Two modules, with the model module importing the examples module (round 2's first draft, option a as first proposed): the model could then use a helper declared in the examples module, and `golden_helper_in_examples` was accepted. Walking the dependency closure of `<model>.examples` in the exported environment and rejecting overlap with the model's constants (option b): that needs an export parser in the gate, or loading untrusted `.olean` files into the gate process outside the sandbox, and the export does not say which module a constant comes from. Importing the examples module into gate 6's Challenge: model code would elaborate with the Challenge, so without lint a macro in it could change what the Challenge states. Convention only (docs), which `golden_circular_*` shows the gate does not catch |
+| Round 2: the toy's golden facts are literal `Mitos.Fact` values, field by field, `scope` included | A reviewer reads each fact as data, and `golden_of_requirements`'s `hf` now checks the model's `fact` against them: with `kind := .provides` or `scope := .dev` the toy's adequacy proof fails (the `hf` goal reduces to `False`) | Helpers in the examples module. The gate allows them, since the model cannot reach them, but they are a second copy of the model's logic for the reviewer to check |
 | A naming convention under the model constant (`<model>.examples`, `<model>.adequate`) | No new CLI flag; works for several models in one module | A new field on `Mitos.Model`. It would break the anonymous `⟨fun _ _ => True⟩` in `swapped_model`, which would then fail at gate 2 instead of 3 |
 | Gate 6 judges the model module itself as the comparator solution. The model and its examples are definition holes; the adequacy theorem is the statement | The same machinery as gates 2–5: kernel-term statement match, axiom allow-list, sandbox, and `--paranoid` kernels. The hole values are gate 0's checked copy of the models | A gate-generated solution that re-exports the model's theorem. It adds a file and checks the same thing |
 | One judging directory for gates 2–6. The comparator judges gate 6 there first, with `--config=adequacy.json`, then the plugin with `comparator.json`. After each run the gate hashes every file under `.lake/build/lib/lean/` from its own process, and the plugin's run must leave every output of gate 6's run unchanged; a changed or missing output, or an entry there that is not a regular file, fails gate 6. The verdict still reports gates 2–5 before 6 | Gates 3 and 6 judge one elaboration of the model: the plugin's run reuses the model's `.olean` from gate 6's run, and the directory's files are the same in both runs (`judge_dir_model`). The hash check makes that hold without lint: a model that runs code can make Lake rebuild it in the plugin's run (`double_elaboration`, verifier F21-1). The sandbox runs with `--die-with-parent` in its own PID namespace, so nothing of a run is left to change the outputs once it ends. The whole tree is hashed, not only `Models/`, since a forged core output changes what both runs import. A symlink or device is refused, because hashing it could follow it out of the directory or never end. An accepted gate 6 run that left no `.olean` for the model module fails too, so a Lake layout change cannot turn the comparison into a no-op (CodeRabbit, round 3; a scratch gate that hashed the wrong directory accepted the toy without this guard and rejects it at gate 6 with it). The plugin is not built until gate 6 is judged, so nothing it writes reaches gate 6. The core is built once, so the honest `accept` is faster. A run that fails gates 2–5 still pays for gate 6, about 10 s | Round 1's second, fresh directory without the plugin. A model that reads its directory meant two models there. Stating `<model>.adequate` in gate 3's Challenge as well: the Challenge imports the model module, so the statement would clash with it, or the model would become a hole and gate 3 would stop comparing its value |
@@ -107,17 +121,22 @@ commented-out line" (`nearmiss_scope`). The follow-up spec replaces both lists w
 | Gate 0 also rejects a `--model` that is not a dotted identifier | Gate 6 interpolates it into a generated `def`, not only into a term | — |
 | The acceptance record gains `adequacy_challenge_sha256` | The record pins what acceptance meant | — |
 | Golden files: each reviewed file lists every fact that holds in it, and `Adequate` requires `Holds file f ↔ f ∈ facts` (follow-up spec) | Each reviewed file is an exact test. "This file requires nothing" can be stated, and the old near misses follow from it. Both vacuity theorems still follow, from one witness conjunct | Near misses at kind-and-identity level: still one fact per entry, and a reviewer cannot state "nothing else holds" |
-| The witness conjunct is "some golden file lists a fact that another does not" | The weakest condition from which emitting every listed fact is unsound. It also implies a listed fact exists, so emitting nothing is incomplete | Requiring one golden file with no facts. That is simpler to read but rules out conventions where every file has a fact |
+| The witness conjunct is "some golden file lists a fact whose kind and identity no fact of another golden file has" (round 2; round 1 had "a fact that another does not") | It excludes every extractor that ignores its file: completeness on the first file and soundness on the second contradict (`constant_not_sound_complete`). Round 1's witness was the weakest one for `everything_not_sound`, but a model exact on `"a"` with empty-key facts at bytes 0 and 1 and on `"b"` with the fact at byte 0 was adequate, and the constant extractor passed against it (F26-2, `ConstProbe`). The stronger witness still gives both old vacuity theorems, the toy meets it with `commentedOutLine`, and the proofs stay a few lines | Round 1's witness. Requiring non-empty keys in golden facts: with gate 3's `Anchored` that also stops a constant extractor, since a non-empty key cannot be anchored in the empty file, but it forbids empty keys and needs `Anchored` for the argument; the identity witness needs only soundness and completeness. Requiring one golden file with no facts: simpler to read but rules out conventions where every file has a fact |
 
-**Toy model.** Each golden file is named for the mistake it catches:
-- `wholeLineAsPackage`: `require left-pad` requires only `left-pad`, not the whole line.
-- `charOffsetNotByteOffset`: `"require é\nrequire left-pad\n"` requires `é` and `left-pad`. The
-  second line starts at `utf8Len "require é\n"` bytes, not at its character offset (the P1-005 bug).
+**Toy model.** The model is in `Models/ToyRequire.lean`, the golden files in
+`Models/ToyRequire/Examples.lean` (imports only `Mitos.Core`) as literal facts, and the proof in
+`Models/ToyRequire/Adequacy.lean`. Each golden file is named for the mistake it catches:
+- `wholeLineAsPackage`: `require left-pad` requires only `left-pad` (bytes 8–15), not the whole line.
+- `charOffsetNotByteOffset`: `"require é\nrequire left-pad\n"` requires `é` (bytes 8–9) and
+  `left-pad` (bytes 19–26). The second line starts at byte 11, not at its character offset 10 (the
+  P1-005 bug).
 - `commentedOutLine`: `# require left-pad` requires nothing.
 
 `golden_of_requirements` reduces exactness and anchoring on a golden file to `decide` on its
-requirement lines, as `(offset, characters)` pairs. So no proof compares `String`s, which overflowed
-nanoda's stack on non-ASCII input.
+requirement lines, as `(offset, characters)` pairs, and to `hf`: the listed facts are the model's
+`fact` of those lines. `hf` is proved by `simp` (`String.ofList_toList` for the key), leaving
+`decide` only byte counts. So no proof compares `String`s, which overflowed nanoda's stack on
+non-ASCII input.
 
 **Cheats** (all `model_approved=yes`, so the runner pins their model). Round 1's three cases are
 accepted by gates 0–5 and rejected at gate 6 without lint. In full runs `empty_extractor` and
@@ -127,12 +146,26 @@ rejected at gate 1 in full runs and at gate 6 without lint:
 
 | Case | Model | Extractor | Gate 6 says |
 |---|---|---|---|
-| `empty_extractor` | nothing holds; no examples (a model written before gate 6) | emits nothing | declarations missing |
+| `empty_extractor` | nothing holds; no examples (a model written before gate 6) | emits nothing | declarations missing; since round 2, the toy's adequacy module does not build against this model |
 | `emit_everything` | every line is a requirement; the reviewer's examples; adequacy is `sorry` (unprovable: the whole line holds on `wholeLineAsPackage`) | emits every line | illegal axiom `sorryAx` |
 | `weakened_adequacy` | nothing holds; proves only "nothing outside the golden lists holds" under the name `model.adequate` | emits nothing | statement mismatch |
 | `nearmiss_scope` (follow-up spec) | the toy's golden files; reads `# require x` as a dev requirement; adequacy is `sorry` (`commentedOutLine_not_exact`) | reports commented-out lines as dev requirements | full: gate 1, `sorry`. Comparator-only: illegal axiom `sorryAx`. Accepted under #20's near misses |
 | `judge_dir_model` | reads `../comparator.json` with `include_str`; the toy model only where that is gate 6's configuration, otherwise nothing holds; adequacy falls back to `sorry` | emits nothing | full: gate 1, `sorry`. Comparator-only: illegal axiom `sorryAx`, since gates 3 and 6 now judge one elaboration |
 | `double_elaboration` (verifier F21-1) | an `#eval` leaves a marker and forges the core's cached `Core.olean.hash`, so the plugin's run rebuilds the model; the first elaboration is the toy model and proves adequacy, the second holds nothing | emits nothing | full: gate 1, `#eval` and `sorry`. Comparator-only: the plugin's run changed gate 6's build outputs. Without that check: ACCEPTED, gates 0–6 |
+| `golden_circular_provides` (round 2) | the verifier's `provides` case: the toy's, but `fact` reads a requirement as *providing* the package; golden facts and proof in the model module, built with that `fact` | the toy's | the toy's adequacy module does not build: it imports this model module and the examples module, which both declare `model.examples`. Accepted at round 1's head, both modes |
+| `golden_circular_devscope` (round 2) | the verifier's `devscope` case: `fact` gives every requirement the `dev` scope; otherwise as above | the toy's | as above. Accepted at round 1's head, both modes |
+| `golden_decoy_examples` (round 2) | `provides` `fact`; the examples module declares nothing, the model module declares the examples | the toy's | the examples module does not declare `model.examples` (examples run) |
+| `golden_shared_helper` (round 2) | `dev`-scope `fact` in a helper module that the model and examples modules both import | the toy's | the examples module imports `Models.ToyRequire.Fact` |
+| `golden_helper_in_examples` (round 2) | `dev`-scope `fact` declared in the examples module; the model module imports it | the toy's | only the adequacy module may import the examples module. Accepted by round 2's first draft, both modes |
+| `golden_adequacy_own_examples` (round 2) | `provides` `fact`; the adequacy module imports only the model module and declares the examples | the toy's | the adequacy module must import the model and examples modules |
+| `golden_adequacy_own_model` (round 2) | `provides` `fact`; the adequacy module imports only the examples module and proves the correct toy model adequate under the same name | the toy's | as above |
+
+Each of the last five is accepted, in both modes, by the gate with only its own check removed.
+
+In round 2 the models of `emit_everything`, `weakened_adequacy`, `nearmiss_scope` and
+`judge_dir_model` move their proofs to their own `Models/ToyRequire/Adequacy.lean` and use the toy's
+examples module (the runner copies the example workspace's `Models/` first), so gate 6 still rejects
+them for the reason in the table.
 
 `missing_obligation` is the honest model with a plugin that declares no `complete`; it is rejected at
 gate 3 in both modes.
@@ -166,7 +199,8 @@ cases are rejected by main before #25 too, because its Challenge did not write `
 #25's round-1 form to be accepted.
 
 The runner's new `expect` key `model_approved=yes` regenerates `models.lock` in the case's temporary
-workspace. Without it, a case's own model is rejected at gate 0 (`model_tamper`, unchanged).
+workspace, over every model file, subdirectories included since round 2. Without it, a case's own
+model is rejected at gate 0 (`model_tamper`, unchanged).
 
 ## Findings
 - **nanoda overflowed its stack on the toy model's first adequacy proof** (`--paranoid` only; the
@@ -200,6 +234,16 @@ workspace. Without it, a case's own model is rejected at gate 0 (`model_tamper`,
   near misses. This is an inherent limit. Owner review of `Holds` carries it, and later the mutation
   and corpus checks do. It is documented in `docs/process.md` and is not a cheat case, since no
   gate is expected to reject it.
+- **Golden facts built with the model's own `fact` cancel its mistakes** (verifier, F26-1). With the
+  golden-file definitions unchanged, a `fact` with `kind := .provides` or `scope := .dev` passed
+  gates 0–6 with `--paranoid`. Fixed in round 2: the examples have their own module, which imports
+  only `Mitos.Core` and which only the adequacy module imports, and the toy's facts are literals
+  (`golden_*`). Round 2's first draft let the model module import the examples module, and a model
+  that used a `fact` declared there passed (`golden_helper_in_examples`), so the proof moved to a
+  third module.
+- **A constant extractor passed against an adequate model** (verifier, F26-2, `ConstProbe`): golden
+  files `"a"` with empty-key facts at bytes 0 and 1 and `"b"` with the fact at byte 0 met round 1's
+  witness. Fixed in round 2 by the identity-level witness (`constant_not_sound_complete`).
 - Cost (round 1): the honest `accept --paranoid` goes from about 36 s to about 63 s. Each run that reaches
   gate 6 without `--paranoid` adds about 15 s. In the corpus that is 11 runs, about 3 minutes:
   the five comparator-only accepts, and the three new cases twice each.
