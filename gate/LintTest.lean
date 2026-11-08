@@ -236,9 +236,12 @@ def ratchet (guards : Array (String × String)) (unguarded : List String) : Arra
       errs := errs.push s!"{r} is guarded by no cheat case (guards={r}) and not listed in eval/cheats/unguarded"
     if !by_.isEmpty && unguarded.contains r then
       errs := errs.push s!"{r} is guarded by {", ".intercalate by_.toList}, so take it off eval/cheats/unguarded"
-  for r in unguarded do
+  for r in unguarded.eraseDups do
     unless bans.contains r do
       errs := errs.push s!"eval/cheats/unguarded lists {r}, which is not an entry of Lint.banned"
+    -- A repeat would keep the count while a dropped ban leaves the list.
+    if (unguarded.filter (· == r)).length > 1 then
+      errs := errs.push s!"eval/cheats/unguarded lists {r} more than once"
   if unguarded.length > unguardedCount then
     errs := errs.push s!"eval/cheats/unguarded lists {unguarded.length} rules, more than unguardedCount ({unguardedCount}); the list may only shrink"
   else if unguarded.length < unguardedCount then
