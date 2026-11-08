@@ -42,6 +42,7 @@ shadowed name as the Challenge spells it.
 | `shadow_extractor_model` | `namespace ToyRequire.ToyRequire` / a reference `ofLine` and `extractor` | `main` |
 | `shadow_root_component` | `def ToyRequire._root_.Mitos.CompleteWrt … := True` | round-1 head (25fce96) |
 | `shadow_root_export` | `namespace ToyRequire._root_.Mitos` / `export Weak (CompleteWrt)`, with `Weak.CompleteWrt … := True` | round-1 head (25fce96) |
+| `shadow_export_model` | `namespace ToyRequire.Mitos` / `export Weak (CompleteWrt)`, plus `namespace Weak` / `def CompleteWrt … := True` (the plain `export` alias) | `main` (rejected at gate 3 at 697ecb8) |
 
 The `_root_`-component forms of the model and extractor shadows
 (`ToyRequire._root_.Models.ToyRequire.model`, `ToyRequire._root_.ToyRequire.extractor`) were also
@@ -58,5 +59,15 @@ accepted at the round-1 head; all are rejected at gate 3 with this fix, in both 
 - [x] `shadow_obligation` is rejected at gate 3 in both modes
 - [x] the honest toy is accepted with `--paranoid`, and the record is regenerated
 - [x] every existing cheat case behaves as its `expect` says
-- [ ] the model-side cases above join `eval/cheats/` once `model_approved=yes` is on `main`
+- [ ] the six model-side cases above (`shadow_model`, `shadow_obligation_model`, `shadow_extractor_model`,
+  `shadow_root_component`, `shadow_root_export`, `shadow_export_model`) join `eval/cheats/` once
+  `model_approved=yes` is on `main`
 - [x] run-log record written (ops/runs/)
+
+## Pending follow-ups
+- Gate check that the `--model` constant is a declaration whose type is exactly `Mitos.Model`. It
+  backs up two things: an `export` alias for the model constant, which now fails at gate 2 with
+  "Unknown identifier", and a coercion from another type to `Mitos.Model`. The coercion is closed
+  by #24's model allowlist, which bans `instance`.
+- Round 2 verifiers found that the fix also stops a namespace-scoped `macro_rules` in a model
+  from rewriting the Challenge. A global `macro_rules` is #24's area.
