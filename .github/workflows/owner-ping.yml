@@ -22,17 +22,18 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Comment with the latest catch-up line, or the title
+      - name: Comment with the first line of the latest catch-up
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           OWNER: ${{ github.repository_owner }}
           NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-          TITLE: ${{ github.event.issue.title || github.event.pull_request.title }}
         run: |
           set -euo pipefail
           # The first line of the owner account's latest comment that starts with "Catch-up",
-          # without its Markdown marks. Every "@" is dropped so the line mentions nobody else.
+          # without its Markdown marks. Only the owner's account writes it, so no outside text
+          # (such as a fork PR's title) reaches the comment. Every "@" is dropped so the line
+          # mentions nobody else.
           line=$(gh api --paginate --slurp "repos/$REPO/issues/$NUMBER/comments?per_page=100" \
             | jq -r --arg owner "$OWNER" '
                 [ .[][]
@@ -42,7 +43,10 @@ jobs:
                   | select(test("^catch-up"; "i"))
                   | sub("^catch-up:? *"; ""; "i") ]
                 | last // empty')
-          [ -n "$line" ] || line=$TITLE
           line=${line//@/}
-          body=$(printf '<!-- owner-ping -->\n@%s this needs you: %s' "$OWNER" "${line:0:200}")
+          if [ -n "$line" ]; then
+            body=$(printf '<!-- owner-ping -->\n@%s this needs you: %s' "$OWNER" "${line:0:200}")
+          else
+            body=$(printf '<!-- owner-ping -->\n@%s this needs you.' "$OWNER")
+          fi
           gh api -X POST "repos/$REPO/issues/$NUMBER/comments" -f body="$body" --jq .html_url
