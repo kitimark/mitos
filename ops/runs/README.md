@@ -24,4 +24,6 @@ statement is wrong.
 Run-log files are append-only. `.gitattributes` sets `merge=union` for `ops/runs/*.ndjson`, so
 when two branches append different lines, a rebase or merge keeps the lines from both sides and
 does not stop on a conflict. Never edit or reorder a line that is already in a file: if both
-sides touch the same line, union keeps both versions. To correct a record, append a new one.
+sides touch the same line, union keeps both versions. Do not correct a record by appending a
+second record for the same attempt either: the schema has no marker for which one wins, and
+union does not fix line order. Put a correction in the `note` of the next attempt's record.
