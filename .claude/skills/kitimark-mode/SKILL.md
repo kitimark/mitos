@@ -98,7 +98,8 @@ directive, the last report and the branch.
 1. Branch from the latest `main`. One task, or a few tightly coupled ones, per PR. Keep the
    branch current by rebasing onto `main`, not by merging `main` in. A `needs-rebase` label (set
    by `.github/workflows/update-prs.yml` when an automatic rebase conflicts) gets a PR owner, who
-   rebases, resolves, reruns the checks and force-pushes with a lease.
+   rebases, resolves, reruns the checks and force-pushes with a lease. A PR in a GitHub stack never
+   gets that label and is rebased only with its whole stack (see **Stacks**).
 2. Before pushing, run locally every check in the `docs/process.md` check matrix that the change
    can affect. For Lean work that includes `cd core && lake check` and
    `lake comparator --paranoid`.
@@ -151,19 +152,34 @@ rely on both.
 ## Stacks
 
 - PRs that build on each other form a GitHub stack, not a base-branch chain retargeted by hand.
-  Make one with `gh stack` (`gh stack submit`) or the REST stack routes (`POST
-  repos/{owner}/{repo}/stacks` with the PR numbers, bottom to top). GitHub rebases the rest when the
-  bottom PR merges and retargets the next one to trunk, so nobody retargets or force-pushes a
-  stacked PR to follow its parent. `update-prs.yml` skips every PR in a stack for the same reason.
-  Repair a stack with `gh stack rebase` and then `gh stack push` (the remote branches change only
-  at the push), or with the server-side **Rebase stack** button.
+  These sessions block GraphQL, and `gh stack submit` and `gh stack link` find and open PRs over
+  GraphQL, so they fail here. Open each PR through the REST create route in **Forge** instead, the
+  bottom one on `main` and each next one on the branch below it. Then make the stack with
+  `gh api -X POST repos/{owner}/{repo}/stacks -H "X-GitHub-Api-Version: 2026-03-10"
+  -F 'pull_requests[]=<bottom>' -F 'pull_requests[]=<next>'`, one `-F` per PR, bottom to top. That
+  sends the body field `pull_requests`, a list of 2 to 100 PR numbers.
+- GitHub rebases the rest of a stack when its bottom PR merges and retargets the next one to
+  `main`, so nobody retargets or force-pushes a stacked PR to follow its parent. GitHub does not
+  rebase a stack when `main` moves ahead, and `update-prs.yml` skips every PR in a stack, so it
+  never labels one `needs-rebase`. When `main` moves ahead of a stack, its owner rebases the whole
+  stack, or the root gives it to a PR owner as it would a `needs-rebase` label. Rebase each branch
+  onto the one below it, bottom-up from `main`, then push all of them in one
+  `git push --atomic --force-with-lease`. `gh stack rebase` and then `gh stack push` do the same
+  git work (the remote branches change only at the push), and their PR sync over GraphQL fails
+  here without stopping them. The **Rebase stack** button does it on the server, but it is browser
+  only: the REST API has no route that rebases a stack.
 - Merge a stack bottom-up, one PR at a time. Each PR needs its own verdict and green `gate` at its
   head before its turn, as for any PR.
 - An agent merges a stacked PR with the asynchronous endpoint, because the legacy `/merge` route
-  cannot merge a stack: `gh api -X PUT repos/{owner}/{repo}/pulls/<pr>/merge-async -f
-  merge_method=rebase -f sha=<head>` answers `202` with a `uuid`. Poll `GET
-  repos/{owner}/{repo}/pulls/<pr>/merge-async/<uuid>` until the status is `merged` or `failed`
-  (`enqueued` means only that a merge queue took it).
+  cannot merge a stack: `gh api -X PUT repos/{owner}/{repo}/pulls/<pr>/merge-async
+  -H "X-GitHub-Api-Version: 2026-03-10" -f merge_method=rebase -f merge_action=direct_merge
+  -f sha=<head>`. `direct_merge` keeps a merge queue out of it. The answer is `202` for a new
+  request, `409` when one is already pending (`gh` exits 1 but still prints the body), `200` when
+  the PR has already merged or is already queued, or `400` (`failed`) when it cannot merge, such
+  as a draft. `202` and `409` carry the request's id at `.details.uuid`. Poll `GET
+  repos/{owner}/{repo}/pulls/<pr>/merge-async/<uuid>` until `.status` is no longer `pending`.
+  `merged`, `failed` (reason at `.details.message`) and `enqueued` are final, and `enqueued` means
+  only that a merge queue took it. Read the PR back for `merged` before calling it landed.
 - Never merge a mid-stack PR to land the ones below it. Merging a stacked PR merges every open PR
   below it too, verdict or not. So a PR above one that waits for the user (a label or a merge) waits
   as well.

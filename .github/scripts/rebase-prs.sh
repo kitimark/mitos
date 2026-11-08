@@ -7,19 +7,30 @@ git fetch -q origin "$BASE"
 gh label create needs-rebase --color FBCA04 \
   --description "Could not be rebased onto $BASE automatically" >/dev/null 2>&1 || true
 
-# GitHub rebases a stack of pull requests itself, and a push from here would break its linear
-# history. `GET repos/{owner}/{repo}/stacks` lists every stack with its pull requests (`number`,
-# `state`) and an `open` flag. A pull request object also carries a `stack` field, but only for
-# members and `gh pr list --json` cannot select it, so the stack list is the source. If the list
-# cannot be read, nothing is rebased: skipping is safe, a rebase that breaks a stack is not.
-if ! stacked=$(gh api --paginate -H "X-GitHub-Api-Version: 2026-03-10" \
+# A GitHub stack of pull requests is rebased as a whole, and a push from here to one of its
+# branches would break its linear history. GitHub rebases a stack only when its bottom PR merges;
+# when `$BASE` moves ahead, the stack's owner rebases it (Rebase stack, or `gh stack rebase` and
+# `gh stack push`). So no PR in a stack is rebased or labelled `needs-rebase` here.
+# `GET repos/{owner}/{repo}/stacks` lists every stack with its `pull_requests`. A pull request
+# object also carries a `stack` field, but only for members and `gh pr list --json` cannot select
+# it, so the stack list is the source. Every PR number in any stack is skipped, whatever the
+# stack's `open` or the PR's `state` say: `gh pr list --state open` already keeps only open PRs,
+# and a filter on those fields would skip nothing if they changed. `--slurp` gathers the pages
+# into one array, and a page without a body breaks it. The run goes on only if there is at least
+# one page and every page is an array of stacks whose `pull_requests` are objects with an integer
+# `number`. Anything else rebases nothing: skipping is safe, a rebase that breaks a stack is not.
+if ! stacked=$(gh api --paginate --slurp -H "X-GitHub-Api-Version: 2026-03-10" \
     "repos/{owner}/{repo}/stacks?per_page=100" \
-    --jq '.[] | select(.open) | .pull_requests[] | select(.state == "open") | .number' \
-    | jq -s -c .); then
+    | jq -s -c 'def int: type == "number" and . == floor;
+        def pr: type == "object" and (.number | int);
+        def stack: type == "object" and (.pull_requests | type == "array" and all(.[]; pr));
+        def page: type == "array" and all(.[]; stack);
+        if length == 1 and (.[0] | type == "array" and length > 0 and all(.[]; page))
+        then [.[0][][].pull_requests[].number] else error("unexpected stack list") end'); then
   echo "::error::could not read the stack list; no PR was rebased"
   exit 1
 fi
-echo "open PRs in a stack, left to GitHub: $stacked"
+echo "PRs in a stack, skipped: $stacked"
 
 # `--base` and the `baseRefName` test both leave out a PR that targets another branch, which is a
 # hand-made stack: its parent branch is not `$BASE`, so it is not ours to rebase onto `$BASE`.
