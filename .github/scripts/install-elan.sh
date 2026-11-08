@@ -17,12 +17,12 @@ ELAN_URL="https://github.com/leanprover/elan/releases/download/${ELAN_VERSION}/$
 attempts=5
 delay="${INSTALL_RETRY_DELAY:-10}"
 
-if [ -x "$HOME/.elan/bin/elan" ]; then
+if [ -x "$HOME/.elan/bin/elan" ] && "$HOME/.elan/bin/elan" --version >/dev/null 2>&1; then
   echo "elan found in $HOME/.elan (cache hit): no download."
 else
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
-  echo "elan not found: downloading ${ELAN_VERSION}."
+  echo "elan missing or not working: downloading ${ELAN_VERSION}."
   n=1
   until curl -sSfL --connect-timeout 30 --max-time 180 -o "$tmp/$ELAN_ARCHIVE" "$ELAN_URL"; do
     if [ "$n" -ge "$attempts" ]; then
