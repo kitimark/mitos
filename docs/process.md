@@ -136,7 +136,7 @@ enforces it. `main` is protected: changes arrive by pull request with the `gate`
 | File | Pins | Regenerate with | Changing it needs |
 |---|---|---|---|
 | `statements.lock` | every declaration in `Mitos.Core.*` (not `Mitos.Impl`/`Mitos.Proofs`): SHA-256 of its type, of its value for definitions, and (`aux=`) of every generated declaration it reaches; generated declarations get no line of their own | `lake exe mitos-gate lock` | `spec-approved` label |
-| `<workspace>/models.lock` | the SHA-256 of every human-reviewed model file, examples modules included | `find Models -name '*.lean' \| LC_ALL=C sort \| xargs sha256sum > models.lock` | `spec-approved` label |
+| `<workspace>/models.lock` | the SHA-256 of every human-reviewed model file, examples modules included | `lake exe mitos-gate lock-models --workspace <workspace>` | `spec-approved` label |
 | `core/Challenge/`, `core/comparator.json` | the theorems the core implementation must prove | edited by hand in a spec PR | `spec-approved` label |
 
 `statements.lock` is computed from the compiled environment, not from source text, so a

@@ -14,6 +14,8 @@ def usage : String := "usage:
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.*; spec never imports impl)
   mitos-gate lock [--check]                      write or check statements.lock
+  mitos-gate lock-models --workspace <dir> [--check]
+                                                 write or check <dir>/models.lock, as gate 0 reads the models
   mitos-gate accept --workspace <dir> --plugin <Name> --model <Module.const>
                     [--plugin-file <f>] [--paranoid] [--record] [--keep] [--skip-lint]
   mitos-gate runlog [--base <dir>] --head <dir>   run-log records parse, one per (task, role, attempt);
@@ -32,6 +34,34 @@ partial def parseAccept (args : List String) (c : Accept.Config) : Except String
   | "--keep" :: rest => parseAccept rest { c with keep := true }
   | "--skip-lint" :: rest => parseAccept rest { c with skipLint := true }
   | a :: _ => .error s!"unknown argument {a}"
+
+/-- Writes the lock `txt` to `file`, or with `check` compares them and prints the lines only one of
+them has. -/
+def writeOrCheck (file : System.FilePath) (txt : String) (check : Bool) (count stale : String) :
+    IO UInt32 := do
+  let name := oneLine file.toString
+  unless check do
+    IO.FS.writeFile file txt
+    IO.println s!"wrote {name} ({count})"
+    return 0
+  let old ← IO.FS.readFile file
+  if old == txt then
+    IO.println s!"{name} up to date ({count})"
+    return 0
+  let lines (s : String) := (s.splitOn "\n").filter (fun l => !l.startsWith "#" && !l.isEmpty)
+  let (was, now) := (lines old, lines txt)
+  for l in was do unless now.contains l do IO.println s!"- {oneLine l}"
+  for l in now do unless was.contains l do IO.println s!"+ {oneLine l}"
+  IO.println s!"{name} is out of date: {stale}."
+  return 1
+
+/-- Writes or checks `<workspace>/models.lock`. Gate 0's walker reads the models, and gate 0 reads
+back what this writes (`Accept.lockEntries_renderLock`). -/
+def lockModels (workspace : System.FilePath) (check : Bool) : IO UInt32 := do
+  let files ← Accept.modelFiles workspace
+  let es ← files.toList.mapM fun (rel, txt) => return (rel, ← sha256 txt)
+  writeOrCheck (workspace / "models.lock") (Accept.renderLock es) check s!"{es.length} models"
+    "it does not match the models"
 
 def main (args : List String) : IO UInt32 := do
   match args with
@@ -52,21 +82,10 @@ def main (args : List String) : IO UInt32 := do
     return if vs.isEmpty then 0 else 1
   | "lock" :: rest =>
     let es ← Lock.entries `Mitos.Core [`Mitos.Core]
-    let txt := Lock.render es
-    if rest == ["--check"] then
-      let old ← IO.FS.readFile "statements.lock"
-      if old == txt then
-        IO.println s!"statements.lock up to date ({es.size} declarations)"
-        return 0
-      let oldSet := (old.splitOn "\n").filter (fun l => !l.startsWith "#" && !l.isEmpty)
-      let newSet := (txt.splitOn "\n").filter (fun l => !l.startsWith "#" && !l.isEmpty)
-      for l in oldSet do unless newSet.contains l do IO.println s!"- {l}"
-      for l in newSet do unless oldSet.contains l do IO.println s!"+ {l}"
-      IO.println "statements.lock is out of date: the meaning of the trusted core changed."
-      return 1
-    IO.FS.writeFile "statements.lock" txt
-    IO.println s!"wrote statements.lock ({es.size} declarations)"
-    return 0
+    writeOrCheck "statements.lock" (Lock.render es) (rest == ["--check"]) s!"{es.size} declarations"
+      "the meaning of the trusted core changed"
+  | ["lock-models", "--workspace", ws] => lockModels ws false
+  | ["lock-models", "--workspace", ws, "--check"] => lockModels ws true
   | "accept" :: rest =>
     match parseAccept rest { workspace := "", plugin := "", model := "" } with
     | .error e => IO.eprintln e; IO.eprintln usage; return 2
