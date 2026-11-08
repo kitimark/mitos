@@ -448,17 +448,6 @@ def buildOutputs (dir : System.FilePath) : ExceptT String IO (Array (String × S
 def changedOutputs (before after : Array (String × String)) : Array String :=
   before.filterMap fun (f, h) => if after.contains (f, h) then none else some f
 
-/-- The judgments of one judging directory. -/
-structure Judgments where
-  /-- Gates 2–5: the plugin against the generated Challenge. -/
-  plugin  : Judgment
-  /-- Gate 6: the layout, then its two runs against the adequacy Challenge. On failure, the
-  reason and the comparator output to show. -/
-  model   : Except (String × String) Unit
-  /-- Why gates 3 and 6 may not have judged one elaboration of the model: the plugin's run changed
-  or removed a build output of gate 6's run, or the outputs could not be compared. -/
-  rebuilt : Option String
-
 /-- Why gate 6's examples run failed, or `none` when it passed. -/
 def examplesFailure (model : String) : Outcome → Option String
   | .ok => none
@@ -497,61 +486,6 @@ def judgeModel (c : Config) (m : LockedModels) (dir : System.FilePath) :
   if let some why := adequacyFailure m.model ad.outcome then return .error (why, ad.output)
   return .ok ()
 
-/-- One judging directory, so gates 3 and 6 see one elaboration of the model. Gate 6 is judged
-first, before the plugin is built, so nothing the plugin's build writes can reach it. The plugin's
-run must then reuse every output gate 6's run built: a module that runs code while it elaborates
-could otherwise make Lake rebuild the model, and gate 3 would judge a different elaboration from
-gate 6's. Writing and removing the directory is gate 2's; gate 6's runs and the hashing of their
-outputs are gate 6's. -/
-def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : GateM Judgments := do
-  let generated : List (System.FilePath × String) :=
-    [ ("Plugins" / s!"{c.plugin}.lean", src), ("Challenge" / s!"{c.plugin}.lean", chal),
-      ("comparator.json", comparatorJson c.plugin),
-      ("Challenge" / "Mitos" / "ModelAdequacy.lean", adequacyChal),
-      ("examples.json", examplesComparatorJson m),
-      ("adequacy.json", adequacyComparatorJson m),
-      ("lakefile.toml", judgeLakefile), ("lake-manifest.json", judgeManifest) ]
-  let files := m.files.toList.map (fun (r, t) => ((⟨r⟩ : System.FilePath), t)) ++ generated
-  -- The core is copied to `Mitos/`; every other file needs a path of its own.
-  let rels := files.map (·.1.toString)
-  let dir ← atGate .sandbox do
-    if let some r := rels.find? fun r => r.startsWith "Mitos/" || (rels.filter (· == r)).length > 1 then
-      throwThe IO.Error <| IO.userError s!"two files of the judging directory would share the path {r}"
-    IO.FS.createTempDir
-  let judged : GateM Judgments := do
-    atGate .sandbox do
-      copyFile (c.mitosRoot / "lean-toolchain") (dir / "lean-toolchain")
-      copyLeanTree (c.mitosRoot / "core" / "Mitos") (dir / "Mitos")
-      for (rel, txt) in files do
-        if let some p := (dir / rel).parent then IO.FS.createDirAll p
-        IO.FS.writeFile (dir / rel) txt
-    let model ← atGate .adequacy (judgeModel c m dir)
-    let before ← atGate .adequacy (buildOutputs dir).run
-    let plugin ← runComparator c dir "comparator.json"
-    let after ← atGate .adequacy (buildOutputs dir).run
-    -- An accepted gate 6 built the model module, so its `.olean` must be among the outputs;
-    -- without it (another Lake layout, say) the comparison would check nothing.
-    let modelOlean := "/".intercalate ((modelModule m.model).splitOn ".") ++ ".olean"
-    let modelAccepted := match model with | .ok _ => true | .error _ => false
-    let rebuilt := match before, after with
-      | .ok b, .ok a =>
-        let changed := changedOutputs b a
-        if modelAccepted && !b.any (·.1 == modelOlean) then
-          some s!"gate 6's runs left no {modelOlean} under .lake/build/lib/lean/ to compare"
-        else if changed.isEmpty then none
-        else some s!"the plugin's run changed {", ".intercalate (changed.toList.take 5)}"
-      | .error e, _ | _, .error e => some e
-    return { plugin, model, rebuilt }
-  -- The first failure decides the verdict: after one, an error removing the directory is only
-  -- reported.
-  let (j, ()) ← tryFinally' judged fun j? => do
-    let close : IO Unit :=
-      if c.keep then IO.println s!"  (judging directory kept: {oneLine dir.toString})"
-      else IO.FS.removeDirAll dir
-    if j?.isSome then atGate .sandbox close
-    else tryCatchThe IO.Error close fun e => report .sandbox false s!"I/O error: {e}"
-  return j
-
 def showComparatorTail (out : String) : IO Unit := do
   let frame (l : String) := l == "backtrace:" || (l.startsWith "/" && (l.splitOn " [0x").length > 1)
   let lines := (out.splitOn "\n").filter fun l =>
@@ -568,6 +502,10 @@ def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
   report .axioms true (String.intercalate ", " permittedAxioms)
   report .kernels true (if c.paranoid then "lean4lean, nanoda, con-leche, con-ron, paranoid" else "Lean kernel only (use --paranoid for independent kernels)")
 
+/-- Gate 6's verdict. `j` is the layout and the two runs, with the reason and the comparator output
+to show on failure. `rebuilt` says why gates 3 and 6 may not have judged one elaboration of the
+model: the plugin's run changed or removed a build output of gate 6's runs, or the outputs could
+not be compared. -/
 def adequacyGate (m : LockedModels) (j : Except (String × String) Unit) (rebuilt : Option String) :
     GateM Unit := do
   if let .error (reason, out) := j then
@@ -580,6 +518,60 @@ def adequacyGate (m : LockedModels) (j : Except (String × String) Unit) (rebuil
     throw (.adequacy, "")
   report .adequacy true
     s!"{m.model}.adequate : Mitos.Model.Adequate {m.model} {m.model}.examples, examples from {examplesModule m.model}"
+
+/-- One judging directory, so gates 3 and 6 see one elaboration of the model. Gate 6 is judged
+first, before the plugin is built, so nothing the plugin's build writes can reach it. The plugin's
+run must then reuse every output gate 6's run built: a module that runs code while it elaborates
+could otherwise make Lake rebuild the model, and gate 3 would judge a different elaboration from
+gate 6's. Writing and removing the directory is gate 2's; gate 6's runs and the hashing of their
+outputs are gate 6's. Gates 2–5 are reported before gate 6. -/
+def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : GateM Unit := do
+  let generated : List (System.FilePath × String) :=
+    [ ("Plugins" / s!"{c.plugin}.lean", src), ("Challenge" / s!"{c.plugin}.lean", chal),
+      ("comparator.json", comparatorJson c.plugin),
+      ("Challenge" / "Mitos" / "ModelAdequacy.lean", adequacyChal),
+      ("examples.json", examplesComparatorJson m),
+      ("adequacy.json", adequacyComparatorJson m),
+      ("lakefile.toml", judgeLakefile), ("lake-manifest.json", judgeManifest) ]
+  let files := m.files.toList.map (fun (r, t) => ((⟨r⟩ : System.FilePath), t)) ++ generated
+  -- The core is copied to `Mitos/`; every other file needs a path of its own.
+  let rels := files.map (·.1.toString)
+  let dir ← atGate .sandbox do
+    if let some r := rels.find? fun r => r.startsWith "Mitos/" || (rels.filter (· == r)).length > 1 then
+      throwThe IO.Error <| IO.userError s!"two files of the judging directory would share the path {r}"
+    IO.FS.createTempDir
+  let gates : GateM Unit := do
+    atGate .sandbox do
+      copyFile (c.mitosRoot / "lean-toolchain") (dir / "lean-toolchain")
+      copyLeanTree (c.mitosRoot / "core" / "Mitos") (dir / "Mitos")
+      for (rel, txt) in files do
+        if let some p := (dir / rel).parent then IO.FS.createDirAll p
+        IO.FS.writeFile (dir / rel) txt
+    let model ← atGate .adequacy (judgeModel c m dir)
+    let before ← atGate .adequacy (buildOutputs dir).run
+    pluginGates c (← runComparator c dir "comparator.json")
+    let after ← atGate .adequacy (buildOutputs dir).run
+    -- An accepted gate 6 built the model module, so its `.olean` must be among the outputs;
+    -- without it (another Lake layout, say) the comparison would check nothing.
+    let modelOlean := "/".intercalate ((modelModule m.model).splitOn ".") ++ ".olean"
+    let modelAccepted := match model with | .ok _ => true | .error _ => false
+    let rebuilt := match before, after with
+      | .ok b, .ok a =>
+        let changed := changedOutputs b a
+        if modelAccepted && !b.any (·.1 == modelOlean) then
+          some s!"gate 6's runs left no {modelOlean} under .lake/build/lib/lean/ to compare"
+        else if changed.isEmpty then none
+        else some s!"the plugin's run changed {", ".intercalate (changed.toList.take 5)}"
+      | .error e, _ | _, .error e => some e
+    adequacyGate m model rebuilt
+  -- The first failure decides the verdict: once a gate has failed, an error removing the
+  -- directory is only reported.
+  let ((), ()) ← tryFinally' gates fun passed? => do
+    let close : IO Unit :=
+      if c.keep then IO.println s!"  (judging directory kept: {oneLine dir.toString})"
+      else IO.FS.removeDirAll dir
+    if passed?.isSome then atGate .sandbox close
+    else tryCatchThe IO.Error close fun e => report .sandbox false s!"I/O error: {e}"
 
 def writeRecord (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO Unit := do
   let coreFiles ← leanFiles (c.mitosRoot / "core" / "Mitos")
@@ -611,9 +603,7 @@ def runAccept (c : Config) : IO UInt32 := do
       pure src
     let chal := challenge c.plugin m.model
     let adequacyChal := adequacyChallenge m
-    let j ← judge c m src chal adequacyChal
-    pluginGates c j.plugin
-    adequacyGate m j.model j.rebuilt
+    judge c m src chal adequacyChal
     return writeRecord c m src chal adequacyChal
   match ← gates.run with
   | .ok record =>
