@@ -1,5 +1,6 @@
 import MitosGate.Lint
 import MitosGate.Accept
+import MitosGate.Imports
 
 /-! Regression test for gate 1's lint: every command kind outside the model allowlist is rejected,
 every allowed kind is accepted, models pass the plugin rules, and the import rule holds for
@@ -155,6 +156,17 @@ def stopsRejected : List (String × String) :=
     ("mid-file import, then @[implemented_by]",
       "\nimport Init.«..».Lake\ndef evil (_ : Nat) : Nat := 0\n@[implemented_by evil] def f (n : Nat) : Nat := n\n") ]
 
+/-- The roots `mitos-gate imports` allows in `core/`, as in `gate/Main.lean`. -/
+def coreImports : List String := ["Init", "Std", "Mitos.Core", "Mitos.Impl", "Mitos.Proofs"]
+
+/-- Core-style sources for `mitos-gate imports` (`Imports.checkSource`). -/
+def coreCases : List (String × String × Bool) :=
+  [ ("plain core header", "import Init\nimport Mitos.Core\n\ndef x : Nat := 1\n", true),
+    ("tab before import Lean", "\timport Lean\n\ndef x : Nat := 1\n", false),
+    ("tab before a later import", "import Init\n\timport Lean\n\ndef x : Nat := 1\n", false),
+    ("import Lean", "import Lean\n\ndef x : Nat := 1\n", false),
+    ("import Mitos.«..».Lean", "import Mitos.«..».Lean\n\ndef x : Nat := 1\n", false) ]
+
 structure Case where
   kind : String
   name : String
@@ -178,10 +190,13 @@ def main : IO UInt32 := do
       accepted.map (fun (n, s) => ⟨"model", n, s, true⟩) ++
       rejected.map (fun (n, s) => ⟨"model", n, s, false⟩) ++ headers "model" ++ stops "model" toy ++
       [⟨"plugin", "examples/acme/Plugins/ToyRequire.lean", plugin, true⟩] ++ headers "plugin" ++
-      stops "plugin" plugin
+      stops "plugin" plugin ++
+      [⟨"core", "core/Mitos/Core.lean", ← IO.FS.readFile ("core" / "Mitos" / "Core.lean"), true⟩] ++
+      coreCases.map (fun (n, s, w) => ⟨"core", n, s, w⟩)
   let mut fails := 0
   for c in cases do
     let vs ← if c.kind == "model" then Lint.checkModel env Accept.pluginImports c.src
+      else if c.kind == "core" then Imports.checkSource coreImports c.src
       else Lint.check env Accept.pluginImports c.src
     let ok := vs.isEmpty
     let mark := if ok == c.wantOk then "ok  " else "FAIL"
@@ -189,7 +204,7 @@ def main : IO UInt32 := do
     let verdict := if ok then "accepted" else s!"rejected: {(vs[0]?.map (·.render s!"<{c.kind}>")).getD ""}"
     IO.println s!"{mark} {c.kind} {c.name}: {verdict}"
   let count (k : String) (w : Bool) := (cases.filter fun c => c.kind == k && c.wantOk == w).length
-  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected"
+  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected"
   if fails == 0 then
     IO.println s!"gate-1 lint: all {cases.length} cases behave as expected ({summary})"
     return 0

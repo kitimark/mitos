@@ -3,11 +3,17 @@ import MitosGate.Util
 
 namespace MitosGate.Imports
 
+/-- The import violations of one core source: a header that fails to parse, or an import outside
+`allowed`. -/
+def checkSource (allowed : List String) (src : String) : IO (Array Lint.Violation) := do
+  match ← Lint.headerSyntax src with
+  | .error v => return #[v]
+  | .ok (fm, header) => return Lint.importRules fm header allowed (strict := false)
+
 def check (dir : System.FilePath) (allowed : List String) : IO (Array String) := do
   let mut out := #[]
   for f in ← leanFiles dir do
-    let (fm, header) ← Lint.headerSyntax (← IO.FS.readFile f)
-    for v in Lint.importRules fm header allowed (strict := false) do
+    for v in ← checkSource allowed (← IO.FS.readFile f) do
       out := out.push (v.render f.toString)
   return out
 
