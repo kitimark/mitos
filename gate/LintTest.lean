@@ -148,6 +148,13 @@ def headersRejected : List (String × String) :=
     ("meta import, no module", "meta import Mitos.Core\n"),
     ("import all, no module", "import all Mitos.Core\n") ]
 
+/-- Sources where Lean's parser stops before the end of the file; neither may have them. Each is
+appended to a source that is otherwise accepted. -/
+def stopsRejected : List (String × String) :=
+  [ ("mid-file import, then sorry", "\nimport Lean\ntheorem t : 1 = 2 := sorry\n"),
+    ("mid-file import, then @[implemented_by]",
+      "\nimport Init.«..».Lake\ndef evil (_ : Nat) : Nat := 0\n@[implemented_by evil] def f (n : Nat) : Nat := n\n") ]
+
 structure Case where
   kind : String
   name : String
@@ -162,11 +169,16 @@ def main : IO UInt32 := do
   let headers (kind : String) : List Case :=
     headersAccepted.map (fun (n, h) => ⟨kind, n, h ++ body, true⟩) ++
       headersRejected.map (fun (n, h) => ⟨kind, n, h ++ body, false⟩)
+  let stops (kind base : String) : List Case :=
+    ⟨kind, "mid-file import (short)",
+      "import Mitos.Core\ndef x := 1\nimport Lean\ntheorem t : 1 = 2 := sorry\n", false⟩ ::
+      stopsRejected.map (fun (n, s) => ⟨kind, s!"acme {kind}, {n}", base ++ s, false⟩)
   let cases : List Case :=
     ⟨"model", "examples/acme/Models/ToyRequire.lean", toy, true⟩ ::
       accepted.map (fun (n, s) => ⟨"model", n, s, true⟩) ++
-      rejected.map (fun (n, s) => ⟨"model", n, s, false⟩) ++ headers "model" ++
-      [⟨"plugin", "examples/acme/Plugins/ToyRequire.lean", plugin, true⟩] ++ headers "plugin"
+      rejected.map (fun (n, s) => ⟨"model", n, s, false⟩) ++ headers "model" ++ stops "model" toy ++
+      [⟨"plugin", "examples/acme/Plugins/ToyRequire.lean", plugin, true⟩] ++ headers "plugin" ++
+      stops "plugin" plugin
   let mut fails := 0
   for c in cases do
     let vs ← if c.kind == "model" then Lint.checkModel env Accept.pluginImports c.src
