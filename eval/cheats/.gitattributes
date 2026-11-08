@@ -1,0 +1,5 @@
+# `unguarded` lists the Lint.banned entries that no cheat case guards yet. Merge it with union:
+# when two branches each append a ban, a rebase keeps both lines. A conflict resolution can then
+# drop a ban from Lint.lean and gate/LintTest.lean only by leaving the file out of step, and
+# `lake exe mitos-lint-test` turns red on that. See #71 item 8.
+unguarded merge=union

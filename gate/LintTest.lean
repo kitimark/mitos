@@ -256,7 +256,7 @@ def ratchet (guards : Array (String × String)) (unguarded : List String) : Arra
       errs := errs.push s!"eval/cheats/unguarded does not list {r}, which unguardedBans lists"
   for r in unguarded.eraseDups do
     unless pinned.contains r do
-      errs := errs.push s!"eval/cheats/unguarded lists {r}, which unguardedBans does not"
+      errs := errs.push s!"eval/cheats/unguarded lists {r}, which unguardedBans does not (a merge may have dropped that ban from Lint.banned and unguardedBans)"
     if (unguarded.filter (· == r)).length > 1 then
       errs := errs.push s!"eval/cheats/unguarded lists {r} more than once"
   return errs
