@@ -207,7 +207,8 @@ that says nothing holds would admit the extractor that emits nothing, and one th
 would admit one that emits too much. So for `--model Models.X.model`, three modules pinned in
 `models.lock` take part:
 
-- the model module `Models.X` declares `Models.X.model`, the model gates 3 and 6 judge;
+- the model module `Models.X` declares `Models.X.model`, the model gates 3 and 6 judge. Gate 3's
+  Challenge imports only this module, so the model must be declared within its reach;
 - the examples module `Models.X.Examples` declares `Models.X.model.examples : Mitos.ModelExamples`:
   golden files, each a reviewed file with every fact the model must say holds in it and no other.
   A golden file with no facts says that the file requires nothing;
@@ -221,6 +222,11 @@ the shared definition would sit on both sides of "holds exactly when listed" and
 model whose `fact` read `require left-pad` as *providing* `left-pad`, with its golden facts built by
 that `fact`, passed gate 6 while the examples could live in the model module. So gate 6 reads the
 headers of gate 0's copy of the models with Lean's own parser and checks that:
+- every import's components are plain identifiers, as gate 1 also requires. Lean finds a module's
+  file by joining its name's components with `/`, so without this a name such as
+  `Models.«..».Mitos.Impl.Resolve` reaches a file outside the locked models, and one such as
+  `Models.«X/Examples»` could name the examples module's file under another name
+  (`model_dotdot_import`, which gate 6 now rejects without lint);
 - the examples module imports only `Mitos.Core` (and Lean's `Init`), so no golden fact is built with
   a model definition (`golden_circular_provides`, `golden_circular_devscope`,
   `golden_shared_helper`);
@@ -232,8 +238,12 @@ headers of gate 0's copy of the models with Lean's own parser and checks that:
 A first comparator run then judges the examples module on its own against the Challenge's
 `examples` hole. So the examples constant is declared there (`golden_decoy_examples`), and a model
 module that declares its own examples, as round 1's toy did, makes the adequacy module's build fail
-on the duplicate name. Write golden facts as literal values,
-field by field, as the toy's `Models/ToyRequire/Examples.lean` does.
+on the duplicate name. The model the adequacy run judges is the one gate 3 judges: gate 3's
+Challenge imports only the model module, so a model declared in the examples module, which the
+model module cannot reach, fails gate 3's build, which is reported first, and the adequacy module
+cannot see a second declaration of the name beside the first (`golden_model_in_examples`, rejected
+at gate 2). Write golden facts as literal values, field by field, as the toy's
+`Models/ToyRequire/Examples.lean` does.
 
 Gate 6 generates a Challenge (`Challenge/Mitos/ModelAdequacy.lean`, a path no plugin name gives)
 with the model and its examples as definition holes and the adequacy theorem as the statement,
@@ -328,10 +338,14 @@ plugin-chosen file (`../comparator.json`, `../Plugins/<P>.lean`) with `include_s
 plugin being judged, means the weak model where only `require zz` holds, with weak examples it
 proves adequate; the empty-for-`left-pad` extractor then passes gates 3 and 6. Gate 1 rejects the
 `include_str`; the comparator alone accepts them, which is why the lint ban is the fix.
-`double_elaboration` makes Lake rebuild its model between the two runs; lint rejects its `#eval`,
-and without lint gate 6 rejects the changed build outputs. The `shadow_*` model cases each declare
-a name that the Challenge's statements would find under the plugin's namespace if they were not
-written from `_root_`. Gate 3 rejects them, and gate 1 already rejects the two that need `export`.
+`double_elaboration` makes Lake rebuild its model between gate 6's runs and the plugin's; lint
+rejects its `#eval`, and without lint gate 6 rejects the changed build outputs. The `shadow_*` model
+cases each declare a name that the Challenge's statements would find under the plugin's namespace if
+they were not written from `_root_`. Gate 3 rejects them, and gate 1 already rejects the two that
+need `export`. Case models use the golden-file layout too: most are the toy's model module with one
+change and use the toy's examples and adequacy modules, while `double_elaboration`,
+`judge_dir_model`, `model_include_str` and `model_include_str_src` prove their own adequacy, and
+the two `model_include_str` cases also choose their golden files with `include_str`.
 
 Seven cases have a model with a wrong `fact` and a layout in which the mistake would not reach
 gate 6: the golden facts share the model's `fact`, or gate 6 judges a different model from gate 3.
@@ -348,14 +362,20 @@ Gate 6 rejects all seven, with and without lint:
 - `golden_adequacy_own_examples` and `golden_adequacy_own_model`: the adequacy module does not
   import the examples module, or the model module, and declares its own.
 
-Each is accepted by a gate without the one check that rejects it.
+Each is accepted by a gate without the one check that rejects it. In `golden_model_in_examples` the
+examples module declares the model as well as golden facts built with its wrong `fact`, and the
+model module declares nothing. Gate 6's layout rule and both of its runs accept that layout, but
+gate 3's Challenge, which imports only the model module, does not build, so the case is rejected at
+gate 2 in both modes. With a Challenge that also imported the examples module it is accepted.
 
-Twelve cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
+Eleven cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
 `eval_command`, the smuggling variants `char_literal_smuggle`, `raw_string_smuggle` and
 `escaped_attr_smuggle`, the model cases `model_notation`, `model_implemented_by`,
-`model_include_str` and `model_include_str_src`, and the
-escaped imports `plugin_dotdot_import` and `model_dotdot_import`. The kernel cannot see what code *runs*, only what is *proved*. Those cases are
-why the lint is a required gate rather than a nicety.
+`model_include_str` and `model_include_str_src`, and the escaped import `plugin_dotdot_import`.
+The kernel cannot see what code *runs*, only what is *proved*. Those cases are why the lint is a
+required gate rather than a nicety. `model_dotdot_import`, the escaped import in a model, passed the
+comparator on its own too until gate 6 checked the components of every model import; without lint,
+gate 6 now rejects it.
 
 ## 4. How to observe
 

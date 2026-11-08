@@ -30,9 +30,17 @@ touches: spec PR: core/Mitos/Core/ModelExamples.lean, core/Mitos/Core.lean, stat
   eval/cheats/{emit_everything, weakened_adequacy, judge_dir_model}/Models/ (new examples form),
   eval/cheats/nearmiss_scope/, eval/cheats/golden_{circular_provides, circular_devscope,
   decoy_examples, shared_helper, helper_in_examples, adequacy_own_examples,
-  adequacy_own_model}/ (round 2), docs/process.md, this file, plan/phase-1.md, ops/runs/
+  adequacy_own_model}/ (round 2), docs/process.md, this file, plan/phase-1.md, ops/runs/;
+  follow-up spec PR round 3 (rebase onto main): gate/MitosGate/Accept.lean (component check on
+  model imports), eval/cheats/{double_elaboration, model_notation, model_implemented_by,
+  model_dotdot_import, model_include_str, model_include_str_src, shadow_model,
+  shadow_obligation_model, shadow_extractor_model, shadow_root_component, shadow_root_export,
+  shadow_export_model}/Models/ (golden-file layout), eval/cheats/model_dotdot_import/expect,
+  eval/cheats/golden_model_in_examples/
 must_not_touch: core/Challenge/, core/comparator.json, existing eval/cheats/*/ expect files (round 3
   gives the models of #24's three model cases the toy's adequacy proof; see Findings).
+  Exception, follow-up spec PR round 3: `model_dotdot_import`'s `comparator_only` goes from
+  `accept` to `reject@6`, because gate 6 now checks the components of model imports (verifier N2).
   Exception, follow-up spec PR: the models of emit_everything, weakened_adequacy and
   judge_dir_model (new in the gate PR) move to the golden-file form and, in round 2, to an
   adequacy module that uses the toy's examples module, and two why= lines are reworded; no full= or
@@ -292,6 +300,51 @@ model is rejected at gate 0 (`model_tamper`, unchanged).
   (`--skip-lint`-free) acceptance path. `docs/process.md` now states that "does not rest on lint"
   covers the double-elaboration check only and that the hash check compares in one direction only.
 
+### Follow-up spec PR round 3 (rebase onto main)
+
+- **Rebase.** #26's commits moved from #21's old head `3b4bd8a` onto `main` (#21 merged with its
+  rounds 3 and 4). Conflicts were resolved toward main's gate 6: the Challenge stays at
+  `Challenge/Mitos/ModelAdequacy.lean` (main's constant is renamed `adequacyChallengeModule`, since
+  `adequacyModule` now names `Models.X.Adequacy`), the build-output hash check now runs after all of
+  gate 6's runs, main's runner and plan row were kept, and the record is regenerated. `nearmiss_scope`, new
+  in this PR, is now `full=1`, since #24's model lint rejects its `sorry`. The spec paths are the
+  same at the old head and here.
+- **Main's model cases move to golden files.** Twelve cases on main declare #20's near-miss
+  examples and their proof in the model module. Under golden files those do not type-check, so at
+  the rebased head each stopped at gate 2 in both modes (shadow cases included, which expect gate 3):
+
+  | Case | Rebased, before the move: full / no lint | After: full / no lint | What moved |
+  |---|---|---|---|
+  | `model_notation`, `model_implemented_by`, `model_dotdot_import` | 1 / 2 | 1 / ACCEPTED (`model_dotdot_import`: 1 / 6, see N2) | the toy's current model module plus the case's one change; the toy's examples and adequacy modules |
+  | `shadow_model`, `shadow_obligation_model`, `shadow_extractor_model`, `shadow_root_component` | 2 / 2 | 3 / 3 | as above |
+  | `shadow_root_export`, `shadow_export_model` | 1 / 2 | 1 / 3 | as above |
+  | `double_elaboration` | 1 / 2 | 1 / 6, "the plugin's run changed Models/ToyRequire.olean, …" | its own adequacy module, against the toy's golden files; `#eval` and forge stay in the model module |
+  | `model_include_str`, `model_include_str_src` | 1 / 2 | 1 / ACCEPTED | its own examples module, which picks weak or toy golden files with `include_str` as the model does, and its own adequacy module |
+
+  Every `expect` file but `model_dotdot_import`'s is unchanged. Not moved: `empty_extractor` (a model
+  with no examples, rejected at gate 6 as before), `model_tamper` (rejected at gate 0 before its
+  model builds), and the cases with no model. In the two `include_str` cases the adequacy module
+  proves `examplesWeak = weak` by `rfl` on the two string literals: `decide +kernel` evaluated the
+  plugin source twice and was killed for memory (exit 137).
+- **N2 (verifier, Low): the layout rule compared names, but Lean maps a name to a file by its
+  components.** Without lint, `Models.«..».Mitos.Impl.Resolve` passed gate 6's "imports only `Init`,
+  `Std`, `Mitos.Core` and `Models`" by name and reached a file outside the locked models, and a
+  component such as `«X/Examples»` could name the examples module's file under another name.
+  **Fix:** `examplesLayout` rejects any model import whose components are not plain identifiers,
+  with gate 1's `Lint.plainComponents`. `model_dotdot_import` without lint: ACCEPTED before the check,
+  REJECTED@6 with it (`Models/ToyRequire.lean imports Models.«..».Mitos.Impl.Resolve; each component
+  of a module name must be a plain identifier`); its `expect` records the change.
+- **N1 (verifier, Low, fails closed): gate 6 does not check that the model is declared in the model
+  module.** It rests on gate 3's Challenge, which imports only the model module and is reported
+  before gate 6. **Choice: pin it with a case, not a third comparator run.** If gate 3 passes, the
+  model is declared within the model module's reach, which the layout keeps away from the examples,
+  and the adequacy module cannot see a second declaration of it. So a `model.json` run in gate 6
+  could change no verdict, would cost one more comparator run in every gate-6 judgment, and no case
+  could flip to ACCEPTED without it. `golden_model_in_examples` (the verifier's case: the model and
+  golden facts built with its `provides` `fact` in the examples module, an empty model module) is
+  REJECTED@2 in both modes, and ACCEPTED in both on a scratch gate whose Challenge also imports the
+  examples module.
+
 ## Done when
 - [x] all `checks` pass locally
 - [x] no `sorry`, no new axioms
@@ -304,6 +357,9 @@ model is rejected at gate 0 (`model_tamper`, unchanged).
   `model_include_str_src` added (full@1, comparator-only accept), each ACCEPTED with the ban removed;
   confirmed `include_str` is the only `Init`/`Std` file-read-into-data vector; minor findings deferred
   to a follow-up issue
+- [x] follow-up spec PR round 3: rebased onto main; main's twelve model cases on golden files, each
+  failing at gate 2 before the move and at its expected gates after it; N2 fixed, with
+  `model_dotdot_import` as its case; N1 pinned by `golden_model_in_examples`
 - [x] owner adds `spec-approved` to the spec PR and merges it (#20)
 - [ ] owner merges the gate PR
 - [x] run-log record written (ops/runs/)
