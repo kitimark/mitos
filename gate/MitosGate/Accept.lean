@@ -234,16 +234,114 @@ def atGate (g : GateId) (x : GateM α) : GateM α :=
     report g false s!"I/O error: {e}"
     throw (g, "I/O error")
 
+/-! ## `models.lock` -/
+
+/-- A workspace's model files: every `.lean` file under `Models/`, recursively, with its path
+relative to the workspace and its text, sorted by path. Gate 0 reads the models with it, and
+`mitos-gate lock-models` locks them. -/
+def modelFiles (workspace : System.FilePath) : IO (Array (String × String)) := do
+  (← leanFiles (workspace / "Models")).mapM fun f =>
+    return ((f.toString.drop (workspace.toString.length + 1)).toString, ← IO.FS.readFile f)
+
+/-- Whether `h` is a SHA-256 as `sha256sum` prints it: 64 lower-case hexadecimal digits.
+`sha256sum --check` also accepts upper case; gate 0 does not. -/
+def isSha256 (h : List Char) : Bool :=
+  h.length == 64 && h.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
+
+example : isSha256 "D50E5AC2F941C654A7141D3E5BBC1631E1547F442CF3027E6C597E238CEC21BB".toList = false := by
+  decide +kernel
+
+/-- `models.lock` for the model files `es`, each a path and its SHA-256, as `sha256sum` prints
+them: the SHA-256, two spaces and the path, one file per line. -/
+def renderLock (es : List (String × String)) : String :=
+  String.join (es.map fun (path, h) => h ++ "  " ++ path ++ "\n")
+
+/-- A line of `models.lock`, as its path and SHA-256: the SHA-256, two spaces, and the rest of the
+line is the path, which holds no two spaces in a row. -/
+def lockLine (l : List Char) : Except String (String × String) :=
+  let malformed : Except String (String × String) :=
+    .error s!"models.lock has a malformed line: {String.ofList l}"
+  match l.splitAt 64 with
+  | (h, ' ' :: ' ' :: path) =>
+    if isSha256 h ∧ ¬[' ', ' '] <:+: path then .ok (String.ofList path, String.ofList h)
+    else malformed
+  | _ => malformed
+
+/-- A path the list holds twice, if there is one. -/
+def listedTwice : List String → Option String
+  | [] => none
+  | p :: ps => if ps.contains p then some p else listedTwice ps
+
+/-- Gate 0's reading of `models.lock`: each line that is not empty, as its path and SHA-256. -/
 def lockEntries (lock : String) : Except String (List (String × String)) := do
-  let entries ← (lock.splitOn "\n").filter (fun l => !l.isEmpty) |>.mapM fun l =>
-    match l.splitOn "  " with
-    | [h, path] =>
-      if h.length == 64 && h.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then .ok (path, h)
-      else .error s!"models.lock has a malformed line: {l}"
-    | _ => .error s!"models.lock has a malformed line: {l}"
-  for (path, _) in entries do
-    if (entries.filter (·.1 == path)).length > 1 then .error s!"models.lock lists {path} twice"
+  let entries ← ((lock.toList.splitOn '\n').filter (!·.isEmpty)).mapM lockLine
+  if let some p := listedTwice (entries.map (·.1)) then throw s!"models.lock lists {p} twice"
   return entries
+
+theorem listedTwice_eq_none {ps : List String} : listedTwice ps = none ↔ ps.Nodup := by
+  induction ps with
+  | nil => simp [listedTwice]
+  | cons p ps ih => by_cases h : p ∈ ps <;> simp [listedTwice, h, ih]
+
+/-- A lock that gate 0 reads lists no path twice, so `List.lookup` finds a path's only line. -/
+theorem lockEntries_nodup {lock : String} {es : List (String × String)}
+    (h : lockEntries lock = .ok es) : (es.map (·.1)).Nodup := by
+  simp only [lockEntries, bind, Except.bind] at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · rename_i twice
+      cases h
+      exact listedTwice_eq_none.mp (Option.eq_none_iff_forall_ne_some.mpr twice)
+
+/-- Gate 0 reads back exactly what `mitos-gate lock-models` writes: model files with distinct
+paths that hold no line break and no two spaces in a row, each with its SHA-256 as `sha256sum`
+prints it. -/
+theorem lockEntries_renderLock {es : List (String × String)}
+    (hashes : ∀ e ∈ es, isSha256 e.2.toList) (paths : ∀ e ∈ es, '\n' ∉ e.1.toList)
+    (spaces : ∀ e ∈ es, ¬[' ', ' '] <:+: e.1.toList)
+    (distinct : (es.map (·.1)).Nodup) : lockEntries (renderLock es) = .ok es := by
+  let line (e : String × String) := e.2.toList ++ ' ' :: ' ' :: e.1.toList
+  have lines : ∀ es : List (String × String), (∀ e ∈ es, isSha256 e.2.toList) →
+      (∀ e ∈ es, '\n' ∉ e.1.toList) →
+      (renderLock es).toList.splitOn '\n' = es.map line ++ [[]] := by
+    intro es hs ps
+    induction es with
+    | nil => rfl
+    | cons e es ih =>
+      have hx : '\n' ∉ line e := by
+        have := hs e (by simp)
+        simp only [isSha256, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at this
+        simp only [line, List.mem_append, List.mem_cons, not_or]
+        exact ⟨fun m => absurd (this.2 _ m) (by decide), by decide, by decide, ps e (by simp)⟩
+      have : (renderLock (e :: es)).toList = line e ++ '\n' :: (renderLock es).toList := by
+        simp [renderLock, line]
+      rw [this, List.splitOn_append_cons_self_of_not_mem hx,
+        ih (fun e m => hs e (by simp [m])) (fun e m => ps e (by simp [m]))]
+      rfl
+  have parsed : ∀ es : List (String × String), (∀ e ∈ es, isSha256 e.2.toList) →
+      (∀ e ∈ es, ¬[' ', ' '] <:+: e.1.toList) → (es.map line).mapM lockLine = .ok es := by
+    intro es hs ss
+    induction es with
+    | nil => rfl
+    | cons e es ih =>
+      have he := hs e (by simp)
+      have len : e.2.toList.length = 64 := by
+        simp only [isSha256, Bool.and_eq_true, beq_iff_eq] at he; exact he.1
+      have : lockLine (line e) = .ok e := by
+        simp [lockLine, line, List.splitAt_eq, len, he, ss e (by simp)]
+      simp [List.mapM_cons, this, ih (fun e m => hs e (by simp [m])) (fun e m => ss e (by simp [m]))]
+      rfl
+  have kept : (es.map line).filter (!·.isEmpty) = es.map line := by
+    rw [List.filter_eq_self]
+    intro l m
+    simp only [List.mem_map] at m
+    obtain ⟨e, -, rfl⟩ := m
+    simp [line]
+  simp only [lockEntries, lines es hashes paths, List.filter_append]
+  simp [kept, parsed es hashes spaces, bind, Except.bind, listedTwice_eq_none.mpr distinct]
+  rfl
 
 def provenance (c : Config) (pluginFile : System.FilePath) : GateM Inputs := do
   let mut errs := #[]
@@ -260,9 +358,7 @@ def provenance (c : Config) (pluginFile : System.FilePath) : GateM Inputs := do
   let mut pluginSrc := ""
   if ← pluginFile.pathExists then pluginSrc ← IO.FS.readFile pluginFile
   else errs := errs.push s!"plugin file {pluginFile} not found"
-  let mut files := #[]
-  for f in ← leanFiles (c.workspace / "Models") do
-    files := files.push ((f.toString.drop (c.workspace.toString.length + 1)).toString, ← IO.FS.readFile f)
+  let files ← modelFiles c.workspace
   let modelFile := ((System.mkFilePath parts.dropLast).addExtension "lean").toString
   unless files.any (·.1 == modelFile) do
     errs := errs.push s!"model module file {c.workspace / modelFile} not found"
