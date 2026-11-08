@@ -144,7 +144,35 @@ rely on both.
   MCP merge tool with `expectedHeadSha`. `gh pr merge` fails in these sessions (see **Forge** in
   `.claude/skills/poteto-mode/playbooks/opening-a-pr.md`). A PR owner that is still running
   merges it, as in Autopilot-full step 5. Otherwise the root makes that one call.
+  A PR that is part of a GitHub stack merges through the asynchronous endpoint instead (see
+  **Stacks**).
 - A failed verdict goes to a fresh PR owner with the findings.
+
+## Stacks
+
+- PRs that build on each other form a GitHub stack, not a base-branch chain retargeted by hand.
+  Make one with `gh stack` (`gh stack submit`) or the REST stack routes (`POST
+  repos/{owner}/{repo}/stacks` with the PR numbers, bottom to top). GitHub rebases the rest when the
+  bottom PR merges and retargets the next one to trunk, so nobody retargets or force-pushes a
+  stacked PR to follow its parent. `update-prs.yml` skips every PR in a stack for the same reason.
+  Repair a stack with `gh stack rebase` or the **Rebase stack** button.
+- Merge a stack bottom-up, one PR at a time. Each PR needs its own verdict and green `gate` at its
+  head before its turn, as for any PR.
+- An agent merges a stacked PR with the asynchronous endpoint, because the legacy `/merge` route
+  cannot merge a stack: `gh api -X PUT repos/{owner}/{repo}/pulls/<pr>/merge-async -f
+  merge_method=rebase -f sha=<head>` answers `202` with a `uuid`. Poll `GET
+  repos/{owner}/{repo}/pulls/<pr>/merge-async/<uuid>` until the status is `merged` or `failed`
+  (`enqueued` means only that a merge queue took it).
+- Never merge a mid-stack PR to land the ones below it. Merging a stacked PR merges every open PR
+  below it too, verdict or not. So a PR above one that waits for the user (a label or a merge) waits
+  as well.
+
+## Working rules
+
+- A foreground Bash command times out at 600000 ms. Long waits use a bounded watcher
+  (`timeout 540 bash -c 'until <check>; do sleep 60; done'`, re-issued), never one long command.
+- Each agent names its scratch folders so that no other agent can pick the same name, for example
+  with a prefix unique to that agent. Two verifiers once overwrote each other's folders.
 
 ## Done means verified
 
