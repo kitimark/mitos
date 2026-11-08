@@ -228,9 +228,9 @@ structure Judgments where
   plugin  : Judgment
   /-- Gate 6: the model module against the adequacy Challenge. -/
   model   : Judgment
-  /-- Build outputs that gate 6's run left and the plugin's run changed or removed, or why they could
-  not be compared. Empty when gates 3 and 6 judged one elaboration of the model. -/
-  rebuilt : Array String
+  /-- Why gates 3 and 6 may not have judged one elaboration of the model: the plugin's run changed
+  or removed a build output of gate 6's run, or the outputs could not be compared. -/
+  rebuilt : Option String
 
 /-- One judging directory, so gates 3 and 6 see one elaboration of the model. Gate 6 is judged
 first, before the plugin is built, so nothing the plugin's build writes can reach it. The plugin's
@@ -260,9 +260,17 @@ def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO 
     let before ← buildOutputs dir
     let plugin ← runComparator c dir "comparator.json"
     let after ← buildOutputs dir
+    -- An accepted gate 6 built the model module, so its `.olean` must be among the outputs;
+    -- without it (another Lake layout, say) the comparison would check nothing.
+    let modelOlean := "/".intercalate ((modelModule m.model).splitOn ".") ++ ".olean"
     let rebuilt := match before, after with
-      | .ok b, .ok a => changedOutputs b a
-      | .error e, _ | _, .error e => #[e]
+      | .ok b, .ok a =>
+        let changed := changedOutputs b a
+        if model.accepted && !b.any (·.1 == modelOlean) then
+          some s!"gate 6's run left no {modelOlean} under .lake/build/lib/lean/ to compare"
+        else if changed.isEmpty then none
+        else some s!"the plugin's run changed {", ".intercalate (changed.toList.take 5)}"
+      | .error e, _ | _, .error e => some e
     return { plugin, model, rebuilt }
   finally
     if c.keep then IO.println s!"  (judging directory kept: {oneLine dir.toString})"
@@ -296,15 +304,14 @@ def adequacyFailure (model out : String) : String :=
   else if has "kernel" && has "reject" then s!"a kernel rejected `{model}.adequate`"
   else "the adequacy proof could not be judged"
 
-def adequacyGate (m : LockedModels) (j : Judgment) (rebuilt : Array String) : GateM Unit := do
+def adequacyGate (m : LockedModels) (j : Judgment) (rebuilt : Option String) : GateM Unit := do
   if !j.accepted then
     report 6 "model adequacy" false (adequacyFailure m.model j.output)
     showComparatorTail j.output
     throw (6, "model adequacy")
-  unless rebuilt.isEmpty do
-    report 6 "model adequacy" false <|
-      "the plugin's run changed the build outputs of gate 6's run, so gates 3 and 6 did not judge " ++
-      s!"one elaboration of the model: {", ".intercalate (rebuilt.toList.take 5)}"
+  if let some why := rebuilt then
+    report 6 "model adequacy" false
+      s!"gates 3 and 6 may not have judged one elaboration of the model: {why}"
     throw (6, "model adequacy")
   report 6 "model adequacy" true
     s!"{m.model}.adequate : Mitos.Model.Adequate {m.model} {m.model}.examples"
