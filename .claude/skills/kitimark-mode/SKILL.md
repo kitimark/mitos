@@ -184,8 +184,9 @@ watcher's echo filter and the merge rule below rely on both.
 
 - **Blocking only.** A round fixes only blocking findings, everywhere, playbooks included. A
   finding blocks when a run at the head or a line of the diff shows it: a cheat the gate accepts,
-  a wrong result, a red check, or a doc line the PR made wrong. A problem `main` already has
-  blocks only if the PR copies it or newly reaches it. Everything else is minor.
+  a wrong result, a red check, a check added or restored without the cheat case that pins it
+  (`docs/process.md`, Security fixes), or a doc line the PR made wrong. A problem `main` already
+  has blocks only if the PR copies it or newly reaches it. Everything else is minor.
 - Minor findings go into one `follow-up` issue per PR, which the PR body links. The PR owner files
   those it holds in its round, and the root files a passing verdict's. A minor fix joins a round
   only when it is one line in a file that round already touches.
@@ -218,10 +219,13 @@ watcher's echo filter and the merge rule below rely on both.
   each resolved file in its report. The verifier at that head reads each resolution as new code
   against both sides, and confirms that every check either side added survives it.
 - A verifier does not rerun the whole cheat corpus. It reads the `cheat-logs` artifact of the
-  latest `ci` run at the head SHA, which holds each case's full and `--skip-lint` log:
-  `gh run list --commit <head> --workflow ci.yml --json databaseId,conclusion`, then
-  `gh run download <run-id> -n cheat-logs`. Locally it runs only the cases the change adds or
-  edits, and the variants it builds to test a finding, with `eval/cheats/run.sh <case>...`.
+  latest `ci` run at the head SHA: `gh run list --commit <head> --workflow ci.yml --json
+  databaseId,conclusion`, then `gh run download <run-id> -n cheat-logs`. It uses the artifact
+  only when that run's `Cheat corpus is rejected` step passed (`gh api
+  repos/{owner}/{repo}/actions/runs/<run-id>/jobs`), because the CI cache can restore logs from
+  an earlier run. Then every case at the head has a fresh full and `--skip-lint` log, and a log
+  for a case the head lacks is stale. Locally it runs only the cases the change adds or edits,
+  and the variants it builds to test a finding, with `eval/cheats/run.sh <case>...`.
 - The root writes each verdict into the PR's In flight row on the Owner dashboard, or into its
   merged line once the PR has merged (see Catching the user up): pass or fail, the short head it
   covers and who gave it, such as `PASS sonnet-xhigh + opus-xhigh at 43fc333`.
