@@ -96,7 +96,7 @@ budget: 40 iterations · 2h wall · 1.5M tokens
 | Role | Who | May write | May not write |
 |---|---|---|---|
 | Owner | person | statements, models, lock files, phase plans; merges trusted paths | — |
-| Orchestrator | agent, the session the owner talks to | task choice, agent briefs, merges of verified PRs, catch-ups | any repository file, which it hands to other agents |
+| Orchestrator | agent, the session the owner talks to | task choice, agent briefs, merges of verified PRs, catch-ups on GitHub (§4) | any repository file, which it hands to other agents |
 | Planner | agent | task files; draft statements, submitted as a spec PR | proofs, gate, eval |
 | Builder | agent (a few in parallel) | code and proofs inside the task's `touches` | statements, lock files, `gate/`, `eval/`, models |
 | Red team | agent | new cases in `eval/cheats/`, counterexamples | anything merged into trusted code |
@@ -252,6 +252,23 @@ PRs get the fixture scorecard (`eval/fixtures/toy`, hand labels in its `labels.t
 comment from the `scorecard-comment` job in `ci.yml`. The diff against `main`'s scorecard comes
 with the nightly scorecard.
 
+### Owner catch-up on GitHub
+
+The owner catches up on GitHub, not in a chat session:
+
+- **The Owner dashboard**, a pinned issue. The orchestrator rewrites its body when something
+  changes for the owner: what needs the owner, each open PR with its head, `gate` result and
+  verdict, what comes next, and the open follow-ups.
+- **Assigned to the owner** means it needs the owner (`is:open assignee:kitimark`). Agents act
+  through the owner's account, and GitHub does not notify a user of their own actions, so
+  `.github/workflows/owner-ping.yml` posts an @mention as `github-actions[bot]` on each such
+  assignment. PRs carry no status labels, because any label change re-runs the `gate`.
+- **One milestone per phase, one issue per open plan row.** `plan/phase-N.md` keeps what is done
+  in which order, and its Issue column links each row's issue. Status lives in the issue and its
+  PRs. The labels `follow-up` and `process` mark work found along the way.
+
+The rules are in `.claude/skills/kitimark-mode/SKILL.md`, "Catching the user up".
+
 ### Tripwires: stop and fix first
 
 | Signal | Meaning | Action |
@@ -279,6 +296,7 @@ At the end of each phase the owner reviews the scorecard trend and the run logs:
 | L2 CI fixes | the agent that owns the PR, watching it and fixing failures inside the task's `touches` |
 | L3 | `.github/workflows/nightly.yml` (full checks, `--paranoid` comparator, next-toolchain canary), plus a scheduled task posting the scorecard |
 | L4 | the scorecard trend plus a short retrospective in `plan/` |
+| Owner catch-up | the pinned Owner dashboard issue, issues and PRs assigned to the owner, one milestone per phase, `.github/workflows/owner-ping.yml` |
 
 ## 6. Local setup
 

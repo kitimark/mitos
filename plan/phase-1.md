@@ -29,17 +29,21 @@ later phase relies on.
 
 ## Tasks
 
-| # | Task | Kind | Status |
+| # | Task | Kind | Issue |
 |---|---|---|---|
-| P1-001 | Resolver vocabulary, statements, adequacy theorems, Challenge; spec-PR mechanics; docs for solo-owner review | spec | done ([#1](https://github.com/kitimark/mitos/pull/1)) |
-| P1-002 | Reference resolver: `Mitos.Impl.resolve`; prove sound, complete, unresolved-exact, total | impl | done ([#2](https://github.com/kitimark/mitos/pull/2)) |
-| P1-003 | Prove assumptions-exact, status-honest, retract-exact | impl | done ([#2](https://github.com/kitimark/mitos/pull/2)) |
-| P1-004 | Impact analysis `Mitos.Impl.impact` (worklist reverse reachability); prove impact-correct | impl | done ([#2](https://github.com/kitimark/mitos/pull/2)) |
-| P1-005 | Checked UTF-8 byte spans in `Span` and the line layer; migrate obligations and the toy plugin | spec, then impl | done ([#7](https://github.com/kitimark/mitos/pull/7)) |
-| P1-006 | Mutation testing: `eval/mutants/` + runner; each mutant must break a theorem | tooling | not started |
-| P1-007 | Fixture repos + hand labels; scorer; PR scorecard comment | tooling | in review ([#18](https://github.com/kitimark/mitos/pull/18)) |
-| P1-008 | Nightly scheduled job; next-toolchain canary | tooling | done ([#5](https://github.com/kitimark/mitos/pull/5)) |
-| P1-009 | Gate 6 for models: examples, vacuity checks (empty / emit-everything extractors) | gate | not started |
+| P1-001 | Resolver vocabulary, statements, adequacy theorems, Challenge; spec-PR mechanics; docs for solo-owner review | spec | none, landed in [#1](https://github.com/kitimark/mitos/pull/1) |
+| P1-002 | Reference resolver: `Mitos.Impl.resolve`; prove sound, complete, unresolved-exact, total | impl | none, landed in [#2](https://github.com/kitimark/mitos/pull/2) |
+| P1-003 | Prove assumptions-exact, status-honest, retract-exact | impl | none, landed in [#2](https://github.com/kitimark/mitos/pull/2) |
+| P1-004 | Impact analysis `Mitos.Impl.impact` (worklist reverse reachability); prove impact-correct | impl | none, landed in [#2](https://github.com/kitimark/mitos/pull/2) |
+| P1-005 | Checked UTF-8 byte spans in `Span` and the line layer; migrate obligations and the toy plugin | spec, then impl | none, landed in [#7](https://github.com/kitimark/mitos/pull/7) |
+| P1-006 | Mutation testing: `eval/mutants/` + runner; each mutant must break a theorem | tooling | [#30](https://github.com/kitimark/mitos/issues/30) |
+| P1-007 | Fixture repos + hand labels; scorer; PR scorecard comment | tooling | none, landed in [#18](https://github.com/kitimark/mitos/pull/18) |
+| P1-008 | Nightly scheduled job; next-toolchain canary | tooling | none, landed in [#5](https://github.com/kitimark/mitos/pull/5) |
+| P1-009 | Gate 6 for models: examples, vacuity checks (empty / emit-everything extractors) | gate | [#31](https://github.com/kitimark/mitos/issues/31) |
+
+Each open row has an issue in the [Phase 1 milestone](https://github.com/kitimark/mitos/milestone/1),
+and its status lives in that issue and its PRs. Rows that landed before issues were used have
+none.
 
 P1-002 and P1-004 can run in parallel; P1-003 follows P1-002 because both edit
 `Mitos/Impl/Resolve.lean`. In practice P1-002, P1-003 and P1-004 landed in one implementation PR,

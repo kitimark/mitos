@@ -1,0 +1,48 @@
+name: owner-ping
+
+# Agents act through the owner's account, and GitHub never notifies a user of their own actions.
+# So when an issue or PR is assigned to the owner, this job comments as github-actions[bot], a
+# different actor, and its @mention notifies the owner (kitimark-mode skill, "Catching the user
+# up"). pull_request_target runs this file from the default branch, so it also covers PRs stacked
+# on another branch. It never checks out or runs PR code, and it uses no secrets.
+on:
+  issues:
+    types: [assigned]
+  pull_request_target:
+    types: [assigned]
+
+permissions: {}
+
+jobs:
+  ping:
+    if: github.event.assignee.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Comment with the latest catch-up line, or the title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          TITLE: ${{ github.event.issue.title || github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          # The first line of the owner account's latest comment that starts with "Catch-up",
+          # without its Markdown marks. Every "@" is dropped so the line mentions nobody else.
+          line=$(gh api --paginate --slurp "repos/$REPO/issues/$NUMBER/comments?per_page=100" \
+            | jq -r --arg owner "$OWNER" '
+                [ .[][]
+                  | select(.user.login == $owner)
+                  | .body | split("\n")[0]
+                  | sub("^[#* ]+"; "") | sub("[* ]+$"; "")
+                  | select(test("^catch-up"; "i"))
+                  | sub("^catch-up:? *"; ""; "i") ]
+                | last // empty')
+          [ -n "$line" ] || line=$TITLE
+          line=${line//@/}
+          body=$(printf '<!-- owner-ping -->\n@%s this needs you: %s' "$OWNER" "${line:0:200}")
+          gh api -X POST "repos/$REPO/issues/$NUMBER/comments" -f body="$body" --jq .html_url
