@@ -321,6 +321,14 @@ record what the later gates catch on their own. Every full run must reject at th
 The comparator-only expectation is checked as well, so a change in what each layer catches is
 noticed and recorded on purpose.
 
+A `comparator_only=accept` case may also have one `guards=R` line, naming the lint rule it pins:
+the id at the end of each gate-1 violation, such as `[banned:include_str]`. The runner then checks
+that every violation of the full run has rule R. Gate 1 is the only gate `--skip-lint` skips, so
+without R the full run would be ACCEPTED, and a change that drops R turns the corpus red.
+`lake exe mitos-lint-test` requires every entry of `Lint.banned` to be guarded by a case or listed
+in `eval/cheats/unguarded`, and that list may only shrink, since its length is pinned in
+`gate/LintTest.lean`.
+
 A case's `Models/` is copied over the example workspace's, so a case model can import the toy's
 examples module. A case with its own model is judged against the example workspace's
 `models.lock`, so gate 0 rejects it (`model_tamper`), unless its `expect` has

@@ -1,0 +1,44 @@
+# Lint bans (`Lint.banned`) that no cheat case guards yet, one rule id per line.
+# `lake exe mitos-lint-test` fails unless every ban is guarded by a case (a `guards=` line in its
+# `expect`) or listed here. The list may only shrink: guarding a ban takes it off the list and
+# lowers `unguardedCount` in `gate/LintTest.lean`.
+banned:sorry
+banned:admit
+banned:axiom
+banned:unsafe
+banned:partial
+banned:opaque
+banned:noncomputable
+banned:export
+banned:csimp
+banned:init
+banned:builtin_init
+banned:never_extract
+banned:native_decide
+banned:native
+banned:ofReduceBool
+banned:reduceBool
+banned:trustCompiler
+banned:notation
+banned:infix
+banned:infixl
+banned:infixr
+banned:prefix
+banned:postfix
+banned:macro
+banned:macro_rules
+banned:syntax
+banned:elab
+banned:elab_rules
+banned:declare_syntax_cat
+banned:binder_predicate
+banned:instance
+banned:scoped
+banned:meta
+banned:initialize
+banned:builtin_initialize
+banned:run_cmd
+banned:run_elab
+banned:run_meta
+banned:debug
+banned:Lean

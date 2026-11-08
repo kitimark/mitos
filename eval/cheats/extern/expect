@@ -1,3 +1,4 @@
 full=1
 comparator_only=accept
 why=Binds the runtime implementation to foreign C code via `@[extern]`.
+guards=banned:extern

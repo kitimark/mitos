@@ -1,3 +1,4 @@
 full=1
 comparator_only=accept
 why=The honest plugin plus `import Models.«..».Mitos.Impl.Resolve`, which reaches the reference implementation that plugins may not import. Lint de-escaped the module name to the string `Models....Mitos.Impl.Resolve`, which starts with the allowed `Models.`, so this passed gates 0-5 with --paranoid. Imports are now checked on the parsed name's components, and each must be a plain identifier.
+guards=import:component

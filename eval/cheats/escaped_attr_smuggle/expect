@@ -1,3 +1,4 @@
 full=1
 comparator_only=accept
 why=`@[«implemented_by» evilRun]` escapes the attribute name, and Lean still applies `implemented_by`. Lint must match identifiers by name, not by spelling.
+guards=banned:implemented_by
