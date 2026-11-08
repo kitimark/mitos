@@ -310,8 +310,7 @@ def splitLines (s : String) : List String :=
     if s.endsWith "\n" then ls.dropLast else ls
 
 /-- `s` quoted for a message: `"` and `\` are escaped with `\`, and only the first `max` characters
-are kept. It does not sanitize: a message is printed through `oneLine` (`Problem.render`), which
-writes every `\` as `\u{005C}` and every code point off its allowlist as `\u{XXXX}`. -/
+are kept. It does not sanitize: every message is printed through `oneLine`. -/
 def quote (s : String) (max : Nat := 60) : String :=
   let cs := s.toList
   let esc (acc : String) (c : Char) : String :=
@@ -320,9 +319,8 @@ def quote (s : String) (max : Nat := 60) : String :=
     else acc.push c
   "\"" ++ (cs.take max).foldl esc "" ++ (if cs.length > max then "\"..." else "\"")
 
-/-- GitHub's escaping for the message of a workflow command: `%`, carriage return and newline
-become `%25`, `%0D` and `%0A`. Written character by character, not with `String.replace`, so that
-the kernel can evaluate `Problem.render` in the examples below. -/
+/-- GitHub's escaping for the message of a workflow command. Written character by character, not
+with `String.replace`, so that the kernel can evaluate `Problem.render` in the examples below. -/
 def escapeData (s : String) : String :=
   String.ofList <| s.toList.flatMap fun
     | '%' => ['%', '2', '5']
@@ -330,8 +328,7 @@ def escapeData (s : String) : String :=
     | '\n' => ['%', '0', 'A']
     | c => [c]
 
-/-- GitHub's escaping for a property value of a workflow command: `escapeData`, and `:` and `,`
-become `%3A` and `%2C`. -/
+/-- GitHub's escaping for a property value of a workflow command. -/
 def escapeProperty (s : String) : String :=
   String.ofList <| (escapeData s).toList.flatMap fun
     | ':' => ['%', '3', 'A']
