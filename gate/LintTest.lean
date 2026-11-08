@@ -116,6 +116,7 @@ def rejected : List (String × String) :=
     ("«sorry»", model "theorem t : 1 = 2 := «sorry»"),
     ("admit", model "theorem t : 1 = 2 := by admit"),
     ("native_decide", model "theorem t : 1 = 1 := by native_decide"),
+    ("include_str", model "def s : String := include_str \"../comparator.json\""),
     ("Lean.ofReduceBool", model "def x := Lean.ofReduceBool"),
     ("trustCompiler", model "def x := Lean.trustCompiler"),
     ("set_option debug in a proof", model "theorem t : 1 = 1 := by\n  set_option debug.skipKernelTC true in rfl"),
@@ -189,8 +190,10 @@ def main : IO UInt32 := do
     ⟨"model", "examples/acme/Models/ToyRequire.lean", toy, true⟩ ::
       accepted.map (fun (n, s) => ⟨"model", n, s, true⟩) ++
       rejected.map (fun (n, s) => ⟨"model", n, s, false⟩) ++ headers "model" ++ stops "model" toy ++
-      [⟨"plugin", "examples/acme/Plugins/ToyRequire.lean", plugin, true⟩] ++ headers "plugin" ++
-      stops "plugin" plugin ++
+      [⟨"plugin", "examples/acme/Plugins/ToyRequire.lean", plugin, true⟩,
+       ⟨"plugin", "include_str",
+         "import Mitos.Core\n\ndef s : String := include_str \"../comparator.json\"\n", false⟩] ++
+      headers "plugin" ++ stops "plugin" plugin ++
       [⟨"core", "core/Mitos/Core.lean", ← IO.FS.readFile ("core" / "Mitos" / "Core.lean"), true⟩] ++
       coreCases.map (fun (n, s, w) => ⟨"core", n, s, w⟩)
   let mut fails := 0

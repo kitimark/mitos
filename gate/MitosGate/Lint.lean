@@ -156,7 +156,12 @@ def banned : List String :=
     "notation", "infix", "infixl", "infixr", "prefix", "postfix",
     "macro", "macro_rules", "syntax", "elab", "elab_rules", "declare_syntax_cat",
     "binder_predicate", "instance", "scoped", "meta", "initialize", "builtin_initialize",
-    "run_cmd", "run_elab", "run_meta", "debug", "Lean" ]
+    "run_cmd", "run_elab", "run_meta", "debug", "Lean",
+    -- `include_str` reads a judging-directory file at elaboration time, so an approved model
+    -- could pick its `model` and `examples` from a plugin-chosen file (`../comparator.json`,
+    -- `../Plugins/<P>.lean`) and admit a dishonest extractor. It is the only `Init`/`Std` term
+    -- syntax that reads a file's contents into a term; a plugin never needs it either.
+    "include_str" ]
 
 def allowedHashCommands : List String := ["#check", "#print"]
 
