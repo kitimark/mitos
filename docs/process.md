@@ -207,10 +207,12 @@ that says nothing holds would admit the extractor that emits nothing, and one th
 would admit one that emits too much. So for `--model Models.X.model`, the model module must also
 declare, pinned with it in `models.lock`:
 
-- `Models.X.model.examples : Mitos.ModelExamples`: files paired with a fact the model must say
-  holds (`holds`) and with a fact it must reject (`nearMisses`);
-- `Models.X.model.adequate : Mitos.Model.Adequate Models.X.model Models.X.model.examples`: at least
-  one example and one near miss, every example's fact holds and is anchored, no near miss's does.
+- `Models.X.model.examples : Mitos.ModelExamples`: golden files, each a reviewed file with every
+  fact the model must say holds in it and no other. A golden file with no facts says that the file
+  requires nothing;
+- `Models.X.model.adequate : Mitos.Model.Adequate Models.X.model Models.X.model.examples`: on each
+  golden file a fact holds exactly when it is listed, every listed fact is anchored, and some golden
+  file lists a fact that another does not.
 
 Gate 6 generates a Challenge (`Challenge/Mitos/ModelAdequacy.lean`, a path no plugin name gives)
 with the model and its examples as definition holes and the adequacy theorem as the statement,
@@ -234,11 +236,25 @@ model allowlist rejects such code anyway, and `noncomputable`, so the examples a
 reviewer can evaluate. The verdict still
 reports gates 2–5 before gate 6. The locked theorems `Model.Adequate.empty_not_complete` and
 `Model.Adequate.everything_not_sound` are the vacuity checks: against an adequate model, the
-extractor that emits nothing is not complete, and the one that emits every example fact on every
-file is not sound. Gate 6 cannot tell whether the examples are the right ones; that stays with the
-reviewer of the model. With `--paranoid`, all five kernels replay the model's proof: nanoda
-overflowed its stack on a `decide` that compared whole facts built from a non-ASCII file, so the toy
-model compares a fact's offset before the fact itself (`holds_iff`).
+extractor that emits nothing is not complete, and the one that emits every listed fact on every
+file is not sound. More generally (`sound_on_golden`, `complete_on_golden`), a plugin that passes
+gates 3 and 6 emits on each golden file only listed facts, and a fact with the kind and identity of
+each listed one. Each golden file is an exact test of the model, and of the plugin through it.
+
+What gate 6 does not show:
+- whether the golden files are the right ones, or enough of them;
+- anything about the model on files that are not golden.
+
+A model whose `Holds` is true exactly on its golden facts, a lookup table, is adequate. Against it,
+a lookup-table extractor that knows only the golden files passes every gate. Gate 6 cannot rule
+that out. Owner review of `Holds` carries it, and later the mutation and corpus checks (gate 7)
+will too. The same holds for a model that is right on its golden files and wrong elsewhere, such as
+one that reads only the first lines of a file.
+
+With `--paranoid`, all five kernels replay the model's proof. nanoda overflowed its stack on a
+`decide` that compared whole facts built from a non-ASCII file. So the toy model decides its
+requirement lines as offsets and characters, and never compares `String`s
+(`golden_of_requirements`).
 
 Gates 7 (corpus and differential runs) and 8 (human review) come in later phases.
 
@@ -270,7 +286,9 @@ own, since CI reads every `models.lock` path as spec): `lock_duplicate_path` lis
 second time with a wrong hash, and gate 0 rejects it as `sha256sum --check` would. `empty_extractor`,
 `emit_everything` and `weakened_adequacy` stand for a weak model the owner approved by mistake:
 gates 0–5 accept all three and gate 6 rejects them. In a full run gate 1 already rejects
-`emit_everything`, whose unprovable adequacy theorem is `sorry`.
+`emit_everything`, whose unprovable adequacy theorem is `sorry`. In `nearmiss_scope` the model has
+the toy model's golden files but reads a commented-out line as a dev requirement. Near misses, which
+excluded only one exact fact, let it pass; its golden file `commentedOutLine` rejects it.
 In `judge_dir_model` the model reads its judging directory, so it meant one model at gate 3
 and another at gate 6 while they had separate directories. Lint rejects its `include_str` and the
 `sorry` its proof falls back to, and without lint gate 6 does, because both gates now judge one

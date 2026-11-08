@@ -13,14 +13,11 @@ def model : Mitos.Model where
   Holds _ _ := False
 
 def model.examples : Mitos.ModelExamples where
-  holds :=
-    [ ("require left-pad\n", fact 0 "left-pad".toList),
-      ("require é\nrequire left-pad\n", fact 11 "left-pad".toList) ]
-  nearMisses :=
-    [ ("# require left-pad\n", fact 2 "left-pad".toList),
-      ("require é\nrequire left-pad\n", fact 10 "left-pad".toList) ]
+  golden :=
+    [ { file := "require left-pad\n", facts := [fact 0 "left-pad".toList] },
+      { file := "# require left-pad\n", facts := [] } ]
 
-theorem model.adequate : ∀ e ∈ model.examples.nearMisses, ¬ model.Holds e.1 e.2 :=
-  fun _ _ h => h
+theorem model.adequate : ∀ g ∈ model.examples.golden, ∀ f, model.Holds g.file f → f ∈ g.facts :=
+  fun _ _ _ h => h.elim
 
 end Models.ToyRequire

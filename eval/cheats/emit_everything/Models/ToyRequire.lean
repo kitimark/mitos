@@ -17,16 +17,20 @@ def lineFact (o : Nat) (l : List Char) : Mitos.Fact :=
 def model : Mitos.Model where
   Holds s f := ∃ o l, (o, l) ∈ Mitos.lines s.toList ∧ f = lineFact o l
 
+def wholeLineAsPackage : Mitos.GoldenFile where
+  file := "require left-pad\n"
+  facts := [fact 0 "left-pad".toList]
+
+def charOffsetNotByteOffset : Mitos.GoldenFile where
+  file := "require é\nrequire left-pad\n"
+  facts := [fact 0 "é".toList, fact (Mitos.utf8Len "require é\n".toList) "left-pad".toList]
+
+def commentedOutLine : Mitos.GoldenFile where
+  file := "# require left-pad\n"
+  facts := []
+
 def model.examples : Mitos.ModelExamples where
-  holds :=
-    [ ("require left-pad\n", fact 0 "left-pad".toList),
-      ("require é\nrequire left-pad\n", fact 11 "left-pad".toList) ]
-  nearMisses :=
-    [ ("# require left-pad\n", fact 2 "left-pad".toList),
-      ("require é\nrequire left-pad\n", fact 10 "left-pad".toList),
-      ("require left-pad\n",
-        { kind := .requires, ident := { kind := "toy", key := "require left-pad" },
-          span := { start := 0, len := 16 } }) ]
+  golden := [wholeLineAsPackage, charOffsetNotByteOffset, commentedOutLine]
 
 theorem model.adequate : model.Adequate model.examples := by
   sorry
