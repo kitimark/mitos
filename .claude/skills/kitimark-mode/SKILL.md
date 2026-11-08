@@ -163,11 +163,12 @@ rely on both.
   rebase a stack when `main` moves ahead, and `update-prs.yml` skips every PR in a stack, so it
   never labels one `needs-rebase`. When `main` moves ahead of a stack, its owner rebases the whole
   stack, or the root gives it to a PR owner as it would a `needs-rebase` label. Rebase each branch
-  onto the one below it, bottom-up from `main`, then push all of them in one
-  `git push --atomic --force-with-lease`. `gh stack rebase` and then `gh stack push` do the same
-  git work (the remote branches change only at the push), and their PR sync over GraphQL fails
-  here without stopping them. The **Rebase stack** button does it on the server, but it is browser
-  only: the REST API has no route that rebases a stack.
+  onto the one below it, bottom-up from `main`, then push every branch of the stack in one
+  `git push --atomic --force-with-lease origin <bottom> <next> ...`, naming each branch, because a
+  bare `git push` pushes only the current one. `gh stack rebase` and then `gh stack push` do the
+  same git work (the remote branches change only at the push), and their PR sync over GraphQL
+  fails here without stopping them. The **Rebase stack** button does it on the server, but it is
+  browser only: the REST API has no route that rebases a stack.
 - Merge a stack bottom-up, one PR at a time. Each PR needs its own verdict and green `gate` at its
   head before its turn, as for any PR.
 - An agent merges a stacked PR with the asynchronous endpoint, because the legacy `/merge` route
@@ -176,7 +177,9 @@ rely on both.
   -f sha=<head>`. `direct_merge` keeps a merge queue out of it. The answer is `202` for a new
   request, `409` when one is already pending (`gh` exits 1 but still prints the body), `200` when
   the PR has already merged or is already queued, or `400` (`failed`) when it cannot merge, such
-  as a draft. `202` and `409` carry the request's id at `.details.uuid`. Poll `GET
+  as a draft. `202` and `409` carry the request's id at `.details.uuid`. A `409` names the request
+  already pending, so poll it only if its `.details.expected_head_sha`, `merge_method` and
+  `merge_action` are the ones you sent; otherwise stop and report the mismatch. Poll `GET
   repos/{owner}/{repo}/pulls/<pr>/merge-async/<uuid>` until `.status` is no longer `pending`.
   `merged`, `failed` (reason at `.details.message`) and `enqueued` are final, and `enqueued` means
   only that a merge queue took it. Read the PR back for `merged` before calling it landed.
