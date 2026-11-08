@@ -39,6 +39,26 @@ jobs:
       - name: Build core and gate
         run: lake build
 
+      # On a PR, every run-log line of the merge-base must still be there, so union merges stay
+      # correct (ops/runs/README.md); on main, the records parse with one per attempt.
+      - name: Run-log lines are append-only, one record per (task, role, attempt)
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            base=$(git merge-base "origin/$BASE_REF" HEAD)
+            dir="$RUNNER_TEMP/runlog-base"
+            rm -rf "$dir" && mkdir -p "$dir/ops/runs"
+            if git cat-file -e "$base:ops/runs" 2>/dev/null; then
+              git archive "$base" ops/runs | tar -x -C "$dir"
+            fi
+            lake exe mitos-gate runlog --base "$dir/ops/runs" --head ops/runs
+          else
+            lake exe mitos-gate runlog --head ops/runs
+          fi
+
       - name: Import rule (core imports Init, Std, Mitos.*; the spec never imports implementations)
         run: lake exe mitos-gate imports
 
