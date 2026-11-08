@@ -4,8 +4,9 @@ import MitosGate.Imports
 
 /-! Regression test for gate 1's lint: every command kind outside the model allowlist is rejected,
 every allowed kind is accepted, models pass the plugin rules, and the import rule holds for
-plugins and models alike (`Lint.check`, `Lint.checkModel`). Run with `lake exe mitos-lint-test`
-from the repository root. -/
+plugins and models alike (`Lint.check`, `Lint.checkModel`). Each rule reports under its own id
+(`ruleCases`), and each ban is guarded by a cheat case or listed in `eval/cheats/unguarded`
+(`ratchet`). Run with `lake exe mitos-lint-test` from the repository root. -/
 
 open MitosGate
 
@@ -168,6 +169,82 @@ def coreCases : List (String × String × Bool) :=
     ("import Lean", "import Lean\n\ndef x : Nat := 1\n", false),
     ("import Mitos.«..».Lean", "import Mitos.«..».Lean\n\ndef x : Nat := 1\n", false) ]
 
+/-- For each rule, a source and the rules of its violations (`Lint.Rule.id`), as a model
+(`checkModel`), a plugin (`check`) or a core file (`Imports.checkSource`). Each reports one rule
+but `import:modifier`, which parses only under a `module` header. -/
+def ruleCases : List (String × String × List Lint.Rule) :=
+  [ ("plugin", "import Mitos.Core\n\ndef x : Nat := 1 ⊞ 2\n", [.parse]),
+    ("plugin", "import Mitos.Core\ndef x := 1\nimport Lean\ntheorem t : 1 = 2 := sorry\n", [.parseStop]),
+    ("core", "import\n", [.parseHeader]),
+    ("plugin", "module\n\nimport Mitos.Core\n", [.importModule]),
+    ("plugin", "prelude\nimport Mitos.Core\n", [.importPrelude]),
+    ("plugin", "module\n\npublic import Mitos.Core\n", [.importModule, .importModifier]),
+    ("plugin", "import Models.«a.b»\n", [.importComponent]),
+    ("plugin", "import Mathlib\n", [.importRoot]),
+    ("plugin", "import Mitos.Core\n#eval 1\n", [.hash]),
+    ("plugin", "import Mitos.Core\nset_option pp.all true\n", [.setOption]),
+    ("plugin", "import Mitos.Core\ndef s : String := include_str \"../comparator.json\"\n",
+      [.banned "include_str"]),
+    ("model", model "variable (n : Nat)", [.modelCommand]),
+    ("model", model "public section\nend", [.modelSection]),
+    ("model", model "private def x : Nat := 1", [.modelModifier]),
+    ("model", model "class inductive K where\n  | a", [.modelDeclaration]),
+    ("model", model "class K where\n  a : Nat", [.modelClass]),
+    ("model", model "@[reducible] def x : Nat := 1", [.modelAttribute]),
+    ("model", model "inductive C where\n  | red\nwith\n  h : C → Nat\n  | .red => 0",
+      [.modelComputedFields]),
+    ("model", model "inductive C where\n  | red\n  deriving Repr", [.modelDeriving]) ]
+
+/-! ## Ban ratchet
+
+Each entry of `Lint.banned` is guarded by a cheat case, whose `expect` has `guards=banned:<token>`
+(`eval/cheats/run.sh` checks the claim), or listed in `eval/cheats/unguarded`. A change that drops
+a ban, as #21's rebase did, then turns this test red, whether or not a case guarded it. -/
+
+/-- How many bans `eval/cheats/unguarded` lists. The list may only shrink: a PR that guards a ban
+takes it off the list and lowers this number, and a PR that adds one must raise it here, in trusted
+code the owner merges. A number in the test, rather than a comparison with `main`'s copy, needs no
+git history or CI step, so the test gives the same answer locally and in CI. -/
+def unguardedCount : Nat := 40
+
+/-- `(case, rule)` for each `guards=` line of an `eval/cheats/<case>/expect`. -/
+def cheatGuards : IO (Array (String × String)) := do
+  let mut out := #[]
+  for e in ← System.FilePath.readDir ("eval" / "cheats") do
+    let f := e.path / "expect"
+    if (← e.path.isDir) && (← f.pathExists) then
+      for l in (← IO.FS.readFile f).splitOn "\n" do
+        if l.startsWith "guards=" then out := out.push (e.fileName, (l.drop 7).toString)
+  return out.qsort (fun a b => a.1 < b.1)
+
+/-- The rules `eval/cheats/unguarded` lists, one per line; blank lines and `#` comments aside. -/
+def unguardedRules : IO (List String) := do
+  let txt ← IO.FS.readFile ("eval" / "cheats" / "unguarded")
+  return (txt.splitOn "\n").filter fun l => !l.isEmpty && !l.startsWith "#"
+
+/-- Every way the guards and the list break the ratchet, one message each. -/
+def ratchet (guards : Array (String × String)) (unguarded : List String) : Array String := Id.run do
+  let guardable := (Lint.Rule.fixed ++ Lint.banned.map Lint.Rule.banned).filter (·.guardable) |>.map (·.id)
+  let bans := Lint.banned.map fun b => (Lint.Rule.banned b).id
+  let mut errs := #[]
+  for (c, r) in guards do
+    unless guardable.contains r do
+      errs := errs.push s!"eval/cheats/{c} has guards={r}, which names no lint rule a case can guard"
+  for r in bans do
+    let by_ := guards.filter (·.2 == r) |>.map (·.1)
+    if by_.isEmpty && !unguarded.contains r then
+      errs := errs.push s!"{r} is guarded by no cheat case (guards={r}) and not listed in eval/cheats/unguarded"
+    if !by_.isEmpty && unguarded.contains r then
+      errs := errs.push s!"{r} is guarded by {", ".intercalate by_.toList}, so take it off eval/cheats/unguarded"
+  for r in unguarded do
+    unless bans.contains r do
+      errs := errs.push s!"eval/cheats/unguarded lists {r}, which is not an entry of Lint.banned"
+  if unguarded.length > unguardedCount then
+    errs := errs.push s!"eval/cheats/unguarded lists {unguarded.length} rules, more than unguardedCount ({unguardedCount}); the list may only shrink"
+  else if unguarded.length < unguardedCount then
+    errs := errs.push s!"eval/cheats/unguarded lists {unguarded.length} rules; lower unguardedCount ({unguardedCount}) to match"
+  return errs
+
 structure Case where
   kind : String
   name : String
@@ -196,20 +273,42 @@ def main : IO UInt32 := do
       headers "plugin" ++ stops "plugin" plugin ++
       [⟨"core", "core/Mitos/Core.lean", ← IO.FS.readFile ("core" / "Mitos" / "Core.lean"), true⟩] ++
       coreCases.map (fun (n, s, w) => ⟨"core", n, s, w⟩)
+  let lintAs (kind src : String) : IO (Array Lint.Violation) :=
+    if kind == "model" then Lint.checkModel env Accept.pluginImports src
+    else if kind == "core" then Imports.checkSource coreImports src
+    else Lint.check env Accept.pluginImports src
   let mut fails := 0
   for c in cases do
-    let vs ← if c.kind == "model" then Lint.checkModel env Accept.pluginImports c.src
-      else if c.kind == "core" then Imports.checkSource coreImports c.src
-      else Lint.check env Accept.pluginImports c.src
+    let vs ← lintAs c.kind c.src
     let ok := vs.isEmpty
     let mark := if ok == c.wantOk then "ok  " else "FAIL"
     if ok != c.wantOk then fails := fails + 1
     let verdict := if ok then "accepted" else s!"rejected: {(vs[0]?.map (·.render s!"<{c.kind}>")).getD ""}"
     IO.println s!"{mark} {c.kind} {c.name}: {verdict}"
+  for (kind, src, want) in ruleCases do
+    let got := (← lintAs kind src).toList.map (·.rule) |>.eraseDups
+    let ok := got.length == want.length && want.all got.contains
+    if !ok then fails := fails + 1
+    let ids (rs : List Lint.Rule) := ", ".intercalate (rs.map (·.id))
+    IO.println s!"{if ok then "ok  " else "FAIL"} rules [{ids want}] ({kind}): got [{ids got}]"
+  -- `import:syntax` has no case: on a header that parses, every import names a module.
+  let missing := Lint.Rule.fixed.filter fun r =>
+    r != .importSyntax && !ruleCases.any (·.2.2.contains r)
+  unless missing.isEmpty do
+    fails := fails + 1
+    IO.println s!"FAIL rule cases: none for {", ".intercalate (missing.map (·.id))}"
+  let guards ← cheatGuards
+  let unguarded ← unguardedRules
+  let errs := ratchet guards unguarded
+  for e in errs do IO.println s!"FAIL ratchet: {e}"
+  let guarded := (Lint.banned.filter fun b => guards.any (·.2 == (Lint.Rule.banned b).id)).length
+  IO.println s!"{if errs.isEmpty then "ok  " else "FAIL"} ratchet: {Lint.banned.length} bans, {guarded} guarded by a cheat case, {unguarded.length} in eval/cheats/unguarded; guards: {", ".intercalate (guards.toList.map fun (c, r) => s!"{c}={r}")}"
+  unless errs.isEmpty do fails := fails + 1
+  let total := cases.length + ruleCases.length + 1
   let count (k : String) (w : Bool) := (cases.filter fun c => c.kind == k && c.wantOk == w).length
-  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected"
+  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet"
   if fails == 0 then
-    IO.println s!"gate-1 lint: all {cases.length} cases behave as expected ({summary})"
+    IO.println s!"gate-1 lint: all {total} cases behave as expected ({summary})"
     return 0
-  IO.println s!"gate-1 lint: {fails} of {cases.length} cases FAILED"
+  IO.println s!"gate-1 lint: {fails} of {total} cases FAILED"
   return 1

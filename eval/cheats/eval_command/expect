@@ -1,3 +1,4 @@
 full=1
 comparator_only=accept
 why=Runs code at elaboration time with `#eval`.
+guards=hash

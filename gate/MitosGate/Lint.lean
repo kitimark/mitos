@@ -9,13 +9,62 @@ structure Token where
   col  : Nat
   deriving Repr
 
+/-- The rule a violation breaks; each check below reports under its own. When a source parses,
+every rule but the parse rules runs on that parse and reads no other rule's result, so if one of
+them reported nothing, lint would report the other violations and only those. A cheat case's
+`guards=` line names such a rule (`eval/cheats/run.sh`). -/
+inductive Rule where
+  | parse | parseStop | parseHeader
+  | importModule | importPrelude | importModifier | importComponent | importRoot | importSyntax
+  | hash | setOption | banned (token : String)
+  | modelCommand | modelSection | modelModifier | modelDeclaration | modelClass | modelAttribute
+  | modelComputedFields | modelDeriving
+  deriving BEq, Repr
+
+def Rule.id : Rule → String
+  | .parse => "parse"
+  | .parseStop => "parse:stop"
+  | .parseHeader => "parse:header"
+  | .importModule => "import:module"
+  | .importPrelude => "import:prelude"
+  | .importModifier => "import:modifier"
+  | .importComponent => "import:component"
+  | .importRoot => "import:root"
+  | .importSyntax => "import:syntax"
+  | .hash => "hash"
+  | .setOption => "set_option"
+  | .banned t => s!"banned:{t}"
+  | .modelCommand => "model:command"
+  | .modelSection => "model:section"
+  | .modelModifier => "model:modifier"
+  | .modelDeclaration => "model:declaration"
+  | .modelClass => "model:class"
+  | .modelAttribute => "model:attribute"
+  | .modelComputedFields => "model:computed-fields"
+  | .modelDeriving => "model:deriving"
+
+/-- Every rule but `banned t`, of which there is one per entry `t` of `banned`. -/
+def Rule.fixed : List Rule :=
+  [ .parse, .parseStop, .parseHeader, .importModule, .importPrelude, .importModifier,
+    .importComponent, .importRoot, .importSyntax, .hash, .setOption, .modelCommand, .modelSection,
+    .modelModifier, .modelDeclaration, .modelClass, .modelAttribute, .modelComputedFields,
+    .modelDeriving ]
+
+/-- Whether a cheat case may guard the rule. A parse rule may not: when one fires, no other rule
+runs, so without it the others would run and could report more. -/
+def Rule.guardable : Rule → Bool
+  | .parse | .parseStop | .parseHeader => false
+  | _ => true
+
 structure Violation where
   line : Nat
   col  : Nat
+  rule : Rule
   msg  : String
 
+/-- `file:line:col: message [rule]`. The rule id comes last, so no message can stand in for it. -/
 def Violation.render (file : String) (v : Violation) : String :=
-  s!"{file}:{v.line}:{v.col}: {v.msg}"
+  s!"{file}:{v.line}:{v.col}: {v.msg} [{v.rule.id}]"
 
 def syntaxEnv : IO Environment := do
   unsafe enableInitializersExecution
@@ -48,7 +97,7 @@ def headerSyntax (src : String) : IO (Except Violation (FileMap × Syntax)) := d
   match msgs.toList.find? (·.severity == .error) with
   | some m =>
     let text ← m.data.toString
-    return .error { line := m.pos.line, col := m.pos.column + 1,
+    return .error { line := m.pos.line, col := m.pos.column + 1, rule := .parseHeader,
                     msg := s!"the header does not parse ({text.trimAscii}), so its imports cannot be checked" }
   | none => return .ok (ictx.fileMap, header)
 
@@ -82,28 +131,29 @@ identifiers and that lies under one of `allowedImports`. With `strict` (plugins 
 header also has no `module` or `prelude`, and no import is `public`, `meta` or `all`. -/
 def importRules (fm : FileMap) (header : Syntax) (allowedImports : List String)
     (strict := true) : Array Violation := Id.run do
-  let at_ (stx : Syntax) (msg : String) : Violation :=
+  let at_ (stx : Syntax) (rule : Rule) (msg : String) : Violation :=
     let pos := fm.toPosition (stx.getPos?.getD 0)
-    { line := pos.line, col := pos.column + 1, msg }
+    { line := pos.line, col := pos.column + 1, rule, msg }
   let mut vs : Array Violation := #[]
   if strict && !isEmptyNode header[0] then
-    vs := vs.push <| at_ header[0] "a `module` header is not allowed"
+    vs := vs.push <| at_ header[0] .importModule "a `module` header is not allowed"
   if strict && !isEmptyNode header[1] then
-    vs := vs.push <| at_ header[1] "`prelude` is not allowed"
+    vs := vs.push <| at_ header[1] .importPrelude "`prelude` is not allowed"
   for imp in header[2].getArgs do
     if strict && !(isEmptyNode imp[0] && isEmptyNode imp[1] && isEmptyNode imp[3]) then
-      vs := vs.push <| at_ imp "only a plain `import` is allowed, not `public`, `meta` or `all`"
+      vs := vs.push <| at_ imp .importModifier
+        "only a plain `import` is allowed, not `public`, `meta` or `all`"
     match imp[4] with
     | .ident _ _ n _ =>
       match plainComponents n with
       | none =>
-        vs := vs.push <| at_ imp[4]
+        vs := vs.push <| at_ imp[4] .importComponent
           s!"import `{n}` is not allowed: each component of a module name must be a plain identifier"
       | some mod =>
         unless moduleAllowed allowedImports mod do
-          vs := vs.push <| at_ imp[4]
+          vs := vs.push <| at_ imp[4] .importRoot
             s!"import `{n}` is not allowed; imports must lie under {", ".intercalate allowedImports}"
-    | stx => vs := vs.push <| at_ imp s!"import of `{stx}` is not allowed"
+    | stx => vs := vs.push <| at_ imp .importSyntax s!"import of `{stx}` is not allowed"
   return vs
 
 /-- The header and top-level commands Lean's parser produces for `src`, or the first parse error
@@ -132,13 +182,13 @@ def parse (env : Environment) (src : String) :
   match msgs.toList.find? (·.severity == .error) with
   | some m =>
     let text ← m.data.toString
-    return .error { line := m.pos.line, col := m.pos.column + 1,
+    return .error { line := m.pos.line, col := m.pos.column + 1, rule := .parse,
                     msg := s!"does not parse with the toolchain's syntax ({text.trimAscii}); plugins may not declare notation" }
   | none =>
     if let some cmd := stoppedAt then
       let pos := ictx.fileMap.toPosition (cmd.getPos?.getD 0)
       let text := ((tokensOf ictx.fileMap cmd #[])[0]?.map (·.text)).getD (toString cmd.getKind)
-      return .error { line := pos.line, col := pos.column + 1,
+      return .error { line := pos.line, col := pos.column + 1, rule := .parseStop,
                       msg := s!"Lean's parser stops at `{text}` before the end of the file, so the rest would go unchecked; it is not allowed" }
     return .ok (ictx.fileMap, header, cmds)
 
@@ -178,18 +228,20 @@ def tokenRules (toks : Array Token) (what := "plugins") : Array Violation := Id.
     let nextTok := toks[k+1]?
     if t.text.startsWith "#" then
       unless allowedHashCommands.contains t.text do
-        vs := vs.push { line := t.line, col := t.col, msg := s!"command `{t.text}` is not allowed" }
+        vs := vs.push { line := t.line, col := t.col, rule := .hash,
+                        msg := s!"command `{t.text}` is not allowed" }
     else if t.text == "set_option" then
       let ok := match nextTok with
         | some o => allowedOptionPrefixes.any (o.text.startsWith ·)
         | none => false
       unless ok do
-        vs := vs.push { line := t.line, col := t.col,
+        vs := vs.push { line := t.line, col := t.col, rule := .setOption,
                         msg := s!"`set_option {(nextTok.map (·.text)).getD ""}` is not allowed" }
     else
       for c in components t.text do
         if banned.contains c then
-          vs := vs.push { line := t.line, col := t.col, msg := s!"`{c}` is not allowed in {what}" }
+          vs := vs.push { line := t.line, col := t.col, rule := .banned c,
+                          msg := s!"`{c}` is not allowed in {what}" }
   return vs
 
 /-- Check a plugin's source, parsed in `env` (see `syntaxEnv`). `allowedImports` lists module
@@ -233,33 +285,33 @@ private def listed (ks : List SyntaxNodeKind) : String :=
 
 /-- The model allowlist over a model's top-level commands. Each violation names the command kind. -/
 partial def commandRules (fm : FileMap) (cmds : Array Syntax) : Array Violation := Id.run do
-  let at_ (stx : Syntax) (msg : String) : Violation :=
+  let at_ (stx : Syntax) (rule : Rule) (msg : String) : Violation :=
     let pos := fm.toPosition (stx.getPos?.getD 0)
-    { line := pos.line, col := pos.column + 1, msg }
+    { line := pos.line, col := pos.column + 1, rule, msg }
   let head (stx : Syntax) : String :=
     ((tokensOf fm stx #[])[0]?.map (·.text)).getD "?"
   let mut vs : Array Violation := #[]
   for cmd in cmds do
     let k := cmd.getKind
     if !modelCommands.contains k then
-      vs := vs.push <| at_ cmd
+      vs := vs.push <| at_ cmd .modelCommand
         s!"command `{head cmd}` ({kindName k}) is not allowed in models; they may contain only {listed modelCommands}"
       continue
     if k == ``Parser.Command.section && !(cmd[0].getArgs.all isEmptyNode) then
-      vs := vs.push <| at_ cmd
+      vs := vs.push <| at_ cmd .modelSection
         s!"`{head cmd} … section` is not allowed in models; only `section` or `section <name>`, with no `@[expose]`, `public`, `noncomputable` or `meta`"
     if k == ``Parser.Command.declaration then
       let mods := cmd[0]
       let decl := cmd[1]
       unless (mods.getArgs.extract 2 mods.getNumArgs).all isEmptyNode do
-        vs := vs.push <| at_ cmd
+        vs := vs.push <| at_ cmd .modelModifier
           "declaration modifiers other than a doc comment and attributes are not allowed in models"
       if !modelDeclarations.contains decl.getKind then
-        vs := vs.push <| at_ decl
+        vs := vs.push <| at_ decl .modelDeclaration
           s!"declaration `{head decl}` ({kindName decl.getKind}) is not allowed in models; they may declare only {listed modelDeclarations}"
       else if decl.getKind == ``Parser.Command.structure &&
           decl[0].getKind != ``Parser.Command.structureTk then
-        vs := vs.push <| at_ decl s!"declaration `{head decl}` is not allowed in models"
+        vs := vs.push <| at_ decl .modelClass s!"declaration `{head decl}` is not allowed in models"
   -- Inside the allowed commands: attributes outside `modelAttributes`; `deriving`, which generates
   -- instances; and computed fields, which replace a constructor's compiled code.
   let rec walk (stx : Syntax) (vs : Array Violation) : Array Violation :=
@@ -267,12 +319,12 @@ partial def commandRules (fm : FileMap) (cmds : Array Syntax) : Array Violation 
     | .node _ k args =>
       let vs :=
         if k == ``Parser.Term.attrInstance && !modelAttributes.contains stx[1].getKind then
-          vs.push <| at_ stx[1] s!"attribute `{head stx[1]}` is not allowed in models; they may use only {listed modelAttributes}"
+          vs.push <| at_ stx[1] .modelAttribute s!"attribute `{head stx[1]}` is not allowed in models; they may use only {listed modelAttributes}"
         else if k == ``Parser.Command.computedFields then
-          vs.push <| at_ stx "computed fields (`with`) are not allowed in models"
+          vs.push <| at_ stx .modelComputedFields "computed fields (`with`) are not allowed in models"
         else vs
       args.foldl (fun a s => walk s a) vs
-    | .atom _ "deriving" => vs.push <| at_ stx "`deriving` is not allowed in models"
+    | .atom _ "deriving" => vs.push <| at_ stx .modelDeriving "`deriving` is not allowed in models"
     | _ => vs
   return cmds.foldl (fun a c => walk c a) vs
 
