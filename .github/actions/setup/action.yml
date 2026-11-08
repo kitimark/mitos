@@ -1,5 +1,5 @@
 name: setup
-description: Install elan and bubblewrap (the sandbox for lake comparator), and optionally restore the build cache.
+description: Restore the build cache (optional), then install elan (only if the cache has none), the Lean toolchains, and bubblewrap (the sandbox for lake comparator).
 
 inputs:
   cache:
@@ -9,20 +9,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install elan (toolchain comes from lean-toolchain)
-      shell: bash
-      run: |
-        curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
-          | sh -s -- -y --default-toolchain none
-        echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-
-    - name: Install bubblewrap
-      shell: bash
-      run: |
-        sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
-        # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bwrap needs them.
-        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
+    # Restore the cache first: a hit has elan and the toolchain, so GitHub is not needed for them.
     - if: inputs.cache == 'true'
       uses: actions/cache@v4
       with:
@@ -32,3 +19,18 @@ runs:
           core/.lake
         key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
         restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+
+    - name: Install elan if the cache has none (pinned, checked, retried)
+      shell: bash
+      run: ${{ github.workspace }}/.github/scripts/install-elan.sh
+
+    - name: Install bubblewrap
+      shell: bash
+      run: |
+        sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
+        # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bwrap needs them.
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+    - name: Install the Lean toolchains from lean-toolchain (retried; no download on a cache hit)
+      shell: bash
+      run: ${{ github.workspace }}/.github/scripts/install-toolchains.sh
