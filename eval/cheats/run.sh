@@ -25,6 +25,7 @@ check_guards() {  # <expect file> <full-run log>
   local rule why; rule=$(grep '^guards=' "$1" | cut -d= -f2-)
   [ -z "$rule" ] && return 0
   printf 'guards=%s' "$rule"
+  [ -s "$2" ] || { echo ": no full-run log"; return 1; }
   why=$(LC_ALL=C awk -v want=" [$rule]" '
     /^GATE 1 lint: FAIL/ { on = 1; if (match($0, /[0-9]+ violation/)) n = substr($0, RSTART, RLENGTH - 10) + 0; next }
     on && /^  / {

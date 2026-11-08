@@ -1,7 +1,7 @@
 # Lint bans (`Lint.banned`) that no cheat case guards yet, one rule id per line.
 # `lake exe mitos-lint-test` fails unless every ban is guarded by a case (a `guards=` line in its
-# `expect`) or listed here. The list may only shrink: guarding a ban takes it off the list and
-# lowers `unguardedCount` in `gate/LintTest.lean`.
+# `expect`) or listed here, and unless this list is exactly `unguardedBans` in `gate/LintTest.lean`.
+# Guarding a ban takes it off both lists.
 banned:sorry
 banned:admit
 banned:axiom

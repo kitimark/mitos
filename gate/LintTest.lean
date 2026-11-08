@@ -5,8 +5,9 @@ import MitosGate.Imports
 /-! Regression test for gate 1's lint: every command kind outside the model allowlist is rejected,
 every allowed kind is accepted, models pass the plugin rules, and the import rule holds for
 plugins and models alike (`Lint.check`, `Lint.checkModel`). Each rule reports under its own id
-(`ruleCases`), and each ban is guarded by a cheat case or listed in `eval/cheats/unguarded`
-(`ratchet`). Run with `lake exe mitos-lint-test` from the repository root. -/
+(`ruleCases`), and each ban is guarded by a cheat case or listed in `unguardedBans` and
+`eval/cheats/unguarded` (`ratchet`). Run with `lake exe mitos-lint-test` from the repository
+root. -/
 
 open MitosGate
 
@@ -198,21 +199,32 @@ def ruleCases : List (String × String × List Lint.Rule) :=
 /-! ## Ban ratchet
 
 Each entry of `Lint.banned` is guarded by a cheat case, whose `expect` has `guards=banned:<token>`
-(`eval/cheats/run.sh` checks the claim), or listed in `eval/cheats/unguarded`. A change that drops
-a ban, as #21's rebase did, then turns this test red, whether or not a case guarded it. -/
+(`eval/cheats/run.sh` checks the claim), or listed in `unguardedBans` and `eval/cheats/unguarded`.
+A change that drops a ban, as #21's rebase did, then turns this test red, whether or not a case
+guarded it. -/
 
-/-- How many bans `eval/cheats/unguarded` lists. The list may only shrink: a PR that guards a ban
-takes it off the list and lowers this number, and a PR that adds one must raise it here, in trusted
-code the owner merges. A number in the test, rather than a comparison with `main`'s copy, needs no
-git history or CI step, so the test gives the same answer locally and in CI. -/
-def unguardedCount : Nat := 40
+/-- The bans no cheat case guards yet; `eval/cheats/unguarded` must list exactly these. Each must
+stay in `Lint.banned`, so dropping or renaming one takes an edit here, in trusted code the owner
+merges. Guarding a ban takes it off here and off `eval/cheats/unguarded`. A new ban needs a guarding
+case, whose directory no conflict resolution can drop, or an entry in both lists. A list in the
+test, rather than a comparison with `main`'s copy, needs no git history or CI step, so the test
+gives the same answer locally and in CI. -/
+def unguardedBans : List String :=
+  [ "sorry", "admit", "axiom", "unsafe", "partial", "opaque", "noncomputable",
+    "export", "csimp", "init", "builtin_init", "never_extract",
+    "native_decide", "native", "ofReduceBool", "reduceBool", "trustCompiler",
+    "notation", "infix", "infixl", "infixr", "prefix", "postfix",
+    "macro", "macro_rules", "syntax", "elab", "elab_rules", "declare_syntax_cat",
+    "binder_predicate", "instance", "scoped", "meta", "initialize", "builtin_initialize",
+    "run_cmd", "run_elab", "run_meta", "debug", "Lean" ]
 
-/-- `(case, rule)` for each `guards=` line of an `eval/cheats/<case>/expect`. -/
+/-- `(case, rule)` for each `guards=` line of an `eval/cheats/<case>/expect`. Hidden directories
+are left out, as `run.sh` leaves them out of the corpus (`ls -d eval/cheats/*/`). -/
 def cheatGuards : IO (Array (String × String)) := do
   let mut out := #[]
   for e in ← System.FilePath.readDir ("eval" / "cheats") do
     let f := e.path / "expect"
-    if (← e.path.isDir) && (← f.pathExists) then
+    if !e.fileName.startsWith "." && (← e.path.isDir) && (← f.pathExists) then
       for l in (← IO.FS.readFile f).splitOn "\n" do
         if l.startsWith "guards=" then out := out.push (e.fileName, (l.drop 7).toString)
   return out.qsort (fun a b => a.1 < b.1)
@@ -226,26 +238,27 @@ def unguardedRules : IO (List String) := do
 def ratchet (guards : Array (String × String)) (unguarded : List String) : Array String := Id.run do
   let guardable := (Lint.Rule.fixed ++ Lint.banned.map Lint.Rule.banned).filter (·.guardable) |>.map (·.id)
   let bans := Lint.banned.map fun b => (Lint.Rule.banned b).id
+  let pinned := unguardedBans.map fun b => (Lint.Rule.banned b).id
   let mut errs := #[]
   for (c, r) in guards do
     unless guardable.contains r do
       errs := errs.push s!"eval/cheats/{c} has guards={r}, which names no lint rule a case can guard"
   for r in bans do
     let by_ := guards.filter (·.2 == r) |>.map (·.1)
-    if by_.isEmpty && !unguarded.contains r then
-      errs := errs.push s!"{r} is guarded by no cheat case (guards={r}) and not listed in eval/cheats/unguarded"
-    if !by_.isEmpty && unguarded.contains r then
-      errs := errs.push s!"{r} is guarded by {", ".intercalate by_.toList}, so take it off eval/cheats/unguarded"
-  for r in unguarded.eraseDups do
+    if by_.isEmpty && !pinned.contains r then
+      errs := errs.push s!"{r} is guarded by no cheat case (guards={r}) and not listed in unguardedBans"
+    if !by_.isEmpty && pinned.contains r then
+      errs := errs.push s!"{r} is guarded by {", ".intercalate by_.toList}, so take it off unguardedBans and eval/cheats/unguarded"
+  for r in pinned do
     unless bans.contains r do
-      errs := errs.push s!"eval/cheats/unguarded lists {r}, which is not an entry of Lint.banned"
-    -- A repeat would keep the count while a dropped ban leaves the list.
+      errs := errs.push s!"unguardedBans lists {r}, which is not an entry of Lint.banned"
+    unless unguarded.contains r do
+      errs := errs.push s!"eval/cheats/unguarded does not list {r}, which unguardedBans lists"
+  for r in unguarded.eraseDups do
+    unless pinned.contains r do
+      errs := errs.push s!"eval/cheats/unguarded lists {r}, which unguardedBans does not"
     if (unguarded.filter (· == r)).length > 1 then
       errs := errs.push s!"eval/cheats/unguarded lists {r} more than once"
-  if unguarded.length > unguardedCount then
-    errs := errs.push s!"eval/cheats/unguarded lists {unguarded.length} rules, more than unguardedCount ({unguardedCount}); the list may only shrink"
-  else if unguarded.length < unguardedCount then
-    errs := errs.push s!"eval/cheats/unguarded lists {unguarded.length} rules; lower unguardedCount ({unguardedCount}) to match"
   return errs
 
 structure Case where
@@ -305,7 +318,7 @@ def main : IO UInt32 := do
   let errs := ratchet guards unguarded
   for e in errs do IO.println s!"FAIL ratchet: {e}"
   let guarded := (Lint.banned.filter fun b => guards.any (·.2 == (Lint.Rule.banned b).id)).length
-  IO.println s!"{if errs.isEmpty then "ok  " else "FAIL"} ratchet: {Lint.banned.length} bans, {guarded} guarded by a cheat case, {unguarded.length} in eval/cheats/unguarded; guards: {", ".intercalate (guards.toList.map fun (c, r) => s!"{c}={r}")}"
+  IO.println s!"{if errs.isEmpty then "ok  " else "FAIL"} ratchet: {Lint.banned.length} bans, {guarded} guarded by a cheat case, {unguardedBans.length} in unguardedBans, {unguarded.length} in eval/cheats/unguarded; guards: {", ".intercalate (guards.toList.map fun (c, r) => s!"{c}={r}")}"
   unless errs.isEmpty do fails := fails + 1
   let total := cases.length + ruleCases.length + 1
   let count (k : String) (w : Bool) := (cases.filter fun c => c.kind == k && c.wantOk == w).length
