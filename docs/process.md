@@ -261,9 +261,10 @@ The owner catches up on GitHub, not in a chat session:
   verdict, the PRs merged lately with their verdicts, what comes next, and the open follow-ups.
 - **Assigned to the owner** means it needs the owner (`is:open assignee:kitimark`). Agents act
   through the owner's account, and GitHub does not notify a user of their own actions, so
-  `.github/workflows/owner-ping.yml` posts an @mention as `github-actions[bot]` on each such
-  assignment. Never label a PR to show the owner its state, because any label change re-runs
-  the full `gate`.
+  `.github/workflows/owner-ping.yml` posts an @mention as `github-actions[bot]` on each
+  assignment of the owner made from the owner's account. An assignment that any other account
+  or a bot makes gets no ping. Never label a PR to show the owner its state, because any label
+  change re-runs the full `gate`.
 - **One milestone per phase, one issue per open plan row.** `plan/phase-N.md` says what is to be
   done and in which order, and its Issue column links each row's issue. Status lives in the
   issue and its PRs. The labels `follow-up` and `process` mark work found along the way.
@@ -298,7 +299,7 @@ At the end of each phase the owner reviews the scorecard trend and the run logs:
 | L3 | `.github/workflows/nightly.yml` (full checks, `--paranoid` comparator, next-toolchain canary), plus a scheduled task posting the scorecard |
 | L4 | the scorecard trend plus a short retrospective in `plan/` |
 | Owner catch-up | the pinned Owner dashboard issue, issues and PRs assigned to the owner, one milestone per phase, `.github/workflows/owner-ping.yml` |
-| Waiting on GitHub | the orchestrator's Monitor running `.claude/scripts/watch-github.sh`, which prints one line per change to an open PR, `main` or the owner's comments and nothing otherwise |
+| Waiting on GitHub | the orchestrator's Monitor running `.claude/scripts/watch-github.sh`, which prints one line per change to an open PR, `main` or the owner's comments and nothing otherwise; PR owners wait at most two bounded calls, and watcher agents cover only what the script cannot see |
 
 ## 6. Local setup
 
