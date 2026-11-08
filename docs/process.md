@@ -333,8 +333,9 @@ and without lint gate 6 rejects the changed build outputs. The `shadow_*` model 
 a name that the Challenge's statements would find under the plugin's namespace if they were not
 written from `_root_`. Gate 3 rejects them, and gate 1 already rejects the two that need `export`.
 
-Seven cases build their golden facts with the same wrong `fact` as the model, so the mistake
-cancels out of exactness. Gate 6 rejects all seven, with and without lint:
+Seven cases have a model with a wrong `fact` and a layout in which the mistake would not reach
+gate 6: the golden facts share the model's `fact`, or gate 6 judges a different model from gate 3.
+Gate 6 rejects all seven, with and without lint:
 - `golden_circular_provides` and `golden_circular_devscope`, the verifier's two cases: `fact` reads
   a requirement as *providing* the package, or gives it the `dev` scope, and the examples module
   imports the model module to build its facts with `fact`. With the examples in the model module,
