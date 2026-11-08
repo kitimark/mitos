@@ -308,6 +308,9 @@ comparator_only=reject@4    # with lint skipped, the later gates must still reje
 why=Leaves the completeness proof as `sorry`.
 ```
 
+`why=` states the attack in the present tense: what the case does and what it would get accepted.
+It holds no history, such as when the case was found or which fix closed it.
+
 A case whose `expect` also has the line `model_approved=yes` stands for models the owner approved:
 the runner re-pins `models.lock` to every model under the workspace's `Models/`, recursively as
 gate 0 walks it, so gate 0 passes and the later gates
@@ -376,6 +379,21 @@ The kernel cannot see what code *runs*, only what is *proved*. Those cases are w
 required gate rather than a nicety. `model_dotdot_import`, the escaped import in a model, passed the
 comparator on its own too until gate 6 checked the components of every model import; without lint,
 gate 6 now rejects it.
+
+### Security fixes
+
+- **Input property first.** State what a fix protects as a property of the gate's inputs, such as
+  "a model's meaning depends only on its locked bytes", before choosing how to enforce it.
+  Enforce it by isolation, so that untrusted code cannot reach what the property rules out. A
+  token ban adds defence in depth on top of isolation; it does not replace it.
+- **A cheat case per check.** Each check that a fix adds or restores lands with a corpus case
+  that the check rejects. With the check removed, the case's full run is ACCEPTED, or its
+  `--skip-lint` run for a check after gate 1. So a rebase that drops the check turns the corpus
+  red. The PR shows that flip with one run of the case on the gate without the check. A run that
+  another check also rejects does not pin this one.
+- **Test the premise.** A fix has failed when a later cheat or verifier gets past it. After two
+  failed fixes that rest on one premise, write the premise down and test it directly before a
+  third fix.
 
 ## 4. How to observe
 
