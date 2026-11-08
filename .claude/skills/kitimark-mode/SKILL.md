@@ -155,7 +155,8 @@ rely on both.
   repos/{owner}/{repo}/stacks` with the PR numbers, bottom to top). GitHub rebases the rest when the
   bottom PR merges and retargets the next one to trunk, so nobody retargets or force-pushes a
   stacked PR to follow its parent. `update-prs.yml` skips every PR in a stack for the same reason.
-  Repair a stack with `gh stack rebase` or the **Rebase stack** button.
+  Repair a stack with `gh stack rebase` and then `gh stack push` (the remote branches change only
+  at the push), or with the server-side **Rebase stack** button.
 - Merge a stack bottom-up, one PR at a time. Each PR needs its own verdict and green `gate` at its
   head before its turn, as for any PR.
 - An agent merges a stacked PR with the asynchronous endpoint, because the legacy `/merge` route
