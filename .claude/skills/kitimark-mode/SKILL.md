@@ -45,7 +45,7 @@ tool.
 |---|---|---|---|---|
 | PR owner, hard | Lean proofs, a trust-critical PR (see Verdicts), a skill or design change | `general-purpose`, worktree | `opus` | `xhigh`, or `max` for the subtlest proof |
 | PR owner, routine | a script, a fixture, a doc fix, a rebase, a conflict merge, a one-line fix | `general-purpose`, worktree | `sonnet` | `high`, or `medium` for a rebase or a one-line fix |
-| Verifier | checks one head it did not write and returns pass or fail with evidence | `general-purpose`, worktree | the model that did not write most of the diff | `xhigh`, or `high` at a rebase or minor-fix head |
+| Verifier | checks one head it did not write and returns pass or fail with evidence | `general-purpose`, worktree | the model that did not write most of the diff | `xhigh`, or `high` at a rebase or small-fix head (a few lines changed since the last verified head) |
 | Watcher | waits on one condition the root's GitHub monitor cannot report (see Watchers) and returns when it changes | `general-purpose` | `sonnet` | `low` |
 | Researcher | reads docs or prior art, or diagnoses a failure, and edits nothing | `general-purpose` | `sonnet`, or `opus` for a judgment call | `medium`, or `high` on `opus` |
 
@@ -184,10 +184,14 @@ watcher's echo filter and the merge rule below rely on both.
 
 - **Blocking only.** A round fixes only blocking findings, everywhere, playbooks included. A
   finding blocks when a run at the head or a line of the diff shows it: a cheat the gate accepts,
-  a wrong result, a red check, a check added or restored without the cheat case that pins it
-  (`docs/process.md`, Security fixes), or a doc line the PR made wrong. A problem `main` already
-  has blocks only if the PR copies it, newly reaches it or is meant to fix it. Everything else is
-  minor.
+  a wrong result, a red check, a security check added or restored without the cheat case that
+  pins it (`docs/process.md`, Security fixes), or a doc line the PR made wrong. A check, cheat
+  case, theorem or `expect` line that the diff removes or weakens also blocks, such as a deleted
+  case, `reject@N` relaxed to `reject` or a check that a conflict resolution drops, because
+  weakening one is a spec change for the user (PR owners carry their PR, step 4); so does a
+  confidential key, token or ID in the diff or a post, which Catching the user up rules out. A
+  problem `main` already has blocks only if the PR copies it, newly reaches it or is meant to fix
+  it. Everything else is minor.
 - Minor findings go into one `follow-up` issue per PR, which the PR body links. The PR owner files
   those it holds in its round, and the root files a passing verdict's. A minor fix joins a round
   only when it is one line in a file that round already touches.
@@ -218,17 +222,21 @@ watcher's echo filter and the merge rule below rely on both.
   other new head needs a new verifier.
 - A conflict resolution is new content, not a rebase. A PR owner that resolved a conflict lists
   each resolved file in its report. The verifier at that head reads each resolution as new code
-  against both sides, and confirms that every check either side added survives it.
+  against both sides, and confirms that every check either side added survives it. A check that
+  a resolution drops is a blocking finding (see Rounds).
 - A verifier does not rerun the whole cheat corpus. It reads the `cheat-logs` artifact of the
   latest `ci` run at the head SHA: `gh run list --commit <head> --workflow ci.yml --json
-  databaseId,conclusion`, then `gh run download <run-id> -n cheat-logs`. It uses the artifact
-  only when that run's `Cheat corpus is rejected` step passed (`gh api
+  databaseId,conclusion`, then `gh run download <run-id> -n cheat-logs -D <scratch folder>`, so
+  the logs stay out of its worktree. It uses the artifact only when that run's
+  `Cheat corpus is rejected` step passed (`gh api
   repos/{owner}/{repo}/actions/runs/<run-id>/jobs`), because the CI cache can restore logs from
   an earlier run. Only the cases in that step's table are fresh, each with a full and a
   `--skip-lint` log. The table is in the `gate` job's log (`gh api
   repos/{owner}/{repo}/actions/jobs/<job-id>/logs`), and on a PR it lists the cases of the head
   merged into its base. Locally the verifier runs only the cases the change adds or edits, and
-  the variants it builds to test a finding, with `eval/cheats/run.sh <case>...`.
+  the variants it builds to test a finding, with `eval/cheats/run.sh <case>...`. Like
+  **Blocking only**, this rule holds in the playbooks too: where Autopilot-full step 4 says
+  verifiers re-run the gates, they read the cheat corpus from these logs.
 - The root writes each verdict into the PR's In flight row on the Owner dashboard, or into its
   merged line once the PR has merged (see Catching the user up): pass or fail, the short head it
   covers and who gave it, such as `PASS sonnet-xhigh + opus-xhigh at 43fc333`.
