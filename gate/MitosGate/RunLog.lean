@@ -22,9 +22,10 @@ states that rule, proves the check that enforces it, and runs it.
 
 `check` is the executable. It reads the files, parses each line with Lean core's `Lean.Json`, and
 decides with `appendOnly`, `noDupKeys` and the proved locators `firstMissing?` and `dupAt?`. The
-file I/O, the JSON parser and the field checks in `parseRecord` are not proved. Every line it
-prints that holds a file name, a field value or a message passes through `oneLine`
-(`gate/MitosGate/Util.lean`, with its proof), the gate's one sanitizer for untrusted text.
+file I/O, the JSON parser and the field checks in `parseRecord` are not proved. Every line
+`check` and `cli` print that holds a file name, a field value, a message or an I/O error passes
+through `oneLine` (`gate/MitosGate/Util.lean`, with its proof), the gate's one sanitizer for
+untrusted text.
 -/
 
 namespace MitosGate.RunLog
@@ -530,9 +531,18 @@ def parseArgs : List String → Option String → Option String →
   | "--head" :: v :: rest, b, _ => parseArgs rest b (some v)
   | a :: _, _, _ => .error s!"unknown or incomplete argument {quote a}"
 
+/-- `check`, but an I/O error it throws is printed as one `::error::` line through `oneLine`, with
+exit 1. The Lean runtime would print an uncaught one raw, and the error names the path it failed
+on, which can hold a newline. A file name that is not UTF-8 throws one: Lean reads it back with
+U+FFFD, and no file has that name. -/
 def cli (args : List String) (usage : String) : IO UInt32 := do
   match parseArgs args none none with
-  | .ok (b, some h) => check (b.map System.FilePath.mk) h
+  | .ok (b, some h) =>
+    try check (b.map System.FilePath.mk) h
+    catch e =>
+      let msg := s!"the run-log check stopped on an I/O error: {e}"
+      IO.println s!"::error::{escapeData (oneLine msg)}"
+      return 1
   | .ok (_, none) => IO.eprintln "runlog needs --head <dir>"; IO.eprintln usage; return 2
   | .error e => IO.eprintln (oneLine e); IO.eprintln usage; return 2
 
