@@ -162,13 +162,16 @@ rely on both.
   `main`, so nobody retargets or force-pushes a stacked PR to follow its parent. GitHub does not
   rebase a stack when `main` moves ahead, and `update-prs.yml` skips every PR in a stack, so it
   never labels one `needs-rebase`. When `main` moves ahead of a stack, its owner rebases the whole
-  stack, or the root gives it to a PR owner as it would a `needs-rebase` label. Rebase each branch
-  onto the one below it, bottom-up from `main`, then push every branch of the stack in one
-  `git push --atomic --force-with-lease origin <bottom> <next> ...`, naming each branch, because a
-  bare `git push` pushes only the current one. `gh stack rebase` and then `gh stack push` do the
-  same git work (the remote branches change only at the push), and their PR sync over GraphQL
-  fails here without stopping them. The **Rebase stack** button does it on the server, but it is
-  browser only: the REST API has no route that rebases a stack.
+  stack, or the root gives it to a PR owner as it would a `needs-rebase` label. Fetch, note each
+  branch's remote tip (`git rev-parse origin/<branch>`), and rebase each branch onto the one below
+  it, bottom-up from `main`. Then push every branch of the stack in one `git push --atomic
+  --force-with-lease=<bottom>:<old-tip> --force-with-lease=<next>:<old-tip> ... origin <bottom>
+  <next> ...`. Name each branch, because a bare `git push` pushes only the current one, and pin
+  each lease to the noted tip, because a bare `--force-with-lease` trusts whatever a later fetch,
+  perhaps from another worktree, put in `origin/<branch>`. `gh stack rebase` and then
+  `gh stack push` do the same git work (the remote branches change only at the push), and their PR
+  sync over GraphQL fails here without stopping them. The **Rebase stack** button does it on the
+  server, but it is browser only: the REST API has no route that rebases a stack.
 - Merge a stack bottom-up, one PR at a time. Each PR needs its own verdict and green `gate` at its
   head before its turn, as for any PR.
 - An agent merges a stacked PR with the asynchronous endpoint, because the legacy `/merge` route
