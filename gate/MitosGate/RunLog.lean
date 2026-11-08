@@ -1,4 +1,5 @@
 import Lean.Data.Json
+import MitosGate.Util
 
 /-!
 # The run-log check (`mitos-gate runlog`)
@@ -21,7 +22,9 @@ states that rule, proves the check that enforces it, and runs it.
 
 `check` is the executable. It reads the files, parses each line with Lean core's `Lean.Json`, and
 decides with `appendOnly`, `noDupKeys` and the proved locators `firstMissing?` and `dupAt?`. The
-file I/O, the JSON parser and the field checks in `parseRecord` are not proved.
+file I/O, the JSON parser and the field checks in `parseRecord` are not proved. Every line it
+prints that holds a file name, a field value or a message passes through `oneLine`
+(`gate/MitosGate/Util.lean`, with its proof), the gate's one sanitizer for untrusted text.
 -/
 
 namespace MitosGate.RunLog
@@ -306,47 +309,70 @@ def splitLines (s : String) : List String :=
     let ls := s.splitOn "\n"
     if s.endsWith "\n" then ls.dropLast else ls
 
-/-- Characters that could move the cursor, change colours or reorder text when printed: C0 and C1
-controls, DEL, the line and paragraph separators, the bidirectional controls and the BOM. -/
-def unsafeChar (c : Char) : Bool :=
-  let n := c.toNat
-  n < 0x20 || (0x7f ≤ n && n ≤ 0x9f) || n == 0x061c || n == 0x200e || n == 0x200f ||
-    (0x2028 ≤ n && n ≤ 0x202e) || (0x2066 ≤ n && n ≤ 0x2069) || n == 0xfeff
-
-private def hex4 (n : Nat) : String :=
-  let d := Nat.toDigits 16 n
-  String.ofList (List.replicate (4 - d.length) '0' ++ d)
-
-/-- `s` with every `unsafeChar` written as `\u{XXXX}`. -/
-def clean (s : String) : String :=
-  s.foldl (fun acc c => if unsafeChar c then acc ++ "\\u{" ++ hex4 c.toNat ++ "}" else acc.push c) ""
-
-/-- `s` quoted for a log line: `"` and `\` are escaped, every `unsafeChar` becomes `\u{XXXX}`,
-and only the first `max` characters are kept. -/
+/-- `s` quoted for a message: `"` and `\` are escaped with `\`, and only the first `max` characters
+are kept. It does not sanitize: a message is printed through `oneLine` (`Problem.render`), which
+writes every `\` as `\u{005C}` and every code point off its allowlist as `\u{XXXX}`. -/
 def quote (s : String) (max : Nat := 60) : String :=
   let cs := s.toList
   let esc (acc : String) (c : Char) : String :=
     if c == '"' then acc ++ "\\\""
     else if c == '\\' then acc ++ "\\\\"
-    else if unsafeChar c then acc ++ "\\u{" ++ hex4 c.toNat ++ "}"
     else acc.push c
   "\"" ++ (cs.take max).foldl esc "" ++ (if cs.length > max then "\"..." else "\"")
 
-/-- GitHub's escaping for the message of a workflow command. -/
+/-- GitHub's escaping for the message of a workflow command: `%`, carriage return and newline
+become `%25`, `%0D` and `%0A`. Written character by character, not with `String.replace`, so that
+the kernel can evaluate `Problem.render` in the examples below. -/
 def escapeData (s : String) : String :=
-  ((s.replace "%" "%25").replace "\r" "%0D").replace "\n" "%0A"
+  String.ofList <| s.toList.flatMap fun
+    | '%' => ['%', '2', '5']
+    | '\r' => ['%', '0', 'D']
+    | '\n' => ['%', '0', 'A']
+    | c => [c]
 
-/-- GitHub's escaping for a property value of a workflow command. -/
+/-- GitHub's escaping for a property value of a workflow command: `escapeData`, and `:` and `,`
+become `%3A` and `%2C`. -/
 def escapeProperty (s : String) : String :=
-  ((escapeData s).replace ":" "%3A").replace "," "%2C"
+  String.ofList <| (escapeData s).toList.flatMap fun
+    | ':' => ['%', '3', 'A']
+    | ',' => ['%', '2', 'C']
+    | c => [c]
 
 structure Problem where
   file : String
   line : Nat
   msg : String
 
+/-- A problem as a GitHub error annotation. The file name and the message are untrusted (a file
+name in `ops/runs/`, a field value, a JSON error): `oneLine` keeps the annotation on one line and
+free of controls, bidi and format characters and blanks; the escapes after it only add `%XX`. -/
 def Problem.render (p : Problem) : String :=
-  s!"::error file={escapeProperty (clean p.file)},line={p.line}::{escapeData (clean p.msg)}"
+  s!"::error file={escapeProperty (oneLine p.file)},line={p.line}::{escapeData (oneLine p.msg)}"
+
+/-! ## What the check prints, checked by the kernel -/
+
+/-- A zero-width space (U+200B) in the file name, and a zero-width joiner (U+200D), a soft hyphen
+(U+00AD) and a braille blank (U+2800) in a task: each is printed as an escape. -/
+example : (Problem.mk "ops/runs/d\u200b1.ndjson" 4
+      s!"a second record for task {quote "B\u200d\u00ad\u2800"}, role {quote "builder"}").render =
+    "::error file=ops/runs/d\\u{200B}1.ndjson,line=4::a second record for task " ++
+      "\"B\\u{200D}\\u{00AD}\\u{2800}\", role \"builder\"" := by
+  decide
+
+/-- The case in `gate/runlog-test.sh`: a newline, a workflow command, an ANSI escape, a bidi
+override and a `%0A` in a task, and a comma and colons in the file name, stay on one line. -/
+example : (Problem.mk "ops/runs/a,b::c.ndjson" 2
+      s!"task {quote "x\n::warning::injected\x1b[2J\u202e%0A,y"}").render =
+    "::error file=ops/runs/a%2Cb%3A%3Ac.ndjson,line=2::task " ++
+      "\"x\\u{000A}::warning::injected\\u{001B}[2J\\u{202E}%250A,y\"" := by
+  decide
+
+/-- A quote and a backslash in a value: `quote` writes a string literal, escaping each with `\`,
+and `oneLine` then writes every `\` as `\u{005C}`. Decoding those gives back the literal, so a
+value cannot end its quotes early. -/
+example : (Problem.mk "f" 1 (quote "a\"b\\c")).render =
+    "::error file=f,line=1::\"a\\u{005C}\"b\\u{005C}\\u{005C}c\"" := by
+  decide
 
 def outcomes : List String := ["in-review", "merged", "stuck", "counterexample", "abandoned"]
 
@@ -443,7 +469,7 @@ def check (base : Option System.FilePath) (head : System.FilePath) : IO UInt32 :
     let isDir ← try pure ((← d.symlinkMetadata).type == .dir) catch _ => pure false
     unless isDir do
       let msg := s!"run-log directory {quote d.toString} is missing, or is not a plain directory"
-      IO.println s!"::error::{escapeData (clean msg)}"
+      IO.println s!"::error::{escapeData (oneLine msg)}"
       return 1
   let mut problems : Array Problem := #[]
   let mut recs : Array (String × Nat × Record) := #[]
@@ -511,6 +537,6 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
   match parseArgs args none none with
   | .ok (b, some h) => check (b.map System.FilePath.mk) h
   | .ok (_, none) => IO.eprintln "runlog needs --head <dir>"; IO.eprintln usage; return 2
-  | .error e => IO.eprintln e; IO.eprintln usage; return 2
+  | .error e => IO.eprintln (oneLine e); IO.eprintln usage; return 2
 
 end MitosGate.RunLog

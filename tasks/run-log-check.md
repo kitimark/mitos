@@ -45,6 +45,11 @@ escalation: hint → automation → stronger model → pair → split → revisi
   check fails at `2026-11-08.ndjson` line 2, so that edit would have been caught on its own PR.
 - **Only one problem per kind.** The check reports the first missing line of each file and the
   first duplicate key; fixing one and rerunning shows the next.
+- **Printing (#55, PR 3).** Every line the check prints that holds a file name, a field value or a
+  message passes through `oneLine` (`gate/MitosGate/Util.lean`), the gate's one sanitizer for
+  untrusted text; `quote` only quotes. The earlier denylist here (`unsafeChar`, `clean`) let the
+  zero-width space and joiner, the soft hyphen and blank fillers through. `escapeData` and
+  `escapeProperty` map one character at a time, so `example`s pin what `Problem.render` prints.
 
 ## Theorems (`gate/MitosGate/RunLog.lean`)
 - `appendOnly_iff_count`, `appendOnly_iff_subperm`, `appendOnly_iff_perm_append`
