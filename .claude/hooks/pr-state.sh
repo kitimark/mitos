@@ -27,7 +27,7 @@ fetch() { # name, route
 fetch open "repos/$repo/pulls?state=open&per_page=11" &
 fetch closed "repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=20" &
 fetch main "repos/$repo/branches/main" &
-fetch ci "repos/$repo/actions/workflows/ci.yml/runs?branch=main&per_page=1" &
+fetch ci "repos/$repo/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=1" &
 wait
 
 for n in open closed main ci; do

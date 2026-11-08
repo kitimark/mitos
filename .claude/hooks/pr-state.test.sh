@@ -81,6 +81,7 @@ expect "main and ci" "main 46e9998; latest ci run on main: completed/success hea
 reject "origin credentials are not printed" "SECRET123"
 if [ "$(grep -c . <<<"$out")" -le 25 ]; then echo "ok    at most 25 lines"; else echo "FAIL  too long"; failed=1; fi
 if [ "$(grep -c '^api ' "$work/calls")" -eq 4 ]; then echo "ok    four gh api calls"; else echo "FAIL  calls: $(cat "$work/calls")"; failed=1; fi
+if grep -qF 'ci.yml/runs?branch=main&event=push&' "$work/calls"; then echo "ok    ci run query filters event=push"; else echo "FAIL  ci query lacks event=push"; failed=1; fi
 if grep -q graphql "$work/calls"; then echo "FAIL  used graphql"; failed=1; else echo "ok    no graphql"; fi
 if [ "$(grep -c "^open " <<<"$out")" -eq 2 ]; then echo "ok    open lines"; else echo "FAIL  open lines"; failed=1; fi
 
