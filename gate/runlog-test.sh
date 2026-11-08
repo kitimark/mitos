@@ -151,21 +151,27 @@ fresh utf8
 printf '\xff\xfe\n' >"$h/d1.ndjson"
 expect "invalid UTF-8 fails" 1 "line=1::not valid UTF-8" --head "$h"
 
-# A hostile key: a newline, an ANSI escape, a bidi override and a workflow command in the task,
-# and a file name with a comma and colons. The output must stay one line per problem, with no raw
-# control character and no second workflow command.
+# A hostile key: a newline, an ANSI escape, a bidi override, a workflow command, a zero-width
+# space and joiner, a soft hyphen and a braille blank in the task (JSON escapes, decoded by the
+# parser), and a file name with a comma and colons. The output must stay one line per problem, with
+# none of those characters raw and no second workflow command.
 fresh hostile
-evil='x\n::warning::injected\u001b[2J‮%0A,y'
+evil='x\n::warning::injected\u001b[2J\u202e%0A,y\u200b\u200d\u00ad\u2800'
 hf="$h/a,b::c.ndjson"
 { rec "$evil" 1; rec "$evil" 1 again; } >"$hf"
-expect "a hostile string prints safely" 1 '^::error file=.*a%2Cb%3A%3Ac.ndjson,line=2::a second record for task "x\\u\{000a\}::warning::injected\\u\{001b\}\[2J\\u\{202e\}%250A,y"' --head "$h"
+expect "a hostile string prints safely" 1 '^::error file=.*a%2Cb%3A%3Ac.ndjson,line=2::a second record for task "x\\u\{000A\}::warning::injected\\u\{001B\}\[2J\\u\{202E\}%250A,y\\u\{200B\}\\u\{200D\}\\u\{00AD\}\\u\{2800\}"' --head "$h"
 if LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f\x7f]' "$out"; then
   echo "FAIL hostile: raw control character in output"; fail=$((fail + 1))
 fi
 if grep -v '^::error ' "$out" | grep -qv '^[0-9]* run-log problem(s)'; then
   echo "FAIL hostile: a line that is not an annotation or the summary"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
 fi
-if grep -q $'\xe2\x80\xae' "$out"; then echo "FAIL hostile: raw bidi override in output"; fail=$((fail + 1)); fi
+raw() { if grep -qF -- "$2" "$out"; then echo "FAIL hostile: raw $1 in output"; fail=$((fail + 1)); fi; }
+raw "bidi override U+202E" $'\xe2\x80\xae'
+raw "zero-width space U+200B" $'\xe2\x80\x8b'
+raw "zero-width joiner U+200D" $'\xe2\x80\x8d'
+raw "soft hyphen U+00AD" $'\xc2\xad'
+raw "braille blank U+2800" $'\xe2\xa0\x80'
 
 fresh args
 expect "--head is required" 2 'runlog needs --head' --base "$b"

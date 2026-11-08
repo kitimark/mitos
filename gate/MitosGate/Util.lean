@@ -41,7 +41,8 @@ def printableRanges : List (Nat × Nat) :=
     (0x0370, 0x03FF), (0x0400, 0x0482), (0x048A, 0x04FF),   -- Greek, Cyrillic (no combining marks)
     (0x1D00, 0x1DBF), (0x1E00, 0x1FFF),                     -- phonetic, Latin and Greek extended
     (0x2010, 0x2027), (0x2030, 0x205E),                     -- punctuation (no spaces, U+2028–U+202F, U+205F–U+206F)
-    (0x2070, 0x20CF), (0x2100, 0x2BFF), (0x2C60, 0x2C7F),   -- super/subscripts, currency, symbols, math, arrows
+    (0x2070, 0x20CF), (0x2100, 0x27FF),                     -- super/subscripts, currency, symbols, math, arrows
+    (0x2801, 0x2BFF), (0x2C60, 0x2C7F),                     -- braille (not the blank U+2800), arrows, math, Latin Ext-C
     (0x2E00, 0x2E7F), (0x3001, 0x3029), (0x3030, 0x303F),   -- supplemental punctuation, CJK symbols
     (0x3041, 0x3096), (0x309B, 0x30FF), (0x4E00, 0x9FFF),   -- kana, CJK ideographs
     (0xAC00, 0xD7A3), (0xFF01, 0xFF9F), (0xFFA1, 0xFFEE),   -- Hangul, full- and halfwidth forms (no filler)
@@ -96,14 +97,17 @@ theorem oneLine_printable (s : String) :
       exact .inl (printable_hexDigit (Nat.mod_lt _ (by decide)))
     · exact .inl (by decide)
 
-/-- What a hostile file name or message may contain to break a line, move the cursor or reorder the
-text: C0 and C1 controls (newline, carriage return, escape, NEL, CSI), DEL, the line and paragraph
-separators, bidi embeddings, overrides, isolates and marks, zero-width and other format characters. -/
+/-- What a hostile file name or message may contain to break a line, move the cursor, reorder the
+text or hide in it: C0 and C1 controls (newline, carriage return, escape, NEL, CSI), DEL, the
+no-break space, the soft hyphen, the line and paragraph separators, bidi embeddings, overrides,
+isolates and marks, zero-width and other format characters, a private-use code point, a combining
+mark, and the blank fillers (Hangul choseong, jungseong, compatibility and halfwidth fillers, and
+the braille blank). Written as escapes so that each entry is visible in review. -/
 def unsafeSamples : List Char :=
   [ '\x00', '\t', '\n', '\x0b', '\x0c', '\r', '\x1b', '\x7f', '\u0080', '\u0085', '\u009b',
-    '\u009f', ' ', '­', '؜', '​', '‍', '‎', '‏', ' ',
-    ' ', '‪', '‫', '‬', '‭', '‮', '⁦', '⁧', '⁨',
-    '⁩', '﻿', '', '́' ]
+    '\u009f', '\u00a0', '\u00ad', '\u061c', '\u200b', '\u200d', '\u200e', '\u200f', '\u2028',
+    '\u2029', '\u202a', '\u202b', '\u202c', '\u202d', '\u202e', '\u2066', '\u2067', '\u2068',
+    '\u2069', '\ufeff', '\ue000', '\u0301', '\u115f', '\u1160', '\u3164', '\uffa0', '\u2800' ]
 
 theorem unsafeSamples_escaped : ∀ c ∈ unsafeSamples, printable c = false := by decide
 
@@ -111,6 +115,11 @@ example : oneLine "Models/Ev\u0085il ‮VERDICT: ACCEPTED\u009b31m.lean" =
     "Models/Ev\\u{0085}il\\u{2028}\\u{202E}VERDICT: ACCEPTED\\u{009B}31m.lean" := by decide
 
 example : oneLine "a\nVERDICT: ACCEPTED" = "a\\u{000A}VERDICT: ACCEPTED" := by decide
+
+/-- A zero-width space, a zero-width joiner, a soft hyphen and the braille blank are escaped; the
+braille pattern next to the blank prints as itself. -/
+example : oneLine "a\u200bb\u200dc\u00add\u2800e\u2801" =
+    "a\\u{200B}b\\u{200D}c\\u{00AD}d\\u{2800}e\u2801" := by decide
 
 example : oneLine "∀ x ∈ s, x ≤ é ⊢ «foo» → ℕ" = "∀ x ∈ s, x ≤ é ⊢ «foo» → ℕ" := by decide
 
