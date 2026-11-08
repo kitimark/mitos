@@ -266,12 +266,17 @@ email or a private URL. The routes are in **Forge**.
   writing it. A body edit notifies nobody.
 - **Needs you means assigned to the user.** Assign `kitimark` to each issue or PR that waits on
   the user, and unassign them when their part is done. Their queue is the search
-  `is:open assignee:kitimark`. Before saying that something waits on the user, read its current
-  state over REST, not an old report. Agents act through the user's account, and GitHub never
+  `is:open assignee:kitimark`. Agents act through the user's account, and GitHub never
   notifies a user of their own actions. So `.github/workflows/owner-ping.yml` comments
   `@kitimark this needs you: <line>` as `github-actions[bot]` on each such assignment, where the
-  line is the first line of the item's latest catch-up. Assignment starts no CI. Never label a
-  PR to show the user its state, because any label change re-runs the full `gate`.
+  line is the first line of the item's latest catch-up. Before each assignment, of an issue or a
+  PR, post a comment on it whose first line is `## Catch-up: <what the user must do>`.
+  Assignment starts no CI. Never label a PR to show the user its state, because any label change
+  re-runs the full `gate`.
+- **PR state comes from REST.** Before any message, catch-up or dashboard edit that says a PR is
+  waiting, open or not merged, the root reads that PR over REST in the same turn. An agent's
+  report is never the source for PR state: the user merged #29 and #44 while the root still
+  called them waiting.
 - **Milestones and issues.** Each phase is a milestone. Each open row of its `plan/phase-N.md` is
   an issue in that milestone, titled with the task id, and the plan's Issue column links it. The
   task's status lives only in that issue and its PRs. Work found during a task is an issue
@@ -285,9 +290,8 @@ email or a private URL. The routes are in **Forge**.
 - For "why" questions: the idea first, then one concrete example from this repo.
 - While a PR waits on the user (a label, a merge, a setting only they can change), post one
   catch-up comment on the PR, then assign the user. Add the PR to the dashboard's Needs you, then
-  carry on with an independent task. The comment's first line is
-  `## Catch-up: <what the user must do>`, because the ping quotes the latest such line. Then the
-  comment has:
+  carry on with an independent task. The comment starts with the `## Catch-up:` line (see Needs
+  you), then has:
   - **Status:** each check and verdict at the current head, with its evidence. A verdict names
     the head it covers, says whether later heads only rebase (same `git patch-id --verbatim`) or change
     content, and names who gave it: a verifier agent and its model, a bot, or the root itself.
@@ -299,9 +303,13 @@ email or a private URL. The routes are in **Forge**.
   catch-up as "hold the merge until N fixes land". When the state changes, post a new catch-up
   rather than editing an old one, then unassign and assign the user again so the ping carries
   it.
-- After every catch-up that waits on a user action, spawn a watcher on that exact condition. When
-  it returns, check the condition yourself, unassign the user if their part is done, and carry on
-  without waiting to be told.
+- From the moment a PR opens, the root keeps one watcher on the merge or close of every open PR,
+  not only after a catch-up. After every catch-up that waits on a user action, it also watches
+  that exact condition. When a watcher returns, check the condition yourself, unassign the user if
+  their part is done, and carry on without waiting to be told. A merge the root did not expect is
+  a state change: update the dashboard and tell the user once, in one line.
+- The user may merge before a verdict. The verifier then still runs, on the merged head, and a
+  FAIL becomes a fix PR, as #28 fixed #27.
 
 ## Research
 
