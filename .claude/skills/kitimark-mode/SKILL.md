@@ -102,6 +102,13 @@ tool.
   context, which is why the monitor comes first: the #26 label watcher used about 70k tokens over
   99 minutes. A watcher agent never waits in a background shell, because a Claude Code session
   stops a few minutes after no agent is in a model call or a foreground tool call.
+- While the monitor cannot run, every condition is one it cannot report. That is when it exits,
+  for example with `watch-github: gh is not installed`, or prints that GitHub is unreachable. The
+  root then reads the state in flight itself, over REST or the GitHub MCP tools that **Forge**
+  names, and spawns one watcher agent for each condition that a returned PR owner or a catch-up
+  waits on. Such a watcher may poll with those MCP tools where `gh` fails. The root re-arms the
+  monitor once `gh` answers again and stops those watchers, so one wake source covers each
+  condition at a time.
 - A watcher agent returns only on a state change. That is a new head, a check result at the
   current head, a new or reopened thread that no agent posted, a new comment without the footer or
   with an id no poster recorded, a label, a merge or a close. It drops check suites on superseded
