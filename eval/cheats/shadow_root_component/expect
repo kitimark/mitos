@@ -1,0 +1,4 @@
+full=3
+comparator_only=reject@3
+model_approved=yes
+why=The approved model declares `ToyRequire._root_.Mitos.CompleteWrt := True`, with `_root_` as a literal component. With namespace `ToyRequire` open, Lean looks `_root_.Mitos.CompleteWrt` up as `ToyRequire._root_.Mitos.CompleteWrt` before it strips `_root_`. A Challenge that wrote `_root_` only in its statements, as `theorem ToyRequire.complete : _root_.Mitos.CompleteWrt ...`, named the shadow, so gates 0-6 accepted the extractor that emits nothing. Gate 3 now declares `theorem _root_.ToyRequire.complete`, which opens no namespace.

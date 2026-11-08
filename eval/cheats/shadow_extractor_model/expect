@@ -1,0 +1,4 @@
+full=3
+comparator_only=reject@3
+model_approved=yes
+why=The approved model declares a reference extractor `ToyRequire.ToyRequire.extractor`. The plugin's `ToyRequire.extractor` emits one false fact, and its theorems, written inside `namespace ToyRequire`, are about the model's extractor. Before the Challenge wrote its names from `_root_`, its theorems named the model's extractor too and the definition hole was compared by type only, so gates 0-6 accepted it. Gate 3 now states the obligations of `_root_.ToyRequire.extractor`.

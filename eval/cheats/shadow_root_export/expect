@@ -1,0 +1,4 @@
+full=1
+comparator_only=reject@3
+model_approved=yes
+why=The approved model puts the alias `ToyRequire._root_.Mitos.CompleteWrt` for a `CompleteWrt := True` with `export` inside `namespace ToyRequire._root_.Mitos`. Gate 1 rejects it: `export` is not on the model allowlist and is a banned token. Without lint, a Challenge that wrote `_root_` only in its statements named the alias and accepted the extractor that emits nothing; gate 3 now declares `theorem _root_.ToyRequire.complete`, so nothing under `ToyRequire` is in scope.

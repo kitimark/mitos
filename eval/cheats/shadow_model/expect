@@ -1,0 +1,4 @@
+full=3
+comparator_only=reject@3
+model_approved=yes
+why=The approved model also declares `ToyRequire.Models.ToyRequire.model`, where nothing holds. Inside `namespace ToyRequire` the plugin's `Models.ToyRequire.model` names that one, so the extractor that emits nothing proves its obligations. Before the Challenge wrote its names from `_root_`, `theorem ToyRequire.complete` opened `ToyRequire` too and named the same shadow, so gates 0-6 accepted it. Gate 3 now states the obligations of `_root_.Models.ToyRequire.model`.
