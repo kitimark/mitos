@@ -10,9 +10,11 @@ statement: Mitos.ModelExamples, Mitos.Model.Adequate, Mitos.Extractor.empty,
   Mitos.Model.{nothing_holds_not_adequate, everything_holds_not_adequate} (new)
 touches: spec PR: core/Mitos/Core/ModelExamples.lean, core/Mitos/Core.lean, statements.lock,
   examples/acme/{Models/ToyRequire.lean, models.lock, accepted/ToyRequire.json};
-  gate PR: gate/MitosGate/{Accept.lean, Util.lean}, gate/Main.lean, eval/cheats/run.sh (`lock_append=`
+  gate PR: gate/MitosGate/{Accept.lean, Util.lean, Lint.lean (`include_str` ban)}, gate/Main.lean,
+  gate/LintTest.lean (`include_str` cases), eval/cheats/run.sh (`lock_append=`
   lines), eval/cheats/{empty_extractor, emit_everything, weakened_adequacy, judge_dir_model,
-  missing_obligation, double_elaboration, lock_duplicate_path}/,
+  missing_obligation, double_elaboration, lock_duplicate_path,
+  model_include_str, model_include_str_src}/,
   eval/cheats/shadow_{model, obligation_model, extractor_model, root_component, root_export,
   export_model}/ (deferred by tasks/gate3-qualified-challenge.md),
   eval/cheats/{model_notation, model_implemented_by, model_dotdot_import}/Models/, docs/process.md,
@@ -175,6 +177,47 @@ workspace. Without it, a case's own model is rejected at gate 0 (`model_tamper`,
   gate 6 without `--paranoid` adds about 15 s. In the corpus that is 11 runs, about 3 minutes:
   the five comparator-only accepts, and the three new cases twice each.
 
+### Round 4
+
+- **An approved, lint-clean model could pick its meaning and examples per plugin with `include_str`**
+  (verifier F21-B1, opus). A model reads a judging-directory file the plugin controls
+  (`../comparator.json`, `../Plugins/<P>.lean`) and, for the plugin being judged, means the weak
+  model where only `require zz` holds, with weak examples it proves adequate. Gate 6 reads the same
+  file, so it judges the weak model and the empty-for-`left-pad` extractor passes gates 0–6,
+  `--paranoid` included. Round 2 had banned `include_str` in models; round 3 dropped that when it
+  adopted #24's allowlist. **Fix:** `include_str` is added to `Lint.banned`, so gate 1 rejects it in
+  every model and plugin. The two probes are added as `model_include_str` (reads `../comparator.json`)
+  and `model_include_str_src` (reads `../Plugins/ToyRequire.lean`), both `model_approved=yes`,
+  `full=1`, `comparator_only=accept`, with small literals so `--paranoid` does not run out of memory.
+  Each is rejected at gate 1 with the ban and ACCEPTED in a full run with `include_str` removed from
+  `banned` (shown on a scratch gate built from this head). `gate/LintTest.lean` gains a model and a
+  plugin `include_str` reject case (now 147 cases: model 22/94, plugin 3/22).
+- **`include_str` is the only `Init`/`Std` way a model reads a file's contents into a term.**
+  Checked on the v4.35.0 toolchain sources: of the builtin term/tactic/command elaborators that do
+  any `IO.FS`/`getEnv`/`Process` work,
+  - `include_str` (`Init/Notation.lean`, `Lean/Elab/BuiltinTerm.lean`) reads a file into a `String`
+    term — the vector, now banned;
+  - `idbg` (`Lean/Parser/Term.lean`, `Lean/Elab/Idbg.lean`) yields a monadic (IO) value, not pure
+    data, so it cannot inhabit `Mitos.Model`/`Mitos.ModelExamples`; at elaboration it only resolves
+    its own source path (`IO.FS.realPath (getFileName)`) and starts a server task solely in editor
+    mode (`Elab.inServer`), which the batch gate is not — no plugin-chosen file is read;
+  - `bv_check "file.lrat"` / `bv_decide` (`Init/Tactics.lean`, `Lean/Meta/Tactic/BVDecide/*`) read an
+    LRAT file from the source dir, but only as proof input to close a bitvector goal; they cannot
+    read file contents into a definition's value, and the model's `model`/`examples` are elaborated
+    before any proof;
+  - `getEnv "LEAN_MANUAL_ROOT"` (`Lean/DocString/Links.lean`) only affects Verso docstring link
+    rendering behind the `doc.verso` option; it produces no term data.
+  Every command that would run arbitrary code at a model's elaboration (`#eval`, `run_cmd`,
+  `initialize`, attributes, `set_option`) is already rejected by the model command allowlist, so no
+  such elaborator fires. Conclusion: banning `include_str` closes the file-read-into-data channel.
+- **Not in this round (follow-up issue):** a structural gate-6 defence that works without lint (a
+  judging directory with no plugin files, or rebuild-and-compare); comparing the judging directory's
+  core outputs against the trusted build (the hash check is one-directional); escaping blank-rendering
+  code points such as U+2800 in `oneLine`; the docs saying lower-case hex and the recursive
+  `models.lock` regeneration row. These are not regressions and each is caught by lint on the real
+  (`--skip-lint`-free) acceptance path. `docs/process.md` now states that "does not rest on lint"
+  covers the double-elaboration check only and that the hash check compares in one direction only.
+
 ## Done when
 - [x] all `checks` pass locally
 - [x] no `sorry`, no new axioms
@@ -183,6 +226,10 @@ workspace. Without it, a case's own model is rejected at gate 0 (`model_tamper`,
   at its expected gate after it
 - [x] round 3: rebased onto #24 and #25; `double_elaboration` and the six shadow cases added, each
   shown accepted without its check; `oneLine` is an allowlist with a proof
+- [x] round 4: `include_str` banned at gate 1 (`Lint.banned`); `model_include_str` and
+  `model_include_str_src` added (full@1, comparator-only accept), each ACCEPTED with the ban removed;
+  confirmed `include_str` is the only `Init`/`Std` file-read-into-data vector; minor findings deferred
+  to a follow-up issue
 - [x] owner adds `spec-approved` to the spec PR and merges it (#20)
 - [ ] owner merges the gate PR
 - [x] run-log record written (ops/runs/)
