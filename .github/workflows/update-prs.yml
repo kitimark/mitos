@@ -47,6 +47,8 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app.outputs.token }}
 
+      # Skips draft, fork, labelled `no-auto-rebase`, stacked (GitHub rebases a stack itself) and
+      # non-`main`-based PRs. See `.github/scripts/rebase-prs.sh`.
       - name: Rebase open PRs onto main
         if: steps.cfg.outputs.ok == 'true'
         env:

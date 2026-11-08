@@ -7,12 +7,31 @@ git fetch -q origin "$BASE"
 gh label create needs-rebase --color FBCA04 \
   --description "Could not be rebased onto $BASE automatically" >/dev/null 2>&1 || true
 
+# GitHub rebases a stack of pull requests itself, and a push from here would break its linear
+# history. `GET repos/{owner}/{repo}/stacks` lists every stack with its pull requests (`number`,
+# `state`) and an `open` flag. A pull request object also carries a `stack` field, but only for
+# members and `gh pr list --json` cannot select it, so the stack list is the source. If the list
+# cannot be read, nothing is rebased: skipping is safe, a rebase that breaks a stack is not.
+if ! stacked=$(gh api --paginate -H "X-GitHub-Api-Version: 2026-03-10" \
+    "repos/{owner}/{repo}/stacks?per_page=100" \
+    --jq '.[] | select(.open) | .pull_requests[] | select(.state == "open") | .number' \
+    | jq -s -c .); then
+  echo "::error::could not read the stack list; no PR was rebased"
+  exit 1
+fi
+echo "open PRs in a stack, left to GitHub: $stacked"
+
+# `--base` and the `baseRefName` test both leave out a PR that targets another branch, which is a
+# hand-made stack: its parent branch is not `$BASE`, so it is not ours to rebase onto `$BASE`.
 prs=$(gh pr list --base "$BASE" --state open --limit 100 \
-  --json number,headRefName,headRefOid,isCrossRepository,isDraft,labels \
-  | jq -c '.[] | select((.isCrossRepository or .isDraft) | not)
-               | select([.labels[].name] | index("no-auto-rebase") | not)
-               | {number, ref: .headRefName, oid: .headRefOid,
-                  flagged: ([.labels[].name] | index("needs-rebase") != null)}')
+  --json number,headRefName,headRefOid,baseRefName,isCrossRepository,isDraft,labels \
+  | jq -c --arg base "$BASE" --argjson stacked "$stacked" \
+      '.[] | select((.isCrossRepository or .isDraft) | not)
+           | select(.baseRefName == $base)
+           | select([.number] | inside($stacked) | not)
+           | select([.labels[].name] | index("no-auto-rebase") | not)
+           | {number, ref: .headRefName, oid: .headRefOid,
+              flagged: ([.labels[].name] | index("needs-rebase") != null)}')
 
 status=0
 flag() {
