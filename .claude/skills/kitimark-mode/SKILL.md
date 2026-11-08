@@ -186,7 +186,8 @@ watcher's echo filter and the merge rule below rely on both.
   finding blocks when a run at the head or a line of the diff shows it: a cheat the gate accepts,
   a wrong result, a red check, a check added or restored without the cheat case that pins it
   (`docs/process.md`, Security fixes), or a doc line the PR made wrong. A problem `main` already
-  has blocks only if the PR copies it or newly reaches it. Everything else is minor.
+  has blocks only if the PR copies it, newly reaches it or is meant to fix it. Everything else is
+  minor.
 - Minor findings go into one `follow-up` issue per PR, which the PR body links. The PR owner files
   those it holds in its round, and the root files a passing verdict's. A minor fix joins a round
   only when it is one line in a file that round already touches.
@@ -223,9 +224,11 @@ watcher's echo filter and the merge rule below rely on both.
   databaseId,conclusion`, then `gh run download <run-id> -n cheat-logs`. It uses the artifact
   only when that run's `Cheat corpus is rejected` step passed (`gh api
   repos/{owner}/{repo}/actions/runs/<run-id>/jobs`), because the CI cache can restore logs from
-  an earlier run. Then every case at the head has a fresh full and `--skip-lint` log, and a log
-  for a case the head lacks is stale. Locally it runs only the cases the change adds or edits,
-  and the variants it builds to test a finding, with `eval/cheats/run.sh <case>...`.
+  an earlier run. Only the cases in that step's table are fresh, each with a full and a
+  `--skip-lint` log. The table is in the `gate` job's log (`gh api
+  repos/{owner}/{repo}/actions/jobs/<job-id>/logs`), and on a PR it lists the cases of the head
+  merged into its base. Locally the verifier runs only the cases the change adds or edits, and
+  the variants it builds to test a finding, with `eval/cheats/run.sh <case>...`.
 - The root writes each verdict into the PR's In flight row on the Owner dashboard, or into its
   merged line once the PR has merged (see Catching the user up): pass or fail, the short head it
   covers and who gave it, such as `PASS sonnet-xhigh + opus-xhigh at 43fc333`.
