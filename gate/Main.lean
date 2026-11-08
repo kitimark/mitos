@@ -2,6 +2,7 @@ import MitosGate.Lint
 import MitosGate.Imports
 import MitosGate.Lock
 import MitosGate.Accept
+import MitosGate.RunLog
 
 open MitosGate
 
@@ -14,7 +15,9 @@ def usage : String := "usage:
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.*; spec never imports impl)
   mitos-gate lock [--check]                      write or check statements.lock
   mitos-gate accept --workspace <dir> --plugin <Name> --model <Module.const>
-                    [--plugin-file <f>] [--paranoid] [--record] [--keep] [--skip-lint]"
+                    [--plugin-file <f>] [--paranoid] [--record] [--keep] [--skip-lint]
+  mitos-gate runlog [--base <dir>] --head <dir>   run-log records parse, one per (task, role, attempt);
+                                                 with --base, every base line is kept (append-only)"
 
 partial def parseAccept (args : List String) (c : Accept.Config) : Except String Accept.Config :=
   match args with
@@ -71,4 +74,5 @@ def main (args : List String) : IO UInt32 := do
       if c.workspace.toString.isEmpty || c.plugin.isEmpty || c.model.isEmpty then
         IO.eprintln usage; return 2
       Accept.runAccept c
+  | "runlog" :: rest => RunLog.cli rest usage
   | _ => IO.eprintln usage; return 2
