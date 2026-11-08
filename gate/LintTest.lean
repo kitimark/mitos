@@ -1,9 +1,10 @@
 import MitosGate.Lint
 import MitosGate.Accept
 
-/-! Regression test for gate 1's model lint (`Lint.checkModel`): every command kind outside the
-model allowlist is rejected, every allowed kind is accepted, and models pass the plugin rules.
-Run with `lake exe mitos-lint-test` from the repository root. -/
+/-! Regression test for gate 1's lint: every command kind outside the model allowlist is rejected,
+every allowed kind is accepted, models pass the plugin rules, and the import rule holds for
+plugins and models alike (`Lint.check`, `Lint.checkModel`). Run with `lake exe mitos-lint-test`
+from the repository root. -/
 
 open MitosGate
 
@@ -120,21 +121,65 @@ def rejected : List (String × String) :=
     -- Syntax the toolchain's Init/Std parser does not know.
     ("unknown syntax", model "def x : Nat := 1 ⊞ 2") ]
 
+/-- Headers both plugins and models may have, each followed by a body without banned tokens. -/
+def headersAccepted : List (String × String) :=
+  [ ("plain imports", "import Init\nimport Std.Data.HashMap\nimport Mitos.Core\nimport Models.ToyRequire\n"),
+    ("escaped plain component", "import «Mitos».Core\n") ]
+
+/-- Headers neither may have: escaped components that leave an allowed root, other roots, and
+the `module`/`prelude` forms. -/
+def headersRejected : List (String × String) :=
+  [ ("import Init.«..».Lake", "import Init.«..».Lake\n"),
+    ("import Init.«..».Lean", "import Init.«..».Lean\n"),
+    ("import Models.«..».Mitos.Impl.Resolve", "import Models.«..».Mitos.Impl.Resolve\n"),
+    ("import Models.«..».Mitos.Proofs.Resolver", "import Models.«..».Mitos.Proofs.Resolver\n"),
+    ("import Models.«..».Challenge.ToyRequire", "import Models.«..».Challenge.ToyRequire\n"),
+    ("import Mitos.Core.«..».Impl.Resolve", "import Mitos.Core.«..».Impl.Resolve\n"),
+    ("import Models.«a.b»", "import Models.«a.b»\n"),
+    ("import Models.«x y»", "import Models.«x y»\n"),
+    ("import Mitos.Impl.Resolve", "import Mitos.Impl.Resolve\n"),
+    ("import Mitos.CoreX", "import Mitos.CoreX\n"),
+    ("prelude", "prelude\nimport Mitos.Core\n"),
+    ("module", "module\n\nimport Mitos.Core\n"),
+    ("public import", "module\n\npublic import Mitos.Core\n"),
+    ("meta import", "module\n\nmeta import Mitos.Core\n"),
+    ("import all", "module\n\nimport all Mitos.Core\n"),
+    ("public import, no module", "public import Mitos.Core\n"),
+    ("meta import, no module", "meta import Mitos.Core\n"),
+    ("import all, no module", "import all Mitos.Core\n") ]
+
+structure Case where
+  kind : String
+  name : String
+  src : String
+  wantOk : Bool
+
 def main : IO UInt32 := do
   let env ← Lint.syntaxEnv
-  let mut fails := 0
   let toy ← IO.FS.readFile ("examples" / "acme" / "Models" / "ToyRequire.lean")
-  for (name, src, wantOk) in (("examples/acme/Models/ToyRequire.lean", toy) :: accepted).map
-      (fun (n, s) => (n, s, true)) ++ rejected.map (fun (n, s) => (n, s, false)) do
-    let vs ← Lint.checkModel env Accept.pluginImports src
+  let plugin ← IO.FS.readFile ("examples" / "acme" / "Plugins" / "ToyRequire.lean")
+  let body := "\ndef x : Nat := 1\n"
+  let headers (kind : String) : List Case :=
+    headersAccepted.map (fun (n, h) => ⟨kind, n, h ++ body, true⟩) ++
+      headersRejected.map (fun (n, h) => ⟨kind, n, h ++ body, false⟩)
+  let cases : List Case :=
+    ⟨"model", "examples/acme/Models/ToyRequire.lean", toy, true⟩ ::
+      accepted.map (fun (n, s) => ⟨"model", n, s, true⟩) ++
+      rejected.map (fun (n, s) => ⟨"model", n, s, false⟩) ++ headers "model" ++
+      [⟨"plugin", "examples/acme/Plugins/ToyRequire.lean", plugin, true⟩] ++ headers "plugin"
+  let mut fails := 0
+  for c in cases do
+    let vs ← if c.kind == "model" then Lint.checkModel env Accept.pluginImports c.src
+      else Lint.check env Accept.pluginImports c.src
     let ok := vs.isEmpty
-    let mark := if ok == wantOk then "ok  " else "FAIL"
-    if ok != wantOk then fails := fails + 1
-    let verdict := if ok then "accepted" else s!"rejected: {(vs[0]?.map (·.render "<model>")).getD ""}"
-    IO.println s!"{mark} {name}: {verdict}"
-  let total := accepted.length + 1 + rejected.length
+    let mark := if ok == c.wantOk then "ok  " else "FAIL"
+    if ok != c.wantOk then fails := fails + 1
+    let verdict := if ok then "accepted" else s!"rejected: {(vs[0]?.map (·.render s!"<{c.kind}>")).getD ""}"
+    IO.println s!"{mark} {c.kind} {c.name}: {verdict}"
+  let count (k : String) (w : Bool) := (cases.filter fun c => c.kind == k && c.wantOk == w).length
+  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected"
   if fails == 0 then
-    IO.println s!"model lint: all {total} cases behave as expected ({accepted.length + 1} accepted, {rejected.length} rejected)"
+    IO.println s!"gate-1 lint: all {cases.length} cases behave as expected ({summary})"
     return 0
-  IO.println s!"model lint: {fails} of {total} cases FAILED"
+  IO.println s!"gate-1 lint: {fails} of {cases.length} cases FAILED"
   return 1
