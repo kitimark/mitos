@@ -1,4 +1,4 @@
 full=1
 comparator_only=reject@6
 model_approved=yes
-why=The approved model reads `../comparator.json` with `include_str`. It holds nothing unless that file is gate 6's configuration, and there it is the toy model. While gates 3 and 6 had separate judging directories, gate 3 judged the empty extractor against the empty model and gate 6 judged the toy model's proof, so the case was accepted. Lint rejects `include_str` in a model. Without lint, both gates now judge one elaboration of the model in one directory. There it holds nothing, and its adequacy proof falls back to `sorry`.
+why=The approved model reads `../comparator.json` with `include_str`. It holds nothing unless that file is gate 6's configuration, and there it is the toy model. While gates 3 and 6 had separate judging directories, gate 3 judged the empty extractor against the empty model and gate 6 judged the toy model's proof, so the case was accepted. Lint rejects the `sorry` its adequacy proof falls back to. Without lint, both gates now judge one elaboration of the model in one directory. There it holds nothing, and its adequacy proof falls back to `sorry`.

@@ -1,0 +1,4 @@
+full=3
+comparator_only=reject@3
+model_approved=yes
+why=The approved model declares `ToyRequire.Mitos.CompleteWrt := True`. Inside `namespace ToyRequire` the plugin's `Mitos.CompleteWrt` names it, and so did the Challenge's `theorem ToyRequire.complete` before it wrote its names from `_root_`, so the extractor that emits nothing passed gates 0-6. Gate 3 now states `_root_.Mitos.CompleteWrt`.

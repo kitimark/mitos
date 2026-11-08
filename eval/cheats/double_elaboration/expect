@@ -1,0 +1,4 @@
+full=1
+comparator_only=reject@6
+model_approved=yes
+why=The approved model runs code while it elaborates (`#eval`). In gate 6's run it reads as the toy model and proves its adequacy, then forges the core's cached output hash, so the plugin's run rebuilds it, and there nothing holds and the extractor that emits nothing is complete. Lint rejects `#eval`. Without lint, the gate hashes the build outputs after gate 6's run and again after the plugin's, and rejects the change at gate 6. Without that check, gates 0-6 accepted it.
