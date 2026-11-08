@@ -1,0 +1,4 @@
+full=1
+comparator_only=accept
+model_approved=yes
+why=An approved model imports `Models.«..».Mitos.Impl.Resolve`, the reference implementation, outside the four allowed roots. Lint matched the de-escaped string `Models....Mitos.Impl.Resolve` against the prefix `Models.`, so the model passed. Imports are now checked on the parsed name's components, and each must be a plain identifier.

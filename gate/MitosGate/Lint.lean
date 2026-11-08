@@ -40,10 +40,63 @@ partial def tokensOf (fm : FileMap) (stx : Syntax) (acc : Array Token) : Array T
   | .ident _ _ n _ => push (deEscapeIdent n)
   | .missing => acc
 
-def headerTokens (src : String) : IO (Array Token) := do
+/-- The parsed module header of `src`. -/
+def headerSyntax (src : String) : IO (FileMap × Syntax) := do
   let ictx := Parser.mkInputContext src "<source>"
   let (header, _, _) ← Parser.parseHeader ictx
-  return tokensOf ictx.fileMap header #[]
+  return (ictx.fileMap, header)
+
+def isEmptyNode (stx : Syntax) : Bool :=
+  stx.isMissing || (stx.isOfKind nullKind && stx.getNumArgs == 0)
+
+/-- An identifier that needs no `«»`: not empty, no `.`, no space. -/
+def plainIdent (s : String) : Bool :=
+  match s.toList with
+  | c :: cs => isIdFirst c && cs.all isIdRest
+  | [] => false
+
+/-- The components of a module name, if each is a plain identifier. `Models.«..».Mitos.Impl` has
+the component `..`, so it has none. -/
+def plainComponents : Name → Option (List String)
+  | .anonymous => some []
+  | .str p s => do
+    let ps ← plainComponents p
+    if plainIdent s then some (ps ++ [s]) else none
+  | .num .. => none
+
+/-- Whether a module, as its components, lies under one of the `allowed` prefixes, matched
+component by component. -/
+def moduleAllowed (allowed : List String) (mod : List String) : Bool :=
+  allowed.any fun p => (p.splitOn ".").isPrefixOf mod
+
+/-- The import rules over a parsed header: every import names a module whose components are plain
+identifiers and that lies under one of `allowedImports`. With `strict` (plugins and models), the
+header also has no `module` or `prelude`, and no import is `public`, `meta` or `all`. -/
+def importRules (fm : FileMap) (header : Syntax) (allowedImports : List String)
+    (strict := true) : Array Violation := Id.run do
+  let at_ (stx : Syntax) (msg : String) : Violation :=
+    let pos := fm.toPosition (stx.getPos?.getD 0)
+    { line := pos.line, col := pos.column + 1, msg }
+  let mut vs : Array Violation := #[]
+  if strict && !isEmptyNode header[0] then
+    vs := vs.push <| at_ header[0] "a `module` header is not allowed"
+  if strict && !isEmptyNode header[1] then
+    vs := vs.push <| at_ header[1] "`prelude` is not allowed"
+  for imp in header[2].getArgs do
+    if strict && !(isEmptyNode imp[0] && isEmptyNode imp[1] && isEmptyNode imp[3]) then
+      vs := vs.push <| at_ imp "only a plain `import` is allowed, not `public`, `meta` or `all`"
+    match imp[4] with
+    | .ident _ _ n _ =>
+      match plainComponents n with
+      | none =>
+        vs := vs.push <| at_ imp[4]
+          s!"import `{n}` is not allowed: each component of a module name must be a plain identifier"
+      | some mod =>
+        unless moduleAllowed allowedImports mod do
+          vs := vs.push <| at_ imp[4]
+            s!"import `{n}` is not allowed; imports must lie under {", ".intercalate allowedImports}"
+    | stx => vs := vs.push <| at_ imp s!"import of `{stx}` is not allowed"
+  return vs
 
 /-- The header and top-level commands Lean's parser produces for `src`, or the first parse error
 with its position. -/
@@ -92,24 +145,13 @@ def allowedOptionPrefixes : List String := ["maxHeartbeats", "maxRecDepth", "lin
 def components (t : String) : List String :=
   (t.splitOn ".").filter (· != "")
 
-def moduleAllowed (allowed : List String) (mod : String) : Bool :=
-  allowed.any fun p => mod == p || mod.startsWith (p ++ ".")
-
-/-- The plugin rules, over the tokens of a parsed source. `allowedImports` lists module prefixes it
-may import. -/
-def tokenRules (allowedImports : List String) (toks : Array Token) (what := "plugins") :
-    Array Violation := Id.run do
+/-- The plugin token rules, over the tokens of a parsed source. Imports are `importRules`'. -/
+def tokenRules (toks : Array Token) (what := "plugins") : Array Violation := Id.run do
   let mut vs : Array Violation := #[]
   for h : k in [0:toks.size] do
     let t := toks[k]
     let nextTok := toks[k+1]?
-    if t.text == "import" then
-      match nextTok with
-      | some m =>
-        unless moduleAllowed allowedImports m.text do
-          vs := vs.push { line := m.line, col := m.col, msg := s!"import `{m.text}` is not allowed" }
-      | none => pure ()
-    else if t.text.startsWith "#" then
+    if t.text.startsWith "#" then
       unless allowedHashCommands.contains t.text do
         vs := vs.push { line := t.line, col := t.col, msg := s!"command `{t.text}` is not allowed" }
     else if t.text == "set_option" then
@@ -129,13 +171,15 @@ def tokenRules (allowedImports : List String) (toks : Array Token) (what := "plu
 prefixes it may import. -/
 def check (env : Environment) (allowedImports : List String) (src : String) :
     IO (Array Violation) := do
-  match ← tokenize env src with
-  | .ok toks => return tokenRules allowedImports toks
+  match ← parse env src with
   | .error v => return #[v]
+  | .ok (fm, header, cmds) =>
+    return importRules fm header allowedImports ++ tokenRules (allTokens fm header cmds)
 
 /-! ## Model allowlist
 
-A plugin may use what a model defines, so a model passes every plugin rule (`tokenRules`). On top,
+A plugin may use what a model defines, so a model passes every plugin rule (`importRules`,
+`tokenRules`). On top,
 it may contain only the commands a reviewed model needs (`commandRules`). Each allowed command is a
 built-in one that adds no syntax, runs no code at build time and leaves compiled code alone, so
 "models declare no syntax" holds by construction, not by naming the commands that do. -/
@@ -159,9 +203,6 @@ private def kindName (k : SyntaxNodeKind) : String :=
   | .str _ s => s
   | _ => k.toString
 
-private def isEmptyNode (stx : Syntax) : Bool :=
-  stx.isMissing || (stx.isOfKind nullKind && stx.getNumArgs == 0)
-
 private def listed (ks : List SyntaxNodeKind) : String :=
   ", ".intercalate (ks.map kindName)
 
@@ -180,7 +221,8 @@ partial def commandRules (fm : FileMap) (cmds : Array Syntax) : Array Violation 
         s!"command `{head cmd}` ({kindName k}) is not allowed in models; they may contain only {listed modelCommands}"
       continue
     if k == ``Parser.Command.section && !(cmd[0].getArgs.all isEmptyNode) then
-      vs := vs.push <| at_ cmd s!"`{head cmd} … section` is not allowed in models; only a plain `section`"
+      vs := vs.push <| at_ cmd
+        s!"`{head cmd} … section` is not allowed in models; only `section` or `section <name>`, with no `@[expose]`, `public`, `noncomputable` or `meta`"
     if k == ``Parser.Command.declaration then
       let mods := cmd[0]
       let decl := cmd[1]
@@ -211,12 +253,14 @@ partial def commandRules (fm : FileMap) (cmds : Array Syntax) : Array Violation 
 
 /-- Check a model's source, parsed in `env`. Plugins are parsed in `env` alone, so a model may not
 change their syntax; and a plugin may use what a model defines, so a model must pass every plugin
-rule too. A model passes `tokenRules` (imports within `allowedImports`) and `commandRules`. -/
+rule too. A model passes `importRules` (imports within `allowedImports`), `tokenRules` and
+`commandRules`. -/
 def checkModel (env : Environment) (allowedImports : List String) (src : String) :
     IO (Array Violation) := do
   match ← parse env src with
   | .error v => return #[v]
   | .ok (fm, header, cmds) =>
-    return tokenRules allowedImports (allTokens fm header cmds) "models" ++ commandRules fm cmds
+    return importRules fm header allowedImports ++ tokenRules (allTokens fm header cmds) "models" ++
+      commandRules fm cmds
 
 end MitosGate.Lint
