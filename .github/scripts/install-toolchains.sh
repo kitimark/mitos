@@ -11,8 +11,8 @@ attempts=5
 delay="${INSTALL_RETRY_DELAY:-10}"
 
 # .lake holds dependency checkouts, which carry their own lean-toolchain files.
-toolchains=$(find . -name lean-toolchain -not -path '*/.lake/*' \
-  | while read -r f; do cat "$f"; echo; done | sed '/^[[:space:]]*$/d' | sort -u)
+toolchains=$(find . -name lean-toolchain -not -path '*/.lake/*' -print0 \
+  | while IFS= read -r -d '' f; do cat "$f"; echo; done | sed '/^[[:space:]]*$/d' | sort -u)
 
 [ -n "$toolchains" ] || { echo "::error::no lean-toolchain file found"; exit 1; }
 

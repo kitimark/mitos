@@ -22,7 +22,7 @@ runs:
 
     - name: Install elan if the cache has none (pinned, checked, retried)
       shell: bash
-      run: ${{ github.workspace }}/.github/scripts/install-elan.sh
+      run: ${{ github.action_path }}/../../scripts/install-elan.sh
 
     - name: Install bubblewrap
       shell: bash
@@ -33,4 +33,4 @@ runs:
 
     - name: Install the Lean toolchains from lean-toolchain (retried; no download on a cache hit)
       shell: bash
-      run: ${{ github.workspace }}/.github/scripts/install-toolchains.sh
+      run: ${{ github.action_path }}/../../scripts/install-toolchains.sh
