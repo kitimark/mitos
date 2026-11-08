@@ -219,18 +219,20 @@ would admit one that emits too much. So for `--model Models.X.model`, three modu
 **Golden facts and the model share no definition outside `Mitos.Core`.** If they did, a mistake in
 the shared definition would sit on both sides of "holds exactly when listed" and cancel out. A toy
 model whose `fact` read `require left-pad` as *providing* `left-pad`, with its golden facts built by
-that `fact`, passed gate 6 (`golden_circular_provides`). So gate 6 reads the headers of gate 0's
-copy of the models with Lean's own parser and checks that:
+that `fact`, passed gate 6 while the examples could live in the model module. So gate 6 reads the
+headers of gate 0's copy of the models with Lean's own parser and checks that:
 - the examples module imports only `Mitos.Core` (and Lean's `Init`), so no golden fact is built with
-  a model definition (`golden_shared_helper`);
+  a model definition (`golden_circular_provides`, `golden_circular_devscope`,
+  `golden_shared_helper`);
 - no model module but the adequacy module imports the examples module, so the model cannot use a
   helper declared there (`golden_helper_in_examples`);
 - the adequacy module imports the model module and the examples module, so it cannot declare a
   model or examples of its own (`golden_adequacy_own_model`, `golden_adequacy_own_examples`).
 
 A first comparator run then judges the examples module on its own against the Challenge's
-`examples` hole. So the examples constant is declared there, and no module the adequacy module
-imports can declare it again (`golden_decoy_examples`). Write golden facts as literal values,
+`examples` hole. So the examples constant is declared there (`golden_decoy_examples`), and a model
+module that declares its own examples, as round 1's toy did, makes the adequacy module's build fail
+on the duplicate name. Write golden facts as literal values,
 field by field, as the toy's `Models/ToyRequire/Examples.lean` does.
 
 Gate 6 generates a Challenge (`Challenge/Mitos/ModelAdequacy.lean`, a path no plugin name gives)
@@ -333,9 +335,10 @@ written from `_root_`. Gate 3 rejects them, and gate 1 already rejects the two t
 
 Seven cases build their golden facts with the same wrong `fact` as the model, so the mistake
 cancels out of exactness. Gate 6 rejects all seven, with and without lint:
-- `golden_circular_provides` and `golden_circular_devscope`: `fact` reads a requirement as
-  *providing* the package, or gives it the `dev` scope; the examples and the proof are in the model
-  module, as before golden files had their own module. Gate 6 accepted both then;
+- `golden_circular_provides` and `golden_circular_devscope`, the verifier's two cases: `fact` reads
+  a requirement as *providing* the package, or gives it the `dev` scope, and the examples module
+  imports the model module to build its facts with `fact`. With the examples in the model module,
+  as round 1 allowed, gate 6 accepted both;
 - `golden_decoy_examples`: the examples module declares nothing, and the model module declares the
   examples;
 - `golden_shared_helper`: the examples module imports a helper module with `fact` that the model
@@ -344,7 +347,7 @@ cancels out of exactness. Gate 6 rejects all seven, with and without lint:
 - `golden_adequacy_own_examples` and `golden_adequacy_own_model`: the adequacy module does not
   import the examples module, or the model module, and declares its own.
 
-Each of the last five is accepted by a gate without the one check it is named for.
+Each is accepted by a gate without the one check that rejects it.
 
 Twelve cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
 `eval_command`, the smuggling variants `char_literal_smuggle`, `raw_string_smuggle` and
