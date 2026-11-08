@@ -270,9 +270,10 @@ email or a private URL. The routes are in **Forge**.
   notifies a user of their own actions. So `.github/workflows/owner-ping.yml` comments
   `@kitimark this needs you: <line>` as `github-actions[bot]` on each such assignment, where the
   line is the first line of the item's latest catch-up. Before each assignment, of an issue or a
-  PR, post a comment on it whose first line is `## Catch-up: <what the user must do>`.
-  Assignment starts no CI. Never label a PR to show the user its state, because any label change
-  re-runs the full `gate`.
+  PR, post a comment on it whose first line is `## Catch-up: <what the user must do>`. When the
+  action needed from the user changes on an item already assigned to them, post a new catch-up,
+  then unassign and assign them again so the ping carries it. Assignment starts no CI. Never
+  label a PR to show the user its state, because any label change re-runs the full `gate`.
 - **PR state comes from REST.** Before any message, catch-up or dashboard edit that says a PR is
   waiting, open or not merged, the root reads that PR over REST in the same turn. An agent's
   report is never the source for PR state: the user merged #29 and #44 while the root still
@@ -301,8 +302,7 @@ email or a private URL. The routes are in **Forge**.
   - **Expected result** of each step, and what to do if it differs.
   A known fix that is not pushed yet, such as one held back to save bot reviews, goes in a new
   catch-up as "hold the merge until N fixes land". When the state changes, post a new catch-up
-  rather than editing an old one, then unassign and assign the user again so the ping carries
-  it.
+  rather than editing an old one, and reassign as Needs you says.
 - From the moment a PR opens, the root keeps one watcher on the merge or close of every open PR,
   not only after a catch-up. After every catch-up that waits on a user action, it also watches
   that exact condition. When a watcher returns, check the condition yourself, unassign the user if
