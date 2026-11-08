@@ -40,14 +40,14 @@ def main (args : List String) : IO UInt32 := do
     let mut bad := 0
     for f in files do
       let vs ← Lint.check env Accept.pluginImports (← IO.FS.readFile f)
-      for v in vs do IO.println (v.render f)
+      for v in vs do IO.println (oneLine (v.render f))
       bad := bad + vs.size
     IO.println s!"{bad} violation(s)"
     return if bad == 0 then 0 else 1
   | ["imports"] =>
     let vs ← Imports.check "core" trustedCoreImports
     let vs := vs ++ (← Imports.check ("core" / "Mitos" / "Core") lockedSpecImports)
-    for v in vs do IO.println v
+    for v in vs do IO.println (oneLine v)
     IO.println s!"{vs.size} import violation(s) in core/"
     return if vs.isEmpty then 0 else 1
   | "lock" :: rest =>
