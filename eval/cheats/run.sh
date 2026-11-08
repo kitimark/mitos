@@ -27,7 +27,9 @@ for c in "${cases[@]}"; do
   cp examples/acme/lakefile.toml examples/acme/lean-toolchain examples/acme/models.lock "$ws/"
   cp -r examples/acme/Models examples/acme/Plugins "$ws/"
   cp -r "$d/Plugins" "$ws/"; [ -d "$d/Models" ] && cp -r "$d/Models" "$ws/"
-  grep -qx 'model_approved=yes' "$d/expect" && (cd "$ws" && sha256sum Models/*.lean > models.lock)
+  # Re-pin every model, recursively, as gate 0 walks Models/.
+  grep -qx 'model_approved=yes' "$d/expect" && (cd "$ws" &&
+    find Models -name '*.lean' ! -type d -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > models.lock)
   log="$ROOT/.lake/cheats"; mkdir -p "$log"
   full=$(verdict "$ws" "" "$log/$c.full.log")
   comp=$(verdict "$ws" "--skip-lint" "$log/$c.comparator.log")
