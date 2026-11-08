@@ -168,19 +168,51 @@ def judgeManifest : String :=
   "{\"version\": \"1.3.0\", \"packagesDir\": \".lake/packages\", \"packages\": [], " ++
   "\"name\": \"judge\", \"lakeDir\": \".lake\", \"fixedToolchain\": false}\n"
 
-def report (gate : Nat) (name : String) (ok : Bool) (detail : String := "") : IO Unit := do
+/-- The gates `mitos-gate accept` runs, in the order it reports them (`docs/process.md`, "The
+acceptance gate"). -/
+inductive GateId
+  | provenance | lint | sandbox | statements | axioms | kernels | adequacy
+
+/-- The gate's number, as `docs/process.md` and the verdict line give it. -/
+def GateId.num : GateId → Nat
+  | .provenance => 0 | .lint => 1 | .sandbox => 2 | .statements => 3 | .axioms => 4
+  | .kernels => 5 | .adequacy => 6
+
+/-- The gate's name, as its lines print it. -/
+def GateId.name : GateId → String
+  | .provenance => "provenance" | .lint => "lint" | .sandbox => "sandbox build"
+  | .statements => "statements" | .axioms => "axioms" | .kernels => "kernels"
+  | .adequacy => "model adequacy"
+
+example : [GateId.provenance, .lint, .sandbox, .statements, .axioms, .kernels, .adequacy].map
+    GateId.num = List.range 7 := rfl
+
+/-- How the gate's lines start, such as `GATE 2 sandbox build`. -/
+def GateId.label (g : GateId) : String := s!"GATE {g.num} {g.name}"
+
+def report (g : GateId) (ok : Bool) (detail : String := "") : IO Unit := do
   let status := if ok then "PASS" else "FAIL"
-  IO.println s!"GATE {gate} {name}: {status}{if detail.isEmpty then "" else " — " ++ oneLine detail}"
+  IO.println s!"{g.label}: {status}{if detail.isEmpty then "" else " — " ++ oneLine detail}"
 
 private def validIdent (s : String) : Bool :=
   !s.isEmpty && s.toList.all (fun c => c.isAlphanum || c == '_') && (s.toList.head!).isAlpha
 
-abbrev GateM := ExceptT (Nat × String) IO
+/-- A rejection is the gate that failed and what failed in it when that was not the gate's own
+judgment (`I/O error`), otherwise `""`. -/
+abbrev GateM := ExceptT (GateId × String) IO
 
-def atGate (gate : Nat) (name : String) (x : GateM α) : GateM α :=
+/-- The verdict line for a rejection. `eval/cheats/run.sh` reads the gate number from it. -/
+def rejectedLine (g : GateId) (why : String) : String :=
+  s!"VERDICT: REJECTED (gate {g.num}: {g.name}{if why.isEmpty then "" else ": " ++ why})"
+
+example : rejectedLine .adequacy "I/O error" =
+    "VERDICT: REJECTED (gate 6: model adequacy: I/O error)" := by decide +kernel
+
+/-- `x` as part of gate `g`: an I/O error in it fails `g`. -/
+def atGate (g : GateId) (x : GateM α) : GateM α :=
   tryCatchThe IO.Error x fun e => do
-    report gate name false s!"I/O error: {e}"
-    throw (gate, s!"{name}: I/O error")
+    report g false s!"I/O error: {e}"
+    throw (g, "I/O error")
 
 def lockEntries (lock : String) : Except String (List (String × String)) := do
   let entries ← (lock.splitOn "\n").filter (fun l => !l.isEmpty) |>.mapM fun l =>
@@ -225,14 +257,14 @@ def provenance (c : Config) (pluginFile : System.FilePath) : GateM LockedModels 
       for (path, _) in listed do
         unless files.any (·.1 == path) do
           errs := errs.push s!"models.lock lists {path}, which is not a model file"
-  report 0 "provenance" errs.isEmpty (String.intercalate "; " errs.toList)
-  unless errs.isEmpty do throw (0, "provenance")
+  report .provenance errs.isEmpty (String.intercalate "; " errs.toList)
+  unless errs.isEmpty do throw (.provenance, "")
   return { model := c.model, files, lock }
 
 def lint (c : Config) (pluginFile : System.FilePath) (src : String) (m : LockedModels) :
     GateM Unit := do
   if c.skipLint then
-    IO.println "GATE 1 lint: SKIPPED (--skip-lint: measuring the later gates only)"
+    IO.println s!"{GateId.lint.label}: SKIPPED (--skip-lint: measuring the later gates only)"
     return
   let env ← Lint.syntaxEnv
   let mut shown := #[]
@@ -240,35 +272,151 @@ def lint (c : Config) (pluginFile : System.FilePath) (src : String) (m : LockedM
   for (rel, txt) in m.files do
     for v in ← Lint.checkModel env pluginImports txt do
       shown := shown.push (v.render (c.workspace / rel).toString)
-  report 1 "lint" shown.isEmpty s!"{shown.size} violation(s)"
+  report .lint shown.isEmpty s!"{shown.size} violation(s)"
   for v in shown do IO.println s!"  {oneLine v}"
-  unless shown.isEmpty do throw (1, "lint")
+  unless shown.isEmpty do throw (.lint, "")
 
+/-! ## What a comparator run decided -/
+
+/-- What one `lake comparator` run decided. `Outcome.parse` reads it from the run's exit code and
+output, and nothing else in the gate decides anything from comparator text. Gates 2–5
+(`pluginFailure`) and both runs of gate 6 (`examplesFailure`, `adequacyFailure`) match every
+constructor. -/
+inductive Outcome
+  /-- Exit code 0 and `Your solution is okay!`: everything built, the statements and definition holes
+  match the Challenge's, only permitted axioms are used, and every kernel accepts. -/
+  | ok
+  /-- A theorem or definition uses an axiom outside the permitted ones. -/
+  | illegalAxiom
+  /-- A constant the configuration names is missing from the solution. -/
+  | missingConst
+  /-- A statement or definition hole differs from the Challenge's. -/
+  | statement
+  /-- A kernel rejected the solution. -/
+  | kernelReject
+  /-- A module did not build because two modules it imports declare one name. -/
+  | importClash
+  /-- No judgment: any other build error, or the comparator did not run. -/
+  | noJudgment
+  deriving DecidableEq
+
+/-- Whether `pat` occurs in `s` as consecutive characters. On lists, because `decide` cannot
+evaluate `String.splitOn` in the examples below. -/
+def occursIn (pat : List Char) : List Char → Bool
+  | [] => pat.isEmpty
+  | s@(_ :: rest) => pat.isPrefixOf s || occursIn pat rest
+
+/-- The comparator's messages for a constant the solution lacks: the exporter's panic and
+`Lake.Check.compareAt`'s own. -/
+def missingMarkers : List String := ["not found in environment", "Const not found in solution"]
+
+/-- `Lake.Check.compareAt`'s messages for a statement or definition hole that is not the
+Challenge's. -/
 def statementMarkers : List String :=
-  [ "Const not found in challenge", "Const not found in solution",
+  [ "Const not found in challenge",
     "Const does not match between challenge and target",
     "Challenge and solution constant kind don't match",
     "Challenge and solution theorem statement do not match",
     "Challenge constant is not a definition", "Solution constant is not a definition" ]
 
-def failedGate (comparatorOutput : String) : Nat × String :=
-  let has (s : String) := (comparatorOutput.splitOn s).length > 1
-  if has "Illegal axiom" then (4, "axioms")
-  else if statementMarkers.any has || has "not found in environment" then (3, "statements")
-  else if has "kernel" && has "reject" then (5, "kernels")
-  -- No judgment at all: a build error, or `lake` did not run.
-  else (2, "sandbox build")
+/-- The outcome of a comparator run that exited with `code` and printed `out`. The comparator stops
+at its first error, but the build output before it is the plugin's and the models', and can hold
+any of these markers. So the order of the checks decides which gate such a run fails, never whether
+it is accepted: that needs exit code 0 (`Outcome.parse_ok`). -/
+def Outcome.parse (code : UInt32) (out : String) : Outcome :=
+  let has (marker : String) := occursIn marker.toList out.toList
+  if code == 0 && has "Your solution is okay!" then .ok
+  else if has "Illegal axiom" then .illegalAxiom
+  else if missingMarkers.any has then .missingConst
+  else if statementMarkers.any has then .statement
+  else if has "kernel" && has "reject" then .kernelReject
+  else if has "environment already contains" then .importClash
+  else .noJudgment
 
+/-- Only a run that exited with code 0 is `ok`. -/
+theorem Outcome.parse_ok {code : UInt32} {out : String} (h : Outcome.parse code out = .ok) :
+    code = 0 := by
+  simp only [Outcome.parse] at h
+  split at h
+  · simp_all
+  · repeat' split at h
+    all_goals simp_all
+
+/-! Each outcome, from the last lines of a real run as the gate prints them, without its `  | `
+prefix. Unless its comment says otherwise, the text is from the named log in CI's `cheat-logs`
+artifact for main at c79e03f. The exit codes are the ones Lake's `CLI/Check.lean` returns: 0 for an
+accepted run, 1 for any error once the run has started. -/
+
+-- The `cd core && lake comparator --paranoid` step of the same CI run: the gate prints no
+-- comparator output for an accepted run.
+example : Outcome.parse 0 "Running con-ron kernel on solution
+con-ron: accepted 1885 declarations (--verified)
+con-ron kernel accepts the solution
+Running Lean default kernel on solution
+Lean default kernel accepts the solution
+Your solution is okay!
+" = .ok := by decide +kernel
+
+-- `admit.comparator.log`.
+example : Outcome.parse 1 "warning: Plugins/ToyRequire.lean:38:8: declaration uses `sorry`
+Build completed successfully (11 jobs).
+error: Illegal axiom detected: 'sorryAx'
+" = .illegalAxiom := by decide +kernel
+
+-- `missing_obligation.full.log`.
+example : Outcome.parse 1 "Build completed successfully (11 jobs).
+PANIC at LeanExport.dumpConstant LeanExport.Basic:254:48: Constant ToyRequire.complete not found in environment.
+error: Child exited with 134
+" = .missingConst := by decide +kernel
+
+-- `weakened_statement.full.log`.
+example : Outcome.parse 1 "Building Plugins.ToyRequire
+Build completed successfully (11 jobs).
+error: Challenge and solution theorem statement do not match: 'ToyRequire.complete'
+" = .statement := by decide +kernel
+
+-- `env_hack.comparator.log`.
+example : Outcome.parse 1 "Running Lean default kernel on solution
+Lean default kernel rejected the solution
+error: Lean default exited with 1
+" = .kernelReject := by decide +kernel
+
+-- No cheat case reaches this outcome. A local run on the toy, with `model.examples` declared in
+-- the model module as well as in the examples module.
+example : Outcome.parse 1 "error: Models/ToyRequire/Adequacy.lean:1:0: import Models.ToyRequire.Examples failed, environment already contains 'Models.ToyRequire.model.examples' from Models.ToyRequire
+Some required targets logged failures:
+- Models.ToyRequire.Adequacy
+error: build failed
+error: Child exited with 1
+" = .importClash := by decide +kernel
+
+-- `escaped_sorry.comparator.log`.
+example : Outcome.parse 1 "error: Plugins/ToyRequire.lean:39:8: Unknown identifier `«sorry»`
+Some required targets logged failures:
+- Plugins.ToyRequire
+error: build failed
+error: Child exited with 1
+" = .noJudgment := by decide +kernel
+
+/-- The gate that rejects the plugin's run, or `none` when the run passes gates 2–5. -/
+def pluginFailure : Outcome → Option GateId
+  | .ok => none
+  | .noJudgment | .importClash => some .sandbox
+  | .missingConst | .statement => some .statements
+  | .illegalAxiom => some .axioms
+  | .kernelReject => some .kernels
+
+/-- One comparator run: what it decided, and its output to show. -/
 structure Judgment where
-  accepted : Bool
-  output   : String
+  outcome : Outcome
+  output  : String
 
 def runComparator (c : Config) (dir : System.FilePath) (config : String) : IO Judgment := do
   let args := #["comparator", s!"--config={config}"] ++ if c.paranoid then #["--paranoid"] else #[]
   try
     let (code, out) ← run "lake" args dir
-    return { accepted := code == 0 && (out.splitOn "Your solution is okay!").length > 1, output := out }
-  catch e => return { accepted := false, output := s!"error: could not run lake comparator: {e}" }
+    return { outcome := .parse code out, output := out }
+  catch e => return { outcome := .noJudgment, output := s!"error: could not run lake comparator: {e}" }
 
 /-- The regular files under `dir`, recursively, relative to it and sorted. Anything else there, such
 as a symlink or a device, is an error: reading it could follow it out of the judging directory or
@@ -311,30 +459,31 @@ structure Judgments where
   or removed a build output of gate 6's run, or the outputs could not be compared. -/
   rebuilt : Option String
 
-def examplesFailure (model out : String) : String :=
-  let has (s : String) := (out.splitOn s).length > 1
-  if has "not found in environment" || has "Const not found in solution" then
-    s!"{examplesModule model} must declare `{model}.examples`"
-  else if has "Illegal axiom" then
-    s!"`{model}.examples` uses an axiom outside {String.intercalate ", " permittedAxioms}"
-  else if statementMarkers.any has then
-    s!"`{model}.examples` in {examplesModule model} is not a `Mitos.ModelExamples` definition"
-  else if has "kernel" && has "reject" then s!"a kernel rejected {examplesModule model}"
-  else s!"{examplesModule model} could not be judged"
+/-- Why gate 6's examples run failed, or `none` when it passed. -/
+def examplesFailure (model : String) : Outcome → Option String
+  | .ok => none
+  | .missingConst => some s!"{examplesModule model} must declare `{model}.examples`"
+  | .illegalAxiom =>
+    some s!"`{model}.examples` uses an axiom outside {String.intercalate ", " permittedAxioms}"
+  | .statement =>
+    some s!"`{model}.examples` in {examplesModule model} is not a `Mitos.ModelExamples` definition"
+  | .kernelReject => some s!"a kernel rejected {examplesModule model}"
+  | .importClash | .noJudgment => some s!"{examplesModule model} could not be judged"
 
-def adequacyFailure (model out : String) : String :=
-  let has (s : String) := (out.splitOn s).length > 1
-  if has "environment already contains" then
-    s!"{adequacyModule model} does not build: two modules it imports declare one name; " ++
-      s!"`{model}.examples` may be declared only in {examplesModule model}"
-  else if has "not found in environment" || has "Const not found in solution" then
-    s!"{adequacyModule model} must declare `{model}.adequate`, and {modelModule model} `{model}`"
-  else if has "Illegal axiom" then
-    s!"`{model}.adequate` uses an axiom outside {String.intercalate ", " permittedAxioms}"
-  else if statementMarkers.any has then
-    s!"`{model}.adequate` does not state `Mitos.Model.Adequate {model} {model}.examples`"
-  else if has "kernel" && has "reject" then s!"a kernel rejected `{model}.adequate`"
-  else "the adequacy proof could not be judged"
+/-- Why gate 6's adequacy run failed, or `none` when it passed. -/
+def adequacyFailure (model : String) : Outcome → Option String
+  | .ok => none
+  | .importClash =>
+    some (s!"{adequacyModule model} does not build: two modules it imports declare one name; " ++
+      s!"`{model}.examples` may be declared only in {examplesModule model}")
+  | .missingConst =>
+    some s!"{adequacyModule model} must declare `{model}.adequate`, and {modelModule model} `{model}`"
+  | .illegalAxiom =>
+    some s!"`{model}.adequate` uses an axiom outside {String.intercalate ", " permittedAxioms}"
+  | .statement =>
+    some s!"`{model}.adequate` does not state `Mitos.Model.Adequate {model} {model}.examples`"
+  | .kernelReject => some s!"a kernel rejected `{model}.adequate`"
+  | .noJudgment => some "the adequacy proof could not be judged"
 
 /-- Gate 6, in order, each step only if the one before passed: the layout of the models
 (`examplesLayout`), the examples module alone (`examples.json`), then the adequacy module
@@ -343,17 +492,18 @@ def judgeModel (c : Config) (m : LockedModels) (dir : System.FilePath) :
     IO (Except (String × String) Unit) := do
   if let .error e := ← examplesLayout m then return .error (e, "")
   let ex ← runComparator c dir "examples.json"
-  unless ex.accepted do return .error (examplesFailure m.model ex.output, ex.output)
+  if let some why := examplesFailure m.model ex.outcome then return .error (why, ex.output)
   let ad ← runComparator c dir "adequacy.json"
-  unless ad.accepted do return .error (adequacyFailure m.model ad.output, ad.output)
+  if let some why := adequacyFailure m.model ad.outcome then return .error (why, ad.output)
   return .ok ()
 
 /-- One judging directory, so gates 3 and 6 see one elaboration of the model. Gate 6 is judged
 first, before the plugin is built, so nothing the plugin's build writes can reach it. The plugin's
 run must then reuse every output gate 6's run built: a module that runs code while it elaborates
 could otherwise make Lake rebuild the model, and gate 3 would judge a different elaboration from
-gate 6's. -/
-def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO Judgments := do
+gate 6's. Writing and removing the directory is gate 2's; gate 6's runs and the hashing of their
+outputs are gate 6's. -/
+def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : GateM Judgments := do
   let generated : List (System.FilePath × String) :=
     [ ("Plugins" / s!"{c.plugin}.lean", src), ("Challenge" / s!"{c.plugin}.lean", chal),
       ("comparator.json", comparatorJson c.plugin),
@@ -364,19 +514,21 @@ def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO 
   let files := m.files.toList.map (fun (r, t) => ((⟨r⟩ : System.FilePath), t)) ++ generated
   -- The core is copied to `Mitos/`; every other file needs a path of its own.
   let rels := files.map (·.1.toString)
-  if let some r := rels.find? fun r => r.startsWith "Mitos/" || (rels.filter (· == r)).length > 1 then
-    throw <| IO.userError s!"two files of the judging directory would share the path {r}"
-  let dir ← IO.FS.createTempDir
-  try
-    copyFile (c.mitosRoot / "lean-toolchain") (dir / "lean-toolchain")
-    copyLeanTree (c.mitosRoot / "core" / "Mitos") (dir / "Mitos")
-    for (rel, txt) in files do
-      if let some p := (dir / rel).parent then IO.FS.createDirAll p
-      IO.FS.writeFile (dir / rel) txt
-    let model ← judgeModel c m dir
-    let before ← buildOutputs dir
+  let dir ← atGate .sandbox do
+    if let some r := rels.find? fun r => r.startsWith "Mitos/" || (rels.filter (· == r)).length > 1 then
+      throwThe IO.Error <| IO.userError s!"two files of the judging directory would share the path {r}"
+    IO.FS.createTempDir
+  let judged : GateM Judgments := do
+    atGate .sandbox do
+      copyFile (c.mitosRoot / "lean-toolchain") (dir / "lean-toolchain")
+      copyLeanTree (c.mitosRoot / "core" / "Mitos") (dir / "Mitos")
+      for (rel, txt) in files do
+        if let some p := (dir / rel).parent then IO.FS.createDirAll p
+        IO.FS.writeFile (dir / rel) txt
+    let model ← atGate .adequacy (judgeModel c m dir)
+    let before ← atGate .adequacy (buildOutputs dir).run
     let plugin ← runComparator c dir "comparator.json"
-    let after ← buildOutputs dir
+    let after ← atGate .adequacy (buildOutputs dir).run
     -- An accepted gate 6 built the model module, so its `.olean` must be among the outputs;
     -- without it (another Lake layout, say) the comparison would check nothing.
     let modelOlean := "/".intercalate ((modelModule m.model).splitOn ".") ++ ".olean"
@@ -390,9 +542,15 @@ def judge (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO 
         else some s!"the plugin's run changed {", ".intercalate (changed.toList.take 5)}"
       | .error e, _ | _, .error e => some e
     return { plugin, model, rebuilt }
-  finally
-    if c.keep then IO.println s!"  (judging directory kept: {oneLine dir.toString})"
-    else IO.FS.removeDirAll dir
+  -- The first failure decides the verdict: after one, an error removing the directory is only
+  -- reported.
+  let (j, ()) ← tryFinally' judged fun j? => do
+    let close : IO Unit :=
+      if c.keep then IO.println s!"  (judging directory kept: {oneLine dir.toString})"
+      else IO.FS.removeDirAll dir
+    if j?.isSome then atGate .sandbox close
+    else tryCatchThe IO.Error close fun e => report .sandbox false s!"I/O error: {e}"
+  return j
 
 def showComparatorTail (out : String) : IO Unit := do
   let frame (l : String) := l == "backtrace:" || (l.startsWith "/" && (l.splitOn " [0x").length > 1)
@@ -401,27 +559,26 @@ def showComparatorTail (out : String) : IO Unit := do
   for l in lines.reverse.take 15 |>.reverse do IO.println s!"  | {oneLine l}"
 
 def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
-  if !j.accepted then
-    let (g, name) := failedGate j.output
-    report g name false
+  if let some g := pluginFailure j.outcome then
+    report g false
     showComparatorTail j.output
-    throw (g, name)
-  report 2 "sandbox build" true
-  report 3 "statements" true
-  report 4 "axioms" true (String.intercalate ", " permittedAxioms)
-  report 5 "kernels" true (if c.paranoid then "lean4lean, nanoda, con-leche, con-ron, paranoid" else "Lean kernel only (use --paranoid for independent kernels)")
+    throw (g, "")
+  report .sandbox true
+  report .statements true
+  report .axioms true (String.intercalate ", " permittedAxioms)
+  report .kernels true (if c.paranoid then "lean4lean, nanoda, con-leche, con-ron, paranoid" else "Lean kernel only (use --paranoid for independent kernels)")
 
 def adequacyGate (m : LockedModels) (j : Except (String × String) Unit) (rebuilt : Option String) :
     GateM Unit := do
   if let .error (reason, out) := j then
-    report 6 "model adequacy" false reason
+    report .adequacy false reason
     unless out.isEmpty do showComparatorTail out
-    throw (6, "model adequacy")
+    throw (.adequacy, "")
   if let some why := rebuilt then
-    report 6 "model adequacy" false
+    report .adequacy false
       s!"gates 3 and 6 may not have judged one elaboration of the model: {why}"
-    throw (6, "model adequacy")
-  report 6 "model adequacy" true
+    throw (.adequacy, "")
+  report .adequacy true
     s!"{m.model}.adequate : Mitos.Model.Adequate {m.model} {m.model}.examples, examples from {examplesModule m.model}"
 
 def writeRecord (c : Config) (m : LockedModels) (src chal adequacyChal : String) : IO Unit := do
@@ -447,14 +604,14 @@ def writeRecord (c : Config) (m : LockedModels) (src chal adequacyChal : String)
 def runAccept (c : Config) : IO UInt32 := do
   let pluginFile := c.pluginFile.getD (c.workspace / "Plugins" / s!"{c.plugin}.lean")
   let gates : GateM (IO Unit) := do
-    let m ← atGate 0 "provenance" (provenance c pluginFile)
-    let src ← atGate 1 "lint" do
+    let m ← atGate .provenance (provenance c pluginFile)
+    let src ← atGate .lint do
       let src ← IO.FS.readFile pluginFile
       lint c pluginFile src m
       pure src
     let chal := challenge c.plugin m.model
     let adequacyChal := adequacyChallenge m
-    let j ← atGate 2 "sandbox build" (judge c m src chal adequacyChal)
+    let j ← judge c m src chal adequacyChal
     pluginGates c j.plugin
     adequacyGate m j.model j.rebuilt
     return writeRecord c m src chal adequacyChal
@@ -466,8 +623,8 @@ def runAccept (c : Config) : IO UInt32 := do
         return 1
     IO.println "VERDICT: ACCEPTED"
     return 0
-  | .error (g, name) =>
-    IO.println s!"VERDICT: REJECTED (gate {g}: {name})"
+  | .error (g, why) =>
+    IO.println (rejectedLine g why)
     return 1
 
 end MitosGate.Accept
