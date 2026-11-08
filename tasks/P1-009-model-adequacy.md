@@ -7,7 +7,9 @@ goal: A plugin is accepted only if its model ships reviewed examples and proves 
   the reviewed examples: one whose examples agree with it is adequate.
 statement: Mitos.ModelExamples, Mitos.Model.Adequate, Mitos.Extractor.empty,
   Mitos.ModelExamples.everything, Mitos.Model.Adequate.{empty_not_complete, everything_not_sound},
-  Mitos.Model.{nothing_holds_not_adequate, everything_holds_not_adequate} (new)
+  Mitos.Model.{nothing_holds_not_adequate, everything_holds_not_adequate} (new); follow-up spec PR:
+  Mitos.GoldenFile, Mitos.Model.Adequate.{sound_on_golden, complete_on_golden} (new),
+  Mitos.ModelExamples and Mitos.Model.Adequate (changed: golden files)
 touches: spec PR: core/Mitos/Core/ModelExamples.lean, core/Mitos/Core.lean, statements.lock,
   examples/acme/{Models/ToyRequire.lean, models.lock, accepted/ToyRequire.json};
   gate PR: gate/MitosGate/{Accept.lean, Util.lean, Lint.lean (`include_str` ban)}, gate/Main.lean,
@@ -19,9 +21,16 @@ touches: spec PR: core/Mitos/Core/ModelExamples.lean, core/Mitos/Core.lean, stat
   export_model}/ (deferred by tasks/gate3-qualified-challenge.md),
   eval/cheats/{model_notation, model_implemented_by, model_dotdot_import}/Models/, docs/process.md,
   .github/workflows/ci.yml (step name), examples/acme/accepted/ToyRequire.json,
-  tasks/gate3-qualified-challenge.md, plan/phase-1.md (P1-009 row), ops/runs/
+  tasks/gate3-qualified-challenge.md, plan/phase-1.md (P1-009 row), ops/runs/;
+  follow-up spec PR: core/Mitos/Core/ModelExamples.lean, statements.lock,
+  examples/acme/{Models/ToyRequire.lean, models.lock, accepted/ToyRequire.json},
+  eval/cheats/{emit_everything, weakened_adequacy, judge_dir_model}/Models/ (new examples form),
+  eval/cheats/nearmiss_scope/, docs/process.md, this file, plan/phase-1.md, ops/runs/
 must_not_touch: core/Challenge/, core/comparator.json, existing eval/cheats/*/ expect files (round 3
-  gives the models of #24's three model cases the toy's adequacy proof; see Findings)
+  gives the models of #24's three model cases the toy's adequacy proof; see Findings).
+  Exception, follow-up spec PR: the models of emit_everything, weakened_adequacy and
+  judge_dir_model (new in the gate PR) move to the golden-file form, and two why= lines are
+  reworded; no full= or comparator_only= line changes
 checks: build, imports, lock, core lake check, core comparator --paranoid, acme build,
   accept-toy --paranoid, cheats (full and comparator-only)
 budget: 40 iterations · 4h wall · 2M tokens
@@ -46,26 +55,35 @@ escalation: hint → automation → stronger model → pair → split → revisi
 ## Design
 
 **What gate 6 checks.** For `--model Models.X.model`, the model module must declare:
-- `Models.X.model.examples : Mitos.ModelExamples`: two lists of `(file, fact)` pairs.
-  - `holds`: facts the model must say hold.
-  - `nearMisses`: facts it must reject.
+- `Models.X.model.examples : Mitos.ModelExamples`: golden files, each a `Mitos.GoldenFile`: a file
+  and every fact the model must say holds in it, and no other.
 - `Models.X.model.adequate : Mitos.Model.Adequate Models.X.model Models.X.model.examples`.
 
 `Model.Adequate` holds when:
-- both lists are non-empty
-- every example's fact holds and is anchored in its file
-- no near miss's fact holds
+- on each golden file, a fact holds exactly when it is listed
+- every listed fact is anchored in its file
+- some golden file lists a fact that another golden file does not
 
-Two locked theorems turn this into the vacuity checks:
+Two locked theorems say what this buys a plugin that also passes gate 3:
+- `Adequate.sound_on_golden`: a sound extractor emits on each golden file only listed facts.
+- `Adequate.complete_on_golden`: a complete extractor emits on each golden file a fact with the kind
+  and identity of each listed fact.
+
+Two more turn this into the vacuity checks:
 - `Adequate.empty_not_complete`: `Extractor.empty` is not complete.
-- `Adequate.everything_not_sound`: `ex.everything`, which emits every example fact on every file,
-  is not sound.
+- `Adequate.everything_not_sound`: `ex.everything`, which emits every listed fact on every file, is
+  not sound.
 
 Two corollaries are tripwires for the definition itself:
 - `nothing_holds_not_adequate`: the model where nothing holds is adequate for no examples.
 - `everything_holds_not_adequate`: the model where everything holds is adequate for no examples.
 
-If a later edit dropped the non-emptiness conjuncts, both would stop proving.
+If a later edit dropped the last conjunct, both would stop proving.
+
+The first spec (#20) had examples and near misses: `(file, fact)` pairs the model must accept and
+reject. The red team showed that is weaker than it reads. A near miss excludes one exact `Fact`, so
+a model that reads `# require x` as a dev requirement passed the reviewed near miss "a
+commented-out line" (`nearmiss_scope`). The follow-up spec replaces both lists with golden files.
 
 **Choices and reasons.**
 
@@ -88,15 +106,18 @@ If a later edit dropped the non-emptiness conjuncts, both would stop proving.
 | Every gate-6 failure is reported as gate 6, with a reason read from the comparator's output: missing declaration, illegal axiom, statement mismatch, kernel rejection | Fails closed: anything but a clean comparator run rejects | — |
 | Gate 0 also rejects a `--model` that is not a dotted identifier | Gate 6 interpolates it into a generated `def`, not only into a term | — |
 | The acceptance record gains `adequacy_challenge_sha256` | The record pins what acceptance meant | — |
+| Golden files: each reviewed file lists every fact that holds in it, and `Adequate` requires `Holds file f ↔ f ∈ facts` (follow-up spec) | Each reviewed file is an exact test. "This file requires nothing" can be stated, and the old near misses follow from it. Both vacuity theorems still follow, from one witness conjunct | Near misses at kind-and-identity level: still one fact per entry, and a reviewer cannot state "nothing else holds" |
+| The witness conjunct is "some golden file lists a fact that another does not" | The weakest condition from which emitting every listed fact is unsound. It also implies a listed fact exists, so emitting nothing is incomplete | Requiring one golden file with no facts. That is simpler to read but rules out conventions where every file has a fact |
 
-**Toy model.**
-- Examples: `require left-pad` at byte 0, and the second line of `"require é\nrequire left-pad\n"`
-  at byte 11.
-- Near misses:
-  - a commented-out line
-  - the character offset 10 (the P1-005 bug)
-  - the whole line `require left-pad` as the package
-- Near misses are proved by `decide` through `holds_iff`, a decidable restatement of `Holds`.
+**Toy model.** Each golden file is named for the mistake it catches:
+- `wholeLineAsPackage`: `require left-pad` requires only `left-pad`, not the whole line.
+- `charOffsetNotByteOffset`: `"require é\nrequire left-pad\n"` requires `é` and `left-pad`. The
+  second line starts at `utf8Len "require é\n"` bytes, not at its character offset (the P1-005 bug).
+- `commentedOutLine`: `# require left-pad` requires nothing.
+
+`golden_of_requirements` reduces exactness and anchoring on a golden file to `decide` on its
+requirement lines, as `(offset, characters)` pairs. So no proof compares `String`s, which overflowed
+nanoda's stack on non-ASCII input.
 
 **Cheats** (all `model_approved=yes`, so the runner pins their model). Round 1's three cases are
 accepted by gates 0–5 and rejected at gate 6 without lint. In full runs `empty_extractor` and
@@ -107,8 +128,9 @@ rejected at gate 1 in full runs and at gate 6 without lint:
 | Case | Model | Extractor | Gate 6 says |
 |---|---|---|---|
 | `empty_extractor` | nothing holds; no examples (a model written before gate 6) | emits nothing | declarations missing |
-| `emit_everything` | every line is a requirement; the reviewer's examples; adequacy is `sorry` (unprovable: the whole-line near miss holds) | emits every line | illegal axiom `sorryAx` |
-| `weakened_adequacy` | nothing holds; proves only "near misses fail" under the name `model.adequate` | emits nothing | statement mismatch |
+| `emit_everything` | every line is a requirement; the reviewer's examples; adequacy is `sorry` (unprovable: the whole line holds on `wholeLineAsPackage`) | emits every line | illegal axiom `sorryAx` |
+| `weakened_adequacy` | nothing holds; proves only "nothing outside the golden lists holds" under the name `model.adequate` | emits nothing | statement mismatch |
+| `nearmiss_scope` (follow-up spec) | the toy's golden files; reads `# require x` as a dev requirement; adequacy is `sorry` (`commentedOutLine_not_exact`) | reports commented-out lines as dev requirements | full: gate 1, `sorry`. Comparator-only: illegal axiom `sorryAx`. Accepted under #20's near misses |
 | `judge_dir_model` | reads `../comparator.json` with `include_str`; the toy model only where that is gate 6's configuration, otherwise nothing holds; adequacy falls back to `sorry` | emits nothing | full: gate 1, `sorry`. Comparator-only: illegal axiom `sorryAx`, since gates 3 and 6 now judge one elaboration |
 | `double_elaboration` (verifier F21-1) | an `#eval` leaves a marker and forges the core's cached `Core.olean.hash`, so the plugin's run rebuilds the model; the first elaboration is the toy model and proves adequacy, the second holds nothing | emits nothing | full: gate 1, `#eval` and `sorry`. Comparator-only: the plugin's run changed gate 6's build outputs. Without that check: ACCEPTED, gates 0–6 |
 
@@ -173,6 +195,11 @@ workspace. Without it, a case's own model is rejected at gate 0 (`model_tamper`,
   showed that the comparator alone accepts them. Round 3 gives each model the toy's reviewed
   examples and adequacy proof, unchanged otherwise; their `expect` files are unchanged and all three
   are accepted without lint again.
+- **A lookup-table model is adequate** (red team, `lookup_model`): its `Holds s f` says that `f` is listed
+  for the golden file `s`. Against it, a lookup-table extractor passes every gate, with golden files as with
+  near misses. This is an inherent limit. Owner review of `Holds` carries it, and later the mutation
+  and corpus checks do. It is documented in `docs/process.md` and is not a cheat case, since no
+  gate is expected to reject it.
 - Cost (round 1): the honest `accept --paranoid` goes from about 36 s to about 63 s. Each run that reaches
   gate 6 without `--paranoid` adds about 15 s. In the corpus that is 11 runs, about 3 minutes:
   the five comparator-only accepts, and the three new cases twice each.

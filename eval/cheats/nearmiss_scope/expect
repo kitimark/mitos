@@ -1,0 +1,4 @@
+full=1
+comparator_only=reject@6
+model_approved=yes
+why=The approved model has the toy model's golden files, but it reads a commented-out `# require x` as a dev requirement of `x`. With near misses, which excluded only the exact runtime-scoped fact, gate 6 accepted it, and the extractor that reports commented-out lines passed. The golden file `commentedOutLine` lists no facts, so the model is not adequate (`commentedOutLine_not_exact`), and its adequacy proof is `sorry`. Gate 1's model lint rejects the `sorry`; without lint, gate 6 rejects the illegal axiom.
