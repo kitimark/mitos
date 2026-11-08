@@ -1,0 +1,4 @@
+full=6
+comparator_only=reject@6
+model_approved=yes
+why=The approved `fact` gives every requirement the `dev` scope. It lives in a helper module, `Models.ToyRequire.Fact`, that both the model module and the examples module import, so the golden facts are built with the model's own `fact` and the mistake cancels out. The examples module may import only `Mitos.Core`.

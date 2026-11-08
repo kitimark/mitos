@@ -5,6 +5,9 @@ import Mitos.Core
 
 Convention: a line that is exactly `require <name>` means the file requires the toy package
 `<name>`. The span covers `<name>`, which starts 8 bytes (`"require "`) into the line.
+
+Its golden files are in `Models.ToyRequire.Examples`, which this module does not import, and
+`Models.ToyRequire.Adequacy` proves the model agrees with them.
 -/
 
 namespace Models.ToyRequire
@@ -21,21 +24,6 @@ def fact (o : Nat) (name : List Char) : Mitos.Fact :=
 /-- A fact holds iff some line is `require <name>` and the fact is the one that line yields. -/
 def model : Mitos.Model where
   Holds s f := ∃ o name, (o, prefixChars ++ name) ∈ Mitos.lines s.toList ∧ f = fact o name
-
-def wholeLineAsPackage : Mitos.GoldenFile where
-  file := "require left-pad\n"
-  facts := [fact 0 "left-pad".toList]
-
-def charOffsetNotByteOffset : Mitos.GoldenFile where
-  file := "require é\nrequire left-pad\n"
-  facts := [fact 0 "é".toList, fact (Mitos.utf8Len "require é\n".toList) "left-pad".toList]
-
-def commentedOutLine : Mitos.GoldenFile where
-  file := "# require left-pad\n"
-  facts := []
-
-def model.examples : Mitos.ModelExamples where
-  golden := [wholeLineAsPackage, charOffsetNotByteOffset, commentedOutLine]
 
 /-- Each `require <name>` line's byte offset and package name. -/
 def requirements (s : String) : List (Nat × List Char) :=
@@ -76,26 +64,5 @@ theorem golden_of_requirements {g : Mitos.GoldenFile} (rs : List (Nat × List Ch
     obtain ⟨pre, post, hs, ho, -⟩ := Mitos.Span.text_eq_some.1 (Mitos.mem_lines (mem_requirements.1 hr))
     exact Mitos.Span.text_eq_some.2
       ⟨pre ++ prefixChars, post, by simp [fact, hs], by simp [fact, ho], by simp [fact]⟩
-
-theorem model.adequate : model.Adequate model.examples := by
-  have h1 := golden_of_requirements (g := wholeLineAsPackage) [(0, "left-pad".toList)]
-    (by decide) rfl
-  have h2 := golden_of_requirements (g := charOffsetNotByteOffset)
-    [(0, "é".toList), (Mitos.utf8Len "require é\n".toList, "left-pad".toList)] (by decide) rfl
-  have h3 := golden_of_requirements (g := commentedOutLine) [] (by decide) rfl
-  refine ⟨?_, ?_, wholeLineAsPackage, .head _, commentedOutLine, .tail _ (.tail _ (.head _)),
-    fact 0 "left-pad".toList, .head _, List.not_mem_nil⟩
-  · intro g hg
-    simp only [model.examples, List.mem_cons, List.not_mem_nil, or_false] at hg
-    rcases hg with rfl | rfl | rfl
-    · exact h1.1
-    · exact h2.1
-    · exact h3.1
-  · intro g hg
-    simp only [model.examples, List.mem_cons, List.not_mem_nil, or_false] at hg
-    rcases hg with rfl | rfl | rfl
-    · exact h1.2
-    · exact h2.2
-    · exact h3.2
 
 end Models.ToyRequire

@@ -53,7 +53,7 @@ def Mitos.Located.origin type=08f2df5176a6bac2e7ce63c35008e735 value=fd657e8a2ed
 def Mitos.Located.path type=bf60835527f0872167187184e5feb888 value=93caae0fca8c454531c4042b0cb37493
 def Mitos.Located.repo type=bf60835527f0872167187184e5feb888 value=80dde04cc1bbbe5abc63fa746bc3f3fe
 def Mitos.Located.rev type=bf60835527f0872167187184e5feb888 value=9787ada10124addf11c2e1e8f4ef0a6f
-def Mitos.Model.Adequate type=48360400647318a6d274589ac23e3154 value=3ba4b1f04469f7e7bfd9e03ad10a2b95
+def Mitos.Model.Adequate type=48360400647318a6d274589ac23e3154 value=1e3c59c5b20e8538d4548d0e3b48e9eb
 def Mitos.Model.Holds type=7915113e149e535348fbf6a297bf678d value=a0f678540ba09c83f9fd585c8c664e11
 def Mitos.ModelExamples.everything type=87dca0b5f51b7d21bf55586c5f033d97 value=dfdf9ee0d4aab03dd702e098cb8f2b67
 def Mitos.ModelExamples.golden type=ae0404a18ce1e04e5c6fdad6db80192a value=cb8424e1e08b1c45f4dd63d44edb3962
@@ -123,6 +123,7 @@ inductive Mitos.Span type=baaddf70fb5d432b8bd948ef91d6f910
 inductive Mitos.Status type=baaddf70fb5d432b8bd948ef91d6f910
 theorem Mitos.Affects.brecOn type=c86b1dd99145c1312168462ad3e1f128
 theorem Mitos.Model.Adequate.complete_on_golden type=2252426021d1c5cb8563867c462e94b3
+theorem Mitos.Model.Adequate.constant_not_sound_complete type=3185599ffae1e0ce273709077d96b830
 theorem Mitos.Model.Adequate.empty_not_complete type=3bf9e2c86879c1a14acae9fdefa7b255
 theorem Mitos.Model.Adequate.everything_not_sound type=5eced5376bdb7dd21673d38891ce3200
 theorem Mitos.Model.Adequate.sound_on_golden type=2efb24e20fa9cba66f6110c4c001e378

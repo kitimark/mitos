@@ -1,0 +1,4 @@
+full=6
+comparator_only=reject@6
+model_approved=yes
+why=The examples module imports only `Mitos.Core`, but it declares a `fact` that gives every requirement the `dev` scope and builds the golden facts with it. The model module imports the examples module and uses the same `fact`, so the mistake cancels out. Only the adequacy module `Models.ToyRequire.Adequacy` may import the examples module, so the model module cannot reach anything declared there.

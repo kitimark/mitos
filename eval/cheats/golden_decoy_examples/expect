@@ -1,0 +1,4 @@
+full=6
+comparator_only=reject@6
+model_approved=yes
+why=The approved model's `fact` reads `require left-pad` as providing `left-pad`. The examples module `Models.ToyRequire.Examples` exists and imports only `Mitos.Core`, but declares nothing; the model module declares `model.examples` itself, built with its own `fact`, so the mistake cancels out. Gate 6's first run judges the examples module alone and finds no `model.examples` there.
