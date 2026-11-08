@@ -618,8 +618,16 @@ def writeRecord (c : Config) (i : Inputs) (chal adequacyChal : String) : IO Unit
   let file := dir / s!"{c.plugin}.json"
   let tmp := dir / s!".{c.plugin}.json.{← IO.Process.getPID}.tmp"
   IO.FS.createDirAll dir
-  IO.FS.writeFile tmp rec_
-  IO.FS.rename tmp file
+  -- `.writeNew` creates the file or fails, so nothing planted at `tmp` is followed. The flush
+  -- raises a failed write here: `IO.FS.writeFile` leaves it to the handle's finalizer, which drops
+  -- it, and a short temp file would be renamed over the old record. On any error the temp file is
+  -- removed and the record step fails, so the old record stays.
+  try
+    IO.FS.withFile tmp .writeNew fun h => do h.putStr rec_; h.flush
+    IO.FS.rename tmp file
+  catch e =>
+    try IO.FS.removeFile tmp catch _ => pure ()
+    throw e
   IO.println s!"recorded {oneLine file.toString}"
 
 def runAccept (c : Config) : IO UInt32 := do
