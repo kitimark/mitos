@@ -1,4 +1,4 @@
 full=6
 comparator_only=reject@6
 model_approved=yes
-why=The approved model's `fact` gives every requirement the `dev` scope, the mistake `nearmiss_scope` makes on commented-out lines. Its golden files are the toy's, but each listed fact is built with that same `fact`, so the mistake cancels out of exactness, and gate 6 accepted it while the examples could live in the model module. Gate 6 now requires them in `Models.ToyRequire.Examples`, which may import only `Mitos.Core` and which the model module must import; this model declares its own.
+why=The verifier's `devscope` case: the approved model's `fact` gives every requirement the `dev` scope, the mistake `nearmiss_scope` makes on commented-out lines, and the golden facts are built with that same `fact`, so the mistake cancels out of exactness. Gate 6 accepted it while the examples could live in the model module. Here the examples module `Models.ToyRequire.Examples` imports the model module to use `fact`; gate 6's layout check rejects that, since the examples module may import only `Mitos.Core`.
