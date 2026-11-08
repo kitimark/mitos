@@ -40,11 +40,17 @@ partial def tokensOf (fm : FileMap) (stx : Syntax) (acc : Array Token) : Array T
   | .ident _ _ n _ => push (deEscapeIdent n)
   | .missing => acc
 
-/-- The parsed module header of `src`. -/
-def headerSyntax (src : String) : IO (FileMap × Syntax) := do
+/-- The parsed module header of `src`, or its first parse error: a header that fails to parse
+comes back empty, so its imports would go unchecked. -/
+def headerSyntax (src : String) : IO (Except Violation (FileMap × Syntax)) := do
   let ictx := Parser.mkInputContext src "<source>"
-  let (header, _, _) ← Parser.parseHeader ictx
-  return (ictx.fileMap, header)
+  let (header, _, msgs) ← Parser.parseHeader ictx
+  match msgs.toList.find? (·.severity == .error) with
+  | some m =>
+    let text ← m.data.toString
+    return .error { line := m.pos.line, col := m.pos.column + 1,
+                    msg := s!"the header does not parse ({text.trimAscii}), so its imports cannot be checked" }
+  | none => return .ok (ictx.fileMap, header)
 
 def isEmptyNode (stx : Syntax) : Bool :=
   stx.isMissing || (stx.isOfKind nullKind && stx.getNumArgs == 0)
