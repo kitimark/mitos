@@ -49,7 +49,9 @@ def headerSyntax (src : String) : IO (FileMap × Syntax) := do
 def isEmptyNode (stx : Syntax) : Bool :=
   stx.isMissing || (stx.isOfKind nullKind && stx.getNumArgs == 0)
 
-/-- An identifier that needs no `«»`: not empty, no `.`, no space. -/
+/-- A component made of identifier characters only: not empty, starts with an identifier-start
+character, and has no `.` or space. Keywords such as `«import»` pass; such a component still sits
+inside the allowed root it follows. -/
 def plainIdent (s : String) : Bool :=
   match s.toList with
   | c :: cs => isIdFirst c && cs.all isIdRest
@@ -108,19 +110,31 @@ def parse (env : Environment) (src : String) :
   let mut cmds := #[]
   let mut st := st
   let mut msgs := msgs
+  let mut stoppedAt : Option Syntax := none
   repeat
     let (cmd, st', msgs') := Parser.parseCommand ictx pctx st msgs
     st := st'
     msgs := msgs'
     -- `#exit` is terminal too; keep it, so the rules see it.
     unless cmd.isOfKind ``Parser.Command.eoi do cmds := cmds.push cmd
-    if Parser.isTerminalCommand cmd then break
+    if Parser.isTerminalCommand cmd then
+      -- Lean stops elaborating at `#exit` too, so nothing after it counts. Any other stop before
+      -- the end of the input (today a mid-file `import`) would leave the rest unchecked.
+      unless cmd.isOfKind ``Parser.Command.eoi || cmd.isOfKind ``Parser.Command.exit do
+        stoppedAt := some cmd
+      break
   match msgs.toList.find? (·.severity == .error) with
   | some m =>
     let text ← m.data.toString
     return .error { line := m.pos.line, col := m.pos.column + 1,
                     msg := s!"does not parse with the toolchain's syntax ({text.trimAscii}); plugins may not declare notation" }
-  | none => return .ok (ictx.fileMap, header, cmds)
+  | none =>
+    if let some cmd := stoppedAt then
+      let pos := ictx.fileMap.toPosition (cmd.getPos?.getD 0)
+      let text := ((tokensOf ictx.fileMap cmd #[])[0]?.map (·.text)).getD (toString cmd.getKind)
+      return .error { line := pos.line, col := pos.column + 1,
+                      msg := s!"Lean's parser stops at `{text}` before the end of the file, so the rest would go unchecked; it is not allowed" }
+    return .ok (ictx.fileMap, header, cmds)
 
 private def allTokens (fm : FileMap) (header : Syntax) (cmds : Array Syntax) : Array Token :=
   cmds.foldl (fun a c => tokensOf fm c a) (tokensOf fm header #[])
