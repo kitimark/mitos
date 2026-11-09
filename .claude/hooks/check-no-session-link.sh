@@ -24,8 +24,10 @@
 #   - `pr create` or `pr new`, with any spaces, quotes, backslashes, commas or `$` between the
 #     words and any flags with a value (`gh pr create`, `gh -R o/r pr create`, `gh pr -R o/r
 #     create`, `gh "pr" create`, ['gh','pr','create']), or `createPullRequest`; or
-#   - the pulls list route (`/pulls` at the end of a path, before `?`, a quote that ends the path or
-#     a space; `pulls/"$n"` is one PR's route) together with the word POST, a field or body flag
+#   - the pulls list route (`/pulls` with an optional / and then the end of the path: the end of the
+#     text, a space or one of ? # ; & | ) < > backtick \, or a run of quotes that closes the path,
+#     even inside another quoted string; `pulls/"$n"` and `pulls/12` are one PR's route) together
+#     with the word POST, a field or body flag
 #     (-f, -F, -d, a short cluster such as -if, --field, --raw-field, --input, --data*, --json,
 #     --form, each with or without a quote after it) or a method flag (-X, --method, --request) whose value is not GET or HEAD.
 # These words anywhere in the command count, in a commit message, an echo or a grep as much as in a
@@ -97,9 +99,12 @@ if [ "$alone" = 0 ]; then
   flat=${cmd//$'\n'/ }
   grep -Eiq -- '(^|[^[:alnum:]_])pr[[:space:]'\''"\\,$]+(-[^[:space:]]*[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*(create|new)([^[:alnum:]_]|$)|createpullrequest' <<<"$flat" \
     && block "$open_pr_msg"
-  # The list route: /pulls, an optional /, then the end of the path. A quote ends it only if no word
-  # character, $, quote or backtick follows: `pulls/"$n"` is one PR's route, `"repos/o/r/pulls"` the list.
-  if grep -Eiq -- '/pulls/?($|[?#`[:space:];&|)<>\\]|['\''"]($|[^[:alnum:]_$`'\''"]))' <<<"$flat"; then
+  # The list route: /pulls, then the end of the path. Without a / that is the end of the text, one of
+  # ? # backtick space ; & | ) < > \, or a run of quotes (a closing quote, even one inside another
+  # quoted string) followed by the end of the text or anything but a word character or a quote.
+  # With a / the same ends count, and a run of quotes after the / does too unless a word character,
+  # $, backtick or quote follows it: `pulls/"$n"` and ``pulls/"`cat n`"`` are one PR's route.
+  if grep -Eiq -- '/pulls(/?($|[?#`[:space:];&|)<>\\])|['\''"]+($|[^[:alnum:]_'\''"])|/['\''"]+($|[^[:alnum:]_$`'\''"]))' <<<"$flat"; then
     grep -Eiq -- '(^|[^[:alnum:]_])post([^[:alnum:]_]|$)' <<<"$flat" && block "$open_pr_msg"
     # A short cluster (`-if title=t`) counts, and a quote after a long flag does (`"--input"` in a list).
     grep -Eq -- '(^|[[:space:]'\''"])(-[A-Za-z]*[fFd]|(--field|--raw-field|--input|--data[a-z-]*|--json|--form)([[:space:]='\''"]|$))' <<<"$flat" \

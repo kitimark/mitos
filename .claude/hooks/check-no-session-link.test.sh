@@ -289,7 +289,7 @@ check "gh api --raw-field to the pulls route" \
   "$(bash_in "gh api repos/o/r/pulls --raw-field title=t")" block "open-pr.sh"
 check "gh api --input to the pulls route" \
   "$(bash_in "gh api repos/o/r/pulls --input q.json")" block "open-pr.sh"
-# A quote after /pulls ends the list route only when it ends the path; a PR number in quotes after
+# A quote after /pulls ends the list route when it closes the path; a PR number in quotes after
 # /pulls/ makes the route one PR's, as the process's own commands write it (round 4).
 check "a quoted pulls list route with -f still blocks" \
   "$(bash_in 'gh api -X POST "repos/o/r/pulls" -f title=t')" block "open-pr.sh"
@@ -305,6 +305,71 @@ check "the merge PUT on pulls/\"\$pr\"/merge passes" \
   "$(bash_in "gh api -X PUT repos/kitimark/mitos/pulls/\"\$pr\"/merge -f merge_method=rebase -f sha=\"\$head\"")" allow
 check "a review reply on pulls/\"\$n\"/comments/\"\$c\"/replies passes" \
   "$(bash_in "gh api repos/kitimark/mitos/pulls/\"\$n\"/comments/\"\$c\"/replies -F body=@$work/clean.md")" allow
+# The list route ends at ? # backtick space ; & | ) < > \ or a run of quotes that closes the path
+# (round 5). Each probe is a plain create with the route last or followed by one of these; dropping
+# its character from the hook's end-of-route set lets it through.
+while IFS= read -r c; do
+  check "end of the list route: $c" "$(bash_in "$c")" block "open-pr.sh"
+done <<'PROBES'
+curl -d @q.json https://api.github.com/repos/o/r/pulls#create
+gh api repos/o/r/pulls/ -f title=t -f head=h -f base=main
+x=`gh api --input q.json repos/o/r/pulls`
+gh api --input q.json repos/o/r/pulls; echo done
+gh api --input q.json repos/o/r/pulls&& echo done
+gh api --input q.json repos/o/r/pulls|jq .number
+n=$(gh api --input q.json repos/o/r/pulls)
+gh api --input q.json repos/o/r/pulls<<<""
+gh api --input q.json repos/o/r/pulls>out.json
+python3 -c "import subprocess; subprocess.run(\"gh api --input q.json repos/o/r/pulls\", shell=True)"
+PROBES
+# A route closed by a quote, with another quote, a backtick or $ right after it: the route is last
+# inside a quoted string or backticks, or the quote is followed by an empty string or a variable.
+while IFS= read -r c; do
+  check "a quoted list route, closed inside another string: $c" "$(bash_in "$c")" block "open-pr.sh"
+done <<'PROBES'
+bash -c 'gh api --input q.json "repos/o/r/pulls"'
+bash -c 'gh api -X POST -f title=t -f head=h -f base=main "repos/o/r/pulls"'
+sh -c "gh api --input q.json 'repos/o/r/pulls'"
+timeout 30 sh -c "gh api --method POST --input q.json 'repos/o/r/pulls'"
+bash -lc 'gh api --method POST --input q.json "repos/{owner}/{repo}/pulls"'
+eval 'gh api --input q.json "repos/o/r/pulls"'
+find . -maxdepth 1 -name q.json -exec sh -c 'gh api --input "$1" "repos/o/r/pulls"' _ {} \;
+x=`gh api --input q.json "repos/o/r/pulls"`
+bash -c "curl -s -d @q.json 'https://api.github.com/repos/o/r/pulls'"
+bash -c 'curl -s --json @q.json "https://api.github.com/repos/o/r/pulls"'
+gh api repos/o/r/pulls"" -f title=t -f head=h -f base=main
+gh api repos/o/r/pulls'' -f title=t -f head=h -f base=main
+gh api -X POST "repos/o/r/pulls"$x -f title=t -f head=h -f base=main
+gh api -X POST "repos/o/r/pulls"'' -f title=t -f head=h -f base=main
+gh api -X POST 'repos/o/r/pulls'"" --input q.json
+gh api --input q.json "repos/o/r/pulls""$@"
+gh api --input q.json "repos/o/r/pulls""${q:-}"
+gh api -X POST repos/o/r/pulls/"" -f title=t -f head=h -f base=main
+bash -c 'gh api --input q.json "repos/o/r/pulls/"'
+bash -c 'gh api --input q.json "repos/o/r/PULLS"'
+PROBES
+check "a list route in a python shell=True string, closed by a quote" \
+  "$(bash_in $'python3 - <<\'EOF\'\nimport subprocess\nsubprocess.run("gh api -X POST --input q.json \'repos/o/r/pulls\'", shell=True)\nEOF')" block "open-pr.sh"
+check "a list route in a python bash -c list, closed by a quote" \
+  "$(bash_in $'python3 - <<\'EOF\'\nimport subprocess\nsubprocess.run(["bash", "-c", "gh api --input q.json \'repos/o/r/pulls\'"])\nEOF')" block "open-pr.sh"
+# One PR's route passes, whatever follows the number: a variable, a command, a literal. A word
+# character or a quote after the closing quote joins the path (`"o/r/pulls"98` is `o/r/pulls98`), so
+# it is no list route.
+while IFS= read -r c; do
+  check "one PR's route passes: $c" "$(bash_in "$c")" allow
+done <<'PROBES'
+gh api -X PATCH repos/kitimark/mitos/pulls/"${n}" -F body=@clean.md
+gh api -X PATCH repos/kitimark/mitos/pulls/'98' -F body=@clean.md
+gh api -X PATCH repos/kitimark/mitos/pulls/"`cat n.txt`" -F body=@clean.md
+gh api -X PUT 'repos/kitimark/mitos/pulls/'$pr/merge -f merge_method=rebase
+bash -c 'gh api -X PATCH -F body=@clean.md "repos/o/r/pulls/98"'
+gh api -X PATCH "repos/o/r/pulls"98 -F body=@clean.md
+gh api -X PATCH "repos/o/r/pulls"_98 -F body=@clean.md
+gh api -X PATCH "repos/o/r/pulls""98" -F body=@clean.md
+gh api -X PATCH "repos/o/r/pulls"'98' -F body=@clean.md
+gh api -X PATCH "repos/o/r/pulls/"_98 -F body=@clean.md
+gh api -X PATCH "repos/o/r/pulls/"'98' -F body=@clean.md
+PROBES
 # open-pr.sh run alone passes whatever its title says; run with anything else, it does not.
 check "open-pr.sh alone with a title that names gh pr create" \
   "$(bash_in ".claude/scripts/open-pr.sh --head h --title 'kitimark-mode: block gh pr create' --body-file $work/clean.md")" allow
