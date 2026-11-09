@@ -7,9 +7,10 @@ import MitosGate.CheatsRun
 every allowed kind is accepted, models pass the plugin rules, and the import rule holds for
 plugins and models alike (`Lint.check`, `Lint.checkModel`). Each rule reports under its own id
 (`ruleCases`), and each ban is guarded by a cheat case or listed in `unguardedBans` and
-`eval/cheats/unguarded` (`ratchet`). It also pins how the cheat runner stops a run at its timeout
-(`timeoutCases`), the one runner test that needs no gate run. Run with `lake exe mitos-lint-test`
-from the repository root. -/
+`eval/cheats/unguarded` (`ratchet`). It runs `mitos-gate`, the cheat runner included, on hostile
+text and checks that no line it prints starts a workflow command (`ciCases`). It also pins how the
+cheat runner stops a run at its timeout (`timeoutCases`), the one runner test that needs no gate
+run. Run with `lake exe mitos-lint-test` from the repository root. -/
 
 open MitosGate
 
@@ -309,7 +310,12 @@ def ciCases (root : String) : List CiCase :=
     { name := "accept, gate 1's lines, a plugin file that starts with ::"
       args := ["accept", "--workspace", ".", "--plugin", "ToyRequire", "--model",
         "Models.ToyRequire.model", "--mitos-root", root, "--plugin-file", "::warning::forged.lean"],
-      files := [("::warning::forged.lean", plugin)], toy := true } ]
+      files := [("::warning::forged.lean", plugin)], toy := true },
+    { name := "cheats, the legacy form in an option's value"
+      args := ["cheats", "--jobs", "##[warning]forged"] },
+    { name := "cheats, table rows of cases named :: and with the legacy form"
+      args := ["cheats", "::warning::forged", "x##[warning]forged"],
+      files := [("eval/cheats/README", ""), ("examples/acme/README", "")] } ]
 
 /-- The lines the runner reads from `out`: the pieces between LFs and CRs. -/
 def runnerLines (out : String) : List String :=

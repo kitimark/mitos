@@ -15,7 +15,9 @@ the gates, writes the logs and prints the rows, and decides nothing.
   (`Verdict.parse_eq_some_iff`). The runner reads a run's one `VERDICT:` line (`readVerdict`); none,
   or two, is no verdict (`readVerdict_eq_none`), and the gate's own output reads as its verdict
   (`readVerdict_printed`). A run whose exit code disagrees with its verdict, or that timed out, has
-  none (`Run.verdict_eq_some`).
+  none (`Run.verdict_eq_some`). The gate makes its verdict with `Verdict.ofGate`, whose text goes
+  through `ciLine`, so its line starts no workflow command in a CI log and stays one line
+  (`Verdict.ofGate_not_startsCommand`, `Verdict.ofGate_no_break`).
 * **`expect` files.** `Expect.parse` reads `key=value` lines. Each key is known and given once,
   except `lock_append`, which may repeat; `full` and `comparator_only` are required
   (`Expect.parse_render`).
@@ -98,7 +100,7 @@ theorem splitLines_printed_append {ls : List String} {rest : List Char}
 /-! ## The verdict line -/
 
 /-- What the gate decided, as its last line says. The texts are printed as given, so the gate
-passes them through `oneLine` (`newline_not_mem_oneLine`). -/
+makes its verdict with `Verdict.ofGate`, which writes them with `ciLine`. -/
 inductive Verdict
   /-- Gates 0–6 passed. -/
   | accepted
@@ -343,12 +345,117 @@ theorem readVerdict_printed {pre : List String} {v : Verdict} {rest : List Char}
   simp only [readVerdict, this]
   exact Verdict.parse_render v
 
-/-- `oneLine` text has no newline, so a verdict made with it is one line. -/
-theorem newline_not_mem_oneLine (s : String) : '\n' ∉ (oneLine s).toList := by
-  intro h
-  rcases oneLine_printable s '\n' h with h | h
-  · exact absurd h (by decide)
-  · exact absurd h (by decide)
+/-! ## The verdict line in a CI log
+
+The gate makes its verdict with `Verdict.ofGate`, which writes the verdict's text with `ciLine`,
+and prints `v.render` as it is. So the whole line starts no workflow command
+(`Verdict.ofGate_not_startsCommand`), stays one line (`Verdict.ofGate_no_break`) and holds only
+`oneLine`'s code points (`Verdict.ofGate_printable`), as `ciLine_not_startsCommand`,
+`ciLine_no_break` and `ciLine_printable` say of a line printed through `ciLine`.
+
+The gate does not print `ciLine v.render`. `ciLine` writes the `\` of an escape as `\u{005C}`, so it
+would change a line whose text holds an escape, such as a record error with a newline, and the
+runner would read no verdict from it (the last example below). -/
+
+/-- The verdict the gate prints for how its run ended: `.ok none` when gates 0–6 passed and the
+record, if asked for, was written; `.ok (some e)` when the record could not be written, with the
+error `e`; `.error (g, why)` when gate `g` rejected the plugin. Its text is written with
+`ciLine`: the record error names a path, and every `why` is `""` or `I/O error` today, which
+`ciLine` leaves as they are, but nothing in its type keeps it one. -/
+def Verdict.ofGate : Except (GateId × String) (Option String) → Verdict
+  | .ok none => .accepted
+  | .ok (some e) => .unrecorded (ciLine e)
+  | .error (g, why) => .rejected g (ciLine why)
+
+/-- A code point other than `[` added at the end starts no `##[`. -/
+theorem hasLegacy_append_singleton {c : Char} (hc : c ≠ '[') (l : List Char) :
+    hasLegacy (l ++ [c]) = hasLegacy l := by
+  induction l with
+  | nil => simp [hasLegacy]
+  | cons a l ih =>
+    have : ((l ++ [c]).take 2 == ['#', '[']) = (l.take 2 == ['#', '[']) := by
+      rcases l with _ | ⟨x, _ | ⟨y, r⟩⟩ <;> simp [hc]
+    rw [List.cons_append, hasLegacy, hasLegacy, ih, this]
+
+/-- A line `Verdict.ofGate` makes is `VERDICT: ACCEPTED`, or a trusted start `pre` that begins
+with `V` and holds no `#`, then a `ciLine` text, then `)`. -/
+theorem Verdict.ofGate_render_toList (o : Except (GateId × String) (Option String)) :
+    (Verdict.ofGate o).render.toList = acceptedLine ∨
+      ∃ pre s, (Verdict.ofGate o).render.toList = pre ++ (ciLine s).toList ++ [')'] ∧
+        pre.head? = some 'V' ∧ (∀ x ∈ pre, x ≠ '#' ∧ printable x = true) := by
+  rcases o with ⟨g, why⟩ | _ | e
+  · right
+    rw [Verdict.ofGate, render_toList]
+    by_cases hw : (ciLine why).isEmpty
+    · refine ⟨gateTag ++ (toString g.num ++ ": " ++ g.name).toList, "", ?_, ?_, ?_⟩
+      · have h0 : ciLine why = "" := by simpa [String.isEmpty_iff] using hw
+        rw [h0]
+        simp [whyText, ciLine, ciChars]
+      · cases g <;> decide
+      · cases g <;> decide
+    · refine ⟨gateTag ++ (toString g.num ++ ": " ++ g.name).toList ++ [':', ' '], why, ?_, ?_, ?_⟩
+      · simp [whyText, hw]
+      · cases g <;> decide
+      · cases g <;> decide
+  · left; rfl
+  · right
+    refine ⟨recordTag, e, ?_, by decide, by decide⟩
+    rw [Verdict.ofGate, render_toList]
+
+/-- **The gate's verdict line starts no workflow command**, by either of the runner's parsers. -/
+theorem Verdict.ofGate_not_startsCommand (o : Except (GateId × String) (Option String)) :
+    ¬ startsCommand (Verdict.ofGate o).render := by
+  unfold startsCommand
+  rcases Verdict.ofGate_render_toList o with h | ⟨pre, s, h, hV, hpre⟩
+  · rw [h]; decide +kernel
+  · rw [h]
+    rintro (hp | hl)
+    · obtain ⟨rest, rfl⟩ : ∃ rest, pre = 'V' :: rest := by
+        cases pre with
+        | nil => simp at hV
+        | cons a rest => simp at hV; exact ⟨rest, by rw [hV]⟩
+      simp only [List.cons_append, List.dropWhile_cons, show runnerBlank 'V' = false by decide,
+        Bool.false_eq_true, ↓reduceIte] at hp
+      simp at hp
+    · rw [← hasLegacy_iff, List.append_assoc, hasLegacy_append (fun x hx => (hpre x hx).1),
+        hasLegacy_append_singleton (by decide), ciLine, String.toList_ofList, ciChars_legacy] at hl
+      exact Bool.false_ne_true hl
+
+/-- The gate's verdict line prints only allowlisted code points, and `\` to start an escape. -/
+theorem Verdict.ofGate_printable (o : Except (GateId × String) (Option String)) :
+    ∀ x ∈ (Verdict.ofGate o).render.toList, printable x = true ∨ x = '\\' := by
+  rcases Verdict.ofGate_render_toList o with h | ⟨pre, s, h, -, hpre⟩
+  · rw [h]; decide
+  · rw [h]
+    intro x hx
+    simp only [List.mem_append, List.mem_singleton] at hx
+    rcases hx with (hx | hx) | rfl
+    · exact .inl (hpre x hx).2
+    · exact ciLine_printable s x hx
+    · exact .inl (by decide)
+
+/-- **The gate's verdict line stays one line**, so `readVerdict_printed` reads it back. -/
+theorem Verdict.ofGate_no_break (o : Except (GateId × String) (Option String)) :
+    ∀ c ∈ ['\n', '\x0b', '\x0c', '\r', '\u0085', ' ', ' '],
+      c ∉ (Verdict.ofGate o).render.toList := by
+  have key : ∀ c ∈ ['\n', '\x0b', '\x0c', '\r', '\u0085', ' ', ' '],
+      ¬(printable c = true ∨ c = '\\') := by decide
+  intro c hc hmem
+  exact key c hc (Verdict.ofGate_printable o c hmem)
+
+/-- The gate's own texts print as they are, so its rejection lines are the ones `run.sh` reads. -/
+example : (Verdict.ofGate (.error (.adequacy, "I/O error"))).render =
+    "VERDICT: REJECTED (gate 6: model adequacy: I/O error)" := by decide
+example : (Verdict.ofGate (.error (.lint, ""))).render = "VERDICT: REJECTED (gate 1: lint)" := by
+  decide
+
+/-- A hostile record error: the legacy form and a newline before a command are escaped. -/
+example : (Verdict.ofGate (.ok (some "##[warning]x\n::error::y"))).render =
+    "VERDICT: REJECTED (record: ##\\u{005B}warning]x\\u{000A}::error::y)" := by decide
+
+/-- Why the gate does not print `ciLine v.render`: it would escape the escape's `\` again. -/
+example : ciLine (Verdict.ofGate (.ok (some "a\nb"))).render ≠
+    (Verdict.ofGate (.ok (some "a\nb"))).render := by decide
 
 /-- One finished run of the gate: its exit code, its standard output followed by its standard
 error, and whether the runner stopped it at its timeout. -/
