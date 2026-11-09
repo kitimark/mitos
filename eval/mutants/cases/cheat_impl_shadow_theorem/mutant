@@ -1,0 +1,8 @@
+why=src_dst_swapped, which breaks only resolve_sound, claimed to break resolve_status_honest. The implementation also declares Mitos.Refute.Mitos.Spec.StatusHonest := False, which the refutation Challenge's statement, elaborated in namespace Mitos.Refute, resolved to; so a theorem the mutant meets read as REFUTED (#86 review, round 3, opus B1).
+breaks=resolve_status_honest
+rejects=lint
+file=Mitos/Impl/Resolve.lean
+find=src := r.repo, dst := p.repo
+replace=src := p.repo, dst := r.repo
+find=end Mitos.Impl
+replace=end Mitos.Impl def Mitos.Refute.Mitos.Spec.StatusHonest (_ : Mitos.Resolver) : Prop := False

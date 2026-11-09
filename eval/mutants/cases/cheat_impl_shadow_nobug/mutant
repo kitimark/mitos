@@ -1,0 +1,6 @@
+why=No bug: the resolver is the approved one. The implementation declares Mitos.Refute.Mitos.Spec.AssumptionsExact := False, which the refutation Challenge's statement, elaborated in namespace Mitos.Refute, resolved to, and Mitos.Proofs.resolve_sound, a clash that makes the gate reject; so a correct implementation read as REFUTED (#86 review, round 3, opus B1).
+breaks=resolve_assumptions_exact
+rejects=lint
+file=Mitos/Impl/Resolve.lean
+find=end Mitos.Impl
+replace=end Mitos.Impl def Mitos.Refute.Mitos.Spec.AssumptionsExact (_ : Mitos.Resolver) : Prop := False def Mitos.Proofs.resolve_sound : Nat := 0

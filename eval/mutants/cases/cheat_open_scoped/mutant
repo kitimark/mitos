@@ -1,0 +1,6 @@
+why=src_dst_swapped with a Refute.lean that opens Int: open switches on Init's scoped syntax -[n+1], which the lint's parse with Init's syntax alone reads as - applied to a list, so the lint would check a text Lean reads otherwise (#86 review, round 3, opus B2). Only namespaces under Mitos, which hold no scoped syntax, may be opened.
+breaks=resolve_sound
+rejects=lint
+file=Mitos/Impl/Resolve.lean
+find=src := r.repo, dst := p.repo
+replace=src := p.repo, dst := r.repo
