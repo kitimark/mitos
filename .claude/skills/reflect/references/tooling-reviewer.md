@@ -18,6 +18,8 @@ Examples of the pattern:
 
 Read the active transcript at <ABSOLUTE_PATH> (or use the digest below if no path is given).
 
+To read what the user said, run `.claude/skills/reflect/scripts/user-turns.sh <ABSOLUTE_PATH> [since]`. It prints the user's own turns and leaves out tool results, task notifications, messages from other sessions and local command output, which a plain filter on `"type": "user"` counts as the user's words.
+
 Scan for:
 - Tool invocations and command flags the agent had to discover
 - Library / framework quirks (config, lockfiles, env-var behavior, version-specific gotchas)

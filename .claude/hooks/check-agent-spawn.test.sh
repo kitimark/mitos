@@ -2,6 +2,9 @@
 set -u
 hook="$(dirname "$0")/check-agent-spawn.sh"
 failed=0
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+export MITOS_HOOK_STATE=$work/state
 
 check() {
   local name=$1 input=$2 expect=$3 out code
@@ -23,21 +26,80 @@ check() {
     echo "FAIL  $name: $out"; failed=1
   fi
 }
+lacks() { # name, input, substring that must not be in the message
+  local out
+  out=$("$hook" <<<"$2" 2>/dev/null)
+  if grep -qF -- "$3" <<<"$out"; then echo "FAIL  $1: $out"; failed=1; else echo "ok    $1"; fi
+}
 
 check "owner with model and effort" \
-  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","prompt":"p"}}' ""
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","run_in_background":true,"prompt":"p"}}' ""
 check "verifier without effort" \
-  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"sonnet","prompt":"p"}}' "sets no effort."
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"sonnet","run_in_background":true,"prompt":"p"}}' "sets no effort."
 check "no subagent_type, no model, no effort" \
-  '{"tool_name":"Agent","tool_input":{"prompt":"p"}}' "sets no model or effort."
+  '{"tool_name":"Agent","tool_input":{"run_in_background":true,"prompt":"p"}}' "sets no model or effort."
 check "empty model string" \
-  '{"tool_name":"Agent","tool_input":{"subagent_type":"Explore","model":"","effort":"low","prompt":"p"}}' "sets no model."
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"Explore","model":"","effort":"low","run_in_background":true,"prompt":"p"}}' "sets no model."
 check "fork with neither" \
-  '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"p"}}' ""
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","run_in_background":true,"prompt":"p"}}' ""
 check "fork with model and effort" \
-  '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","model":"opus","effort":"high","prompt":"p"}}' "sets model and effort, which a fork ignores"
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","model":"opus","effort":"high","run_in_background":true,"prompt":"p"}}' "sets model and effort, which a fork ignores"
 check "fork with effort only" \
-  '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","effort":"low","prompt":"p"}}' "sets effort, which a fork ignores"
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","effort":"low","run_in_background":true,"prompt":"p"}}' "sets effort, which a fork ignores"
 check "input that is not JSON" 'not json' ""
+
+# B6: the background and worktree settings (#91).
+check "no run_in_background" \
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"sonnet","effort":"low","prompt":"Watch #84."}}' \
+  "does not set run_in_background: true"
+check "run_in_background false" \
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"sonnet","effort":"low","run_in_background":false,"prompt":"p"}}' \
+  "does not set run_in_background: true"
+check "run_in_background as a string" \
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"sonnet","effort":"low","run_in_background":"true","prompt":"p"}}' \
+  "does not set run_in_background: true"
+check "a fork without run_in_background" \
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"p"}}' "does not set run_in_background: true"
+check "a PR owner without a worktree" \
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","run_in_background":true,"description":"PR owner for #91","prompt":"p"}}' \
+  "sets no isolation: \"worktree\""
+check "a verifier named in the prompt, without a worktree" \
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"sonnet","effort":"xhigh","run_in_background":true,"prompt":"Role: Verifier at head 3c6e3bb."}}' \
+  "sets no isolation: \"worktree\""
+check "a PR owner in a worktree" \
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","run_in_background":true,"isolation":"worktree","description":"PR owner for #91","prompt":"p"}}' ""
+check "a researcher needs no worktree" \
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"sonnet","effort":"medium","run_in_background":true,"description":"Researcher: CI queue","prompt":"Diagnose the queue."}}' ""
+check "both warnings in one message" \
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","description":"PR owner","prompt":"p"}}' \
+  "so the root stays free to answer the user (kitimark-mode, Roles). This PR owner or verifier spawn sets no isolation"
+check "all three in one message" \
+  '{"tool_name":"Agent","tool_input":{"description":"verifier","prompt":"p"}}' \
+  "sets no model or effort. Set both from the role table in .claude/skills/kitimark-mode/SKILL.md, or say why the session default is right. This Agent call does not set run_in_background"
+lacks "a fork is not checked for a worktree" \
+  '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","run_in_background":true,"description":"verifier","prompt":"p"}}' "isolation"
+lacks "a role named past the first 600 characters is not read" \
+  "$(jq -cn --arg p "$(printf 'x%.0s' $(seq 700)) verifier" '{tool_name:"Agent",tool_input:{subagent_type:"general-purpose",model:"sonnet",effort:"low",run_in_background:true,prompt:$p}}')" "isolation"
+
+# B2: the rules-freshness note pr-state.sh left for this session.
+mkdir -p "$MITOS_HOOK_STATE"
+note='Rule files changed on main since this session loaded its rules at beb6f01: .claude/skills/kitimark-mode/SKILL.md. Read these before acting: git fetch origin main, then git show origin/main:<file>.'
+printf '%s\n' "$note" >"$MITOS_HOOK_STATE/s1.note"
+check "the freshness note on a spawn that is otherwise fine" \
+  '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","run_in_background":true,"isolation":"worktree","description":"PR owner","prompt":"p"}}' \
+  "$note Put this in the brief too."
+check "the note after a warning" \
+  '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","run_in_background":true,"prompt":"p"}}' \
+  "sets no effort. Set both from the role table in .claude/skills/kitimark-mode/SKILL.md, or say why the session default is right. Rule files changed on main"
+check "another session gets no note" \
+  '{"session_id":"s2","tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","run_in_background":true,"prompt":"p"}}' ""
+: >"$MITOS_HOOK_STATE/s1.note"
+check "an empty note adds nothing" \
+  '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","run_in_background":true,"prompt":"p"}}' ""
+printf 'first line\nsecond line\n' >"$MITOS_HOOK_STATE/s1.note"
+lacks "only the note's first line is read" \
+  '{"session_id":"s1","tool_name":"Agent","tool_input":{"run_in_background":true,"prompt":"p"}}' "second line"
+lacks "a session id that names a path reads no file" \
+  '{"session_id":"../state/s1","tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","run_in_background":true,"prompt":"p"}}' "first line"
 
 exit "$failed"
