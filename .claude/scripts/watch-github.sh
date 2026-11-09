@@ -5,6 +5,8 @@
 #   - a PR merged or closed after the state directory was first used;
 #   - a new open PR, and an open PR's labels or assignees, when they change;
 #   - the head and finished checks of an open PR from the owner's account, when they change;
+#   - CodeRabbit's check reading `skipped` at the head of such a PR while the owner is assigned to
+#     it, once per head, so a PR handed over without the bot's review shows (bot-review.sh);
 #   - a move of main;
 #   - a comment or review from the owner's account that does not end with the Claude Code footer,
 #     which marks an agent's post, with its id. A footer in a quote above the owner's own text
@@ -286,6 +288,17 @@ poll() {
         .[][] | mine | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or (.body // "") != "")
         | "review \(.id | num)\t0\towner review \(.id | num) on #\($n): \(.state | ascii_downcase | clean(20)): \(.body // "" | clean(120))"' \
         "$w/reviews-$n.json" || return 1
+    done <"$w/heads" &&
+    # CodeRabbit's newest run at the head, from its own app, skipped (paused or refused) while the
+    # owner is assigned: the PR is in the owner's hands without the bot's review of that head.
+    while read -r n sha; do
+      jq -r --arg owner "$owner" --arg n "$n" --arg sha "$sha" --slurpfile open "$w/open.json" "$defs"'
+        select(any($open[][]; (.number | tostring) == $n and any(.assignees[]?; .login == $owner)))
+        | [.check_runs[] | select(.name == "CodeRabbit" and .app.slug == "coderabbitai")] | max_by(.id)
+        | select(. != null and .conclusion == "skipped")
+        | "coderabbit-skipped \($n) \($sha)\t1\tpr #\($n) coderabbit skipped at \($sha[0:7]) while assigned\(
+            if (.output.title // "") == "" then "" else ": \(.output.title | clean(60))" end)"' \
+        "$w/checks-$n.json" || return 1
     done <"$w/heads"
   } >"$w/events" 2>/dev/null || return 1
 }

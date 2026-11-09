@@ -262,6 +262,46 @@ is "a partly failed poll prints nothing" ""
 run
 is "the change shows once the poll succeeds" "pr #50 labels=y assignees=kitimark"
 
+# CodeRabbit's check skipped at the head of a PR assigned to the owner: one line per head. Only the
+# CodeRabbit app's own newest run counts.
+E=$(sha e) F=$(sha f)
+cr() { # id, conclusion, title, app: one CodeRabbit run
+  jq -n --argjson id "$1" --arg c "$2" --arg t "$3" --arg app "${4:-coderabbitai}" \
+    '{id:$id, name:"CodeRabbit", app:{slug:$app}, status:"completed", conclusion:$c, output:{title:$t}}'
+}
+jq -n --argjson r "$(cr 7 skipped 'Review paused')" '{check_runs:[{id:1,name:"gate",status:"completed",conclusion:"success"}, $r]}' \
+  >"$work/f/checks-$A.json"
+run
+is "CodeRabbit skipped at the head of an assigned PR: one line, then its checks" \
+  "pr #50 coderabbit skipped at ${A:0:7} while assigned: Review paused
+pr #50 head ${A:0:7} checks CodeRabbit=skipped,gate=success"
+run
+is "no repeat of the skipped line at the same head" ""
+set_f open.json '(.[] | select(.number == 50) | .assignees) = []'
+set_f open.json '(.[] | select(.number == 50) | .head.sha) = $e' --arg e "$E"
+jq -n --argjson r "$(cr 8 skipped 'Review paused')" '{check_runs:[$r]}' >"$work/f/checks-$E.json"
+run
+is "skipped at the head of a PR not assigned to the owner: no skipped line" \
+  "pr #50 head ${E:0:7} checks CodeRabbit=skipped
+pr #50 labels=y assignees=-"
+set_f open.json '(.[] | select(.number == 50) | .assignees) = [{"login":"kitimark"}]'
+run
+is "the owner assigned to a PR whose head CodeRabbit skipped: the skipped line" \
+  "pr #50 coderabbit skipped at ${E:0:7} while assigned: Review paused
+pr #50 labels=y assignees=kitimark"
+set_f open.json '(.[] | select(.number == 50) | .head.sha) = $f' --arg f "$F"
+jq -n --argjson r "$(cr 9 success Finished)" --argjson x "$(cr 10 skipped 'Review paused' github-actions)" \
+  '{check_runs:[$r, $x]}' >"$work/f/checks-$F.json"
+run
+is "a skipped check named CodeRabbit from another app: no skipped line" "pr #50 head ${F:0:7} checks CodeRabbit=skipped"
+jq -n --argjson r "$(cr 9 success Finished)" --argjson s "$(cr 11 skipped 'Review skipped: 375 files exceed the limit of 300')" \
+  '{check_runs:[$r, $s]}' >"$work/f/checks-$F.json"
+run
+is "a newer CodeRabbit run that skipped the same head: one line with its reason" \
+  "pr #50 coderabbit skipped at ${F:0:7} while assigned: Review skipped: 375 files exceed the limit of 300"
+run
+is "no repeat after a re-arm" ""
+
 # The state files are checked before use. Bash arithmetic would run a command substitution that
 # an index of a set array in the cursor file holds.
 cp "$work/state/cursor" "$work/cursor.good"

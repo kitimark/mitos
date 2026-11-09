@@ -474,6 +474,9 @@ The owner catches up on GitHub, not in a chat session:
   assignment of the owner made from the owner's account. An assignment that any other account
   or a bot makes gets no ping. Never label a PR to show the owner its state, because any label
   change re-runs the full `gate`.
+- **CodeRabbit before a hand-over.** A PR goes to the owner only once
+  `.claude/scripts/bot-review.sh` reads `reviewed` at its head and its PR owner has answered that
+  review, or once CodeRabbit refuses it, which the catch-up names.
 - **One milestone per phase, one issue per open plan row.** `plan/phase-N.md` says what is to be
   done and in which order, and its Issue column links each row's issue. Status lives in the
   issue and its PRs. The labels `follow-up` and `process` mark work found along the way.

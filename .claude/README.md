@@ -33,6 +33,7 @@ this repository. Most are adapted from pstack (MIT); see `THIRD_PARTY_NOTICES.md
 | `/show-me-your-work` | skill | you type it, or poteto-mode follows it on long or unattended work | a TSV decision trail plus a cross-model review of it |
 | `/reflect` | skill | you type it | three reviewers mine the session and route learnings to skill edits; `scripts/user-turns.sh` lists the user's own turns in a transcript, and `scripts/user-turns.test.sh` tests it |
 | `/technical-writing` | skill | you type it, or poteto-mode follows it for docs, PRs and commits | layered writing standard for docs, PR bodies and commit messages |
+| `scripts/bot-review.sh` | script | the root runs it before a catch-up hands the owner a PR (`kitimark-mode`, Catching the user up) | prints whether CodeRabbit reviewed the PR's head (`reviewed`, `paused`, `behind`, `refused` or `pending`) from read-only `gh api` calls, and with `--request` asks it to review a paused or missed head; `scripts/watch-github.sh` prints `pr #N coderabbit skipped at <head> while assigned` when a PR assigned to the owner reaches them without that review; `scripts/bot-review.test.sh` tests it offline |
 
 All the ported skills keep pstack's `disable-model-invocation: true`, so they run only when typed.
 Where one skill uses another, it tells the agent to read the other's `SKILL.md` and follow it,
