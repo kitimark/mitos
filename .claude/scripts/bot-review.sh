@@ -7,20 +7,26 @@
 # Usage: bot-review.sh <pr> [--request]
 #
 # It prints one line, `coderabbit #<pr>: <state>`:
-#   reviewed <head>                            its check at the head passed, or its newest review
-#                                              is of the head; the only state that exits 0
+#   reviewed <head>                            its check at the head passed, or, with no run going,
+#                                              its newest review is of the head; the only state
+#                                              that exits 0
 #   paused: last reviewed <sha>, head <head>   it paused reviews on the branch after many pushes
 #                                              (`reviews.auto_review.auto_pause_after_reviewed_commits`)
-#   behind: last reviewed <sha>, head <head>   its run at the head ended without a review, such as
-#                                              one cancelled because the head moved as it started
-#   refused: <reason>                          it skipped the head for another reason, such as over
-#                                              300 files, which a request does not change
-#   pending: last reviewed <sha>, head <head>  its run at the head is queued or running, or has not
-#                                              started
+#   behind: last reviewed <sha>, head <head>   its run at the head ended without a review: cancelled,
+#                                              as when the head moved as it started, failed, or
+#                                              skipped for a reason a request overrides, such as a
+#                                              draft or a base branch without automatic reviews
+#   refused: <reason>                          it skipped the head for its file limit (over 300
+#                                              files), which a request does not change
+#   pending: last reviewed <sha>, head <head>  its run at the head is queued or running, even when
+#                                              it already posted its review, which comes minutes
+#                                              before the run ends; or it has not started
 # The other states exit 1. `<sha>` is `none` when it has never reviewed the PR. The last reviewed
 # commit is the one its summary comment names under "Reviews paused", else the commit of its newest
 # review with a body; a review with an empty body is only its reply in a thread. With no CodeRabbit
-# check at the head, the summary comment decides between paused, refused and pending.
+# check at the head, its summary comment decides: paused under "Reviews paused", and under "Review
+# skipped" refused or behind, as for a check; otherwise pending. Any skip that is not a pause or
+# the file limit reads behind, so that a request is tried before the owner gets the PR.
 #
 # A head that only rebases content CodeRabbit reviewed reads paused or behind, not reviewed: its
 # check at such a head reads `Review paused` too, and telling a rebase from a change needs the old
@@ -90,6 +96,9 @@ out=$(jq -n -r --arg head "$head" --arg bot 'coderabbitai[bot]' \
   def clean: tostring
     | gsub("[\\p{Cc}\\p{Zl}\\p{Zp}\\p{Zs}]+"; " ") | gsub("[^A-Za-z0-9 .,:;!?()/+#_-]"; "")
     | sub("^ +"; "") | sub(" +$"; "") | .[0:80];
+  # The skips a request does not override: the file limit ("Too many files!", "375 files exceed
+  # the limit of 300").
+  def limit: test("too many files|files? exceeds? the limit"; "i");
   ($checks[0].check_runs | arr) as $runs
   | ([$runs[] | select(.name == "CodeRabbit" and .app.slug == "coderabbitai" and .head_sha == $head
        and (.id | type) == "number")] | max_by(.id)) as $run
@@ -111,19 +120,19 @@ out=$(jq -n -r --arg head "$head" --arg bot 'coderabbitai[bot]' \
      | max_by(.id)) as $req
   | (if $req != null and ([$botc[] | select((.created_at // "") > $req.created_at)] == [])
      then $req.id | tostring else "-" end) as $open
-  | if ($run != null and $run.status == "completed" and $run.conclusion == "success") or $last == $head
-    then ["reviewed", "-"]
+  | if $run != null and $run.status == "completed" and $run.conclusion == "success" then ["reviewed", "-"]
     elif $run != null and $run.status != "completed" then ["pending", "-"]
+    elif $last == $head then ["reviewed", "-"]
     elif $run != null and $run.conclusion == "skipped" then
       ($run.output.title // "" | tostring) as $t
       | if ($t | test("paused"; "i")) then ["paused", "-"]
-        else ["refused", ($t | sub("^Review skipped:?"; "") | clean | if . == "" then "skipped" else . end)]
-        end
+        elif ($t | limit) then ["refused", ($t | sub("^Review skipped:?"; "") | clean)]
+        else ["behind", "-"] end
     elif $run != null then ["behind", "-"]
     elif $pausednote then ["paused", "-"]
     elif ($sb | test("## Review skipped")) then
-      ["refused", ([$sb | capture("## Review skipped[ \\t]*\\n(>[ \\t]*\\n)*>?[ \\t]*(?<r>[^\\n]+)")]
-                   | .[0].r // "" | clean | if . == "" then "skipped" else . end)]
+      ([$sb | capture("## Review skipped[ \\t]*\\n(>[ \\t]*\\n)*>?[ \\t]*(?<r>[^\\n]+)")] | .[0].r // "") as $r
+      | if ($r | limit) then ["refused", ($r | clean)] else ["behind", "-"] end
     else ["pending", "-"] end
   | [.[0], $last, .[1], $open, ($pr[0].state | tostring | clean)] | join("\t")' 2>/dev/null) \
   || die "unexpected JSON from GitHub for PR #$pr"
