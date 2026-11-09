@@ -1,13 +1,15 @@
 import MitosGate.Lint
 import MitosGate.Accept
 import MitosGate.Imports
+import MitosGate.CheatsRun
 
 /-! Regression test for gate 1's lint: every command kind outside the model allowlist is rejected,
 every allowed kind is accepted, models pass the plugin rules, and the import rule holds for
 plugins and models alike (`Lint.check`, `Lint.checkModel`). Each rule reports under its own id
 (`ruleCases`), and each ban is guarded by a cheat case or listed in `unguardedBans` and
-`eval/cheats/unguarded` (`ratchet`). Run with `lake exe mitos-lint-test` from the repository
-root. -/
+`eval/cheats/unguarded` (`ratchet`). It also pins how the cheat runner stops a run at its timeout
+(`timeoutCases`), the one runner test that needs no gate run. Run with `lake exe mitos-lint-test`
+from the repository root. -/
 
 open MitosGate
 
@@ -355,6 +357,56 @@ def ciLog (root : System.FilePath) : IO (Array (String × String)) := do
 /-- The number of cases `ciLog` runs: `ciCases` and the comparator tail. -/
 def ciCount : Nat := (ciCases "").length + 1
 
+/-! ## The cheat runner's timeout
+
+At a run's timeout, `CheatsRun.runChild` sends SIGKILL to the run's whole process group through
+`Child.kill`, whose docstring says SIGTERM. Each case runs a `bash` child through
+`CheatsRun.inRunDir` and `runChild` with a 1 s timeout. The child ignores SIGTERM and starts a
+grandchild that ignores it too and holds the pipes. Both would sleep for 30 s, so on a toolchain
+whose `Child.kill` sent SIGTERM the run would end only after 30 s, or with a code other than 137,
+and the case would fail rather than hang. -/
+
+/-- The timeout cases: a name, the child's script, and the exit code the run must report. In the
+second case the child exits at once with 0, and only the grandchild keeps the run going. -/
+def timeoutCases : List (String × String × UInt32) :=
+  [ ("the child and its grandchild ignore SIGTERM",
+      "trap '' TERM; sleep 30 & echo \"grandchild $!\"; echo x > \"$TMPDIR/left\"; wait", 137),
+    ("the child exits at once; its grandchild ignores SIGTERM and holds the pipes",
+      "trap '' TERM; sleep 30 & echo \"grandchild $!\"; echo x > \"$TMPDIR/left\"", 0) ]
+
+/-- Whether process `pid` has not exited: `/proc/<pid>/stat` is there, and the state after the
+command name, which is in parentheses, is neither zombie (`Z`) nor dead (`X`). -/
+def running (pid : String) : IO Bool := do
+  let stat ← try IO.FS.readFile ("/proc" / pid / "stat") catch _ => return false
+  let state := (stat.toList.reverse.takeWhile (· != ')')).reverse.dropWhile (· == ' ')
+  return !(state.head? == some 'Z' || state.head? == some 'X')
+
+/-- Run one timeout case, and list what went wrong. -/
+def timeoutCase (script : String) (code : UInt32) : IO (List String) := do
+  let dirOf ← IO.mkRef (none : Option System.FilePath)
+  let t0 ← IO.monoMsNow
+  let run ← CheatsRun.inRunDir fun dir => do
+    dirOf.set (some dir)
+    CheatsRun.runChild "bash" #["-c", script] (dir / "ws") (dir / "tmp") 1000
+  let ms := (← IO.monoMsNow) - t0
+  let mut errs := #[]
+  unless run.timedOut do errs := errs.push "the run is not marked timed out"
+  unless run.shown == "TIMEOUT" do errs := errs.push s!"the row would show {run.shown}"
+  unless run.exitCode == code do errs := errs.push s!"exit {run.exitCode}, not {code}"
+  unless ms < 15000 do errs := errs.push s!"the run took {ms} ms"
+  let gc := (run.output.splitOn "\n").findSome? fun l =>
+    let cs := l.toList
+    if cs.take 11 == "grandchild ".toList then some (String.ofList (cs.drop 11)) else none
+  match gc with
+  | some p =>
+    if p.isEmpty || !p.all Char.isDigit then errs := errs.push s!"grandchild pid {p}"
+    else if ← running p then errs := errs.push s!"grandchild {p} still runs"
+  | none => errs := errs.push s!"the grandchild did not start: {run.output}"
+  match ← dirOf.get with
+  | some d => if ← d.pathExists then errs := errs.push s!"{d} is still there"
+  | none => errs := errs.push "no run directory was made"
+  return errs.toList
+
 structure Case where
   kind : String
   name : String
@@ -420,9 +472,14 @@ def main : IO UInt32 := do
   IO.println (s!"{if ci.isEmpty then "ok  " else "FAIL"} ci-log: {nci - ci.size} of {nci} " ++
     "hostile cases print no workflow command")
   fails := fails + ci.size
-  let total := cases.length + ruleCases.length + 1 + nci
+  for (name, script, code) in timeoutCases do
+    let errs ← timeoutCase script code
+    unless errs.isEmpty do fails := fails + 1
+    let detail := if errs.isEmpty then s!"timed out, exit {code}, nothing left" else "; ".intercalate errs
+    IO.println (ciLine s!"{if errs.isEmpty then "ok  " else "FAIL"} cheat runner timeout, {name}: {detail}")
+  let total := cases.length + ruleCases.length + 1 + nci + timeoutCases.length
   let count (k : String) (w : Bool) := (cases.filter fun c => c.kind == k && c.wantOk == w).length
-  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet; {nci} CI-log cases"
+  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet; {nci} CI-log cases; {timeoutCases.length} cheat-runner timeout cases"
   if fails == 0 then
     IO.println s!"gate-1 lint: all {total} cases behave as expected ({summary})"
     return 0

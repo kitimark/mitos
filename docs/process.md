@@ -166,7 +166,7 @@ which covers what no kernel term references, such as a structure field's default
 | Plugin lint (gate 1) | `lake exe mitos-gate lint <file>` | ✓ | ✓ | | yes |
 | Model lint allowlist accepts and rejects each command kind | `lake exe mitos-lint-test` | when touching `gate/` | ✓ | | yes |
 | Honest plugin accepted, gates 0–6 | `lake exe mitos-gate accept … --paranoid` | ✓ | ✓ | ✓ | yes |
-| Cheat corpus rejected | `lake exe mitos-gate cheats` | when touching `gate/` | ✓ | ✓ | yes |
+| Cheat corpus rejected | `lake exe mitos-gate cheats` | when touching `gate/` | ✓ | ✓, but `nightly.yml` still runs `eval/cheats/run.sh` until the PR that deletes it | yes |
 | Fixture scorecard: precision and recall per edge type against hand labels | `lake --dir eval/score exe mitos-score eval/fixtures/toy` | when touching the resolver, a plugin, the fixture or the scorer | ✓, posted on the PR | | the numbers no; a scorer error yes |
 | Full evaluation scorecard | Phase 1 | | | ✓ | — |
 | Differential tests against real tools | Phase 2 | | | ✓ | — |
