@@ -6,22 +6,85 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
-# A new head of a PR (opened, synchronize, reopened) cancels the run of the old head, so the cheat
-# corpus does not hold runners for a head nobody will merge. Every other run gets a group of its
-# own and is never cancelled: a push to main, because each main commit's run is the record for that
-# commit (a shared group would let GitHub drop a pending run when a third push queues behind a
-# running one); and a label change, because the spec-approved step reads the labels of its own
-# event, and a late `labeled` run must not cancel the `unlabeled` run that checks the removal.
-concurrency:
-  group: >-
-    ci-${{ github.event_name == 'pull_request'
-    && github.event.action != 'labeled' && github.event.action != 'unlabeled'
-    && github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# Each job asks for the token permissions it needs; the others get none.
+permissions: {}
 
+# No concurrency group. A group cancels by arrival order, not by head: a re-run or a late-created
+# run of an old head joined the PR's group and cancelled the current head's run (#97). So the
+# `cancel-superseded` job cancels by head instead. A push to main and a run at the PR's current
+# head are never cancelled, a label run included, so a late `labeled` run cannot cancel the
+# `unlabeled` run that checks a spec-approved removal.
 jobs:
+  # Cancels the unfinished runs of this PR's branch whose head is not the PR's current head, this
+  # run included. It reads the head over REST, not from the event, so a re-run of an old head
+  # cancels itself. It lists the runs before it reads the head, so every run it judges existed at
+  # the read, and it acts only when two reads 10 s apart agree; a run at that head is never
+  # cancelled. `gate` does not need it, so a failure here (an API error) never holds `gate` back.
+  # A fork PR's token cannot cancel runs, so forks skip it and their old runs finish.
+  cancel-superseded:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Cancel this branch's runs whose head is not the PR's current head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          CONFIRM_SECONDS: 10
+        run: |
+          set -euo pipefail
+          read -r wf own_head branch < <(gh api "repos/$REPO/actions/runs/$RUN_ID" \
+            --jq '"\(.workflow_id) \(.head_sha) \(.head_branch)"')
+          runs="$RUNNER_TEMP/unfinished-runs"
+          gh api --paginate -X GET "repos/$REPO/actions/workflows/$wf/runs" \
+            -f event=pull_request -f branch="$branch" -f per_page=100 \
+            | jq -r --arg branch "$branch" --arg repo "$REPO" '.workflow_runs[]
+                | select(.status != "completed" and .event == "pull_request"
+                    and .head_branch == $branch and .head_repository.full_name == $repo)
+                | "\(.id) \(.head_sha)"' > "$runs"
+          echo "Unfinished runs of $branch (run id, head):"; cat "$runs"
+
+          head_now() { gh api "repos/$REPO/pulls/$PR" --jq .head.sha; }
+          stale_runs() {
+            awk -v h="$1" -v own="$own_head" '$2 != h { n++ } END { exit !(n || own != h) }' "$runs"
+          }
+          head=$(head_now); confirmed=
+          for _ in 1 2 3; do
+            if ! stale_runs "$head"; then echo "Every unfinished run is at the current head $head."; exit 0; fi
+            sleep "$CONFIRM_SECONDS"
+            next=$(head_now)
+            if [ "$next" = "$head" ]; then confirmed=1; break; fi
+            echo "The head moved from $head to $next between two reads; reading again."
+            head=$next
+          done
+          if [ -z "$confirmed" ]; then echo "::notice::The PR head kept moving; no run cancelled."; exit 0; fi
+
+          failed=0
+          while read -r id sha <&3; do
+            if [ "$sha" = "$head" ] || [ "$id" = "$RUN_ID" ]; then continue; fi
+            echo "Cancel run $id: its head $sha is not the current head $head."
+            if ! gh api -X POST "repos/$REPO/actions/runs/$id/cancel" --silent; then
+              # A run that finished after the listing cannot be cancelled any more; that is not a failure.
+              if [ "$(gh api "repos/$REPO/actions/runs/$id" --jq .status)" != completed ]; then failed=1; fi
+            fi
+          done 3< "$runs"
+          if [ "$own_head" != "$head" ]; then
+            echo "Cancel this run ($RUN_ID): its head $own_head is not the current head $head."
+            gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/cancel" --silent
+          fi
+          exit "$failed"
+
   gate:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
