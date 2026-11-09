@@ -11,7 +11,9 @@
 #   - a Bash command that names `gh api`, `gh pr`, `gh issue` or `git commit`: the command text, and
 #     the files it names with `-F <field>=@<file>`, `--body-file <file>`, `--input <file>`, `-F <file>`
 #     (gh pr, gh issue, git commit) and `--file <file>`. A relative path is taken from the hook's cwd, or
-#     from a leading `cd <dir> &&`. A path with a variable in it cannot be read, so it is skipped;
+#     from a leading `cd <dir> &&`; for a `git -C <dir> commit` it is also taken from <dir> (each -C
+#     joined to the one before, as git does), because git reads the message file there. A path with a
+#     variable in it cannot be read, so it is skipped;
 #   - any GitHub MCP tool that is not a read (get_, list_, search_, *_read): its whole input.
 # A Claude-Session: line counts at the start of a line (a trailer); in a `git commit` command any
 # mention counts. The session link counts anywhere, with or without an id after session_.
@@ -126,6 +128,19 @@ if [[ $cmd =~ ^[[:space:]]*cd[[:space:]]+([^[:space:]\;\&\|]+)[[:space:]]*\&\& ]
   d=${d#[\"\']}; d=${d%[\"\']}
   case $d in /*) base=$d ;; *) base=$cwd/$d ;; esac
 fi
+# Where `git -C <dir> commit` reads its message file: each -C joined to the one before, from base.
+# A relative file is tried there as well as in base, so gh's files keep their own base.
+bases=("$base")
+while IFS= read -r g; do
+  [ -n "$g" ] || continue
+  cb=$base
+  while read -r flag dir; do
+    [ "$flag" = -C ] || continue
+    dir=${dir#[\"\']}; dir=${dir%[\"\']}
+    case $dir in /*) cb=$dir ;; *) cb=$cb/$dir ;; esac
+  done < <(grep -oE -- '-[Cc][[:space:]]+[^[:space:]]+' <<<"$g")
+  bases+=("$cb")
+done < <(grep -oE -- '(^|[^[:alnum:]_.-])git([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+)+[[:space:]]+commit([[:space:]]|$)' <<<"$cmd")
 files=$(
   {
     grep -oE -- '(-F|--field)[[:space:]=]+['\''"]?[A-Za-z_][A-Za-z0-9_]*(\[\])?=@[^[:space:]'\''"]+' <<<"$cmd" | sed -E 's/.*=@//'
@@ -140,9 +155,15 @@ while IFS= read -r f; do
   [ -n "$f" ] && [ "$f" != - ] || continue
   case $f in *'$'* | *'`'*) continue ;; esac
   # shellcheck disable=SC2088 # a literal ~/ prefix in the command text, made into $HOME here
-  case $f in /*) p=$f ;; '~/'*) p=$HOME/${f#'~/'} ;; *) p=$base/$f ;; esac
-  [ -f "$p" ] && [ -r "$p" ] || continue
-  grep -Eq "$link_re" "$p" && link_msg "$f"
-  grep -Eq '^[[:space:]>]*Claude-Session:' "$p" && trailer_msg "$f"
+  case $f in
+    /*) cands=("$f") ;;
+    '~/'*) cands=("$HOME/${f#'~/'}") ;;
+    *) cands=(); for b in "${bases[@]}"; do cands+=("$b/$f"); done ;;
+  esac
+  for p in "${cands[@]}"; do
+    [ -f "$p" ] && [ -r "$p" ] || continue
+    grep -Eq "$link_re" "$p" && link_msg "$f"
+    grep -Eq '^[[:space:]>]*Claude-Session:' "$p" && trailer_msg "$f"
+  done
 done <<<"$files"
 exit 0
