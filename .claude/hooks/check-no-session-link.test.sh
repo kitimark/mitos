@@ -179,6 +179,30 @@ check "eval 'gh pr create ...'" \
   "$(bash_in "eval 'gh pr create --title t --body x'")" block "open-pr.sh"
 check "timeout 60 bash -c 'gh pr create ...'" \
   "$(bash_in "timeout 60 bash -c 'gh pr create --title t --body x'")" block "open-pr.sh"
+check "gh pr create after a single &" \
+  "$(bash_in "true & gh pr create --title t --body x")" block "open-pr.sh"
+check "gh pr create right after a single &" \
+  "$(bash_in "sleep 1 &gh pr create --title t --body x")" block "open-pr.sh"
+check "gh pr create after |&" \
+  "$(bash_in "echo x |& gh pr create --title t --body x")" block "open-pr.sh"
+check "a create with 2>&1 and a trailing &" \
+  "$(bash_in "gh api repos/o/r/pulls -f title=t >/dev/null 2>&1 &")" block "open-pr.sh"
+check "gh pr create in <( )" \
+  "$(bash_in "cat <(gh pr create --title t --body x)")" block "open-pr.sh"
+check "\\gh pr create" \
+  "$(bash_in "\\gh pr create --title t --body x")" block "open-pr.sh"
+check "gh pr create in a function body" \
+  "$(bash_in "f() { gh pr create --title t --body x; }; f")" block "open-pr.sh"
+check "gh api in a case arm" \
+  "$(bash_in "case \$x in y) gh api repos/o/r/pulls -f title=t ;; esac")" block "open-pr.sh"
+check "coproc gh pr create" \
+  "$(bash_in "coproc gh pr create --title t --body x")" block "open-pr.sh"
+check "chronic gh api" \
+  "$(bash_in "chronic gh api -X POST repos/o/r/pulls -f title=t")" block "open-pr.sh"
+check "a commit message with an & that names gh pr create" \
+  "$(bash_in "git commit -m 'docs: R&D notes on gh pr create'")" allow
+check "a comment with 2>&1 is not a create" \
+  "$(bash_in "gh api repos/o/r/issues/5/comments -F body=@$work/clean.md 2>&1")" allow
 check "a grep with flags for gh pr create" \
   "$(bash_in "grep -rn -e 'gh pr create' .claude")" allow
 check "a grep for gh pr create, words unquoted" \
