@@ -3,14 +3,18 @@ import Mutants.Manifest
 /-!
 # Outcomes and the run's verdict
 
-Each case gets up to three sandboxed `lake comparator` runs, each in a fresh copy of the core:
+First the **lint** (`Mutants.Lint`) reads every Lean text the case wrote or changed: the
+`replace=` texts, each file its edits change, and its `Refute.lean`. If it finds code that runs or
+declares syntax while Lean elaborates, or an import outside the approved core and the
+implementation, the case is refused and nothing is built. Otherwise it gets up to three sandboxed
+`lake comparator` runs, each in a fresh copy of the core:
 
 1. **holes**: the mutated core with only the edits under `Mitos/Impl/`, without `Mitos/Proofs/`
    and without any file of the case. The solution module imports every `Mitos/Impl/` module, and
    the configuration is the approved one's definition holes alone. Accepted means: the mutant's
    implementation builds from the approved core alone, and declares every approved hole publicly,
    with its approved type and standard axioms. A case whose implementation hides a hole
-   (`private`), or imports or reads a file of the case, stops here.
+   (`private`) stops here.
 2. **approved**: the approved Challenge and configuration (`core/Challenge/Resolver.lean`,
    `core/comparator.json`) with the real solution module, on the mutated core. This is what the PR
    gate does with the bug.
@@ -26,9 +30,10 @@ rejection in run 2 comes from the mutant and not from the workspace.
 
 The run passes exactly when the control is accepted, there is at least one case, every case is
 judged exactly once, and every case meets its expectation (`passes_iff`). Then every `breaks=` case
-was refuted for its own holes (`passes_refuted`), every `survives=` case was accepted by the gate
-about its own holes (`passes_survived`), and every cheat case was rejected at its stage and counted
-neither as refuted nor as surviving (`passes_rejects`).
+passed the lint and was refuted for its own holes (`passes_refuted`), every `survives=` case passed
+the lint and was accepted by the gate about its own holes (`passes_survived`), every cheat case was
+rejected at its stage and counted neither as refuted nor as surviving (`passes_rejects`), and the
+lint refused only cheat cases that expect it (`passes_refused`).
 -/
 
 namespace Mutants
@@ -61,9 +66,12 @@ theorem Run.ofExit_accepted {code : UInt32} {output : String} (h : Run.ofExit co
     exact ⟨hc.1, pre, post, (splitFirst_some hs).1⟩
   · split at h <;> simp at h
 
-/-- The comparator runs of one case; a run that did not happen is `none`. -/
+/-- The lint's findings and the comparator runs of one case; a run that did not happen is `none`. -/
 structure Runs where
-  holes      : Run
+  /-- What the lint found in the case's Lean text, one line each (`Mutants.Lint`). The comparator
+  runs only when it found nothing. -/
+  lint       : List String := []
+  holes      : Option Run := none
   approved   : Option Run := none
   values     : Option Run := none
   refutation : Option Run := none
@@ -85,35 +93,40 @@ inductive Outcome where
   | failed
   /-- The case could not be set up: its manifest, its files, its edits or its Challenge. -/
   | invalid
+  /-- The lint found code that runs or declares syntax while Lean elaborates, or an import outside
+  the approved core and the implementation, in the case's Lean text; nothing was built. -/
+  | refused
   deriving Repr, DecidableEq
 
 /-- The outcome of a case's runs. -/
 def outcome (x : Runs) : Outcome :=
+  if !x.lint.isEmpty then .refused else
   match x.holes, x.approved, x.values, x.refutation with
-  | .failed, _, _, _ => .failed
-  | .rejected, _, _, _ => .unbound
-  | .accepted, none, _, _ => .failed
-  | .accepted, some .failed, _, _ => .failed
-  | .accepted, some .accepted, some .accepted, _ => .survived
-  | .accepted, some .accepted, some .failed, _ => .failed
-  | .accepted, some .accepted, _, _ => .unbound
-  | .accepted, some .rejected, _, some .accepted => .refuted
-  | .accepted, some .rejected, _, some .failed => .failed
-  | .accepted, some .rejected, _, _ => .rejected
+  | none, _, _, _ => .failed
+  | some .failed, _, _, _ => .failed
+  | some .rejected, _, _, _ => .unbound
+  | some .accepted, none, _, _ => .failed
+  | some .accepted, some .failed, _, _ => .failed
+  | some .accepted, some .accepted, some .accepted, _ => .survived
+  | some .accepted, some .accepted, some .failed, _ => .failed
+  | some .accepted, some .accepted, _, _ => .unbound
+  | some .accepted, some .rejected, _, some .accepted => .refuted
+  | some .accepted, some .rejected, _, some .failed => .failed
+  | some .accepted, some .rejected, _, _ => .rejected
 
 theorem outcome_refuted_iff {x : Runs} :
-    outcome x = .refuted ↔
-      x.holes = .accepted ∧ x.approved = some .rejected ∧ x.refutation = some .accepted := by
-  obtain ⟨h, a, v, r⟩ := x
-  cases h <;> rcases a with _ | (_ | _ | _) <;> rcases v with _ | (_ | _ | _) <;>
-    rcases r with _ | (_ | _ | _) <;> simp [outcome]
+    outcome x = .refuted ↔ x.lint = [] ∧
+      x.holes = some .accepted ∧ x.approved = some .rejected ∧ x.refutation = some .accepted := by
+  obtain ⟨l, h, a, v, r⟩ := x
+  cases l <;> rcases h with _ | (_ | _ | _) <;> rcases a with _ | (_ | _ | _) <;>
+    rcases v with _ | (_ | _ | _) <;> rcases r with _ | (_ | _ | _) <;> simp [outcome]
 
 theorem outcome_survived_iff {x : Runs} :
-    outcome x = .survived ↔
-      x.holes = .accepted ∧ x.approved = some .accepted ∧ x.values = some .accepted := by
-  obtain ⟨h, a, v, r⟩ := x
-  cases h <;> rcases a with _ | (_ | _ | _) <;> rcases v with _ | (_ | _ | _) <;>
-    rcases r with _ | (_ | _ | _) <;> simp [outcome]
+    outcome x = .survived ↔ x.lint = [] ∧
+      x.holes = some .accepted ∧ x.approved = some .accepted ∧ x.values = some .accepted := by
+  obtain ⟨l, h, a, v, r⟩ := x
+  cases l <;> rcases h with _ | (_ | _ | _) <;> rcases a with _ | (_ | _ | _) <;>
+    rcases v with _ | (_ | _ | _) <;> rcases r with _ | (_ | _ | _) <;> simp [outcome]
 
 /-- Whether an outcome is the one a case's claim expects. -/
 def Outcome.meets : Outcome → Expect → Bool
@@ -121,19 +134,23 @@ def Outcome.meets : Outcome → Expect → Bool
   | .survived, .survives _ => true
   | _, _ => false
 
-/-- Whether the runs rejected a cheat case at stage `s`, after every earlier run let it through. -/
+/-- Whether a cheat case was rejected at stage `s`, after every earlier stage let it through: at
+the lint, with no comparator run; at a run, after a lint that found nothing. -/
 def Stage.rejected : Stage → Runs → Bool
-  | .holes, x => x.holes == .rejected
-  | .values, x => x.holes == .accepted && x.approved == some .accepted && x.values == some .rejected
-  | .refutation, x =>
-    x.holes == .accepted && x.approved == some .rejected && x.refutation == some .rejected
+  | .lint, x => !x.lint.isEmpty && x.holes.isNone && x.approved.isNone && x.values.isNone &&
+    x.refutation.isNone
+  | .holes, x => x.lint.isEmpty && x.holes == some .rejected
+  | .values, x => x.lint.isEmpty && x.holes == some .accepted && x.approved == some .accepted &&
+    x.values == some .rejected
+  | .refutation, x => x.lint.isEmpty &&
+    x.holes == some .accepted && x.approved == some .rejected && x.refutation == some .rejected
 
 /-- A case rejected at any stage is neither refuted nor surviving. -/
 theorem Stage.rejected_outcome {s : Stage} {x : Runs} (h : s.rejected x = true) :
     outcome x ≠ .refuted ∧ outcome x ≠ .survived := by
-  obtain ⟨hl, a, v, r⟩ := x
+  obtain ⟨l, hl, a, v, r⟩ := x
   cases s <;> simp only [Stage.rejected, Bool.and_eq_true, beq_iff_eq] at h <;>
-    simp only [ne_eq, outcome_refuted_iff, outcome_survived_iff] <;> simp_all
+    simp only [ne_eq, outcome_refuted_iff, outcome_survived_iff] <;> cases l <;> simp_all
 
 /-- How a case was judged. -/
 inductive Judged where
@@ -174,13 +191,13 @@ theorem passes_iff {control : Run} {cases : List String} {rs : List Result} :
   simp only [passes, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.isEmpty_eq_false_iff,
     List.all_eq_true, List.contains_iff_mem, and_assoc]
 
-/-- In a passing run, a case that claims to break theorems, and is no cheat case, has **the
-mutant's own holes** (the hole run accepted), **was rejected by the gate, and the refutation of
-each theorem it names was accepted for those holes**. -/
+/-- In a passing run, a case that claims to break theorems, and is no cheat case, **passed the
+lint**, has **the mutant's own holes** (the hole run accepted), **was rejected by the gate, and the
+refutation of each theorem it names was accepted for those holes**. -/
 theorem passes_refuted {control : Run} {cases : List String} {rs : List Result}
     (h : passes control cases rs = true) :
-    ∀ r ∈ rs, ∀ ts x, r.judged = .ran (.breaks ts) none x →
-      x.holes = .accepted ∧ x.approved = some .rejected ∧ x.refutation = some .accepted := by
+    ∀ r ∈ rs, ∀ ts x, r.judged = .ran (.breaks ts) none x → x.lint = [] ∧
+      x.holes = some .accepted ∧ x.approved = some .rejected ∧ x.refutation = some .accepted := by
   intro r hr ts x hj
   have hok := ((passes_iff.mp h).2.2.2 r hr).2
   simp only [Result.ok, hj] at hok
@@ -188,12 +205,13 @@ theorem passes_refuted {control : Run} {cases : List String} {rs : List Result}
     revert hok; cases outcome x <;> simp [Outcome.meets]
   exact outcome_refuted_iff.mp this
 
-/-- In a passing run, a known gap that is no cheat case has **the mutant's own holes, the gate
-accepted it, and the gate's proofs are about those holes** (the values run accepted). -/
+/-- In a passing run, a known gap that is no cheat case **passed the lint**, has **the mutant's
+own holes, the gate accepted it, and the gate's proofs are about those holes** (the values run
+accepted). -/
 theorem passes_survived {control : Run} {cases : List String} {rs : List Result}
     (h : passes control cases rs = true) :
-    ∀ r ∈ rs, ∀ g x, r.judged = .ran (.survives g) none x →
-      x.holes = .accepted ∧ x.approved = some .accepted ∧ x.values = some .accepted := by
+    ∀ r ∈ rs, ∀ g x, r.judged = .ran (.survives g) none x → x.lint = [] ∧
+      x.holes = some .accepted ∧ x.approved = some .accepted ∧ x.values = some .accepted := by
   intro r hr g x hj
   have hok := ((passes_iff.mp h).2.2.2 r hr).2
   simp only [Result.ok, hj] at hok
@@ -211,6 +229,22 @@ theorem passes_rejects {control : Run} {cases : List String} {rs : List Result}
   have hok := ((passes_iff.mp h).2.2.2 r hr).2
   simp only [Result.ok, hj] at hok
   exact ⟨hok, Stage.rejected_outcome hok⟩
+
+/-- In a passing run, **the lint refused only cheat cases that expect it**, and nothing was built
+for them. -/
+theorem passes_refused {control : Run} {cases : List String} {rs : List Result}
+    (h : passes control cases rs = true) :
+    ∀ r ∈ rs, ∀ e s x, r.judged = .ran e s x → x.lint ≠ [] →
+      s = some .lint ∧ x.holes = none ∧ x.approved = none ∧ x.values = none ∧ x.refutation = none := by
+  intro r hr e s x hj hl
+  have hok := ((passes_iff.mp h).2.2.2 r hr).2
+  obtain ⟨l, hs, a, v, rf⟩ := x
+  cases l with
+  | nil => exact absurd rfl hl
+  | cons _ _ =>
+    cases s with
+    | none => simp [Result.ok, hj, outcome, Outcome.meets] at hok
+    | some st => cases st <;> simp_all [Result.ok, Stage.rejected]
 
 /-- In a passing run, every case was judged, so no case was skipped or failed to set up. -/
 theorem passes_judged {control : Run} {cases : List String} {rs : List Result}
@@ -235,7 +269,8 @@ def breakers (rs : List Result) (t : String) : List String :=
 
 theorem mem_breakers {rs : List Result} {t n : String} :
     n ∈ breakers rs t ↔ ∃ r ∈ rs, r.name = n ∧ ∃ ts x, r.judged = .ran (.breaks ts) none x ∧
-      t ∈ ts ∧ x.holes = .accepted ∧ x.approved = some .rejected ∧ x.refutation = some .accepted := by
+      t ∈ ts ∧ x.lint = [] ∧ x.holes = some .accepted ∧ x.approved = some .rejected ∧
+        x.refutation = some .accepted := by
   simp only [breakers, List.mem_filterMap]
   constructor
   · rintro ⟨r, hr, hm⟩

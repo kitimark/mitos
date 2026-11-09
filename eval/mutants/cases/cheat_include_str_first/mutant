@@ -1,0 +1,10 @@
+why=The known gap assumptions_dedupe_dropped as a breaks= case, plus a resolve that a tactic block makes bogus when include_str finds the case's file, inside first | … | … so that the hole run, which holds no such file, builds the real one (review on #86, round 2, sonnet B1).
+breaks=resolve_assumptions_exact
+rejects=lint
+file=Mitos/Impl/Resolve.lean
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=[r.origin, p.origin]
+find=def resolve : Resolver := fun fs =>
+replace=def bogusResolver : Resolver := fun _ => { edges := [{ src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, req := 0, prov := 1, assumes := [], status := .inferred }], unresolved := [] } def realResolve : Resolver := fun fs =>
+find=end Mitos.Impl
+replace=def resolve : Resolver := by (first | exact (let _ := include_str "../Proofs/RefuteCase.lean"; bogusResolver) | exact realResolve) end Mitos.Impl

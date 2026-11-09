@@ -9,9 +9,16 @@ warningAsError = true
 name = "mitos-core"
 path = "../../core"
 
+# The root package, for gate 1's lint (`MitosGate.Lint`), which `Mutants.Lint` reuses.
+[[require]]
+name = "mitos"
+path = "../.."
+
 [[lean_lib]]
 name = "Mutants"
 
 [[lean_exe]]
 name = "mitos-mutants"
 root = "Main"
+# `Mutants.Lint` loads Lean's own syntax to parse a case's Lean text, as `mitos-gate` does.
+supportInterpreter = true

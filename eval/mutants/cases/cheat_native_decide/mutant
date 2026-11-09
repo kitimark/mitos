@@ -1,6 +1,6 @@
 why=The known gap assumptions_dedupe_dropped as a breaks= case, refuted by proving False with native_decide on an implemented_by lie.
 breaks=resolve_assumptions_exact
-rejects=refutation
+rejects=lint
 file=Mitos/Impl/Resolve.lean
 find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
 replace=[r.origin, p.origin]

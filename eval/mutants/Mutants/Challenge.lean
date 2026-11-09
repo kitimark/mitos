@@ -13,8 +13,11 @@ theorem Mitos.Proofs.<name> : <statement> := sorry
 
 becomes `theorem Mitos.Refute.<name> : ¬ (<statement>) := sorry`, in a copy of the Challenge that
 keeps every other line and drops the theorems not named. The comparator then compares the case's
-`Refute.lean` with this Challenge as kernel terms, so a refutation of anything but the approved
-statement is rejected.
+`Refute.lean` with this Challenge as kernel terms, so a refutation of anything but what that line
+states is rejected. The Challenge imports the mutated implementation (below), so what the line
+states is the approved statement only because the implementation declares no syntax: a macro there
+would rewrite the line (review on #86, round 2). The lint (`Mutants.Lint`) ensures that before
+anything is built.
 
 ## The holes are compared by value
 
@@ -35,7 +38,9 @@ in the export the kernels replay (without `Mitos.Impl.impact`'s, Lean's replay k
 reduce the `decide` in `src_dst_swapped`'s refutation).
 
 The **hole run** (`Mutants.Verdict`) shows separately that the mutated `Mitos/Impl/` modules build
-from the approved core alone, so the values compared here do not depend on the case's other files.
+from the approved core alone and declare every hole publicly. Its implementation files are the
+other runs' (`holeCore_impl`), and the lint ensures they run no code and read no file while Lean
+elaborates them, so they elaborate the same in every run, whatever other files a run holds.
 
 The reader fails closed: every line of the Challenge must be blank, a comment, an `import`, a
 one-line definition hole (`def … := sorry`) or a one-line theorem in the form above, so no line
@@ -251,7 +256,14 @@ theorem mem_approvedByValue {impls : List String} {ls : List Line} {x : String} 
 
 /-- Outside `Mitos/Proofs/`, where the proofs, a known gap's proof repairs and the case's
 `Refute.lean` go. -/
-def outsideProofs (path : String) : Bool := !"Mitos/Proofs/".toList.isPrefixOf path.toList
+def outsideProofs (path : String) : Bool :=
+  match path.splitOn "/" with
+  | "Mitos" :: "Proofs" :: _ => false
+  | _ => true
+
+theorem outsideProofs_of_impl {p : String} (h : inArea "Impl" p = true) : outsideProofs p = true := by
+  obtain ⟨rest, hr⟩ := inArea_head h
+  simp [outsideProofs, hr]
 
 /-- The core of the hole run: the core without `Mitos/Proofs/`, with the mutant's edits under
 `Mitos/Impl/` and no others. -/
@@ -277,6 +289,97 @@ theorem holeCore_spec {files out : List (String × String)} {m : Mutant}
     intro e he hpe
     rw [hpe] at he
     simp [hp] at he
+
+/-- The text of the file `p`, `src`, after the edits that name it, in order. -/
+def editsOn (p src : String) : List Edit → Option String
+  | [] => some src
+  | e :: es =>
+    if e.file = p then (applyEdit src e.find e.replace).bind (editsOn p · es) else editsOn p src es
+
+theorem lookup_replaceFile_self {p text : String} :
+    ∀ {files : List (String × String)}, (files.lookup p).isSome →
+      (replaceFile files p text).lookup p = some text
+  | [], h => by simp at h
+  | (q, t) :: fs, h => by
+    show List.lookup p ((if q == p then (q, text) else (q, t)) :: replaceFile fs p text) = some text
+    by_cases hq : q = p
+    · subst hq; simp
+    · have h1 : (q == p) = false := by simpa using hq
+      have h2 : (p == q) = false := by simpa using Ne.symm hq
+      simp only [h1, Bool.false_eq_true, ite_false, List.lookup, h2]
+      simp only [List.lookup, h2] at h
+      exact lookup_replaceFile_self h
+
+/-- After edits, a file's text is its text before them with the edits that name it applied. -/
+theorem applyEdits_lookup_eq {p s : String} :
+    ∀ {files out : List (String × String)} {es : List Edit},
+      applyEdits files es = .ok out → files.lookup p = some s → out.lookup p = editsOn p s es
+  | files, out, [], h, hs => by
+    simp only [applyEdits, Except.ok.injEq] at h
+    rw [← h, hs]; rfl
+  | files, out, e :: es, h, hs => by
+    simp only [applyEdits] at h
+    split at h
+    · simp at h
+    · rename_i src hsrc
+      split at h
+      · simp at h
+      · rename_i o ho
+        by_cases he : e.file = p
+        · subst he
+          rw [hs] at hsrc
+          cases hsrc
+          rw [applyEdits_lookup_eq h (lookup_replaceFile_self (by simp [hs]))]
+          simp [editsOn, ho]
+        · rw [applyEdits_lookup_eq h (by rw [lookup_replaceFile_of_ne (Ne.symm he)]; exact hs)]
+          simp [editsOn, he]
+
+theorem editsOn_filter {p : String} {f : Edit → Bool} :
+    ∀ {src : String} {es : List Edit}, (∀ e ∈ es, e.file = p → f e = true) →
+      editsOn p src (es.filter f) = editsOn p src es
+  | _, [], _ => rfl
+  | src, e :: es, h => by
+    have ih : ∀ s, editsOn p s (es.filter f) = editsOn p s es :=
+      fun _ => editsOn_filter fun e' he' => h e' (List.mem_cons_of_mem _ he')
+    by_cases hf : f e = true
+    · simp only [List.filter_cons, hf, ite_true, editsOn, ih]
+    · have he : e.file ≠ p := fun he => hf (h e (List.mem_cons_self ..) he)
+      simp only [List.filter_cons, hf, Bool.false_eq_true, ite_false, editsOn, he, ih]
+
+theorem lookup_filter_key {p : String} {g : String → Bool} :
+    ∀ {l : List (String × String)}, (l.filter fun f => g f.1).lookup p = if g p then l.lookup p else none
+  | [] => by simp
+  | (q, t) :: l => by
+    by_cases hq : p = q
+    · subst hq
+      by_cases hg : g p = true <;> simp [hg, List.lookup, lookup_filter_key]
+    · have hpq : (p == q) = false := by simpa using hq
+      by_cases hg : g q = true <;>
+        simp [hg, List.lookup, hpq, lookup_filter_key]
+
+/-- **The hole run's implementation files are the other runs'**: each file under `Mitos/Impl/` has
+the same text in the hole run's core as in the mutated core the other runs use. -/
+theorem holeCore_impl {files hole full : List (String × String)} {m : Mutant}
+    (hh : holeCore files m = .ok hole) (hf : applyEdits files m.edits = .ok full)
+    {p : String} (hp : inArea "Impl" p = true) : hole.lookup p = full.lookup p := by
+  unfold holeCore at hh
+  cases hs : files.lookup p with
+  | none =>
+    have hkeys : ∀ q ∈ files.map (·.1), (p != q) = true := by
+      intro q hq
+      obtain ⟨f, hf', rfl⟩ := List.mem_map.mp hq
+      exact List.lookup_eq_none_iff.mp hs f hf'
+    have hnone : ∀ {l : List (String × String)}, l.map (·.1) ⊆ files.map (·.1) → l.lookup p = none :=
+      fun hsub => List.lookup_eq_none_iff.mpr fun f hf' =>
+        hkeys f.1 (hsub (List.mem_map_of_mem hf'))
+    rw [hnone (by rw [applyEdits_paths hh]; intro q hq; simp only [List.mem_map, List.mem_filter] at hq ⊢
+                  obtain ⟨f, ⟨hf', _⟩, rfl⟩ := hq; exact ⟨f, hf', rfl⟩),
+      hnone (by rw [applyEdits_paths hf]; exact List.Subset.refl _)]
+  | some s =>
+    have h1 : (files.filter fun f => outsideProofs f.1).lookup p = some s := by
+      rw [lookup_filter_key, outsideProofs_of_impl hp, hs]; rfl
+    rw [applyEdits_lookup_eq hh h1, applyEdits_lookup_eq hf hs, Mutant.implEdits]
+    exact editsOn_filter fun e _ he => he ▸ hp
 
 /-! ## The solution modules -/
 

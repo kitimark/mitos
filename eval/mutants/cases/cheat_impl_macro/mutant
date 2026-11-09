@@ -1,0 +1,6 @@
+why=No bug: the implementation adds a macro_rules that turns Mitos.Spec.AssumptionsExact applications into False, and the refutation Challenge imports the implementation before the approved statement lines, so a proof of ¬ False would read as a refutation (review on #86, round 2, opus B1).
+breaks=resolve_assumptions_exact
+rejects=lint
+file=Mitos/Impl/Resolve.lean
+find=end Mitos.Impl
+replace=end Mitos.Impl macro_rules | `(Mitos.Spec.AssumptionsExact $x) => `(False) | `(Spec.AssumptionsExact $x) => `(False)

@@ -3,6 +3,7 @@ import Mutants.Manifest
 import Mutants.Challenge
 import Mutants.Verdict
 import Mutants.Implied
+import Mutants.Lint
 
 /-!
 # Mutation testing of the resolver and impact analysis
