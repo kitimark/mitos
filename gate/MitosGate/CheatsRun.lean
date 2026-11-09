@@ -92,39 +92,67 @@ def prepare (root : System.FilePath) (c : String) (e : Expect) (ws : System.File
     IO.FS.withFile (ws / "models.lock") .append fun h =>
       for l in e.lockAppend do h.putStr (l ++ "\n")
 
-/-- Run the gate on `ws` in a session of its own, with `TMPDIR` set to `tmp`, where it makes its
-judging directory. At the timeout its process group gets SIGTERM, and SIGKILL 10 s later. The child
-is reaped only once it exits, so its pid is still its own when it is signalled. -/
-def runGate (gate : String) (root ws tmp : System.FilePath) (m : Mode) (timeout : Nat) :
+/-- Run `cmd args` in `cwd`, in a session of its own, with `TMPDIR` set to `tmp`, until it has
+exited and no process holds its stdout or stderr any more. If that takes `timeoutMs`, its whole
+process group gets SIGKILL, once, and the run is marked timed out. There is no SIGTERM step first:
+`inRunDir` removes what a killed run leaves, so a chance to clean up would buy nothing.
+
+The kill is `Child.kill`, which on Lean v4.35.0 sends SIGKILL to the whole group of a child spawned
+with `setsid`, although its docstring says SIGTERM. `mitos-lint-test` pins this: it times out a
+child that ignores SIGTERM and leaves a grandchild that ignores it too, and requires exit 137 and
+both gone. So a toolchain that sends SIGTERM instead fails CI, rather than leaving the runner waiting
+on a survivor.
+
+The timeout covers the pipes too, so a descendant that outlives the child and keeps a pipe open is
+killed with the rest of the group, not waited for. The child is reaped only after both pipes have
+closed. Until then its pid, which is the group's id, cannot be reused, so the kill reaches only
+this run's processes. A process that starts a session of its own leaves the group and is out of
+reach. -/
+def runChild (cmd : String) (args : Array String) (cwd tmp : System.FilePath) (timeoutMs : Nat) :
     IO Run := do
-  let args := #["accept", "--workspace", ws.toString, "--plugin", "ToyRequire",
-    "--model", "Models.ToyRequire.model", "--mitos-root", root.toString] ++
-    (match m with | .full => #[] | .comparatorOnly => #["--skip-lint"])
-  let spawnArgs : IO.Process.SpawnArgs :=
-    { cmd := gate, args := args, cwd := some root, env := #[("TMPDIR", some tmp.toString)],
+  let child ← IO.Process.spawn
+    { cmd, args, cwd := some cwd, env := #[("TMPDIR", some tmp.toString)],
       stdin := .null, stdout := .piped, stderr := .piped, setsid := true }
-  let child ← IO.Process.spawn spawnArgs
   let out ← IO.asTask child.stdout.readToEnd .dedicated
   let err ← IO.asTask child.stderr.readToEnd .dedicated
   let start ← IO.monoMsNow
   let mut timedOut := false
-  let mut killed := false
   let mut code : UInt32 := 0
   repeat
-    match ← child.tryWait with
-    | some c => code := c; break
-    | none =>
-      let ms := (← IO.monoMsNow) - start
-      if !timedOut && ms ≥ timeout * 1000 then
-        timedOut := true
-        child.kill
-      else if timedOut && !killed && ms ≥ (timeout + 10) * 1000 then
-        killed := true
-        discard <| IO.Process.output { cmd := "kill", args := #["-KILL", "--", s!"-{child.pid}"] }
-      IO.sleep 100
+    if (← IO.hasFinished out) && (← IO.hasFinished err) then
+      if let some c ← child.tryWait then
+        code := c
+        break
+    if !timedOut && (← IO.monoMsNow) - start ≥ timeoutMs then
+      timedOut := true
+      child.kill
+    IO.sleep 100
   let out ← IO.ofExcept (← IO.wait out)
   let err ← IO.ofExcept (← IO.wait err)
   return { exitCode := code, output := out ++ err, timedOut }
+
+/-- Run the gate on `ws`, with `TMPDIR` set to `tmp`, where it makes its judging directory, and stop
+it after `timeout` seconds (`runChild`). -/
+def runGate (gate : String) (root ws tmp : System.FilePath) (m : Mode) (timeout : Nat) :
+    IO Run :=
+  runChild gate (#["accept", "--workspace", ws.toString, "--plugin", "ToyRequire",
+      "--model", "Models.ToyRequire.model", "--mitos-root", root.toString] ++
+      (match m with | .full => #[] | .comparatorOnly => #["--skip-lint"]))
+    root tmp (timeout * 1000)
+
+/-- Run `act` in a fresh directory of its own, which holds `ws/` and `tmp/`, and remove the
+directory afterwards. So a run stopped at the timeout, which cannot clean up, leaves nothing behind.
+Any I/O error is the run's output, which then has no verdict. -/
+def inRunDir (act : System.FilePath → IO Run) : IO Run := do
+  let dir ← IO.FS.createTempDir
+  let run ← try
+      IO.FS.createDirAll (dir / "ws")
+      IO.FS.createDirAll (dir / "tmp")
+      act dir
+    catch err => pure { exitCode := 255, output := s!"mitos-gate cheats: {err}\n", timedOut := false }
+  try IO.FS.removeDirAll dir
+  catch err => IO.eprintln (oneLine s!"warning: could not remove the job directory {dir}: {err}")
+  return run
 
 /-- One job: its run, and when it started and ended, in ms since the runner started. -/
 structure Done where
@@ -132,22 +160,14 @@ structure Done where
   startMs : Nat
   endMs : Nat
 
-/-- Run a job in a fresh directory of its own, which holds the workspace (`ws/`) and the gate's
-`TMPDIR` (`tmp/`), write its log, and remove the directory. So a gate stopped at the timeout, which
-cannot remove its judging directory, leaves nothing behind. Any I/O error is the run's output,
-which then has no verdict. -/
+/-- Run a job in a directory of its own (`inRunDir`): the workspace is `ws/` and the gate's
+`TMPDIR` is `tmp/`. Then write its log. -/
 def runJob (gate : String) (root logs : System.FilePath) (t0 : Nat) (timeout : Nat) (c : String)
     (e : Expect) (m : Mode) : IO Done := do
   let startMs := (← IO.monoMsNow) - t0
-  let dir ← IO.FS.createTempDir
-  let run ← try
-      IO.FS.createDirAll (dir / "ws")
-      IO.FS.createDirAll (dir / "tmp")
-      prepare root c e (dir / "ws")
-      runGate gate root (dir / "ws") (dir / "tmp") m timeout
-    catch err => pure { exitCode := 255, output := s!"mitos-gate cheats: {err}\n", timedOut := false }
-  try IO.FS.removeDirAll dir
-  catch err => IO.eprintln (oneLine s!"warning: could not remove the job directory {dir}: {err}")
+  let run ← inRunDir fun dir => do
+    prepare root c e (dir / "ws")
+    runGate gate root (dir / "ws") (dir / "tmp") m timeout
   try IO.FS.writeFile (logs / s!"{c}.{m.logName}.log") run.output
   catch err => IO.eprintln (oneLine s!"warning: could not write the log of {c}: {err}")
   return { run, startMs, endMs := (← IO.monoMsNow) - t0 }

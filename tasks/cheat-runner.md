@@ -3,7 +3,7 @@
 phase: 1
 goal: The cheat corpus runs in parallel in CI, through a runner written in Lean whose decisions (the `expect` parser, the reading of the gate's verdict line, the pass rule with `guards=`, the table and the scheduler) are proved, and no case's verdict changes.
 statement: none (tooling task); theorems in `gate/MitosGate/Cheats.lean`, outside the lock
-touches: gate/MitosGate/Cheats.lean (new, pure), gate/MitosGate/CheatsRun.lean (new, I/O), gate/MitosGate/GateId.lean (new, `GateId` moved from Accept.lean), gate/MitosGate/Accept.lean (the verdict line is `Cheats.Verdict.render`), gate/Main.lean (the `cheats` subcommand), eval/cheats/model_include_str_src/expect (`heavy=yes` only), .github/workflows/ci.yml (the corpus step), docs/process.md (running the corpus), ops/runs/2026-11-09.ndjson (appended lines only), tasks/cheat-runner.md
+touches: gate/MitosGate/Cheats.lean (new, pure), gate/MitosGate/CheatsRun.lean (new, I/O), gate/MitosGate/GateId.lean (new, `GateId` moved from Accept.lean), gate/MitosGate/Accept.lean (the verdict line is `Cheats.Verdict.render`), gate/Main.lean (the `cheats` subcommand), gate/LintTest.lean (the runner's timeout cases), eval/cheats/model_include_str_src/expect (`heavy=yes` only), .github/workflows/ci.yml (the corpus step), docs/process.md (running the corpus), ops/runs/2026-11-09.ndjson (appended lines only), tasks/cheat-runner.md
 must_not_touch: statements.lock, models.lock, core/, lakefile.toml, other `expect` lines, models
 checks: build, imports, lock, lint test, runlog on main's data, gate/runlog-test.sh, cheats (both runners, tables compared)
 budget: 25 iterations · 6h wall · 2M tokens
@@ -43,6 +43,29 @@ escalation: hint → automation → stronger model → pair → split → revisi
   gate's `TMPDIR`, where the gate makes its judging directory and Lake its temp files. The runner
   removes it after the child exits, so a gate stopped at the timeout leaves nothing behind
   (CodeRabbit's finding on the first review round).
+- **The timeout: SIGKILL to the whole process group, once.** The first version said SIGTERM, then
+  SIGKILL 10 s later. But on Lean v4.35.0 `Child.kill` sends SIGKILL to the group of a child
+  spawned with `setsid`, though its docstring says SIGTERM, so the 10 s step could never run (the
+  opus verifier's blocking finding on 22ea1f8). A SIGTERM step would buy nothing, because the run's
+  directory is removed anyway, so there is none: the code, its doc and the PR say SIGKILL.
+  - **The timeout covers the pipes.** The first version waited for the child under the timeout,
+    then for its pipes without one, so a descendant that outlived the child and held a pipe kept
+    the runner waiting (the sonnet verifier's m1 names the same hang behind a SIGTERM). Now the
+    runner waits until both pipes have closed and the child has exited, and kills the group if that
+    takes `--timeout`. It reaps the child last, so the group's id cannot be reused before the kill.
+  - **Pinned by a test, not by the docstring.** `mitos-lint-test` runs two `bash` children through
+    `inRunDir` and `runChild` with a 1 s timeout. Each child ignores SIGTERM and leaves a grandchild
+    that ignores it too and holds the pipes. The run must end within 15 s, marked timed out, with
+    the grandchild gone and the run's directory removed, and with exit 137 where the child was still
+    running at the kill. Every process in them would exit on its own after 30 s, so the
+    test fails rather than hangs. It fails on each of four mutants: SIGTERM to the group (what a
+    toolchain matching the docstring would do), SIGKILL to the child only, the first version's
+    loop (its second case waited 30 s and showed NO-VERDICT), and a directory left behind. It is
+    in `mitos-lint-test` because that is the one Lean test exe CI runs, and a new exe would change
+    the lakefile.
+  - **Out of reach.** A descendant that starts a session of its own leaves the group. If it holds a
+    pipe, the run lasts until it exits, and CI's job timeout fails it. #103 tracks it, with the
+    verdicts' minor findings and what the PR that deletes `run.sh` must update.
 - **Prints.** Every line with a case name, an `expect` value or gate output goes through
   `oneLine`. #68 adds a CI-safe line function that also escapes `##[` and a leading `::`; it takes
   over these prints.
