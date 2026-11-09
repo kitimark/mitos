@@ -226,7 +226,7 @@ while read -r n sha; do
   fi
   if [ ! -e "$dir/files-$n.failed" ]; then
     kept=$(jq -r '
-      def kept: test("^(gate/|eval/cheats/|\\.github/|\\.claude/|plan/|core/Mitos/Core/|core/Challenge/)")
+      def kept: test("^(gate/|eval/cheats/|\\.github/|\\.claude/|\\.cursor/|plan/|core/Mitos/Core/|core/Challenge/)")
         or IN("lean-toolchain", "lakefile.toml", "core/lakefile.toml", "core/Mitos/Core.lean",
               "core/comparator.json", "CLAUDE.md", "docs/process.md")
         or test("(^|/)(statements|models)\\.lock$");

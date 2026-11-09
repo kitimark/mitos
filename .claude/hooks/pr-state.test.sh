@@ -542,7 +542,8 @@ expect "a re-run: the latest gate run counts" "$(mline 45 "$H45" "$userkeeps")"
 # User-kept paths.
 for f in gate/x.lean eval/cheats/c/run.sh .github/workflows/ci.yml statements.lock examples/acme/models.lock \
   core/Mitos/Core.lean core/Mitos/Core/Spec.lean core/Challenge/A.lean core/comparator.json lean-toolchain \
-  lakefile.toml core/lakefile.toml docs/process.md CLAUDE.md plan/phase-1.md; do
+  lakefile.toml core/lakefile.toml docs/process.md CLAUDE.md plan/phase-1.md \
+  .cursor/rules/kitimark-mode.mdc .cursor/skills/kitimark-mode/SKILL.md; do
   jq -n --arg f "$f" '[{filename: "src/a.lean"}, {filename: $f}]' >"$work/files-21.json"
   dash "| #21 other | \`2222222\` | green | PASS at \`2222222\` |"
   run ok
