@@ -115,4 +115,4 @@ jobs:
           PRN: ${{ github.event.pull_request.number }}
         run: |
           echo "probe gate: pr=$PRN action=$ACTION head=$HEAD"
-          sleep 30
+          sleep 420
