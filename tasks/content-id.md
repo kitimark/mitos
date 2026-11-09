@@ -2,10 +2,10 @@
 
 phase: 1
 goal: A verdict carries across a rebase that changes nothing but `main`'s run-log lines around the PR, and never across a real change, by a content id whose decidable parts are proved in Lean.
-statement: none (tooling task); theorems in `gate/MitosGate/ContentId.lean`, outside the lock
-touches: gate/MitosGate/ContentId.lean, gate/Main.lean (the `content-id` subcommand only), gate/content-id-test.sh, .claude/skills/kitimark-mode/SKILL.md (the verdict-carry rule and its two references), ops/runs/2026-11-09.ndjson (appended lines only), tasks/content-id.md
+statement: none (tooling task); theorems in `gate/MitosGate/ContentId.lean` and `gate/MitosGate/Carry.lean`, outside the lock
+touches: gate/MitosGate/ContentId.lean, gate/MitosGate/Carry.lean, gate/Main.lean (the `content-id` and `carry` subcommands only), gate/content-id-test.sh, gate/carry-test.sh, .claude/skills/kitimark-mode/SKILL.md (the verdict-carry rule and its two references), ops/runs/2026-11-09.ndjson (appended lines only), tasks/content-id.md
 must_not_touch: statements.lock, models.lock, core/, eval/cheats/, .github/, docs/process.md, models
-checks: build, imports, lock, lint test, runlog on this PR's run log, gate/runlog-test.sh, gate/content-id-test.sh, shellcheck
+checks: build, imports, lock, lint test, runlog on this PR's run log, gate/runlog-test.sh, gate/content-id-test.sh, gate/carry-test.sh, shellcheck
 budget: 20 iterations · 4h wall · 1.5M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
@@ -82,6 +82,36 @@ escalation: hint → automation → stronger model → pair → split → revisi
   It also says that ids from different builds are not comparable, and that a refusal means the
   verdict does not carry. "Only rebases" is back: the updater's rebase pushed the head, as its PR
   timeline shows, not a PR owner.
+- **The whole push chain is bound: `mitos-gate carry` (round 3).** Round 2's rule checked only
+  that the updater force-pushed the current head. The round-2 opus verifier's repro: an owner
+  pushes V' on the verified head V, `main` adds a copy of a hunk's old side above it, and the
+  updater rebases V' to X. X has V's content id, because the marker counts copies in each head's
+  own merge-base, and X drops a check from another function. So a verdict now carries only when
+  every push since the verified head is a force-push by `mitos-pr-updater[bot]`, the first from
+  the verified head and each later one from the commit the one before it left, up to the current
+  head, and the two heads have the same content id.
+  - **Why the REST activity route.** It lists every push to a branch with its actor, `before` and
+    `after`, plain pushes included. The PR timeline lists only force-pushes and only the commit
+    after, so an owner's plain push leaves no trace there. On #83 the route shows the two plain
+    pushes 484d0ec → 7f2a60a and 7f2a60a → 9833f36 that the timeline does not.
+  - **Why a subcommand, not prose.** Encode Lessons in Structure: the rule was rewritten in each of
+    three rounds, and each prose version had a gap. `mitos-gate carry <base> <verified> <head>`
+    reads the route's TSV on standard input and decides the chain (`walk`, proved by `walk_iff`)
+    and both content ids, with one build, in one call. Only its exit 0 carries, so a refusal of
+    either id cannot be misread, and nobody compares ids from two builds. It is one module of about
+    200 lines, docs, proof and examples included, beside `ContentId`, and it runs from `main`'s
+    checkout like `content-id`.
+  - **Why stdin, not a `gh` call inside the tool.** The tool stays offline and testable on fixed
+    lists, and the skill names the one `gh` command that feeds it. A missing, reordered or partial
+    list fails safe: every push must start where the one before it left, so a gap stops the walk.
+  - **Why also `tip`.** `walk` from a head that is not the verified head already needs the newest
+    push to end at the head. For the verified head itself, `tip` checks the branch is still there.
+  - **Round budget (round 3).** An owner's rebase never carries a verdict now, a stack's restack
+    included. It still does not count as a round when the new head keeps the content id of the
+    head the round started from (with the parent branch as base in a stack). Counting it would
+    use up a stack's two rounds on restacks alone, while the head gets a verifier either way.
+  - **Stacks (round 3).** The updater skips every PR in a stack, so no stacked PR carries a
+    verdict: a stack needs a verifier at every head after a restack. The skill says so.
 
 ## Theorems (`gate/MitosGate/ContentId.lean`)
 - `RunLog.appendOnly_iff_perm_added`: `appendOnly base head = true ↔ head ~ base ++ added base head`
@@ -114,6 +144,16 @@ escalation: hint → automation → stronger model → pair → split → revisi
   `diffHeader` (against git 2.43's output for a name with a tab, a quote, a backslash and a byte
   that is not ASCII) and `preimage` (with and without `noeol`).
 
+## Theorems (`gate/MitosGate/Carry.lean`, round 3)
+- `walk_iff`: `walk v h ps = true` exactly when the newest pushes `pre` of `ps` are all updater
+  rebases and `pre.map after ++ [v] = h :: pre.map before`: the newest ends at `h`, each older one
+  ends where the next one starts, and the oldest starts at `v`.
+- `walk_rebase`: so every push `walk` crosses is an updater rebase.
+- Kernel-checked examples: round 2's laundering chain (the owner's push, then the updater's) is
+  refused; two updater rebases pass; an owner's force-push, a plain push by the updater's login,
+  a gap, a list that ends before `v` and a branch made again are refused.
+- Axioms: `propext` and `Quot.sound`.
+
 ## Limits
 - A `main` change within three lines of a PR hunk changes the id, on purpose: the verifier read
   that context. So does a `main` change that adds a copy of a hunk's old-side lines above it,
@@ -125,14 +165,21 @@ escalation: hint → automation → stronger model → pair → split → revisi
 - The git calls, the `--raw` parse, the block matching, which base file a block's hunks apply to
   and `sha256sum` are not proved, and the hunk header parse is checked on examples only. The test
   covers them. Of 13 mutants of the module, 5 fail `lake build` and 8 fail the test.
+- `carry` trusts GitHub's activity route to list each push with its real actor. A push missing
+  from the list leaves a gap, which fails safe. Reading the route is not proved;
+  `gate/carry-test.sh` feeds the tool fixed lists (22 cases), and the PR's proof runs it on the
+  real route. Of 9 mutants of `Carry.lean`, 6 fail `lake build` and 3 fail the test.
 
 ## Not in this task
-- `gate/content-id-test.sh` is not a CI step: a step is a `.github/workflows/` change, outside this
-  task's brief. A follow-up can add it, as for `gate/runlog-test.sh`. CI checks the theorems and
-  examples through `lake build`.
+- `gate/content-id-test.sh` and `gate/carry-test.sh` are not CI steps: a step is a
+  `.github/workflows/` change, outside this task's brief. A follow-up can add them, as for
+  `gate/runlog-test.sh` (#99). CI checks the theorems and examples through `lake build`.
 - `docs/process.md` and the poteto-mode playbooks still name `git patch-id --verbatim`; #79's PR 5
   moves them. They still say a rebase that keeps that id keeps the verdict. Until PR 5, the skill's
-  rule is the one agents follow.
+  rule is the one agents follow (#99).
+- The round-2 verdicts' other minor findings are in #99: no test pins the `@[csimp]` swap, a
+  verified head that leaves every ref is refused until it is fetched, and attempt 2's run-log
+  record says 79 tests passed where the suite gave 80.
 
 ## Done when
 - [x] all `checks` pass locally
