@@ -332,7 +332,7 @@ are what is tested.
 `--skip-lint`, to record what the later gates catch on their own. Every full run must reject at the
 expected gate. The comparator-only expectation is checked as well, so a change in what each layer
 catches is noticed and recorded on purpose. Each run is its own `mitos-gate accept` process in a
-fresh copy of the workspace, `--jobs N` of them at a time (default 3), each stopped after
+fresh copy of the workspace, `--jobs N` of them at a time (default 4), each stopped after
 `--timeout S` seconds (default 600) and then failed. Naming cases runs only those. A case whose
 `expect` has `heavy=yes` needs much memory (`model_include_str_src` peaks at about 13 GB), so its
 runs run alone. The logs are `.lake/cheats/<case>.full.log` and `<case>.comparator.log`, with

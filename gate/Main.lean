@@ -33,7 +33,7 @@ def usage : String := "usage:
                                                  head, and the same content id
   mitos-gate cheats [--jobs N] [--timeout S] [case]...
                                                  run the cheat corpus (eval/cheats/), N runs at a time
-                                                 (default 3), each stopped after S seconds (default 600)"
+                                                 (default 4), each stopped after S seconds (default 600)"
 
 partial def parseAccept (args : List String) (c : Accept.Config) : Except String Accept.Config :=
   match args with
