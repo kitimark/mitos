@@ -4,10 +4,27 @@ import MitosGate.Util
 /-!
 # The run-log check (`mitos-gate runlog`)
 
-`.gitattributes` merges `ops/runs/*.ndjson` with git's `union` driver, which keeps the lines of
-both sides. That is right only while no branch edits or deletes a line it did not add: union
-turns an edited line into two records for one attempt and reports no conflict. This module
-states that rule, proves the check that enforces it, and runs it.
+Each attempt's record is its own file, `ops/runs/<YYYY-MM-DD>/<task>-<role>-<attempt>.json`,
+holding the record on one line (#91, B7). A PR only adds such files, and a file on the base branch
+never changes, so a rebase replays additions only: no line of a shared file is context for a PR's
+change, `git patch-id --verbatim` stays the same over a rebase, and no merge driver is needed.
+Two PRs that add a record for one attempt on one day write one path, which git merges as one file
+or stops on as a conflict.
+
+* `recordFile`: a record file holds one line (`singleLine?_spec`), that line is a record, its task
+  and role are safe characters (`safeTask`, `safeRole`), and the file is named by its key
+  (`fileName`). `recordFile_ok` states this; `fileName_safe` shows such a name is one plain path
+  entry; `day_keys_nodup` shows a day folder then holds each key at most once.
+* `problems`: the whole check on a merge-base tree and a head tree, read into a `Tree`.
+  `problems_eq_nil` states what a pass means: every merge-base record is kept
+  (`records_kept`), no two head records share a key, every head record file passes
+  `recordFile` in a folder named by a date, and the head has no day file the base lacks.
+
+The day files from before, `ops/runs/<YYYY-MM-DD>.ndjson`, keep the rules below while the open PRs
+that append to them land (`ops/runs/README.md`, Transition): `.gitattributes` still merges them
+with git's `union` driver, which keeps the lines of both sides. That is right only while no branch
+edits or deletes a line it did not add: union turns an edited line into two records for one
+attempt and reports no conflict. A PR may not add a day file.
 
 * `appendOnly base head`: every line of the merge-base file is still in the head file, at least as
   often; order is ignored (`appendOnly_iff_count`, `appendOnly_iff_subperm`). Equivalently, the
@@ -20,9 +37,11 @@ states that rule, proves the check that enforces it, and runs it.
 * An edit that union kept next to the line it replaced fails `noDupKeys`
   (`noDupKeys_eq_false_of_mem`, `edit_then_union`).
 
-`check` is the executable. It reads the files, parses each line with Lean core's `Lean.Json`, and
-decides with `appendOnly`, `noDupKeys` and the proved locators `firstMissing?` and `dupAt?`. The
-file I/O, the JSON parser and the field checks in `parseRecord` are not proved. Every line
+`check` is the executable. It reads the files into a `Tree` (`readTree`), parses each record with
+Lean core's `Lean.Json`, and decides with `problems`, which uses `appendOnly`, `noDupKeys`,
+`recordFile` and the proved locators `firstMissing?` and `dupAt?`. The file I/O, the JSON parser
+and the field checks in `parseRecord` are not proved; the theorems about `problems` hold for any
+parser. Every line
 `check` and `cli` print that holds a file name, a field value, a message or an I/O error is the
 gate's own `::error` command, with the text through `oneLine` and GitHub's escaping
 (`gate/MitosGate/Util.lean`, with its proof). The runner reads such a line as that one command, so
@@ -373,6 +392,412 @@ example : (Problem.mk "f" 1 (quote "a\"b\\c")).render =
     "::error file=f,line=1::\"a\\u{005C}\"b\\u{005C}\\u{005C}c\"" := by
   decide
 
+/-! ## Record files: one record per attempt, named by its key -/
+
+/-- The characters a task or a role may hold: ASCII letters and digits, `.`, `_` and `-`. -/
+def safeChar (c : Char) : Bool := c.isAlphanum || c == '.' || c == '_' || c == '-'
+
+/-- A task that can start a file name: not empty, only `safeChar`s, and a letter or a digit first,
+so that the name starts with neither `.` (a hidden file) nor `-` (read as an option). -/
+def safeTask (s : String) : Bool :=
+  match s.toList with
+  | [] => false
+  | c :: cs => c.isAlphanum && cs.all safeChar
+
+/-- A role: not empty, and only `safeChar`s. -/
+def safeRole (s : String) : Bool := !s.toList.isEmpty && s.toList.all safeChar
+
+/-- The name of the file that holds the record with key `k`: `<task>-<role>-<attempt>.json`. -/
+def fileName (k : Key) : String := k.1 ++ "-" ++ k.2.1 ++ "-" ++ toString k.2.2 ++ ".json"
+
+/-- The name built from a safe task and role is one plain path entry: only `safeChar`s, so no `/`,
+no control character and no blank, and a letter or a digit first. -/
+theorem fileName_safe {k : Key} (ht : safeTask k.1 = true) (hr : safeRole k.2.1 = true) :
+    (∀ c ∈ (fileName k).toList, safeChar c = true) ∧
+      ∃ c cs, (fileName k).toList = c :: cs ∧ c.isAlphanum = true := by
+  obtain ⟨t, r, n⟩ := k
+  simp only at ht hr
+  unfold safeTask at ht
+  split at ht
+  · exact absurd ht (by decide)
+  · rename_i c cs hcs
+    simp only [Bool.and_eq_true, List.all_eq_true] at ht
+    unfold safeRole at hr
+    simp only [Bool.and_eq_true, List.all_eq_true] at hr
+    have hdig : ∀ x ∈ (toString n).toList, safeChar x = true := by
+      intro x hx
+      simp only [toString, Nat.repr, String.toList_ofList] at hx
+      have := Nat.isDigit_of_mem_toDigits (by decide) (by decide) hx
+      simp [safeChar, Char.isAlphanum, this]
+    refine ⟨?_, c, cs ++ ('-' :: r.toList ++ '-' :: (toString n).toList ++ ".json".toList), ?_, ht.1⟩
+    · intro x hx
+      simp only [fileName, String.toList_append, hcs, List.mem_append, List.mem_cons] at hx
+      rcases hx with ((((hx | hx) | hx) | hx) | hx) | hx
+      · rcases hx with rfl | hx
+        · simp [safeChar, ht.1]
+        · exact ht.2 x hx
+      · revert hx; decide +revert
+      · exact hr.2 x hx
+      · revert hx; decide +revert
+      · exact hdig x hx
+      · revert hx; decide +revert
+    · simp [fileName, String.toList_append, hcs]
+
+/-- The one line of a record file's text: the text without a final `\n`, when that is not empty
+and holds no other `\n`. -/
+def singleLine? (s : String) : Option String :=
+  let cs := if s.toList.getLast? = some '\n' then s.toList.dropLast else s.toList
+  if cs = [] ∨ '\n' ∈ cs then none else some (String.ofList cs)
+
+/-- **A record file is one line.** The line is not empty and holds no `\n`, and the text is the
+line, with or without a final `\n`. -/
+theorem singleLine?_spec {s l : String} (h : singleLine? s = some l) :
+    l.toList ≠ [] ∧ '\n' ∉ l.toList ∧
+      (s.toList = l.toList ∨ s.toList = l.toList ++ ['\n']) := by
+  have key : ∀ cs : List Char,
+      (if cs = [] ∨ '\n' ∈ cs then none else some (String.ofList cs)) = some l →
+        l.toList = cs ∧ cs ≠ [] ∧ '\n' ∉ cs := by
+    intro cs hcs
+    split at hcs
+    · cases hcs
+    · rename_i hc
+      cases hcs
+      exact ⟨String.toList_ofList, fun h => hc (Or.inl h), fun h => hc (Or.inr h)⟩
+  unfold singleLine? at h
+  by_cases hl : s.toList.getLast? = some '\n'
+  · simp only [hl, ↓reduceIte] at h
+    obtain ⟨h1, h2, h3⟩ := key _ h
+    obtain ⟨ys, hys⟩ := List.getLast?_eq_some_iff.mp hl
+    refine ⟨h1 ▸ h2, h1 ▸ h3, Or.inr ?_⟩
+    rw [h1, hys, List.dropLast_concat]
+  · simp only [hl, ↓reduceIte] at h
+    obtain ⟨h1, h2, h3⟩ := key _ h
+    exact ⟨h1 ▸ h2, h1 ▸ h3, Or.inl h1.symm⟩
+
+/-- The record a record file named `name` holds, or why it is refused: the text is one line
+(`singleLine?`), the line is a record (`parse`), its task and role are safe (`safeTask`,
+`safeRole`), and the file is named `fileName` of its key. -/
+def recordFile (parse : String → Except String Record) (name text : String) :
+    Except String Record :=
+  match singleLine? text with
+  | none => .error ("a record file holds one record on one line; this one is empty or has " ++
+      "more lines (ops/runs/README.md)")
+  | some l =>
+    match parse l with
+    | .error e => .error e
+    | .ok r =>
+      if safeTask r.task = false then
+        .error s!"task {quote r.task} must start with a letter or a digit and hold only letters, \
+          digits, '.', '_' and '-', because it names the file"
+      else if safeRole r.role = false then
+        .error s!"role {quote r.role} must not be empty and must hold only letters, digits, \
+          '.', '_' and '-', because it names the file"
+      else if name = fileName r.key then .ok r
+      else
+        .error s!"the file must be named {quote (fileName r.key) 120}, from its record's task, \
+          role and attempt, so that two records for one attempt on one day are one path \
+          (ops/runs/README.md)"
+
+/-- **A record file that passes holds one record, named by its key.** -/
+theorem recordFile_ok {parse : String → Except String Record} {name text : String} {r : Record}
+    (h : recordFile parse name text = .ok r) :
+    (∃ l, singleLine? text = some l ∧ parse l = .ok r) ∧ safeTask r.task = true ∧
+      safeRole r.role = true ∧ name = fileName r.key := by
+  unfold recordFile at h
+  split at h
+  · cases h
+  · rename_i l hl
+    split at h
+    · cases h
+    · rename_i r' hr
+      split at h
+      · cases h
+      · rename_i ht
+        split at h
+        · cases h
+        · rename_i hro
+          split at h
+          · rename_i hn
+            cases h
+            refine ⟨⟨l, hl, hr⟩, ?_, ?_, hn⟩
+            · simpa using ht
+            · simpa using hro
+          · cases h
+
+/-- **A day folder holds each key at most once.** A folder lists each name once (`hnames`), and a
+record file that passes `recordFile` is named `fileName` of its record's key (`hname`), so two
+files of one folder never hold records with one key. -/
+theorem day_keys_nodup {fs : List (String × Record)} (hnames : (fs.map (·.1)).Nodup)
+    (hname : ∀ p ∈ fs, p.1 = fileName p.2.key) : (fs.map (·.2.key)).Nodup := by
+  have : fs.map (·.1) = (fs.map (·.2.key)).map fileName := by
+    rw [List.map_map]
+    exact List.map_congr_left hname
+  rw [this] at hnames
+  exact List.Pairwise.of_map fileName (fun _ _ h e => h (congrArg fileName e)) hnames
+
+/-- Whether a folder name is a date: `YYYY-MM-DD`, with digits. -/
+def isDate (s : String) : Bool :=
+  match s.toList with
+  | [y₁, y₂, y₃, y₄, '-', m₁, m₂, '-', d₁, d₂] =>
+    [y₁, y₂, y₃, y₄, m₁, m₂, d₁, d₂].all Char.isDigit
+  | _ => false
+
+/-! ## The check on whole trees -/
+
+/-- What the check reads under `ops/runs/`: each day file directly in it, with its name and lines,
+and each record file in its folders, with the folder's name, the file's name and its text. -/
+structure Tree where
+  days : List (String × List String) := []
+  files : List (String × String × String) := []
+
+/-- The lines of the day file `n` of a tree, none if it has no such file. -/
+def linesOf (t : Tree) (n : String) : List String :=
+  ((t.days.find? (·.1 == n)).map (·.2)).getD []
+
+/-- The records of a tree: the lines of its day files that parse, then its record files that pass
+`recordFile`. -/
+def records (parse : String → Except String Record) (t : Tree) : List Record :=
+  t.days.flatMap (fun d => d.2.filterMap fun l => (parse l).toOption) ++
+    t.files.filterMap fun f => (recordFile parse f.2.1 f.2.2).toOption
+
+/-- The records of the lines `ls` of the file `f`, each with its file and line number, the first
+line numbered `i`. -/
+def lineRecords (parse : String → Except String Record) (f : String) :
+    Nat → List String → List (String × Nat × Record)
+  | _, [] => []
+  | i, l :: ls =>
+    match parse l with
+    | .ok r => (f, i, r) :: lineRecords parse f (i + 1) ls
+    | .error _ => lineRecords parse f (i + 1) ls
+
+/-- The problems of the lines `ls` of the file `f`: each line `parse` refuses, at its number. -/
+def lineErrors (parse : String → Except String Record) (f : String) :
+    Nat → List String → List Problem
+  | _, [] => []
+  | i, l :: ls =>
+    match parse l with
+    | .ok _ => lineErrors parse f (i + 1) ls
+    | .error e => ⟨f, i, e⟩ :: lineErrors parse f (i + 1) ls
+
+/-- The records of a tree under `dir`, each with the file and line it is at. -/
+def located (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
+    List (String × Nat × Record) :=
+  t.days.flatMap (fun d => lineRecords parse (dir / d.1).toString 1 d.2) ++
+    t.files.filterMap fun f =>
+      match recordFile parse f.2.1 f.2.2 with
+      | .ok r => some ((dir / f.1 / f.2.1).toString, 1, r)
+      | .error _ => none
+
+theorem lineRecords_map (parse : String → Except String Record) (f : String) (i : Nat)
+    (ls : List String) :
+    (lineRecords parse f i ls).map (·.2.2) = ls.filterMap fun l => (parse l).toOption := by
+  induction ls generalizing i with
+  | nil => rfl
+  | cons l ls ih =>
+    simp only [lineRecords, List.filterMap_cons]
+    cases parse l <;> simp [Except.toOption, ih]
+
+/-- The located records are the records. -/
+theorem located_map (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
+    (located parse dir t).map (·.2.2) = records parse t := by
+  simp only [located, records, List.map_append, List.map_flatMap, lineRecords_map,
+    List.map_filterMap]
+  congr 1
+  congr 1
+  funext f
+  cases recordFile parse f.2.1 f.2.2 <;> rfl
+
+theorem lineErrors_eq_nil {parse : String → Except String Record} {f : String} {i : Nat}
+    {ls : List String} (h : lineErrors parse f i ls = []) : ∀ l ∈ ls, ∃ r, parse l = .ok r := by
+  induction ls generalizing i with
+  | nil => simp
+  | cons l ls ih =>
+    unfold lineErrors at h
+    intro x hx
+    split at h
+    · rename_i r hr
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact ⟨r, hr⟩
+      · exact ih h x hx
+    · cases h
+
+/-- The problem of one record file, if it has one: its folder is not a date, or `recordFile`
+refuses it. -/
+def fileProblem (parse : String → Except String Record) (dir : System.FilePath)
+    (f : String × String × String) : Option Problem :=
+  let p := (dir / f.1 / f.2.1).toString
+  if isDate f.1 = false then
+    some ⟨p, 1, "a record file must be in a folder named by its date, YYYY-MM-DD " ++
+      "(ops/runs/README.md)"⟩
+  else
+    match recordFile parse f.2.1 f.2.2 with
+    | .ok _ => none
+    | .error e => some ⟨p, 1, e⟩
+
+/-- Every line of a day file that is not a record, and every record file that is refused. -/
+def parseProblems (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
+    List Problem :=
+  t.days.flatMap (fun d => lineErrors parse (dir / d.1).toString 1 d.2) ++
+    t.files.filterMap (fileProblem parse dir)
+
+def keyText (r : Record) : String :=
+  s!"task {quote r.task}, role {quote r.role}, attempt {r.attempt}"
+
+/-- The first record of a tree whose key an earlier record has, located by `dupAt?`. -/
+def dupProblems (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
+    List Problem :=
+  let recs := located parse dir t
+  match dupAt? (recs.map fun x => x.2.2.key) with
+  | none => []
+  | some (i, j) =>
+    -- The positions are in `recs`, and hold one key, by `dupAt?_spec`.
+    let (fi, li, r) := recs[i]!
+    let (fj, lj, _) := recs[j]!
+    [⟨fj, lj, s!"a second record for {keyText r}; the first is at {fi}:{li}. An attempt has " ++
+      "one record: a correction goes in the next attempt's record. Union keeps both versions " ++
+      "of an edited day-file line (ops/runs/README.md)"⟩]
+
+/-- What the head `h` lost or added against the merge base `b`: a day-file line of the base that
+the head's file of the same name lacks (`appendOnly`, located by `firstMissing?`), a day file the
+base lacks, and a record file of the base that the head lacks or holds with other text. -/
+def keptProblems (dir : System.FilePath) (b h : Tree) : List Problem :=
+  b.days.filterMap (fun d =>
+    let hl := linesOf h d.1
+    if appendOnly d.2 hl then none
+    else
+      -- `some` here, by `firstMissing?_eq_none_iff`; the line it names is right by
+      -- `firstMissing?_spec`.
+      let i := (firstMissing? d.2 hl).getD 0
+      let what := if h.days.any (·.1 == d.1) then "is missing from this file" else
+        "is missing: the file was deleted"
+      some ⟨(dir / d.1).toString, i + 1, s!"line {i + 1} of the merge-base version {what}. " ++
+        "Run-log lines are append-only: a line already on the base branch may not be edited " ++
+        "or deleted (ops/runs/README.md)"⟩) ++
+  h.days.filterMap (fun d =>
+    if b.days.any (·.1 == d.1) then none
+    else some ⟨(dir / d.1).toString, 1, "a new day file. Each attempt's record goes in its own " ++
+      "file, ops/runs/<date>/<task>-<role>-<attempt>.json (ops/runs/README.md)"⟩) ++
+  b.files.filterMap (fun f =>
+    if h.files.contains f then none
+    else
+      let what := if h.files.any (fun g => g.1 == f.1 && g.2.1 == f.2.1) then "was changed" else
+        "was deleted"
+      some ⟨(dir / f.1 / f.2.1).toString, 1, s!"this record file is on the base branch and " ++
+        s!"{what}. A record file never changes once it is on main: a correction goes in the " ++
+        "note of the next attempt's record (ops/runs/README.md)"⟩)
+
+/-- The whole check: the records parse, no two share a key, and, given the merge-base tree, the
+head keeps it (`keptProblems`). `problems_eq_nil` states what an empty result means. -/
+def problems (parse : String → Except String Record) (dir : System.FilePath) (base : Option Tree)
+    (head : Tree) : List Problem :=
+  parseProblems parse dir head ++ dupProblems parse dir head ++
+    match base with
+    | some b => keptProblems dir b head
+    | none => []
+
+theorem parseProblems_eq_nil {parse : String → Except String Record} {dir : System.FilePath}
+    {t : Tree} (h : parseProblems parse dir t = []) :
+    (∀ d ∈ t.days, ∀ l ∈ d.2, ∃ r, parse l = .ok r) ∧
+      (∀ f ∈ t.files, isDate f.1 = true ∧ ∃ r, recordFile parse f.2.1 f.2.2 = .ok r) := by
+  rw [parseProblems, List.append_eq_nil_iff, List.flatMap_eq_nil_iff,
+    List.filterMap_eq_nil_iff] at h
+  refine ⟨fun d hd => lineErrors_eq_nil (h.1 d hd), fun f hf => ?_⟩
+  have hp := h.2 f hf
+  unfold fileProblem at hp
+  split at hp
+  · cases hp
+  · rename_i hd
+    refine ⟨by simpa using hd, ?_⟩
+    split at hp
+    · rename_i r hr
+      exact ⟨r, hr⟩
+    · cases hp
+
+theorem dupProblems_eq_nil {parse : String → Except String Record} {dir : System.FilePath}
+    {t : Tree} (h : dupProblems parse dir t = []) : noDupKeys (records parse t) = true := by
+  dsimp only [dupProblems] at h
+  split at h
+  · rename_i hn
+    rw [noDupKeys, ← located_map parse dir, List.map_map, Option.isNone_iff_eq_none]
+    exact hn
+  · cases h
+
+theorem keptProblems_eq_nil {dir : System.FilePath} {b h : Tree} (hk : keptProblems dir b h = []) :
+    (∀ d ∈ b.days, appendOnly d.2 (linesOf h d.1) = true) ∧
+      (∀ d ∈ h.days, ∃ d' ∈ b.days, d'.1 = d.1) ∧ (∀ f ∈ b.files, f ∈ h.files) := by
+  simp only [keptProblems, List.append_eq_nil_iff, List.filterMap_eq_nil_iff] at hk
+  obtain ⟨⟨h1, h2⟩, h3⟩ := hk
+  refine ⟨fun d hd => ?_, fun d hd => ?_, fun f hf => ?_⟩
+  · have := h1 d hd
+    split at this
+    · assumption
+    · cases this
+  · have := h2 d hd
+    split at this
+    · rename_i ha
+      obtain ⟨d', hd', he⟩ := List.any_eq_true.mp ha
+      exact ⟨d', hd', beq_iff_eq.mp he⟩
+    · cases this
+  · have := h3 f hf
+    split at this
+    · exact List.contains_iff_mem.mp (by assumption)
+    · cases this
+
+/-- **Every merge-base record is kept.** When each base day file's lines are still in the head
+file of the same name, as often (`appendOnly`), and each base record file is in the head with the
+same text, every record of the base is a record of the head, for any parser. -/
+theorem records_kept (parse : String → Except String Record) {b h : Tree}
+    (hdays : ∀ d ∈ b.days, appendOnly d.2 (linesOf h d.1) = true)
+    (hfiles : ∀ f ∈ b.files, f ∈ h.files) :
+    ∀ r ∈ records parse b, r ∈ records parse h := by
+  intro r hr
+  simp only [records, List.mem_append, List.mem_flatMap, List.mem_filterMap] at hr ⊢
+  rcases hr with ⟨d, hd, l, hl, hp⟩ | ⟨f, hf, hp⟩
+  · left
+    have hlh : l ∈ linesOf h d.1 := by
+      have := appendOnly_iff_count.mp (hdays d hd) l
+      exact List.count_pos_iff.mp (Nat.lt_of_lt_of_le (List.count_pos_iff.mpr hl) this)
+    unfold linesOf at hlh
+    cases hfind : h.days.find? (fun x => x.1 == d.1) with
+    | none => simp [hfind] at hlh
+    | some d' =>
+      simp only [hfind, Option.map_some, Option.getD_some] at hlh
+      exact ⟨d', List.mem_of_find?_eq_some hfind, l, hlh, hp⟩
+  · exact Or.inr ⟨f, hfiles f hf, hp⟩
+
+/-- **What a pass means.** When `problems` finds nothing: no two records of the head, in day files
+and record files together, share a key; every line of a head day file is a record; every head
+record file is in a folder named by a date and passes `recordFile`, so it is one line, one record,
+named by its key (`recordFile_ok`). Given the merge-base tree `b`, also every record of `b` is a
+record of the head (`records_kept`), and the head has no day file that `b` lacks. -/
+theorem problems_eq_nil (parse : String → Except String Record) (dir : System.FilePath)
+    {base : Option Tree} {h : Tree} (hp : problems parse dir base h = []) :
+    noDupKeys (records parse h) = true ∧
+      (∀ d ∈ h.days, ∀ l ∈ d.2, ∃ r, parse l = .ok r) ∧
+      (∀ f ∈ h.files, isDate f.1 = true ∧ ∃ r, recordFile parse f.2.1 f.2.2 = .ok r) ∧
+      (∀ b, base = some b → (∀ r ∈ records parse b, r ∈ records parse h) ∧
+        ∀ d ∈ h.days, ∃ d' ∈ b.days, d'.1 = d.1) := by
+  unfold problems at hp
+  rw [List.append_eq_nil_iff, List.append_eq_nil_iff] at hp
+  obtain ⟨⟨hpar, hdup⟩, hkept⟩ := hp
+  obtain ⟨hl, hf⟩ := parseProblems_eq_nil hpar
+  refine ⟨dupProblems_eq_nil hdup, hl, hf, fun b hb => ?_⟩
+  subst hb
+  obtain ⟨k1, k2, k3⟩ := keptProblems_eq_nil hkept
+  exact ⟨records_kept parse k1 k3, k2⟩
+
+/-! ## Record files, checked by the kernel -/
+
+example : fileName ("ci-escape-68", "builder", 12) = "ci-escape-68-builder-12.json" := by decide
+example : safeTask "P1-006" = true ∧ safeTask ".x" = false ∧ safeTask "-x" = false ∧
+    safeTask "a/b" = false ∧ safeTask "" = false ∧ safeRole "red-team" = true ∧
+    safeRole "" = false ∧ safeRole "a b" = false := by decide
+example : isDate "2026-11-09" = true ∧ isDate "2026-1-09" = false ∧ isDate "notes" = false := by
+  decide
+example : singleLine? "{}\n" = some "{}" ∧ singleLine? "{}" = some "{}" ∧
+    singleLine? "{}\n{}\n" = none ∧ singleLine? "" = none ∧ singleLine? "\n" = none ∧
+    singleLine? "{}\n\n" = none := by decide
+
 def outcomes : List String := ["in-review", "merged", "stuck", "counterexample", "abandoned"]
 
 open Lean in
@@ -439,30 +864,66 @@ def parseRecord (line : String) : Except String Record := do
     unless isStr v do throw s!"field {quote "note"} must be a string"
   return { task, role, attempt }
 
-/-- The names of the entries directly in `dir` that end in `.ndjson`, sorted. This is the set
-`.gitattributes` merges with union: `ops/runs/*.ndjson` does not match in subdirectories, and its
-`*` also matches a name that starts with a dot or is empty. -/
-def ndjsonNames (dir : System.FilePath) : IO (Array String) := do
-  let es ← dir.readDir
-  let ns := es.filterMap fun e => if e.fileName.endsWith ".ndjson" then some e.fileName else none
-  return ns.qsort (· < ·)
-
-/-- The lines of a run-log file, or why it cannot be read. A symlink is refused, so the check
+/-- The text of a run-log file, or why it cannot be read. A symlink is refused, so the check
 never reads, or prints part of, a file outside the directory. -/
-def readLines (path : System.FilePath) : IO (Except String (List String)) := do
+def readText (path : System.FilePath) : IO (Except String String) := do
   let md ← path.symlinkMetadata
   if md.type != .file then
     return .error "not a regular file; run-log files must be plain files, not symlinks or directories"
   match String.fromUTF8? (← IO.FS.readBinFile path) with
   | none => return .error "not valid UTF-8"
-  | some s => return .ok (splitLines s)
+  | some s => return .ok s
 
-private def keyText (r : Record) : String :=
-  s!"task {quote r.task}, role {quote r.role}, attempt {r.attempt}"
+/-- The lines of a day file, or why it cannot be read. -/
+def readLines (path : System.FilePath) : IO (Except String (List String)) :=
+  return (← readText path).map splitLines
 
-/-- Run the check on the `*.ndjson` files in `head`: every line parses (`parseRecord`), no two
-records share a key (`noDupKeys`, located by `dupAt?`), and, given `base`, every line of each base
-file is still in the head file of the same name (`appendOnly`, located by `firstMissing?`). -/
+/-- The entries directly in `dir`, sorted by name. -/
+def sortedEntries (dir : System.FilePath) : IO (Array IO.FS.DirEntry) :=
+  return (← dir.readDir).qsort (·.fileName < ·.fileName)
+
+/-- Read a run-log directory into a `Tree`. A name directly in `dir` that ends in `.ndjson` is a
+day file: the set `.gitattributes` merges with union, whose `*` also matches a name that starts
+with a dot. A directory directly in `dir`, not a symlink to one, is a folder of record files: each
+entry in it whose name ends in `.json`. `problems` checks the folder's name and the files.
+
+It also returns the problems with what it cannot read or what does not belong, and the paths it
+could not read. A problem names its path under `shown`, the head directory, so that an annotation
+for the merge-base copy (`isBase`) points into the repository. In the merge base only a day or
+record file that cannot be read is a problem, since `main` is checked on its own push. -/
+def readTree (dir shown : System.FilePath) (isBase : Bool) :
+    IO (Tree × Array Problem × Array String) := do
+  let pre := if isBase then "the merge-base copy: " else ""
+  let mut days : Array (String × List String) := #[]
+  let mut files : Array (String × String × String) := #[]
+  let mut ps : Array Problem := #[]
+  let mut bad : Array String := #[]
+  for e in ← sortedEntries dir do
+    let n := e.fileName
+    let p := dir / n
+    let f := (shown / n).toString
+    let ty := (← p.symlinkMetadata).type
+    if n.endsWith ".ndjson" then
+      match ← readLines p with
+      | .ok ls => days := days.push (n, ls)
+      | .error err => ps := ps.push ⟨f, 1, pre ++ err⟩; bad := bad.push f
+    else if ty == .dir then
+      for e' in ← sortedEntries p do
+        let q := (shown / n / e'.fileName).toString
+        if e'.fileName.endsWith ".json" then
+          match ← readText (p / e'.fileName) with
+          | .ok s => files := files.push (n, e'.fileName, s)
+          | .error err => ps := ps.push ⟨q, 1, pre ++ err⟩; bad := bad.push q
+        else unless isBase do
+          ps := ps.push ⟨q, 1, "does not belong in a run-log folder, which holds only record " ++
+            "files <task>-<role>-<attempt>.json (ops/runs/README.md)"⟩
+    else unless isBase || (n == "README.md" && ty == .file) do
+      ps := ps.push ⟨f, 1, "does not belong in the run log, which holds README.md, the day files " ++
+        "<date>.ndjson and the folders <date>/ of record files (ops/runs/README.md)"⟩
+  return ({ days := days.toList, files := files.toList }, ps, bad)
+
+/-- Run the check on the run-log directory `head`, given the merge base's copy `base` on a pull
+request: `readTree` reads both, and `problems` decides (`problems_eq_nil`). -/
 def check (base : Option System.FilePath) (head : System.FilePath) : IO UInt32 := do
   for d in base.toList ++ [head] do
     let isDir ← try pure ((← d.symlinkMetadata).type == .dir) catch _ => pure false
@@ -470,59 +931,25 @@ def check (base : Option System.FilePath) (head : System.FilePath) : IO UInt32 :
       let msg := s!"run-log directory {quote d.toString} is missing, or is not a plain directory"
       IO.println s!"::error::{escapeData (oneLine msg)}"
       return 1
-  let mut problems : Array Problem := #[]
-  let mut recs : Array (String × Nat × Record) := #[]
-  let mut headLines : List (String × List String) := []
-  let headNames ← ndjsonNames head
-  for n in headNames do
-    let f := (head / n).toString
-    match ← readLines (head / n) with
-    | .error e => problems := problems.push ⟨f, 1, e⟩
-    | .ok ls =>
-      headLines := headLines ++ [(n, ls)]
-      for (l, i) in ls.zipIdx do
-        match parseRecord l with
-        | .error e => problems := problems.push ⟨f, i + 1, e⟩
-        | .ok r => recs := recs.push (f, i + 1, r)
-  let mut compared := 0
-  if let some b := base then
-    for n in ← ndjsonNames b do
-      let f := (head / n).toString
-      match ← readLines (b / n) with
-      | .error e => problems := problems.push ⟨f, 1, s!"the merge-base copy: {e}"⟩
-      | .ok bl =>
-        -- A head file that exists but could not be read is reported above.
-        if headNames.contains n && !(headLines.any (·.1 == n)) then continue
-        let hl := (headLines.find? (·.1 == n)).map (·.2) |>.getD []
-        compared := compared + 1
-        unless appendOnly bl hl do
-          -- `some` here, by `firstMissing?_eq_none_iff`; the line it names is right by
-          -- `firstMissing?_spec`.
-          let i := (firstMissing? bl hl).getD 0
-          let what := if headNames.contains n then "is missing from this file" else
-            "is missing: the file was deleted"
-          problems := problems.push ⟨f, i + 1, s!"line {i + 1} of the merge-base version {what}. " ++
-            "Run-log lines are append-only: a line already on the base branch may not be edited " ++
-            "or deleted (ops/runs/README.md)"⟩
-  let rs := recs.toList.map (·.2.2)
-  unless noDupKeys rs do
-    match dupAt? (rs.map Record.key) with
-    | some (i, j) =>
-      let (fi, li, r) := recs[i]!
-      let (fj, lj, _) := recs[j]!
-      problems := problems.push ⟨fj, lj, s!"a second record for {keyText r}; the first is at " ++
-        s!"{fi}:{li}. Union keeps both versions of an edited line. Run-log lines are " ++
-        "append-only, with one record per attempt (ops/runs/README.md)"⟩
-    | none => -- unreachable: `noDupKeys_iff` and `dupAt?_eq_none_iff`
-      problems := problems.push ⟨head.toString, 1, "duplicate key with no location"⟩
-  if problems.isEmpty then
-    let vs := if base.isSome then s!", every merge-base line kept ({compared} file(s) compared)"
-      else ""
-    IO.println (s!"run log OK: {headNames.size} file(s), {rs.length} record(s), " ++
-      s!"one per (task, role, attempt){vs}")
+  let (h, hps, hbad) ← readTree head head false
+  let mut ps := hps
+  let mut b? : Option Tree := none
+  if let some bd := base then
+    let (b, bps, _) ← readTree bd head true
+    ps := ps ++ bps
+    b? := some b
+  -- A head file that could not be read is reported above, not again as missing.
+  ps := ps ++ ((problems parseRecord head b? h).filter fun p => !hbad.contains p.file).toArray
+  if ps.isEmpty then
+    let vs := match b? with
+      | some b => s!", every merge-base line and record file kept " ++
+          s!"({b.days.length + b.files.length} file(s) compared)"
+      | none => ""
+    IO.println (s!"run log OK: {h.days.length + h.files.length} file(s), " ++
+      s!"{(records parseRecord h).length} record(s), one per (task, role, attempt){vs}")
     return 0
-  for p in problems do IO.println p.render
-  IO.println s!"{problems.size} run-log problem(s); see ops/runs/README.md"
+  for p in ps do IO.println p.render
+  IO.println s!"{ps.size} run-log problem(s); see ops/runs/README.md"
   return 1
 
 def parseArgs : List String → Option String → Option String →

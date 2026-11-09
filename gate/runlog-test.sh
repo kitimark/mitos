@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tests for `mitos-gate runlog` (gate/MitosGate/RunLog.lean) on scratch directories, plus a replay
-# of an edit and an append merged by git's union driver with the repository's .gitattributes, and
+# Tests for `mitos-gate runlog` (gate/MitosGate/RunLog.lean) on scratch directories, plus replays on
+# real git with the repository's .gitattributes: an edit and an append to a day file merged by
+# git's union driver, and record files (one per attempt) rebased as the PR updater rebases. Also
 # the same I/O-error case for `mitos-gate lock-models` (gate/Main.lean).
 # Run from anywhere: gate/runlog-test.sh
 set -euo pipefail
@@ -18,6 +19,13 @@ out="$tmp/out"
 # A valid record for task $1, attempt $2, with an optional note $3.
 rec() {
   printf '{"task":"%s","role":"builder","model":"m","attempt":%s,"iterations":1,"wall_min":2,"tokens":null,"errors_by_kind":{"unsolved_goals":1},"lint_hits":[],"escalations":["hint"],"outcome":"in-review","note":"%s"}\n' "$1" "$2" "${3:-}"
+}
+
+# put <dir> <date> <task> <attempt> [note]: a record file under its own name,
+# <task>-builder-<attempt>.json.
+put() {
+  mkdir -p "$1/$2"
+  rec "$3" "$4" "${5:-}" >"$1/$2/$3-builder-$4.json"
 }
 
 # expect <name> <exit code> <grep -E pattern or ""> <runlog args...>
@@ -114,7 +122,7 @@ fresh newfile
 rec A 1 >"$b/d1.ndjson"
 rec A 1 >"$h/d1.ndjson"
 { rec B 1; rec C 1; } >"$h/d2.ndjson"
-expect "a new file passes" 0 '^run log OK: 2 file\(s\), 3 record\(s\)' --base "$b" --head "$h"
+expect "a new day file fails" 1 "^::error file=$h/d2.ndjson,line=1::a new day file. Each attempt's record goes in its own file" --base "$b" --head "$h"
 
 fresh order
 { rec A 1; rec B 1; rec C 1; } >"$b/d1.ndjson"
@@ -129,9 +137,10 @@ expect "a last line without a newline is a line" 0 '^run log OK: 1 file\(s\), 2 
 fresh other
 rec A 1 >"$h/d1.ndjson"
 echo 'not json' >"$h/README.md"
+expect "README.md is not read" 0 '^run log OK: 1 file\(s\), 1 record\(s\)' --head "$h"
 mkdir "$h/sub"
 echo 'not json' >"$h/sub/x.ndjson"
-expect "only *.ndjson directly in the directory is read" 0 '^run log OK: 1 file\(s\)' --head "$h"
+expect "a day file in a folder does not belong" 1 "^::error file=$h/sub/x.ndjson,line=1::does not belong in a run-log folder" --head "$h"
 
 fresh hidden
 echo 'not json' >"$h/.ndjson"
@@ -151,6 +160,137 @@ if grep -q secret "$out"; then echo "FAIL symlink target printed"; fail=$((fail 
 fresh utf8
 printf '\xff\xfe\n' >"$h/d1.ndjson"
 expect "invalid UTF-8 fails" 1 "line=1::not valid UTF-8" --head "$h"
+
+# Record files: ops/runs/<date>/<task>-<role>-<attempt>.json, one record each.
+fresh files
+rec A 1 >"$b/d1.ndjson"
+put "$b" 2026-11-10 B 1
+rec A 1 >"$h/d1.ndjson"
+put "$h" 2026-11-10 B 1
+put "$h" 2026-11-10 C 1
+put "$h" 2026-11-11 B 2
+echo 'not json' >"$h/README.md"
+expect "record files pass next to a day file" 0 '^run log OK: 4 file\(s\), 4 record\(s\).*every merge-base line and record file kept \(2 file\(s\) compared\)' --base "$b" --head "$h"
+rec A 1 | sed 's/"builder"/"red-team"/' >"$h/2026-11-11/A-red-team-1.json"
+expect "the role is part of the name" 0 '^run log OK: 5 file\(s\), 5 record\(s\)' --base "$b" --head "$h"
+
+fresh nonl1
+mkdir -p "$h/2026-11-10"
+rec A 1 | tr -d '\n' >"$h/2026-11-10/A-builder-1.json"
+expect "a record file without a final newline passes" 0 '^run log OK: 1 file\(s\), 1 record\(s\)' --head "$h"
+
+fresh twolines
+mkdir -p "$h/2026-11-10"
+{ rec A 1; rec A 1; } >"$h/2026-11-10/A-builder-1.json"
+expect "a record file with two lines fails" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::a record file holds one record on one line" --head "$h"
+
+fresh emptyfile
+mkdir -p "$h/2026-11-10"
+: >"$h/2026-11-10/A-builder-1.json"
+expect "an empty record file fails" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::a record file holds one record on one line" --head "$h"
+
+fresh blankafter
+mkdir -p "$h/2026-11-10"
+{ rec A 1; echo; } >"$h/2026-11-10/A-builder-1.json"
+expect "a blank line after the record fails" 1 "line=1::a record file holds one record on one line" --head "$h"
+
+fresh badjson
+mkdir -p "$h/2026-11-10"
+echo '{"task":"A",' >"$h/2026-11-10/A-builder-1.json"
+expect "a record file that is not JSON fails" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::the line is not valid JSON" --head "$h"
+
+fresh badname
+mkdir -p "$h/2026-11-10"
+rec A 1 >"$h/2026-11-10/A-builder-2.json"
+expect "a file not named by its record's key fails" 1 "^::error file=$h/2026-11-10/A-builder-2.json,line=1::the file must be named \"A-builder-1.json\", from its record's task, role and attempt" --head "$h"
+
+fresh unsafe
+mkdir -p "$h/2026-11-10"
+rec 'a b' 1 >"$h/2026-11-10/a b-builder-1.json"
+expect "a task with a blank fails" 1 "file=$h/2026-11-10/a b-builder-1.json,line=1::task \"a b\" must start with a letter or a digit" --head "$h"
+expect "unsafe names are refused one by one" 1 '^1 run-log problem' --head "$h"
+rec '.x' 1 >"$h/2026-11-10/.x-builder-1.json"
+expect "a task that starts with a dot fails" 1 "file=$h/2026-11-10/.x-builder-1.json,line=1::task \".x\" must start" --head "$h"
+rec 'P1/2' 1 >"$h/2026-11-10/P1-builder-1.json"
+expect "a task with a slash fails" 1 "file=$h/2026-11-10/P1-builder-1.json,line=1::task \"P1/2\" must start" --head "$h"
+rec B 1 | sed 's/"builder"/""/' >"$h/2026-11-10/B--1.json"
+expect "an empty role fails" 1 "file=$h/2026-11-10/B--1.json,line=1::role \"\" must not be empty" --head "$h"
+
+fresh notdate
+mkdir -p "$h/notes"
+rec A 1 >"$h/notes/A-builder-1.json"
+expect "a record file outside a date folder fails" 1 "^::error file=$h/notes/A-builder-1.json,line=1::a record file must be in a folder named by its date" --head "$h"
+
+fresh stray
+rec A 1 >"$h/d1.ndjson"
+echo x >"$h/notes.txt"
+expect "a stray file fails" 1 "^::error file=$h/notes.txt,line=1::does not belong in the run log" --head "$h"
+rm "$h/notes.txt"
+mkdir -p "$h/2026-11-10/sub"
+expect "a folder in a day folder fails" 1 "^::error file=$h/2026-11-10/sub,line=1::does not belong in a run-log folder" --head "$h"
+rmdir "$h/2026-11-10/sub"
+echo x >"$h/2026-11-10/.hidden"
+expect "a stray file in a day folder fails" 1 "^::error file=$h/2026-11-10/.hidden,line=1::does not belong in a run-log folder" --head "$h"
+
+# A folder named README.md is a folder like any other, so a record in it is not in a date folder.
+# (An empty folder passes, but git keeps no empty folder.)
+fresh readmedir
+mkdir "$h/README.md"
+rec A 1 >"$h/README.md/A-builder-1.json"
+expect "a README.md that is a folder is not skipped" 1 "^::error file=$h/README.md/A-builder-1.json,line=1::a record file must be in a folder named by its date" --head "$h"
+
+fresh readmelink
+ln -s /dev/null "$h/README.md"
+expect "a README.md that is a symlink fails" 1 "^::error file=$h/README.md,line=1::does not belong in the run log" --head "$h"
+
+fresh jsondir
+mkdir -p "$h/2026-11-10/A-builder-1.json"
+expect "a folder named like a record file fails" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::not a regular file" --head "$h"
+
+fresh symlinkrec
+echo 'secret' >"$tmp/symlinkrec/outside"
+mkdir -p "$h/2026-11-10"
+ln -s "$tmp/symlinkrec/outside" "$h/2026-11-10/A-builder-1.json"
+expect "a symlinked record file is refused, not read" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::not a regular file" --head "$h"
+if grep -q secret "$out"; then echo "FAIL symlinked record file printed"; fail=$((fail + 1)); fi
+
+fresh symlinkfolder
+mkdir -p "$tmp/symlinkfolder/real"
+rec A 1 >"$tmp/symlinkfolder/real/A-builder-1.json"
+ln -s "$tmp/symlinkfolder/real" "$h/2026-11-10"
+expect "a symlinked day folder is refused, not read" 1 "^::error file=$h/2026-11-10,line=1::does not belong in the run log" --head "$h"
+
+fresh dupdays
+put "$h" 2026-11-10 A 1 first
+put "$h" 2026-11-11 A 1 second
+expect "one attempt on two days fails" 1 "^::error file=$h/2026-11-11/A-builder-1.json,line=1::a second record for task \"A\", role \"builder\", attempt 1; the first is at $h/2026-11-10/A-builder-1.json:1" --head "$h"
+
+fresh duplegacy
+rec A 1 >"$h/d1.ndjson"
+put "$h" 2026-11-10 A 1 again
+expect "one attempt in a day file and a record file fails" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::a second record for task \"A\", role \"builder\", attempt 1; the first is at $h/d1.ndjson:1" --head "$h"
+
+fresh changed
+put "$b" 2026-11-10 A 1 first
+put "$h" 2026-11-10 A 1 second
+expect "a changed base record file fails" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::this record file is on the base branch and was changed. A record file never changes" --base "$b" --head "$h"
+
+fresh deleted
+put "$b" 2026-11-10 A 1
+put "$b" 2026-11-10 B 1
+put "$h" 2026-11-10 B 1
+expect "a deleted base record file fails" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::this record file is on the base branch and was deleted" --base "$b" --head "$h"
+
+fresh moved
+put "$b" 2026-11-10 A 1
+put "$h" 2026-11-11 A 1
+expect "a base record file moved to another day fails" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::this record file is on the base branch and was deleted" --base "$b" --head "$h"
+
+fresh basesymlink
+mkdir -p "$b/2026-11-10"
+ln -s /dev/null "$b/2026-11-10/A-builder-1.json"
+put "$h" 2026-11-10 A 1
+expect "a merge-base record file that cannot be read fails" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::the merge-base copy: not a regular file" --base "$b" --head "$h"
 
 # A hostile key: a newline, an ANSI escape, a bidi override, a workflow command, a zero-width
 # space and joiner, a soft hyphen and a braille blank in the task (JSON escapes, decoded by the
@@ -174,6 +314,22 @@ raw hostile "zero-width space U+200B" $'\xe2\x80\x8b'
 raw hostile "zero-width joiner U+200D" $'\xe2\x80\x8d'
 raw hostile "soft hyphen U+00AD" $'\xc2\xad'
 raw hostile "braille blank U+2800" $'\xe2\xa0\x80'
+
+# The same hostile task in a record file, whose name holds a newline, a workflow command, a bidi
+# override and a comma and colons, and the same in a day folder's name.
+fresh hostilerec
+mkdir -p "$h/2026-11-10" "$h/"$'d\n::warning::injected\xe2\x80\xae'
+rec "$evil" 1 >"$h/2026-11-10/"$'x\n::warning::injected\xe2\x80\xae,a:b.json'
+rec A 1 >"$h/"$'d\n::warning::injected\xe2\x80\xae/A-builder-1.json'
+expect "a hostile record file prints safely" 1 '^::error file=.*/2026-11-10/x\\u\{000A\}%3A%3Awarning%3A%3Ainjected\\u\{202E\}%2Ca%3Ab\.json,line=1::task "x\\u\{000A\}::warning::injected\\u\{001B\}\[2J\\u\{202E\}%250A,y' --head "$h"
+expect "a hostile folder name prints safely" 1 '^::error file=.*/d\\u\{000A\}%3A%3Awarning%3A%3Ainjected\\u\{202E\}/A-builder-1\.json,line=1::a record file must be in a folder named by its date' --head "$h"
+if LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f\x7f]' "$out"; then
+  echo "FAIL hostilerec: raw control character in output"; fail=$((fail + 1))
+fi
+if grep -v '^::error ' "$out" | grep -qv '^[0-9]* run-log problem(s)'; then
+  echo "FAIL hostilerec: a line that is not an annotation or the summary"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
+fi
+raw hostilerec "bidi override U+202E" $'\xe2\x80\xae'
 
 # A file name with a newline, a workflow command and a byte that is not UTF-8. Lean reads the name
 # back with U+FFFD for that byte, so reading the file throws an I/O error that names the path. The
@@ -284,6 +440,157 @@ else
   m=$(grep -n '"wrong"' "$repo/ops/runs/d1.ndjson" | cut -d: -f1)
   second=$((n > m ? n : m))
   expect "replay: the annotation names the later version's line ($second)" 1 "^::error file=$repo/ops/runs/d1.ndjson,line=$second::" --head "$repo/ops/runs"
+fi
+
+# Replays of record files, one per attempt, rebased as .github/scripts/rebase-prs.sh rebases
+# (`checkout --detach`, then `rebase` onto main), with the repository's .gitattributes.
+# pid <rev>: the change id of <rev> against its merge base with main, with git's diff settings
+# pinned so that no local configuration changes it.
+pid() {
+  g -c core.attributesFile=/dev/null diff --no-color --no-ext-diff --no-textconv --no-renames \
+    --full-index --src-prefix=a/ --dst-prefix=b/ "$(g merge-base main "$1")" "$1" |
+    git patch-id --verbatim | cut -d' ' -f1
+}
+# gate <case> <base rev> <head rev>: snapshots of both and the check as ci.yml runs it on a PR.
+gate() {
+  snap "$1-base" "$2"
+  snap "$1-head" "$3"
+  "$bin" runlog --base "$tmp/$1-base/ops/runs" --head "$tmp/$1-head/ops/runs" >"$out" 2>&1 || true
+}
+repo="$tmp/replay-files"
+runs="$repo/ops/runs"
+mkdir -p "$runs" "$repo/src"
+cp "$root/.gitattributes" "$repo/.gitattributes"
+g init -q -b main
+printf 'one\ntwo\nthree\n' >"$repo/src/a.txt"
+rec M 1 >"$runs/2026-11-09.ndjson"
+put "$runs" 2026-11-09 N 1
+g add -A
+g commit -qm base
+
+# The #74 shape: the PR adds its record and a later commit corrects it. Then main gains three
+# records, two in the PR's day folder. The rebase is clean, keeps one file with the correction,
+# and keeps the change id; the rebased PR passes.
+g checkout -qb pr
+printf 'one\ntwo\nthree\nfour\n' >"$repo/src/a.txt"
+put "$runs" 2026-11-10 X 1 first
+g add -A
+g commit -qm "pr: a change and its record"
+put "$runs" 2026-11-10 X 1 corrected
+g commit -qam "pr: correct its own record"
+before=$(pid pr)
+g checkout -q main
+put "$runs" 2026-11-10 Y 1
+put "$runs" 2026-11-10 Z 3
+put "$runs" 2026-11-11 W 1
+g add -A
+g commit -qm "main: three records"
+g checkout -q --detach pr
+if ! g rebase -q main >"$out" 2>&1; then
+  echo "FAIL files replay: the rebase stopped"; sed 's/^/  | /' "$out"; fail=$((fail + 1)); g rebase --abort
+else
+  after=$(pid HEAD)
+  if [ "$before" = "$after" ] && [ -n "$before" ]; then
+    echo "ok   files replay: the change id is kept over the rebase (${before:0:12})"; pass=$((pass + 1))
+  else
+    echo "FAIL files replay: the change id changed, $before -> $after"; fail=$((fail + 1))
+  fi
+  n=$(g ls-tree -r --name-only HEAD ops/runs | grep -c '/X-builder-1\.json$' || true)
+  if [ "$n" = 1 ] && g show HEAD:ops/runs/2026-11-10/X-builder-1.json | grep -q '"note":"corrected"'; then
+    echo "ok   files replay: one file holds the corrected record"; pass=$((pass + 1))
+  else
+    echo "FAIL files replay: $n file(s) for X, or not the corrected one"; fail=$((fail + 1))
+  fi
+  gate rf main HEAD
+  if grep -q '^run log OK: 6 file(s), 6 record(s).*kept (5 file(s) compared)' "$out"; then
+    echo "ok   files replay: the rebased PR passes"; pass=$((pass + 1))
+  else
+    echo "FAIL files replay: the rebased PR does not pass"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
+  fi
+fi
+
+# Two PRs record one attempt on one day with different text: one path, so the rebase stops on an
+# add/add conflict (the updater labels the PR needs-rebase) instead of keeping two records.
+g checkout -q -B same main
+put "$runs" 2026-11-11 V 1 from-pr
+g add -A
+g commit -qm "same: V"
+g checkout -q main
+put "$runs" 2026-11-11 V 1 from-main
+g add -A
+g commit -qm "main: V"
+g checkout -q --detach same
+if g rebase -q main >"$out" 2>&1; then
+  echo "FAIL same-day replay: the rebase succeeded"; fail=$((fail + 1))
+elif g status --porcelain | grep -q '^AA ops/runs/2026-11-11/V-builder-1.json$'; then
+  echo "ok   same-day replay: the rebase stops on an add/add conflict"; pass=$((pass + 1))
+else
+  echo "FAIL same-day replay: no add/add conflict"; g status --porcelain | sed 's/^/  | /'; fail=$((fail + 1))
+fi
+g rebase --abort 2>/dev/null || true
+
+# One attempt on another day: two paths, so git sees nothing; the check across files fails it.
+g checkout -q -B other main~1
+put "$runs" 2026-11-12 V 1 from-other
+g add -A
+g commit -qm "other: V on another day"
+g checkout -q --detach other
+if ! g rebase -q main >"$out" 2>&1; then
+  echo "FAIL other-day replay: the rebase stopped"; sed 's/^/  | /' "$out"; fail=$((fail + 1)); g rebase --abort
+else
+  gate ro main HEAD
+  if grep -q "^::error file=$tmp/ro-head/ops/runs/2026-11-12/V-builder-1.json,line=1::a second record for task \"V\"" "$out"; then
+    echo "ok   other-day replay: the rebased PR fails on the duplicate key"; pass=$((pass + 1))
+  else
+    echo "FAIL other-day replay: no duplicate-key error"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
+  fi
+fi
+
+# The same record already on main, as when a stacked PR's parent landed it: the rebase drops the
+# commit and one file remains.
+g checkout -q -B ident main
+put "$runs" 2026-11-12 U 1 same
+g add -A
+g commit -qm "ident: U"
+g checkout -q main
+put "$runs" 2026-11-12 U 1 same
+g add -A
+g commit -qm "main: U"
+g checkout -q --detach ident
+if ! g rebase -q main >"$out" 2>&1; then
+  echo "FAIL identical replay: the rebase stopped"; sed 's/^/  | /' "$out"; fail=$((fail + 1)); g rebase --abort
+elif [ "$(g rev-parse HEAD)" = "$(g rev-parse main)" ]; then
+  echo "ok   identical replay: the commit is dropped, one file remains"; pass=$((pass + 1))
+else
+  echo "FAIL identical replay: the commit was kept"; fail=$((fail + 1))
+fi
+
+# The transition: a PR that appends to a day file is rebased over main, which gained a record file
+# and another PR's append to that day file. Union keeps both lines, and the rebased PR passes.
+g checkout -q -B leg1 main
+rec L1 1 >>"$runs/2026-11-09.ndjson"
+g commit -qam "leg1: append"
+g checkout -q -B leg2 main
+rec L2 1 >>"$runs/2026-11-09.ndjson"
+g commit -qam "leg2: append"
+g checkout -q main
+put "$runs" 2026-11-12 T 1
+g add -A
+g commit -qm "main: T"
+# leg1 lands: the updater rebases it onto main, and main moves to it.
+g checkout -q --detach leg1
+g rebase -q main
+g branch -qf main HEAD
+g checkout -q --detach leg2
+if ! g rebase -q main >"$out" 2>&1; then
+  echo "FAIL transition replay: the rebase stopped"; sed 's/^/  | /' "$out"; fail=$((fail + 1)); g rebase --abort
+else
+  gate rt main HEAD
+  if grep -q '^run log OK' "$out" && [ "$(grep -c '"task":"L[12]"' "$runs/2026-11-09.ndjson")" = 2 ]; then
+    echo "ok   transition replay: union keeps both appends and the rebased PR passes"; pass=$((pass + 1))
+  else
+    echo "FAIL transition replay"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
+  fi
 fi
 
 echo "$pass passed, $fail failed"
