@@ -76,7 +76,11 @@ elaborates them, so they elaborate the same in every run, whatever other files a
 
 The reader fails closed: every line of the Challenge must be blank, a comment, an `import`, a
 one-line definition hole (`def … := sorry`) or a one-line theorem in the form above, so no line
-that could change what a statement means (`open`, `namespace`, notation) is dropped or moved.
+that could change what a statement means (`open`, `namespace`, notation) is dropped or moved. A
+hole line holds no other `:=` and no line comment, so the value Lean reads is its `sorry`
+(`readLine_hole`). A reader that looked only at the line's ends took `def f : T := 0 -- := sorry`
+and `def f : T := 0 where g : T := sorry` for holes and dropped them, losing the value `0` they
+state (review on #86, round 7).
 
 It reads block comments as Lean does, or refuses the line. Lean ends a block comment at its first
 closer and nests a comment opened inside one, so the line `/- note -/ open Foo` runs `open Foo`,
@@ -258,6 +262,14 @@ theorem openerLine_scan {cs : List Char} {b : Bool} (h : openerLine cs = some b)
 end: a string literal (`"`) or an escaped name (`«`). -/
 def spansLines (cs : List Char) : Bool := cs.any fun c => c == '"' || c == '«'
 
+/-- Whether a code line is a one-line definition hole as Lean reads it: `def … := sorry`, with no
+other `:=` before the `sorry`, so the value is the `sorry` (in `def f : T := 0 where g : T := sorry`
+it is `0`), and no line comment, which would hide the `:= sorry` from Lean
+(`def f : T := 0 -- := sorry`). -/
+def holeLine (cs : List Char) : Bool :=
+  "def ".toList.isPrefixOf cs && sorrySuffix.isSuffixOf cs && !hasPair '-' '-' cs &&
+    !hasPair ':' '=' (cs.take (cs.length - sorrySuffix.length))
+
 def lexError (l : String) : String :=
   s!"the Challenge has a line whose comments, strings or escaped names the refutation reader does not follow: {l}"
 
@@ -276,7 +288,7 @@ def readLine (inDoc : Bool) (l : String) : Except String (Line × Bool) :=
   else if hasPair '/' '-' cs || hasPair '-' '/' cs || spansLines cs then .error (lexError l)
   else if cs.all (· == ' ') then .ok (.keep l, false)
   else if "import ".toList.isPrefixOf cs then .ok (.imp l, false)
-  else if "def ".toList.isPrefixOf cs && sorrySuffix.isSuffixOf cs then .ok (.hole l, false)
+  else if holeLine cs then .ok (.hole l, false)
   else match theoremHole cs with
     | some (n, s) => .ok (.thm n s l, false)
     | none => .error s!"the Challenge has a line the refutation reader does not handle: {l}"
@@ -343,6 +355,35 @@ theorem readLine_comments {inDoc inDoc' : Bool} {l : String} {x : Line}
           split at h
           · exact ok h
           · simp at h
+
+/-- **A line the reader takes as a definition hole is one as Lean reads it**: a line outside a
+comment that `holeLine` takes, kept as it is. So the reader drops no line whose value is not the
+`sorry`, such as one whose `:= sorry` is in a line comment (review on #86, round 7). -/
+theorem readLine_hole {inDoc inDoc' : Bool} {l t : String}
+    (h : readLine inDoc l = .ok (.hole t, inDoc')) :
+    inDoc = false ∧ inDoc' = false ∧ t = l ∧ holeLine l.toList = true := by
+  unfold readLine at h
+  cases inDoc with
+  | true =>
+    simp only [ite_true] at h
+    split at h <;> simp at h
+  | false =>
+    simp only [Bool.false_eq_true, ite_false] at h
+    split at h
+    · split at h <;> simp at h
+    split at h
+    · simp at h
+    split at h
+    · simp at h
+    split at h
+    · simp at h
+    split at h
+    · simp at h
+    split at h
+    · rename_i hh
+      simp only [Except.ok.injEq, Prod.mk.injEq, Line.hole.injEq] at h
+      exact ⟨rfl, h.2.symm, h.1.symm, hh⟩
+    · split at h <;> simp at h
 
 /-! The facts about Lean's block comments that `leanScan` transcribes, checked whenever this
 package builds, as `Mutants.Resolution` checks name resolution: the code after a closer on the same
@@ -885,6 +926,14 @@ def holesSolution (paths : List String) : String :=
 #guard (readChallenge "/-\r\n-/\r\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- -/").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : F \"x := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- \" := 0").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef «Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- » : Nat := 0").toOption == none
+-- A `def` line whose value Lean does not read as the `sorry` is refused, not dropped as a hole
+-- (review on #86, round 7): the `:= sorry` in a line comment, after a value or after the type,
+-- which Lean continues on the next line; and a value before a `where` or a tactic with its own
+-- `:= sorry`.
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := 0 -- := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat -- := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := 0 where g : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := by exact 0 <;> have x : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 -- Lines Lean reads unambiguously are read as Lean reads them: a comment on one line, a closer at
 -- the end of a line comment inside a comment, and an opener whose next character Lean skips.
 #guard (readChallenge "/-- doc -/\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption ==
