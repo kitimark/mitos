@@ -3,6 +3,7 @@ import MitosGate.Imports
 import MitosGate.Lock
 import MitosGate.Accept
 import MitosGate.RunLog
+import MitosGate.ContentId
 
 open MitosGate
 
@@ -19,7 +20,11 @@ def usage : String := "usage:
   mitos-gate accept --workspace <dir> --plugin <Name> --model <Module.const>
                     [--plugin-file <f>] [--paranoid] [--record] [--keep] [--skip-lint]
   mitos-gate runlog [--base <dir>] --head <dir>   run-log records parse, one per (task, role, attempt);
-                                                 with --base, every base line is kept (append-only)"
+                                                 with --base, every base line is kept (append-only)
+  mitos-gate content-id <base> <head> [--verbose]
+                                                 the id a verdict covers: the diff from the merge-base
+                                                 outside ops/runs/*.ndjson, plus the run-log lines the
+                                                 PR adds; refuses a run-log edit"
 
 partial def parseAccept (args : List String) (c : Accept.Config) : Except String Accept.Config :=
   match args with
@@ -102,6 +107,7 @@ def cli (args : List String) : IO UInt32 := do
         IO.eprintln usage; return 2
       Accept.runAccept c
   | "runlog" :: rest => RunLog.cli rest usage
+  | "content-id" :: rest => ContentId.cli rest usage
   | _ => IO.eprintln usage; return 2
 
 /-- `cli`, but an error it throws is printed through `ciLine`, with exit 1. The Lean runtime would
