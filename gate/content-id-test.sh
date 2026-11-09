@@ -289,7 +289,7 @@ heads="62 09a65980a7c56c0c535f906ea98a634cf8be8485 d60080fbadf74efc94a888743a60e
 73 f206d1f2bdf1c084aba8932ea49b1b5a4c034fff 79e5479b3332bc667d7904d62b856b034d6e0a55"
 repo="$root"
 if git -C "$root" rev-parse -q --verify origin/main >/dev/null &&
-  echo "$heads" | awk '{print $2; print $3}' | git -C "$root" cat-file --batch-check | grep -qv ' commit '; then
+  echo "$heads" | awk '{print $2; print $3}' | git -C "$root" cat-file --batch-check | grep -v ' commit ' >/dev/null; then
   echo "skip replay: the morning's heads are not in this clone"
 elif git -C "$root" rev-parse -q --verify origin/main >/dev/null; then
   kept_old=0; kept_new=0; changed=""
