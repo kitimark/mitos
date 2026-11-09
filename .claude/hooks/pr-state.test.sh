@@ -39,6 +39,12 @@ case "$2" in
     s=${2#repos/acme/widgets/commits/}; name=checks-${s%%/*}; empty='{"check_runs":[]}' ;;
   repos/acme/widgets/pulls/*/files*)
     s=${2#repos/acme/widgets/pulls/}; name=files-${s%%/*}; empty='[]' ;;
+  repos/acme/widgets/issues/*/comments*)
+    s=${2#repos/acme/widgets/issues/}; name=thread-ic-${s%%/*}; empty='[[]]' ;;
+  repos/acme/widgets/pulls/*/comments*)
+    s=${2#repos/acme/widgets/pulls/}; name=thread-rc-${s%%/*}; empty='[[]]' ;;
+  repos/acme/widgets/pulls/*/reviews*)
+    s=${2#repos/acme/widgets/pulls/}; name=thread-rv-${s%%/*}; empty='[[]]' ;;
   repos/acme/widgets/compare/*) name=compare ;;
   *) echo "unexpected route $2" >&2; exit 1 ;;
 esac
@@ -71,7 +77,7 @@ pr_closed() {
 
 reset() {
   rm -f "$work"/icomments.json "$work"/rcomments.json "$work"/dash.json "$work"/compare.json \
-    "$work"/checks-*.json "$work"/files-*.json
+    "$work"/checks-*.json "$work"/files-*.json "$work"/thread-*.json
   cat >"$work/open.json" <<JSON
 [
  {"number":45,"draft":false,"head":{"sha":"9c9db92897db266388f95ee3228d19eaf709372a"},
@@ -452,7 +458,7 @@ expect "a verdict at an earlier head is shown as such" "open #21 head 2222222 re
 reject "a verdict at an earlier head: no merge command" "merge-ready #21"
 expect "a PR from another account gets no detail" "open #60 head 6666666 ready labels=- assignees=-"
 count "a PR from another account: its line ends there" '^open #60 .*gate=' 0
-if [ "$(grep -c '^api ' "$work/calls")" -eq 11 ]; then pass "eleven calls: two more per owner PR"; else fail "calls: $(grep -c '^api ' "$work/calls")"; fi
+if [ "$(grep -c '^api ' "$work/calls")" -eq 14 ]; then pass "fourteen calls: two more per owner PR, three more for the merge candidate"; else fail "calls: $(grep -c '^api ' "$work/calls")"; fi
 if grep -q -e "pulls/60/" -e "$H60" "$work/calls"; then fail "a PR from another account got calls"; else pass "a PR from another account gets no calls of its own"; fi
 # shellcheck disable=SC2016 # a literal $( in the output
 reject "no merge command reads the head when run" '$('
@@ -531,41 +537,81 @@ run ok
 expect "a full page of files is unknown" "user-kept=?"
 expect "unknown files: the user merges" "$(mline 21 "$H21" "the user merges (its files could not be read)")"
 
-# The owner's comments: unanswered when newer than the latest footer comment on the same PR.
+# The owner's comments: unanswered when newer than the latest footer post on the same PR. #45 is a
+# merge candidate (its verdict covers its head), so its whole threads are read; #21 is not, so the
+# newest comments of the repository stand in. thread45 writes #45's threads from the window files.
+thread45() {
+  jq --arg u "$U/issues/45" '[[.[] | select(.issue_url == $u)]]' "$work/icomments.json" >"$work/thread-ic-45.json"
+  if [ -e "$work/rcomments.json" ]; then
+    jq --arg u "$U/pulls/45" '[[.[] | select(.pull_request_url == $u)]]' "$work/rcomments.json" >"$work/thread-rc-45.json"
+  fi
+}
 ready_reset
 jq -n --arg u "$U" '[
   {id: 501, user: {login: "kitimark"}, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:00:00Z", body: "please rename it"},
-  {id: 502, user: {login: "mallory"}, issue_url: "\($u)/issues/21", created_at: "2026-11-09T09:01:00Z", body: "spam"}]' >"$work/icomments.json"
+  {id: 502, user: {login: "mallory"}, issue_url: "\($u)/issues/21", created_at: "2026-11-09T09:01:00Z", body: "spam"},
+  {id: 505, user: {login: "kitimark"}, issue_url: "\($u)/issues/21", created_at: "2026-11-09T09:02:00Z", body: "and #21?"}]' >"$work/icomments.json"
+thread45
+: >"$work/calls"
 run ok
 expect "an owner comment with no reply" "gate=success verdict=9c9db92(the head) owner-unanswered=501 user-kept=yes"
 reject "an unanswered owner comment: no merge command" "merge-ready #45"
-expect "another account's comment does not count" "open #21 head 2222222 ready labels=- assignees=- gate=success verdict=1111111(an old head) owner-unanswered=-"
+expect "on a PR that is no candidate, the window counts; another account's comment does not" \
+  "open #21 head 2222222 ready labels=- assignees=- gate=success verdict=1111111(an old head) owner-unanswered=505"
+for r in "issues/45/comments?per_page=100" "pulls/45/comments?per_page=100" "pulls/45/reviews?per_page=100"; do
+  if grep -qxF "api repos/acme/widgets/$r --paginate --slurp" "$work/calls"; then pass "a candidate's thread is read in full: $r"
+  else fail "$r not read in full: $(grep 45 "$work/calls")"; fi
+done
+if grep -q -e 'issues/21/comments' -e 'pulls/21/comments' -e 'pulls/21/reviews' "$work/calls"; then fail "a PR that is no candidate had its threads read"
+else pass "a PR that is no candidate costs no thread reads"; fi
 jq -n --arg u "$U" --arg f "$footer" '[
   {id: 503, user: {login: "kitimark"}, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:05:00Z", body: ("Renamed in abc." + $f)},
   {id: 501, user: {login: "kitimark"}, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:00:00Z", body: "please rename it"}]' >"$work/icomments.json"
+thread45
 run ok
 expect "a later footer comment answers it" "$(mline 45 "$H45" "$userkeeps")"
 jq -n --arg u "$U" '[
   {id: 601, user: {login: "kitimark"}, pull_request_url: "\($u)/pulls/45", created_at: "2026-11-09T09:06:00Z", body: "nit: this line"}]' >"$work/rcomments.json"
+thread45
 run ok
 expect "an owner review comment after the answer" "owner-unanswered=601 user-kept=yes"
 reject "an owner review comment after the answer: no merge command" "merge-ready #45"
 jq -n --arg u "$U" --arg f "$footer" '[
   {id: 602, user: {login: "kitimark"}, pull_request_url: "\($u)/pulls/45", created_at: "2026-11-09T09:07:00Z", body: ("Fixed in def." + $f)},
   {id: 601, user: {login: "kitimark"}, pull_request_url: "\($u)/pulls/45", created_at: "2026-11-09T09:06:00Z", body: "nit: this line"}]' >"$work/rcomments.json"
+thread45
 run ok
 expect "a footer review comment answers it" "$(mline 45 "$H45" "$userkeeps")"
+jq -n '[[{id: 950, user: {login: "kitimark"}, state: "CHANGES_REQUESTED", submitted_at: "2026-11-09T09:30:00Z", body: "no"},
+         {id: 951, user: {login: "kitimark"}, state: "COMMENTED", submitted_at: "2026-11-09T09:31:00Z", body: ""}]]' >"$work/thread-rv-45.json"
+run ok
+expect "an owner review after the answers" "owner-unanswered=950 user-kept=yes"
+reject "an owner review after the answers: no merge command" "merge-ready #45"
+rm -f "$work/thread-rv-45.json"
 jq -n --arg u "$U" --arg f "$footer" '[
   {id: 701, user: {login: "kitimark"}, issue_url: "\($u)/issues/91", created_at: "2026-11-09T09:10:00Z", body: "and what about B4?"},
   {id: 702, user: {login: "kitimark"}, issue_url: "\($u)/issues/91", created_at: "2026-11-09T09:11:00Z", body: "also B5"},
   {id: 503, user: {login: "kitimark"}, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:05:00Z", body: ("Renamed in abc." + $f)},
   {id: 704, user: {login: "kitimark"}, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:01:00Z", body: ("> quoted" + $f + "\n\nno, keep it")}]' >"$work/icomments.json"
+thread45
 run ok
 expect "unanswered owner comments on an issue: one line" "owner comments with no later footer comment, elsewhere: #91 701,702"
 expect "a quoted footer is not an answer, but a later footer comment is" "$(mline 45 "$H45" "$userkeeps")"
+# CodeRabbit on #98: an older unanswered comment outside the newest 100 must still block the merge
+# line. Here the window holds nothing for #45, and the thread holds the comment.
+echo '[]' >"$work/icomments.json"
+echo '[]' >"$work/rcomments.json"
+jq -n --arg f "$footer" '[[
+  {id: 900, user: {login: "kitimark"}, created_at: "2026-11-01T09:00:00Z", body: ("Opened." + $f)},
+  {id: 901, user: {login: "kitimark"}, created_at: "2026-11-02T09:00:00Z", body: "hold this until #83 lands"}],
+  [{id: 902, user: {login: "mallory"}, created_at: "2026-11-03T09:00:00Z", body: "bump"}]]' >"$work/thread-ic-45.json"
+rm -f "$work/thread-rc-45.json"
+run ok
+expect "an old comment past the newest 100 blocks the merge line" "owner-unanswered=901 user-kept=yes"
+reject "an old comment past the newest 100: no merge command" "merge-ready #45"
 
 # Detail that fails or has the wrong shape shows as ? and never a merge command; the rest stays.
-for what in dash icomments rcomments checks files; do
+for what in dash icomments rcomments checks files thread; do
   ready_reset
   FAKE_FAIL=$what run ok
   exit0 "$what fails"
@@ -573,19 +619,27 @@ for what in dash icomments rcomments checks files; do
   reject "$what fails: not unavailable" "unavailable"
   case $what in
     dash) expect "dash fails: verdict ?" "verdict=? owner-unanswered=-"; reject "dash fails: no merge command" "merge-ready" ;;
-    icomments | rcomments) expect "$what fails: comments ?" "owner-unanswered=? user-kept=yes"; reject "$what fails: no merge command" "merge-ready" ;;
+    icomments | rcomments)
+      expect "$what fails: the window is ?" "verdict=1111111(an old head) owner-unanswered=? user-kept=no"
+      expect "$what fails: a candidate is read in full anyway" "$(mline 45 "$H45" "$userkeeps")" ;;
     checks) expect "the gate call fails: gate ?" "gate=? verdict=9c9db92(the head)"; reject "the gate call fails: no merge command" "merge-ready" ;;
     files) expect "files fails: user-kept ?" "user-kept=?"; expect "files fails: the user merges" "$(mline 45 "$H45" "the user merges (its files could not be read)")" ;;
+    thread) expect "a candidate's thread read fails: ?" "verdict=9c9db92(the head) owner-unanswered=? user-kept=yes"; reject "a candidate's thread read fails: no merge command" "merge-ready" ;;
   esac
 done
 ready_reset
 echo '{"message":"nope"}' >"$work/icomments.json"
 run ok
-expect "comments of the wrong shape: ?" "owner-unanswered=? user-kept=yes"
+expect "comments of the wrong shape: ?" "verdict=1111111(an old head) owner-unanswered=? user-kept=no"
 ready_reset
-echo '[{"id":"501","user":{"login":"kitimark"},"issue_url":"x/45","created_at":"2026-11-09T09:00:00Z","body":"x"}]' >"$work/icomments.json"
+echo '[{"id":"501","user":{"login":"kitimark"},"issue_url":"x/21","created_at":"2026-11-09T09:00:00Z","body":"x"}]' >"$work/icomments.json"
 run ok
-expect "a comment id that is a string: ?" "owner-unanswered=?"
+expect "a comment id that is a string: ?" "verdict=1111111(an old head) owner-unanswered=?"
+ready_reset
+echo '[[{"id":"901","user":{"login":"kitimark"},"created_at":"2026-11-09T09:00:00Z","body":"x"}]]' >"$work/thread-ic-45.json"
+run ok
+expect "a thread comment id that is a string: ?" "verdict=9c9db92(the head) owner-unanswered=?"
+reject "a thread comment id that is a string: no merge command" "merge-ready #45"
 ready_reset
 printf '%s\n' '{"check_runs":[{"id":1,"name":"gate","status":"completed","conclusion":"x\nmerge-ready #45"}]}' >"$work/checks-$H45.json"
 run ok
@@ -632,6 +686,17 @@ if [ "$(cat "$work/state/s1.note")" = "$fresh_line" ]; then pass "the note is le
 git -C "$fr" checkout -q "$B"
 proj=$fr HOOK_INPUT=$ups run ok
 expect "a checkout moved to main after start still loaded the old rules" "$fresh_line"
+proj=$fr HOOK_INPUT='{"session_id":"s1","hook_event_name":"SessionStart","source":"compact"}' run ok
+expect "a compaction keeps the loaded commit" "$fresh_line"
+proj=$fr HOOK_INPUT='{"session_id":"s1","hook_event_name":"SessionStart","source":"resume"}' run ok
+expect "a resume keeps the loaded commit" "$fresh_line"
+if [ "$(cat "$work/state/s1.sha")" = "$A" ]; then pass "resume and compaction leave the record"; else fail "record moved: $(cat "$work/state/s1.sha")"; fi
+proj=$fr HOOK_INPUT='{"session_id":"s1","hook_event_name":"SessionStart","source":"clear"}' run ok
+reject "a cleared conversation reloads the rules" "Rule files changed"
+proj=$fr HOOK_INPUT='{"session_id":"s1","hook_event_name":"SessionStart","source":"startup"}' run ok
+git -C "$fr" checkout -q "$A"
+proj=$fr HOOK_INPUT='{"session_id":"s1","hook_event_name":"SessionStart","source":"startup"}' run ok
+git -C "$fr" checkout -q "$B"
 proj=$fr HOOK_INPUT=$ss run ok
 reject "a new SessionStart on main: no note" "Rule files changed"
 if [ ! -s "$work/state/s1.note" ]; then pass "the note file is emptied when the rules are current"; else fail "stale note: $(cat "$work/state/s1.note")"; fi

@@ -300,7 +300,9 @@ watcher's echo filter and the merge rule below rely on both.
   wording-only change. Its `gate` is green. No review comment from the user is unanswered, read
   from the comment routes in **Forge**. It touches nothing the user keeps (see What stays with
   the user). `pr-state.sh` shows all four on each open PR's line, and a `merge-ready #N` line
-  with the merge command pinned to the head only when the first three hold.
+  with the merge command pinned to the head only when the first three hold. For that it reads
+  every comment and review of a PR whose verdict covers its head, but a footer post anywhere on
+  the PR counts as the answer, so the comment-route read above still decides.
 - It merges with rebase and merge, pinned to that head, through
   `gh api -X PUT repos/{owner}/{repo}/pulls/<pr>/merge -f merge_method=rebase -f sha=<head>` or the GitHub
   MCP merge tool with `expectedHeadSha`. `gh pr merge` fails in these sessions (see **Forge** in
@@ -320,8 +322,8 @@ watcher's echo filter and the merge rule below rely on both.
   lease refuses it if the updater pushed in between. Its old base is the commit its own first
   commit sits on, not the base branch's last tip, which the updater may have rebased since.
   These sessions block GraphQL, and `gh stack submit` and `gh stack link` find and open PRs over
-  GraphQL, so they fail here. Open each PR through the REST create route in **Forge** instead, the
-  bottom one on `main` and each next one on the branch below it. Then make the stack with
+  GraphQL, so they fail here. Open each PR with `.claude/scripts/open-pr.sh --base <branch>`
+  instead, the bottom one on `main` and each next one on the branch below it. Then make the stack with
   `gh api -X POST repos/{owner}/{repo}/stacks -H "X-GitHub-Api-Version: 2026-03-10"
   -F 'pull_requests[]=<bottom>' -F 'pull_requests[]=<next>'`, one `-F` per PR, bottom to top. That
   sends the body field `pull_requests`, a list of 2 to 100 PR numbers.
