@@ -123,6 +123,10 @@ g checkout -qB eol2 base
 rec D 1 | tr -d '\n' >>"$repo/ops/runs/d1.ndjson"
 g commit -qam eol2
 differ "a run-log record with and without a final newline gives two ids" "$(cid main eol1)" "$(cid main eol2)"
+g checkout -qB eol3 base
+rec D 1 | sed 's/$/\r/' >>"$repo/ops/runs/d1.ndjson"
+g commit -qam eol3
+differ "a run-log record with and without a carriage return gives two ids" "$(cid main eol1)" "$(cid main eol3)"
 
 # The run-log part ignores where the added lines are.
 g checkout -qB order base
