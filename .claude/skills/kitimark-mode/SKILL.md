@@ -507,11 +507,13 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   tell the user once, in one line.
 - A merge command in a catch-up is the one on `pr-state.sh`'s `merge-ready #N` line. For a PR
   past the ten the hook lists, write the same command, pinned to the head the verdict covers,
-  once its four conditions read true over REST; for a PR in a stack, use the `merge-async`
-  command in **Stacks** with that head. Each merge moves `main` and the updater rebases every
-  open PR, so a command pinned to the old head fails with 409, as on #61 and #62. When that line
-  changes or goes away for a PR waiting on the user's merge, post a new catch-up with the new
-  command, or one that says to hold the merge until a verdict covers the new head.
+  once its first three conditions read true over REST (the fourth, the paths the user keeps,
+  decides who merges, so a PR that touches them gets the command in its catch-up); for a PR in
+  a stack, use the `merge-async` command in **Stacks** with that head. Each merge moves `main`
+  and the updater rebases every open PR, so a command pinned to the old head fails with 409, as
+  on #61 and #62. When that line changes or goes away for a PR waiting on the user's merge,
+  post a new catch-up with the new command, or one that says to hold the merge until a verdict
+  covers the new head.
 - The user may merge before a verdict. The verifier then still runs, on the merged head. Its
   verdict goes in the PR's merged line under the In flight table, such as `#44 merged 09:30 UTC,
   then PASS opus-xhigh at 04fcb83; follow-ups #47`. A FAIL also becomes a `follow-up` issue and a

@@ -6,9 +6,12 @@
 # the body file when it holds claude.ai/code/session_, and reads it back again. The first revision
 # in the PR's edit history still holds the link; deleting it is browser only (#91, call 3).
 #
+# The title is checked the same way: the script refuses a title that holds a session link or a
+# Claude-Session: line before it posts, and the read-backs cover the title as well as the body.
+#
 # Usage: open-pr.sh --head <branch> --title <title> --body-file <file> [--base <branch>] [--draft]
 # The base defaults to main. It prints the PR number and URL and whether the create was rewritten,
-# and exits 1 if any call fails or the body still holds a session link after the PATCH.
+# and exits 1 if any call fails or the title or body still holds a session link after the PATCH.
 # check-no-session-link.sh refuses a command whose text names any other way to create a PR.
 set -u
 
@@ -37,6 +40,8 @@ done
 link_re='claude\.ai/code/session_'
 grep -Eq "$link_re" "$body" && die "the body file holds a session link; remove it first"
 grep -Eq '^[[:space:]>]*Claude-Session:' "$body" && die "the body file holds a Claude-Session line; remove it first"
+grep -Eq "$link_re" <<<"$title" && die "the title holds a session link; remove it first"
+grep -Eq 'Claude-Session:' <<<"$title" && die "the title holds a Claude-Session line; remove it first"
 for tool in gh jq git; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"
 done
@@ -56,21 +61,21 @@ n=$(jq -r '.number' "$tmp/create.json" 2>/dev/null)
 [[ $n =~ ^[0-9]+$ ]] || die "the create answered without a PR number"
 say "#$n https://github.com/$repo/pull/$n"
 
-readback() { # file
-  gh api "repos/$repo/pulls/$n" --jq '.body // ""' >"$1" 2>"$tmp/err" \
+readback() { # file; the title, a newline, then the body
+  gh api "repos/$repo/pulls/$n" --jq '(.title // "") + "\n" + (.body // "")' >"$1" 2>"$tmp/err" \
     || die "reading #$n back failed: $(head -c 300 "$tmp/err")"
 }
 readback "$tmp/first"
 if ! grep -Eq "$link_re" "$tmp/first"; then
-  say "the body came back clean at create"
+  say "the title and body came back clean at create"
   exit 0
 fi
-say "the body came back with a session link at create; patching it with $body"
-gh api -X PATCH "repos/$repo/pulls/$n" -F "body=@$body" >/dev/null 2>"$tmp/err" \
-  || die "the PATCH of #$n failed: $(head -c 300 "$tmp/err"); the body still holds a session link"
+say "the title or body came back with a session link at create; patching both ($body is the body)"
+gh api -X PATCH "repos/$repo/pulls/$n" -f "title=$title" -F "body=@$body" >/dev/null 2>"$tmp/err" \
+  || die "the PATCH of #$n failed: $(head -c 300 "$tmp/err"); the title or body still holds a session link"
 readback "$tmp/second"
 if grep -Eq "$link_re" "$tmp/second"; then
-  die "#$n still holds a session link after the PATCH; fix it with gh api -X PATCH repos/$repo/pulls/$n -F body=@<clean file>"
+  die "#$n still holds a session link after the PATCH, in its title or body; fix it with gh api -X PATCH repos/$repo/pulls/$n -f title=<clean title> -F body=@<clean file>"
 fi
 say "read back clean after the PATCH; the first revision in the edit history still holds the link"
 exit 0
