@@ -495,6 +495,14 @@ At the end of each phase the owner reviews the scorecard trend and the run logs:
 | Owner catch-up | the pinned Owner dashboard issue, issues and PRs assigned to the owner, one milestone per phase, `.github/workflows/owner-ping.yml` |
 | Waiting on GitHub | the orchestrator's Monitor running `.claude/scripts/watch-github.sh`, which prints one line per change to an open PR, `main` or the owner's comments and nothing otherwise; PR owners wait at most two bounded calls, and watcher agents cover only what the script cannot see |
 
+A Cursor session loads `.cursor/rules/` on every chat, and `.cursor/rules/lean-trust.mdc` when a
+`.lean` file is in context. `.cursor/skills/kitimark-mode/SKILL.md` tells the agent to read
+`.claude/skills/kitimark-mode/SKILL.md` and this document, which stay canonical. pstack is
+installed in Cursor as a plugin (`/add-plugin pstack`,
+[cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack)), and `.claude/` is the port
+this repository maintains. #100 leaves `AGENTS.md` out of the repository, because outside
+reviewers read instructions from the head.
+
 ## 6. Local setup
 
 ```bash

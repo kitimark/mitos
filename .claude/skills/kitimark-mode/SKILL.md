@@ -381,7 +381,7 @@ watcher's echo filter and the merge rule below rely on both.
 - **Trust infrastructure.** `gate/`, `eval/cheats/`, `.github/`, the root `lean-toolchain` and
   `lakefile.toml`, and `core/lakefile.toml`, which sets what `lake check` builds. They decide
   what CI checks and what the gate trusts, so a PR touching them is trust-critical (see Verdicts).
-- **Agent rules and plans.** `docs/process.md`, `CLAUDE.md`, `.claude/` and `plan/`.
+- **Agent rules and plans.** `docs/process.md`, `CLAUDE.md`, `.claude/`, `.cursor/` and `plan/`.
 - The user merges every PR that needs `spec-approved` or touches a path in the first three
   bullets above. A PR whose only change to those paths is issue links in the Issue column of a
   `plan/phase-N.md`, such as `[#31](https://github.com/kitimark/mitos/issues/31)`, is the
@@ -444,7 +444,7 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   What stays with the user). The root keeps the milestone description: the plan's goal and exit
   criteria, each marked `(met in #n)` once #n reads merged over REST. It changes the criteria
   text only to match the plan on `main`, which the user keeps. Work found during a task is an
-  issue labelled `follow-up`, and a finding about agent rules (`.claude/`, `CLAUDE.md`,
+  issue labelled `follow-up`, and a finding about agent rules (`.claude/`, `.cursor/`, `CLAUDE.md`,
   `docs/process.md`) is labelled `process`.
 - A notification that changes nothing for the user gets no update. That covers an agent's
   interim status, a monitor expiring or a watcher re-arming, and every event a watcher drops.

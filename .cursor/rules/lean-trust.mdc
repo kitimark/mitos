@@ -1,0 +1,12 @@
+---
+globs: "**/*.lean"
+alwaysApply: false
+---
+
+# Lean trust
+
+New logic is a proved statement in Lean. Use a fixture or a test only for a claim that cannot be a theorem. The rule is "Lean first" in `.claude/skills/kitimark-mode/SKILL.md`, and the checks are in `docs/process.md`.
+
+- `lake check` accepts no `sorry` and no `admit`. The `sorry` holes in `core/Challenge/` are the spec's holes. An implementation PR leaves them, and adds none of its own.
+- A file under `eval/cheats/` may contain `sorry` or `admit` when that is the attack its `expect` file says the gate rejects.
+- Leave theorems, cheat cases, `expect` lines, and gate checks as strong as they are. Weakening one to get a green run is a spec change, and it waits for the owner.
