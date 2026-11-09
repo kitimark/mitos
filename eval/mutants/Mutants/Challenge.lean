@@ -75,12 +75,8 @@ other runs' (`holeCore_impl`), and the lint ensures they run no code and read no
 elaborates them, so they elaborate the same in every run, whatever other files a run holds.
 
 The reader fails closed: every line of the Challenge must be blank, a comment, an `import`, a
-one-line definition hole (`def … := sorry`) or a one-line theorem in the form above, so no line
-that could change what a statement means (`open`, `namespace`, notation) is dropped or moved. A
-hole line holds no other `:=` and no line comment, so the value Lean reads is its `sorry`
-(`readLine_hole`). A reader that looked only at the line's ends took `def f : T := 0 -- := sorry`
-and `def f : T := 0 where g : T := sorry` for holes and dropped them, losing the value `0` they
-state (review on #86, round 7).
+definition hole in the form below or a one-line theorem in the form above, so no line that could
+change what a statement means (`open`, `namespace`, notation) is dropped or moved.
 
 It reads block comments as Lean does, or refuses the line. Lean ends a block comment at its first
 closer and nests a comment opened inside one, so the line `/- note -/ open Foo` runs `open Foo`,
@@ -95,6 +91,37 @@ literal or an escaped name (`«…»`), which Lean also reads on past a line's e
 transcription of `Lean.Parser.finishCommentBlock`) ends where the reader goes on: still in the
 comment, or closed at the end of the line. The probes after it check that transcription's premises
 whenever this package builds.
+
+## Definition hole lines
+
+A definition hole line is exactly `def <name> : <type> := sorry`, where `qualName` takes the name,
+the type's characters are ASCII letters and digits, `_`, `.`, spaces and `→`, and its words, between
+single spaces, are `→`, `List`, `String`, `Nat` and names under `Mitos` (`holeForm`). `List` and
+`String` are what the approved Challenge's two holes use besides names under `Mitos`, and `Nat` is
+what the scratch holes in the `#guard`s below use. Any other line that starts with `def ` stops the
+runner with the reader's error. `readLine_hole` proves that every line the reader takes as a hole is
+outside a comment and has this form, which is a fact about the line's text.
+
+Why Lean reads the value of such a line as its `sorry` is not proved, because it is a fact about
+Lean's parser (`Lean.Parser.Command.definition`, in the pinned Lean v4.35.0). Lean reads `def`, the
+name, and the signature `: <type>`, with no binder, since `:` follows the name. The type holds no
+character that starts a binder, a comment, a string, an equation, a `:=` or a tactic block, so Lean
+reads it up to the ` := `. Neither it nor the name holds a keyword: `Mutants.Tokens` checks at every
+build that no token of Lean's syntax or of `Mitos.Core`, which the approved Challenge imports, is a
+word the name or the type may be, except `→`. Lean's non-reserved keywords (`nonReservedSymbol` and
+`&"…"`), which are not tokens, all start with a lower-case letter in this toolchain's source, and
+every word a hole may hold starts with a capital letter or is `→`; that was read from the source and
+is not checked at build. So no contract clause (`given`, `requires`, `ensures`) comes before the
+value, and the value is `:= sorry`, the first of the three forms of `declVal` (`declValSimple`; the
+other two are equations, `| … => …`, and structure fields after `where`). The line ends with the
+`sorry`, and the reader takes the next line only as a blank line, a comment, an `import`, another
+hole or a theorem, so no `termination_by`, `where` or `deriving` continues the declaration.
+
+Rounds 7 and 8 of the review on #86 each refused more forms whose value Lean reads as something
+other than the `sorry`, and each missed some: round 7 the `:= sorry` in a line comment
+(`def f : T := 0 -- := sorry`) and after a `where` or a tactic; round 8 equations
+(`def f : T → T | _ => 0 where g : T := sorry`) and structure fields (`def c : S where b := sorry`).
+So the reader no longer lists what a hole may not hold, but what it may.
 -/
 
 namespace Mutants
@@ -105,7 +132,7 @@ inductive Line where
   | imp (text : String)
   /-- Kept as it is: blank, or a comment. -/
   | keep (text : String)
-  /-- A one-line definition hole, `def … := sorry`. -/
+  /-- A definition hole, `def <name> : <type> := sorry` in the form `holeForm` takes. -/
   | hole (text : String)
   /-- `theorem Mitos.Proofs.<name> : <stmt> := sorry`, the whole line being `text`. -/
   | thm (name stmt text : String)
@@ -262,13 +289,61 @@ theorem openerLine_scan {cs : List Char} {b : Bool} (h : openerLine cs = some b)
 end: a string literal (`"`) or an escaped name (`«`). -/
 def spansLines (cs : List Char) : Bool := cs.any fun c => c == '"' || c == '«'
 
-/-- Whether a code line is a one-line definition hole as Lean reads it: `def … := sorry`, with no
-other `:=` before the `sorry`, so the value is the `sorry` (in `def f : T := 0 where g : T := sorry`
-it is `0`), and no line comment, which would hide the `:= sorry` from Lean
-(`def f : T := 0 -- := sorry`). -/
-def holeLine (cs : List Char) : Bool :=
-  "def ".toList.isPrefixOf cs && sorrySuffix.isSuffixOf cs && !hasPair '-' '-' cs &&
-    !hasPair ':' '=' (cs.take (cs.length - sorrySuffix.length))
+/-! ## Definition hole lines -/
+
+/-- A component the qualifier accepts: letters, digits and `_`, not starting with a digit. -/
+def qualPart (c : String) : Bool :=
+  plainName c.toList && !(c.toList.head?.getD '0').isDigit
+
+/-- A name the qualifier accepts: `Mitos` and at least one more component, each a `qualPart`. -/
+def qualName (w : String) : Bool :=
+  match w.splitOn "." with
+  | "Mitos" :: rest => !rest.isEmpty && rest.all qualPart
+  | _ => false
+
+/-- A character the type of a definition hole may hold: an ASCII letter or digit, `_`, `.`, a space
+or `→`. -/
+def typeChar (c : Char) : Bool :=
+  c.isAlphanum || c == '_' || c == '.' || c == ' ' || c == '→'
+
+/-- The names of Lean's types that the type of a definition hole may hold: `List` and `String`,
+which the approved Challenge's holes use, and `Nat`, which the scratch holes of the `#guard`s use. -/
+def leanTypeNames : List String := ["List", "String", "Nat"]
+
+/-- A word the type of a definition hole may be made of: `→`, one of `leanTypeNames`, or a name
+under `Mitos` that `qualName` takes. -/
+def typeWord (w : String) : Bool :=
+  w == "→" || leanTypeNames.contains w || qualName w
+
+/-- The name and the type of a definition hole line: `some (n, ty)` when the line is exactly
+`def <n> : <ty> := sorry`, `qualName` takes `n`, every character of `ty` is a `typeChar`, and
+`ty` is one or more `typeWord`s with a single space between two of them. It cuts a candidate name
+and type from the line, then checks the whole line against them, so every line it takes is one that
+`holeForm_spec` describes. -/
+def holeForm (cs : List Char) : Option (List Char × List Char) :=
+  let mid := (cs.drop 4).take (cs.length - 4 - sorrySuffix.length)
+  let n := mid.takeWhile (· != ' ')
+  let ty := mid.drop (n.length + 3)
+  if cs = "def ".toList ++ n ++ " : ".toList ++ ty ++ sorrySuffix ∧ qualName (String.ofList n) ∧
+      ty.all typeChar ∧ ((String.ofList ty).splitOn " ").all typeWord then
+    some (n, ty)
+  else none
+
+/-- **What `holeForm` takes**: a line that is exactly `def <n> : <ty> := sorry`, with a name under
+`Mitos` and a type made only of `typeChar`s and of `typeWord`s between single spaces. -/
+theorem holeForm_spec {cs n ty : List Char} (h : holeForm cs = some (n, ty)) :
+    cs = "def ".toList ++ n ++ " : ".toList ++ ty ++ sorrySuffix ∧
+      qualName (String.ofList n) = true ∧ (∀ c ∈ ty, typeChar c = true) ∧
+      ∀ w ∈ (String.ofList ty).splitOn " ", typeWord w = true := by
+  unfold holeForm at h
+  dsimp only at h
+  split at h
+  · rename_i hc
+    simp only [Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    simp only [List.all_eq_true] at hc
+    exact hc
+  · simp at h
 
 def lexError (l : String) : String :=
   s!"the Challenge has a line whose comments, strings or escaped names the refutation reader does not follow: {l}"
@@ -288,7 +363,7 @@ def readLine (inDoc : Bool) (l : String) : Except String (Line × Bool) :=
   else if hasPair '/' '-' cs || hasPair '-' '/' cs || spansLines cs then .error (lexError l)
   else if cs.all (· == ' ') then .ok (.keep l, false)
   else if "import ".toList.isPrefixOf cs then .ok (.imp l, false)
-  else if holeLine cs then .ok (.hole l, false)
+  else if (holeForm cs).isSome then .ok (.hole l, false)
   else match theoremHole cs with
     | some (n, s) => .ok (.thm n s l, false)
     | none => .error s!"the Challenge has a line the refutation reader does not handle: {l}"
@@ -356,12 +431,18 @@ theorem readLine_comments {inDoc inDoc' : Bool} {l : String} {x : Line}
           · exact ok h
           · simp at h
 
-/-- **A line the reader takes as a definition hole is one as Lean reads it**: a line outside a
-comment that `holeLine` takes, kept as it is. So the reader drops no line whose value is not the
-`sorry`, such as one whose `:= sorry` is in a line comment (review on #86, round 7). -/
+/-- **A line the reader takes as a definition hole has the hole form**: it is outside a comment,
+kept as it is, and is exactly `def <n> : <ty> := sorry`, where `qualName` takes `n`, every character
+of `ty` is an ASCII letter or digit, `_`, `.`, a space or `→`, and every word of `ty` between single
+spaces is `→`, `List`, `String`, `Nat` or a name under `Mitos`. This is a fact about the line's
+text only; why Lean reads the value of such a line as its `sorry` is in the module doc, and is not
+proved. -/
 theorem readLine_hole {inDoc inDoc' : Bool} {l t : String}
     (h : readLine inDoc l = .ok (.hole t, inDoc')) :
-    inDoc = false ∧ inDoc' = false ∧ t = l ∧ holeLine l.toList = true := by
+    inDoc = false ∧ inDoc' = false ∧ t = l ∧ ∃ n ty,
+      l.toList = "def ".toList ++ n ++ " : ".toList ++ ty ++ sorrySuffix ∧
+      qualName (String.ofList n) = true ∧ (∀ c ∈ ty, typeChar c = true) ∧
+      ∀ w ∈ (String.ofList ty).splitOn " ", typeWord w = true := by
   unfold readLine at h
   cases inDoc with
   | true =>
@@ -382,7 +463,8 @@ theorem readLine_hole {inDoc inDoc' : Bool} {l t : String}
     split at h
     · rename_i hh
       simp only [Except.ok.injEq, Prod.mk.injEq, Line.hole.injEq] at h
-      exact ⟨rfl, h.2.symm, h.1.symm, hh⟩
+      obtain ⟨⟨n, ty⟩, hnt⟩ := Option.isSome_iff_exists.mp hh
+      exact ⟨rfl, h.2.symm, h.1.symm, n, ty, holeForm_spec hnt⟩
     · split at h <;> simp at h
 
 /-! The facts about Lean's block comments that `leanScan` transcribes, checked whenever this
@@ -422,16 +504,6 @@ def Line.isThm (name : String) : Line → Bool
   | _ => false
 
 /-! ## Absolute names -/
-
-/-- A component the qualifier accepts: letters, digits and `_`, not starting with a digit. -/
-def qualPart (c : String) : Bool :=
-  plainName c.toList && !(c.toList.head?.getD '0').isDigit
-
-/-- A name the qualifier accepts: `Mitos` and at least one more component, each a `qualPart`. -/
-def qualName (w : String) : Bool :=
-  match w.splitOn "." with
-  | "Mitos" :: rest => !rest.isEmpty && rest.all qualPart
-  | _ => false
 
 /-- The statement with every name made absolute, `_root_.` before each word, if it is a list of
 names under `Mitos` separated by single spaces; `none` for anything else. -/
@@ -934,6 +1006,32 @@ def holesSolution (paths : List String) : String :=
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat -- := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := 0 where g : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := by exact 0 <;> have x : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+-- A `def` line whose value Lean reads by equations or as structure fields is refused too (review on
+-- #86, round 8, the opus verifier at debeac7): equations with a `where`, with a tactic that has its
+-- own `:= sorry`, and on the approved `impact` type; and fields after `where`, the others keeping
+-- their defaults. Each holds a character or a word outside the hole form.
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat → Nat | _ => 0 where g : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat → Nat | _ => by exact 0 <;> have x : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.impact : List Mitos.Edge → String → List String | _, _ => [] where g : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.c : Mitos.S where b := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+-- The hole form, word by word and character by character: no keyword (and no Lean token of a
+-- name's shape, `Type`, `Sort`, `Prop`, `StateRefT`) is a word of a hole's type, nor is an empty
+-- word (two spaces, an empty type); none of the characters that start an equation, a `:=`, a
+-- comment, a string, an escaped name, a binder or a list is in it; and a hole has a name under
+-- `Mitos` and no binder.
+#guard ["where", "by", "fun", "match", "let", "have", "with", "do", "sorry", "Type", "Sort",
+  "Prop", "StateRefT", "Mitos", "_root_.Mitos.S", ""].all (!typeWord ·)
+#guard "|:=-/\"«(),×[]{}⟨⟩$@#`'\t\r".toList.all (!typeChar ·)
+#guard holeForm "def Mitos.Impl.f : Nat  → Nat := sorry".toList == none
+#guard holeForm "def Mitos.Impl.f :  := sorry".toList == none
+#guard holeForm "def f : Nat := sorry".toList == none
+#guard holeForm "def Mitos.Impl.f (x : Nat) : Nat := sorry".toList == none
+-- The approved Challenge's two holes are read as holes, with their names and types.
+#guard (readChallenge "def Mitos.Impl.resolve : Mitos.Resolver := sorry\ndef Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry").toOption ==
+  some [.hole "def Mitos.Impl.resolve : Mitos.Resolver := sorry",
+    .hole "def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry"]
+#guard holeForm "def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry".toList ==
+  some ("Mitos.Impl.impact".toList, "List Mitos.Edge → String → List String".toList)
 -- Lines Lean reads unambiguously are read as Lean reads them: a comment on one line, a closer at
 -- the end of a line comment inside a comment, and an opener whose next character Lean skips.
 #guard (readChallenge "/-- doc -/\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption ==

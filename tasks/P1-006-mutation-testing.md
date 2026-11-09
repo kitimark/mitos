@@ -340,6 +340,62 @@ a comment and is one `holeLine` takes. Four `#guard`s pin it: the line comment a
 after the type, a `where`, and a tactic with its own `:= sorry`; the reader at e852fd5 takes all
 four as holes, the new one refuses them.
 
+### Definition hole lines (round 8)
+
+**What failed.** Round 7's fix assumed that a `def` line with no `--` and no `:=` before its final
+` := sorry` has the `sorry` as its value. Lean's declaration value has three forms
+(`Lean.Parser.Command.declVal`): `:= expr`, equations (`| pat => expr`, with an optional `where`),
+and structure fields after `where`. `holeLine` ruled out only the first. So the reader took these
+lines for holes and dropped them, although Lean reads another value (`rfl` proves `f = fun _ => 0`):
+`def Mitos.Impl.f : Nat → Nat | _ => 0 where g : Nat := sorry`, the same with
+`| _ => by exact 0 <;> have x : Nat := sorry`, the first on the approved `impact` type, and
+`def Mitos.Impl.c : Mitos.S where b := sorry`, whose other fields keep their defaults. With the
+first added to a copy of the approved Challenge, `--prepare` at debeac7 exited 0 and dropped it
+(review on #86 by the opus verifier at debeac7, B1). Each needs an owner edit of the approved
+Challenge. The verifier also found that `readLine_hole` was cited for "the value Lean reads is its
+`sorry`", while it proved only a fact about the line's text (m1).
+
+**Premise.** Rounds 6, 7 and 8 each refused one more Lean form the reader misread. The premise
+"refuse the forms we know are dangerous" kept failing, because Lean has more forms than a list
+names.
+
+**Decision.** A positive form (`holeForm`). A hole line is exactly `def <name> : <type> := sorry`,
+where `qualName` takes the name, every character of the type is an ASCII letter or digit, `_`, `.`,
+a space or `→` (`typeChar`), and its words, between single spaces, are `→`, `List`, `String`, `Nat`
+or names under `Mitos` (`typeWord`). Any other line that starts with `def ` stops the runner with
+the reader's error, as before. This set is the smallest that keeps every existing `#guard` as it
+is: the approved Challenge's two holes use `Mitos.Resolver`, `List`, `Mitos.Edge`, `String` and
+`→`, and the `#guard`s' scratch holes use `Nat`. It has no parenthesis, `×` or comma, which the
+approved Challenge does not need; a Challenge that needs them stops the runner until the reader
+takes them. A word list instead of "identifiers except keywords" keeps the form positive at the
+word level too: no keyword can be a word, because every allowed word is fixed or under `Mitos`.
+
+`readLine_hole` (replaced) proves that every line the reader takes as a hole is outside a comment,
+kept as it is, and exactly this form, through `holeForm_spec`; it says so and no more (m1). That
+Lean reads the value of such a line as its `sorry` is a fact about Lean's parser, stated in the
+module doc and not proved: Lean reads `def`, the name and `: <type>` (no binder), the type up to the
+` := ` (no character that starts a binder, comment, string, equation, `:=` or tactic block), and
+then the value `:= sorry`, the `declValSimple` form. The one premise about keywords is checked:
+`Mutants.Tokens` fails the build if a token of Lean's syntax or of `Mitos.Core` holds whitespace or
+is a `typeWord` other than `→`. Its probe in this round found `Type`, `Sort`, `Prop` and `StateRefT`
+among the tokens of a name's shape, which is why the allowed words are a list and not "capitalised
+names". Lean's non-reserved keywords are not tokens; in the pinned toolchain's source every one
+starts with a lower-case letter, and every allowed word starts with a capital or is `→` (read from
+the source, not checked at build). The token table checked is that of Lean's command syntax plus
+`Mitos.Core`, which holds every token the approved Challenge, importing only `Mitos.Core`, is read
+with; a Challenge with another import is outside the check.
+
+**Considered.** Asking Lean's own parser, at run time, whether each hole's value is exactly
+`sorry`. That needs the Challenge's imports loaded in the runner and proves nothing about the
+reader; the positive form is provable, and the one fact about Lean it needs is checked at build.
+
+**Pinned.** Four `#guard`s refuse the verifier's forms, which the reader at debeac7 reads as holes;
+more refuse keywords and Lean's name-shaped tokens as words, the characters that start other
+syntax, an empty word, a name outside `Mitos` and a binder; two accept the approved Challenge's
+two holes, with their names and types. Every earlier `#guard` stays as it was, round 6's and
+round 7's refused forms included. The approved Challenge reads to the same 23 lines, 2 of them
+holes, with the reader at debeac7 and the new one.
+
 ### Cases
 
 `eval/mutants/cases/<name>/` holds a manifest `mutant` (`why=`, `breaks=` or `survives=`, an
@@ -436,9 +492,11 @@ a `sorry` fails it:
   multi-line statement), and on every line it takes, Lean's scan of a block comment (`leanScan`)
   ends where the reader goes on (`readLine_comments`, from `commentLine_scan` and
   `openerLine_scan`); `leanScan` transcribes Lean's lexer without proof, and `CommentProbe.probes`
-  checks its premises at build. Every line it takes as a definition hole is `def … := sorry` with
-  no other `:=` and no line comment (`readLine_hole`). The hole run's `Mitos/Impl/` files are the
-  other runs' (`holeCore_impl`).
+  checks its premises at build. Every line it takes as a definition hole is exactly
+  `def <name> : <type> := sorry` with a name under `Mitos` and a type of `typeChar`s and
+  `typeWord`s (`readLine_hole`, `holeForm_spec`); that Lean reads its value as the `sorry` is not
+  proved, and `Mutants.Tokens` checks at build that no Lean token is a word such a line may hold
+  but `→`. The hole run's `Mitos/Impl/` files are the other runs' (`holeCore_impl`).
 - `Mutants.Verdict`: the run passes exactly when the control is accepted, every case is judged
   exactly once and meets its expectation (`passes_iff`). Then every `breaks=` case passed the lint,
   had its hole run accepted, its gate run rejected and its refutation accepted (`passes_refuted`);
