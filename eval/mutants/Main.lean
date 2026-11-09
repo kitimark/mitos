@@ -6,14 +6,16 @@ import Mutants
 
 Run from the repository root: `lake --dir eval/mutants exe mitos-mutants [--paranoid] [<case>...]`.
 
-First it checks its reading of the approved Challenge against the Challenge as Lean builds it
-(`Mutants.CrossCheck`), and stops on any difference. For each case in `eval/mutants/cases/`, it
-applies the case's edits to a copy of `core/` (sources only, no build outputs), lints the case's
-Lean text (`Mutants.Lint`), and judges it with the sandboxed `lake comparator`, as
-`Mutants.Verdict` describes: the hole run, the gate's run, then the values or the refutation run.
-Each run gets a fresh copy, which is removed afterwards. The pure parts (manifest, edits, lint
-decisions, the generated Challenges and solution modules, the cross-check's comparison, verdict)
-are in `Mutants/` with their proofs; this file only reads, parses, writes and runs.
+First it checks, with Lean, its reading of the approved Challenge and every Challenge it will
+generate: the approved Challenge as Lean builds it (`Mutants.CrossCheck`) and as Lean's parser
+reads it, and each generated Challenge as Lean builds it (`Mutants.Output`); it stops on any
+difference. For each case in `eval/mutants/cases/`, it applies the case's edits to a copy of
+`core/` (sources only, no build outputs), lints the case's Lean text (`Mutants.Lint`), and judges
+it with the sandboxed `lake comparator`, as `Mutants.Verdict` describes: the hole run, the gate's
+run, then the values or the refutation run. Each run gets a fresh copy, which is removed
+afterwards. The pure parts (manifest, edits, lint decisions, the generated Challenges and solution
+modules, the comparisons with Lean's build and parse, verdict) are in `Mutants/` with their proofs;
+this file only reads, parses, writes and runs.
 -/
 
 open Mutants Lean
@@ -32,7 +34,9 @@ def usage : String := "usage: mitos-mutants [--paranoid] [--keep] [<case>...]
   UNBOUND: the mutant's implementation alone does not build the approved definition holes, or the
   gate accepts proofs that are not about them.
   Before anything else, it builds the approved Challenge and compares what Lean declares in it
-  with what its line reader read; any difference stops it (exit 2)."
+  and how Lean's parser reads it with what its line reader read, and it builds every Challenge it
+  will generate for the cases and compares what Lean declares in each with what it must state; any
+  difference stops it (exit 2)."
 
 structure Config where
   paranoid : Bool := false
@@ -101,6 +105,12 @@ structure Approved where
   theorems   : List String
   /-- The approved configuration's definition holes. -/
   defs       : List String
+  /-- The implementation modules: every module under `Mitos/Impl/` of the approved core. A case's
+  edits change no path (`Mutants.applyEdits_paths`), so these are every case's too. -/
+  impls      : List String
+  /-- The texts of the generated Challenges the output check passed (`Mutants.Output`); `prepare`
+  writes no other. -/
+  checked    : List String := []
 
 def strs (xs : List String) : Json := Json.arr (xs.toArray.map Json.str)
 
@@ -120,7 +130,7 @@ def valuesConfig (a : Approved) : String :=
 (`Mutants.refutationSolution`), `Mitos.Refute.holes` and the refuted theorems, no definition holes;
 the permitted axioms stay as approved. -/
 def refutationConfig (a : Approved) (ts : List String) : String :=
-  let names := (if a.defs.isEmpty then [] else [holesName]) ++ ts.map (s!"Mitos.Refute.{·}")
+  let names := Output.refutationNames a.defs ts
   ((((a.config.setObjVal! "challenge_module" (.str "Challenge.Mutant")).setObjVal!
     "solution_module" (.str "Mitos.Proofs.Refute")).setObjVal! "theorem_names" (strs names)).setObjVal!
     "definition_names" (strs [])).pretty
@@ -189,18 +199,19 @@ def prepare (env : Environment) (a : Approved) (casesDir : System.FilePath) (nam
   let holes := core ++ [("Mitos/Proofs/Holes.lean", holesSolution (core.map (·.1))),
     ("holes.json", holesConfig a)]
   -- The generated Challenges import the mutated implementation, so the comparator compares the
-  -- holes by value.
-  let impls := implModules (files.map (·.1))
-  let byValue ← match approvedByValue impls a.challenge with
-    | .ok ls => pure ("\n".intercalate ls)
-    | .error e => throw e
+  -- holes by value. Each is a text the output check passed, as Lean built it.
+  let checked (g : Except String Output.Gen) : ExceptT String IO String := do
+    let g ← match g with
+      | .ok g => pure g
+      | .error e => throw e
+    unless a.checked.contains g.text do throw s!"{g.what} was not checked as Lean builds it"
+    return g.text
+  let byValue ← checked (Output.valuesGen a.impls a.challenge)
   let values := [("Challenge/Mutant.lean", byValue), ("values.json", valuesConfig a)]
   match m.expect with
   | .survives _ => return { mutant := m, lint, holes, approved := files, values, refutation := none }
   | .breaks ts =>
-    let chal ← match refutation impls a.defs a.challenge ts with
-      | .ok ls => pure ("\n".intercalate ls)
-      | .error e => throw e
+    let chal ← checked (Output.refutationGen a.impls a.defs a.challenge ts)
     let extra := [("Challenge/Mutant.lean", chal),
       ("Mitos/Proofs/RefuteCase.lean", refuteSrc.getD ""),
       ("Mitos/Proofs/Refute.lean", refutationSolution a.defs),
@@ -245,41 +256,130 @@ def writeFiles (toolchain : String) (dir : System.FilePath) (files : List (Strin
     if let some d := (dir / rel).parent then IO.FS.createDirAll d
     IO.FS.writeFile (dir / rel) txt
 
-/-- The cross-check (`Mutants.CrossCheck`): builds the approved Challenge module and the probes with
-`lake build` in a fresh copy of the approved core, loads each as Lean built it, and compares it with
-the reader's lines. The approved Challenge must show no problem, and each probe its known ones.
-Returns the number of declarations compared. -/
-def leanCheck (a : Approved) (log : System.FilePath) : ExceptT String IO Nat := do
-  for p in CrossCheck.probes do
-    if a.files.any (·.1 == p.path) then throw s!"core/{p.path} exists; the runner writes that path"
+/-- The Challenges the runner will judge with for `cases` (`Mutants.Output`): the values
+Challenge, and the refutation Challenge of each distinct `breaks=` list, once per distinct text. A
+case whose manifest cannot be read or whose refutation cannot be generated adds none; `prepare`
+finds it invalid. -/
+def generatedFor (a : Approved) (casesDir : System.FilePath) (cases : List String) :
+    IO (List Output.Gen) := do
+  let add (gs : Array Output.Gen) : Except String Output.Gen → Array Output.Gen
+    | .ok g => if gs.any (·.text == g.text) then gs else gs.push g
+    | .error _ => gs
+  let mut gens := add #[] (Output.valuesGen a.impls a.challenge)
+  for name in cases do
+    let src ← try some <$> IO.FS.readFile (casesDir / name / "mutant") catch _ => pure none
+    if let some (.ok m) := src.map parse then
+      if let .breaks ts := m.expect then
+        gens := add gens (Output.refutationGen a.impls a.defs a.challenge ts)
+  return gens.toList
+
+/-- What the checks with Lean compared. -/
+structure Checked where
+  decls    : Nat
+  commands : Nat
+  gens     : Nat
+
+/-- The checks with Lean (`Mutants.CrossCheck`, `Mutants.Output`), in a fresh copy of the approved
+core. First it builds the approved Challenge module and the cross-check's probes with `lake build`
+and loads each as Lean built it: the cross-check compares the approved Challenge's declarations
+with the reader's lines, and the parse check compares Lean's parse of the approved Challenge (with
+the syntax of its imports) with them. Then it builds the generated Challenges `gens` and the output
+check's probes in the same copy, and the output check compares each one's constants with what it
+must state. Each must show no problem, and each probe its known ones. -/
+def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
+    ExceptT String IO Checked := do
+  let genPath (k : Nat) : String := s!"Challenge/MutantsOutput{k}.lean"
+  let numbered := (List.range gens.length).zip gens
+  let outProbes ← Output.outProbes.mapM fun p => do
+    let ls ← match readChallenge p.source with
+      | .ok ls => pure ls
+      | .error e => throw s!"{p.path}: {e}"
+    match Output.refutationGen a.impls Output.probeDefs ls p.breaks with
+    | .ok g => pure (p, g, s!"{moduleOf p.path |>.replace "." "/"}Gen.lean")
+    | .error e => throw s!"{p.path}: {e}"
+  let first := CrossCheck.probes.map fun p => (p.path, p.source)
+  let second := numbered.map (fun (k, g) => (genPath k, g.text)) ++
+    outProbes.flatMap fun (p, g, gp) => [(p.path, p.source), (gp, g.text)]
+  for (p, _) in first ++ second do
+    if a.files.any (·.1 == p) then throw s!"core/{p} exists; the runner writes that path"
+  let chalPath := "/".intercalate (a.chalModule.splitOn ".") ++ ".lean"
+  let some chalSrc := a.files.lookup chalPath | throw s!"core/{chalPath} not found"
   let dir ← IO.FS.createTempDir
   try
-    writeFiles a.toolchain dir (a.files ++ CrossCheck.probes.map fun p => (p.path, p.source))
-    let mods := a.chalModule :: CrossCheck.probes.map (moduleOf ·.path)
-    (← IO.getStdout).flush
-    let out ← IO.Process.output { cmd := "lake", args := #["build"] ++ mods.toArray, cwd := dir }
-    IO.FS.writeFile log
-      s!"$ lake build {" ".intercalate mods}\nexit {out.exitCode}\n{out.stdout}{out.stderr}"
-    unless out.exitCode == 0 do
-      throw s!"lake build of the Challenge module and the probes failed ({log})"
+    IO.FS.writeFile log ""
+    -- Writes `files`, then `lake build` of `mods`, its log appended; on a failure, Lean's first
+    -- error names the file.
+    let build (what : String) (files : List (String × String)) (mods : List String) :
+        ExceptT String IO Unit := do
+      writeFiles a.toolchain dir files
+      (← IO.getStdout).flush
+      let out ← IO.Process.output { cmd := "lake", args := #["build"] ++ mods.toArray, cwd := dir }
+      let text := out.stdout ++ out.stderr
+      IO.FS.writeFile log
+        ((← IO.FS.readFile log) ++ s!"$ lake build {" ".intercalate mods}\nexit {out.exitCode}\n{text}\n")
+      unless out.exitCode == 0 do
+        let err := ((text.splitOn "\n").find? (·.startsWith "error:")).getD ""
+        throw s!"lake build of {what} failed: {err} ({log})"
+    build "the Challenge module and the cross-check's probes" (a.files ++ first)
+      (a.chalModule :: first.map (moduleOf ·.1))
     initSearchPath (← findSysroot) [dir / ".lake" / "build" / "lib" / "lean"]
-    let load (m : String) : ExceptT String IO (List String × List CrossCheck.Decl) := do
-      let env ← importModules #[{ module := m.toName }] {}
-      let some r := CrossCheck.built env m.toName
+    let import_ (m : String) : IO Environment := importModules #[{ module := m.toName }] {}
+    -- The cross-check: Lean declares in the approved Challenge exactly what the reader read.
+    let load (m : String) : ExceptT String IO (Environment × List String × List CrossCheck.Decl) := do
+      let env ← import_ m
+      let some (imps, ds) := CrossCheck.built env m.toName
         | throw s!"{m}: not in the environment that imports it"
-      return r
-    let (imps, ds) ← load a.chalModule
+      return (env, imps, ds)
+    let (approvedEnv, imps, ds) ← load a.chalModule
     let ps := CrossCheck.problems a.challenge a.defs imps ds
     unless ps.isEmpty do
       throw ("the refutation reader read the Challenge otherwise than Lean built it: " ++
-        "; ".intercalate (ps.map (·.text)))
+        "; ".intercalate (ps.map (·.text)).eraseDups)
     for p in CrossCheck.probes do
-      let (pi, pd) ← load (moduleOf p.path)
+      let (_, pi, pd) ← load (moduleOf p.path)
       unless p.caught pi pd do
         let found := (CrossCheck.problems p.lines p.defs pi pd).map (·.text)
         throw (s!"the cross-check missed a known misread in {p.path}: " ++
           s!"expected {p.expect}, found {found}")
-    return ds.length
+    -- The parse check: every command Lean's parser reads is a module doc or one of the reader's
+    -- hole and theorem lines, whole.
+    let penv ← Output.parseEnv (CrossCheck.importNames a.challenge)
+    let parsed (src : String) : ExceptT String IO (List String × List String × List Output.Cmd) :=
+      ExceptT.adapt (s!"Lean's parser stops: {·}") (ExceptT.mk (Output.readParse penv src))
+    let (hdr, pimps, cmds) ← parsed chalSrc
+    let pps := Output.parseProblems a.challenge hdr pimps cmds
+    unless pps.isEmpty do
+      throw ("the refutation reader read the Challenge otherwise than Lean's parser: " ++
+        "; ".intercalate (pps.map (·.text)))
+    for p in Output.parseProbes do
+      let ls ← match readChallenge p.source with
+        | .ok ls => pure ls
+        | .error e => throw s!"parse probe {p.name}: {e}"
+      let (h, i, c) ← parsed p.source
+      let found := (Output.parseProblems ls h i c).map (·.key)
+      unless p.expect.all found.contains do
+        throw s!"the parse check missed a known misread in probe {p.name}: expected {p.expect}, found {found}"
+    -- The output check: each generated Challenge, as Lean built it, declares exactly the theorems
+    -- it must, each stating exactly what it must, by the approved Challenge module `am` in `aenv`.
+    build "the generated Challenges and the output check's probes" second (second.map (moduleOf ·.1))
+    let check (aenv : Environment) (am m : String) (g : Output.Gen) :
+        ExceptT String IO (List Output.OutProblem) := do
+      let want ← ExceptT.adapt (s!"{g.what}: {·}") (ExceptT.mk (Output.wantTypes aenv am.toName g.wants))
+      let env ← import_ m
+      let some (imps, found) := Output.builtTheorems env m.toName
+        | throw s!"{m}: not in the environment that imports it"
+      return Output.outProblems Output.sameType want g.imports imps found
+    for (k, g) in numbered do
+      let ps ← check approvedEnv a.chalModule (moduleOf (genPath k)) g
+      unless ps.isEmpty do
+        throw (s!"{g.what}, as Lean built it, does not state what it must: " ++
+          "; ".intercalate (ps.map (·.text)))
+    for (p, g, gp) in outProbes do
+      let ps ← check (← import_ (moduleOf p.path)) (moduleOf p.path) (moduleOf gp) g
+      let found := ps.map (·.key)
+      unless p.expect.all found.contains do
+        throw s!"the output check missed a known misread in {p.path}: expected {p.expect}, found {found}"
+    return { decls := ds.length, commands := cmds.length, gens := gens.length }
   finally
     IO.FS.removeDirAll dir
 
@@ -341,12 +441,14 @@ def readApproved (root : System.FilePath) : ExceptT String IO Approved := do
   -- Every generated statement names everything absolutely (`Mutants.qualify`); a Challenge whose
   -- statements the runner cannot write that way is not judged at all.
   if let some e := unqualified challenge defs then throw s!"core/{chalPath}: {e}"
-  return { toolchain, files, config, chalModule, challenge, theorems, defs }
+  return { toolchain, files, config, chalModule, challenge, theorems, defs,
+           impls := implModules (files.map (·.1)) }
 
 def main (args : List String) : IO UInt32 := do
   let cfg ← match parseArgs args {} with
     | .ok c => pure c
     | .error e => IO.eprintln e; IO.eprintln usage; return 2
+  if cfg.prepare.isSome && cfg.cases.isEmpty then IO.eprintln usage; return 2
   let root : System.FilePath := "."
   let casesDir := root / "eval" / "mutants" / "cases"
   let logDir := root / ".lake" / "mutants"
@@ -354,29 +456,36 @@ def main (args : List String) : IO UInt32 := do
   let a ← match ← (readApproved root).run with
     | .ok a => pure a
     | .error e => IO.eprintln s!"mitos-mutants: {clean e}"; return 2
+  let cases ← if cfg.cases.isEmpty then do
+      unless ← casesDir.isDir do IO.eprintln "mitos-mutants: no eval/mutants/cases/"; return 2
+      pure (((← casesDir.readDir).map (·.fileName)).qsort (· < ·)).toList
+    else pure cfg.cases
+  if cases.isEmpty then IO.eprintln "mitos-mutants: no cases in eval/mutants/cases/"; return 2
   -- Before anything is prepared or judged: Lean declares in the approved Challenge exactly what the
-  -- reader read (`Mutants.CrossCheck`).
+  -- reader read, Lean's parser reads no command in it that the reader did not, and every Challenge
+  -- the runner will generate for these cases states, as Lean builds it, exactly what it must
+  -- (`Mutants.CrossCheck`, `Mutants.Output`).
+  let gens ← generatedFor a casesDir cases
   let t0 ← IO.monoMsNow
-  let checked ← try (leanCheck a (logDir / "challenge.log")).run
+  let checked ← try (leanCheck a gens (logDir / "challenge.log")).run
     catch e => pure (.error (toString e))
-  match checked with
-  | .ok n =>
+  let a ← match checked with
+  | .ok c =>
     let secs := ((← IO.monoMsNow) - t0 + 50) / 100
-    IO.println (s!"challenge (reader against Lean's build): AGREE on {n} declarations, " ++
-      s!"{CrossCheck.probes.length} probes caught ({secs / 10}.{secs % 10}s)")
+    IO.println (s!"challenge (reader against Lean's build): AGREE on {c.decls} declarations, " ++
+      s!"{CrossCheck.probes.length} probes caught")
+    IO.println (s!"challenge (reader against Lean's parse): AGREE on {c.commands} commands, " ++
+      s!"{Output.parseProbes.length} probes caught")
+    IO.println (s!"generated Challenges (as Lean built them): {c.gens} state what they must, " ++
+      s!"{Output.outProbes.length} probes caught ({secs / 10}.{secs % 10}s)")
+    pure { a with checked := gens.map (·.text) }
   | .error e =>
     IO.eprintln s!"mitos-mutants: core/{"/".intercalate (a.chalModule.splitOn ".")}.lean: {clean e}"
     return 2
   let env ← try Lint.syntaxEnv catch e =>
     IO.eprintln s!"mitos-mutants: cannot load Lean's syntax for the lint: {clean (toString e)}"; return 2
   if let some out := cfg.prepare then
-    if cfg.cases.isEmpty then IO.eprintln usage; return 2
-    return ← writeWorkspaces env a casesDir out cfg.cases
-  let cases ← if cfg.cases.isEmpty then do
-      unless ← casesDir.isDir do IO.eprintln "mitos-mutants: no eval/mutants/cases/"; return 2
-      pure (((← casesDir.readDir).map (·.fileName)).qsort (· < ·)).toList
-    else pure cfg.cases
-  if cases.isEmpty then IO.eprintln "mitos-mutants: no cases in eval/mutants/cases/"; return 2
+    return ← writeWorkspaces env a casesDir out cases
   let start ← IO.monoMsNow
   let control ← judge cfg a.toolchain a.files none (logDir / "control.log")
   let controlText := match control with

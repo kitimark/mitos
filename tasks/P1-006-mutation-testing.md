@@ -427,8 +427,10 @@ Challenge.
 misreads: block comments, a `:= sorry` in a comment, equations and `where`, doc comment openers.
 Emulating Lean's lexer by hand keeps failing, so this round adds no lexer rule. Round 8 rejected
 asking Lean at run time ("proves nothing about the reader"); that was the wrong question. The
-reader need not be proved right if every misread stops the runner, and Lean is the one reader
-that cannot misread its own syntax.
+reader need not be proved right if every misread that changes what a generated Challenge states
+stops the runner, and Lean is the one reader that cannot misread its own syntax. This round's
+cross-check alone does not stop every such misread: it compares declarations, and a command that
+declares nothing changes none (round 10, below).
 
 **Decision.** `Mutants.CrossCheck`. Before it prepares or judges anything, the runner builds the
 approved Challenge module (`lake build Challenge.Resolver`) in a fresh copy of the approved core,
@@ -467,7 +469,8 @@ looser reader would. On the approved Challenge the runner prints
 
 **The reader.** Its lexer stays as it is. Its docs now claim only what holds: it reads comments as
 `leanScan` does, which is not all of how Lean reads them; it is a fast first pass, and the
-cross-check is what stops the runner on a misread. m1's sentence on rounds 7 and 8 is reworded.
+cross-check is what stops the runner on a misread that changes a declaration (round 10 adds the
+checks for a misread that changes none). m1's sentence on rounds 7 and 8 is reworded.
 
 **Evidence** (one local run each, default kernel; the check does not depend on `--paranoid`).
 `--prepare decoy_case` on a copy of the repository whose approved Challenge holds, before the
@@ -492,6 +495,114 @@ to 9 show why. Filtering auxiliary names (`match_`, `proof_`, `_private`): the a
 Challenge's module holds none, and a filter is one more list that can miss, so every constant must
 be read. Elaborating the Challenge in the runner's own process instead of `lake build`: faster, but
 it would read `Mitos.Core` from the repository's build outputs, which the runner never trusts.
+
+### Output check (round 10)
+
+**What failed.** Round 9's cross-check compares what the approved Challenge declares, and a command
+that declares nothing changes no declaration. Between the two hole lines, the lines `/-!`, `-- -/`,
+`/-- x -/` and `-- -/ variable (h : False) in include h in` are four comment lines to the reader,
+but Lean skips the line comment after the module doc's opener, nests the doc comment, and ends the
+module doc at the closer on the fourth line, so `variable (h : False) in include h in` is code that
+prefixes the `impact` hole, whose value stays `sorry`. The cross-check agreed. The refutation
+Challenge drops the hole lines and the theorems not named, so there the prefix lands on
+`theorem _root_.Mitos.Refute.resolve_total`, which then states `False → ¬ Total resolve`, and a case
+whose `Refute.lean` proved that by `h.elim` was judged REFUTED, exit 0; on the real Challenge it is
+REJECTED, exit 1. A hidden trailing `namespace Mitos.Impl` or `#exit` passed too (review on #86,
+round 10, the opus verifier at a528c7e, B1). Reproduced at a528c7e: `r10_b1  REFUTED`, exit 0.
+
+**Premise (attacked a second time).** Rounds 6 to 9 each tried to make the reading of the input
+match Lean: lexer rules, then a cross-check of the declarations. Each round a verifier found Lean
+syntax that changes meaning without the reader seeing it. The invariant that matters is about the
+output: every Challenge the runner judges with states exactly the approved statements. So this
+round checks the output with Lean, and also asks Lean's parser about the input, so that no hidden
+command is left at all.
+
+**Decision.** `Mutants.Output`, run after the cross-check and before anything is prepared or judged;
+any difference stops the runner with exit 2 and names it.
+
+1. **The output check** (`outProblems`). The runner computes, as it writes them
+   (`refutationGen`, `valuesGen`), the texts of every Challenge it will judge with for the cases it
+   runs or prepares: the values Challenge, and the refutation Challenge of each distinct `breaks=`
+   list (11 for the whole corpus). In the cross-check's workspace (a fresh copy of the approved core)
+   a second `lake build` builds each one as a module of its own, and the runner loads it as Lean
+   built it. Its constants (all of them, as in round 9) must be exactly the theorems it must
+   declare, each a theorem with no universe parameter whose type, as an `Expr`, is: `Not T` for
+   `Mitos.Refute.<n>`, and `T` for `Mitos.Proofs.<n>` in the values Challenge, where `T` is the type
+   of the theorem `Mitos.Proofs.<n>` of the approved Challenge module as Lean built it; and for
+   `Mitos.Refute.holes`, `(h₁, h₂) = (h₁, h₂)` over the configured holes, as `Meta.mkAppM` and
+   `Meta.mkEq` build it in the approved Challenge's environment. Types are compared with `==`
+   (`Expr.eqv`: structural, binder names ignored) after every universe level is normalized: no
+   unfolding, no definitional equality. Its imports must be `Init`, the implementation modules and
+   the approved imports. `refutationGen_names` proves that the names it checks in a refutation
+   Challenge are the names the refutation run's configuration gives the comparator
+   (`refutationNames`), and `prepare` writes no Challenge text the check did not pass (it throws,
+   so the case is INVALID). `outProblems_nil` proves what an empty result means.
+2. **The parse check** (`parseProblems`). Lean's parser (`MitosGate.Lint.parse`), with the syntax of
+   the modules the approved Challenge imports (`importModules … (loadExts := true)`), reads its
+   header and commands. Every command must be a module doc or exactly one of the reader's hole or
+   theorem lines (a declaration starting at column 0 of that line, whose text is the whole line);
+   every such line must be one; the header must import exactly the reader's import lines, in order,
+   each plain. `parseProblems_nil` proves what an empty result means: the lines the reader keeps as
+   comments or blanks hold no command. A declaration doc comment starts its command before the
+   line, so a hole or theorem may have none (the approved Challenge has none).
+
+**What it proves, and what it does not.** With the three checks passing, Lean's parse of the
+approved Challenge has no command but module docs and the reader's lines; Lean declares exactly the
+reader's theorems and holes (round 9); and each generated Challenge, as Lean builds it with the
+approved implementation, declares exactly the theorems its run compares, each of exactly the
+intended type. Not checked by them: the case's own runs import the mutated `Mitos/Impl/` modules,
+not the approved ones, because the runner never builds a case's code outside the comparator's
+sandbox (Binding a refutation to the mutant, above); that the mutated implementation changes nothing in how the generated text
+elaborates rests, as before, on the lint and the absolute names (rounds 2 to 5). The parse check is
+what removes a hidden command in the approved Challenge whose effect could depend on the
+implementation or on the module name (each generated text is built as a module of its own name, not
+`Challenge.Mutant`). The parse uses the syntax of the Challenge's imports; a command of the
+Challenge that declares syntax is itself a command, which the parse check refuses.
+
+**Probes.** Every run, the parse check must find its known problem in five scratch sources: B1, a
+trailing hidden `namespace Mitos.Impl`, a trailing hidden `#exit`, and round 9's decoy and reverse.
+The output check must find its known problem in the refutation Challenges generated, for
+`breaks=resolve_total`, from two scratch approved Challenges built in the same workspace: B1
+(`differs Mitos.Refute.resolve_total`) and the trailing `#exit` (`missing Mitos.Refute.holes`). A
+trailing hidden `namespace` changes no constant of a generated Challenge, whose declarations are all
+named with `_root_`, so the output check rightly finds nothing there (below). With `sameType`
+always true in a scratch build, the runner exits 2 (`the output check missed a known misread in
+Challenge/OutputProbeB1.lean`); with the parse reading only declarations, it exits 2 (`the parse
+check missed a known misread in probe b1`).
+
+**Evidence** (one local run each, default kernel). Each shape inserted into a copy of the
+repository's approved Challenge, with the case `r10_b1` (`breaks=resolve_total`, `Refute.lean`
+proving `(h : False) → ¬ Spec.Total Impl.resolve` by `h.elim`), against the runner and against
+scratch builds with checks switched off:
+
+| shape | runner | output check alone | parse check alone | cross-check alone (round 9) |
+|---|---|---|---|---|
+| B1 | exit 2, parse: `in` command at line 16 | exit 2, values Challenge: `Mitos.Proofs.resolve_sound` differs | exit 2 | REFUTED, exit 0 |
+| trailing `namespace Mitos.Impl` | exit 2, parse: `namespace` command | no difference; REJECTED, exit 1 (the true result) | exit 2 | REJECTED, exit 1 |
+| trailing `#exit` | exit 2, parse: `exit` command | exit 2, `Mitos.Refute.holes` missing | exit 2 | REJECTED, exit 1 |
+| round 9 decoy | exit 2, cross-check (round 9's message) | exit 2, a generated Challenge does not build (unterminated comment) | exit 2 | exit 2 |
+| round 9 reverse | exit 2, cross-check | exit 2, a generated Challenge does not build | exit 2 | exit 2 |
+| round 8 value line | exit 2, the reader refuses it | the same | the same | the same |
+
+A decoy after a module doc's opener with a `breaks=decoy` case, so that every generated Challenge
+builds: output check alone, exit 2, `the values Challenge: the approved Challenge as Lean built it
+declares no Mitos.Proofs.decoy`. On the approved Challenge: `AGREE on 10 declarations, 3 probes
+caught`, `AGREE on 11 commands, 5 probes caught`, `11 state what they must, 2 probes caught` (all
+42 cases, `--prepare`).
+
+**Cost.** 12.4 to 13.2 s per runner run for all three checks over the whole corpus (3 local runs,
+`--prepare` of all 42 cases: two `lake build`s and about 20 imports), against 4.4 to 5.5 s for
+round 9's check alone; 879 s was the full run with `--paranoid` (round 4), so under 2%.
+
+**Considered.** Loading the generated Challenge as the comparator built it in the case's workspace:
+it imports the case's code, and the runner never loads a case's `.olean` outside the sandbox. A
+second comparator run per case, judging the generated Challenge against a clean reference with
+`sorryAx` permitted: it would check the sandboxed build, but doubles the comparator runs and still
+needs this check for the reference. Dropping the comment lines from the generated Challenges: it
+would remove hidden code from the output instead of stopping on it, and leaves the approved
+Challenge's own hidden commands unseen. m1 (each `differs` reported twice): the stop message now
+lists each difference once (`eraseDups`); `CrossCheck.problems` itself is unchanged, since changing
+it would take its proof and a `#guard` with it.
 
 ### Cases
 
@@ -663,6 +774,11 @@ runner being built in parallel has a job scheduler this runner could reuse later
       Lean built it (declarations, their lines, statements, `sorry` values, definition holes,
       imports); round 9's decoy and its reverse stop `--prepare`, and three probes keep the check
       from going blind
+- [x] the runner stops when Lean's parse of the approved Challenge holds a command that is no
+      module doc and no line the reader read, or when a Challenge it generates, as Lean builds it,
+      declares other theorems than its run compares or states other than the approved statements;
+      round 10's hidden `variable … in`, trailing `namespace` and trailing `#exit` stop it, and
+      seven probes keep the two checks from going blind
 - [x] all `checks` pass locally
 - [x] run-log record written (ops/runs/)
 - [ ] the owner decides the known gaps `assumptions_dedupe_dropped` and `edges_duplicated`
