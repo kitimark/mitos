@@ -42,8 +42,10 @@ statement in the root namespace and with absolute names:
 spaces, as every approved statement is (`Mitos.Spec.Sound Mitos.Impl.resolve`); anything else, such
 as a binder or a parenthesis, is refused, so the runner stops instead of qualifying a statement it
 does not understand (`qualify_eq_some`). The definition hole names in `Mitos.Refute.holes` are
-written the same way. The lint (`Mutants.Lint`) also keeps every name a case declares inside the
-namespaces it owns, so no shadow exists to find.
+written the same way. These two are what keep a shadow from changing a statement, whatever names a
+case declares. The lint (`Mutants.Lint`) also checks the names of a case's top-level declarations,
+as defence in depth; it does not read nested names (`let rec`, `where`), and it bans
+`with_decl_name%`, which declares nested names under any namespace.
 
 The Challenge imports the mutated implementation, so what the line states is the approved
 statement also only because the implementation declares no syntax: a macro there would rewrite
