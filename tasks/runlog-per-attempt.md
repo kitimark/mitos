@@ -68,15 +68,18 @@ escalation: hint → automation → stronger model → pair → split → revisi
   a PR and `runlog --head` on `main`. Its comment ("every run-log line of the merge-base must
   still be there, so union merges stay correct") stays true for the day files. So this PR leaves
   `.github/` alone.
-- **Pinned change id.** #83 (content id and `mitos-gate carry`, waiting on the owner's merge)
-  rewrites all three places in the kitimark-mode skill that compute a change id (Round budget,
-  Verdicts, the catch-up Status), so this PR does not add the pinned `git patch-id` command there.
-  `gate/runlog-test.sh` uses the pinned command. If #83 closes instead, #113 adds it.
+- **Pinned change id.** #83 merged while this PR was open. It replaced all three places in the
+  kitimark-mode skill that computed a change id with `git patch-id` (Round budget, Verdicts, the
+  catch-up Status) by the content id and `mitos-gate carry`, which git configuration does not
+  change. So the pinned `git patch-id` command from the B7 experiment is not needed in the skill,
+  and this PR does not add it. `gate/runlog-test.sh` and the replay use it to compare ids.
 - **Relation to #83.** With one file per attempt, plain `git patch-id --verbatim` stays the same
   over a bot rebase, so #83's special case for run-log lines (`ops/runs/*.ndjson` lines wherever
-  union put them) is no longer needed for new PRs; record files are new paths, which its exact
-  diff already covers. #83's carry chain check, that only the updater pushed since the verified
-  head, is still needed, because a patch-id match alone does not say who pushed.
+  union put them) is no longer needed for new PRs; a record file is a new path, which its exact
+  diff already covers (`content-id` on this branch counts the record file among the 9 files
+  outside the run logs). #83's carry chain check, that only the updater pushed since the verified
+  head, is still needed, because a matching id alone does not say who pushed. The rebase onto
+  #83 conflicted only in the usage text of `gate/Main.lean`, which keeps both sides.
 
 ## Theorems (`gate/MitosGate/RunLog.lean`)
 - `singleLine?_spec`: a record file's text is one non-empty line without `\n`, with or without a
