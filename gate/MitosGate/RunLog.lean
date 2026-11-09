@@ -23,9 +23,10 @@ states that rule, proves the check that enforces it, and runs it.
 `check` is the executable. It reads the files, parses each line with Lean core's `Lean.Json`, and
 decides with `appendOnly`, `noDupKeys` and the proved locators `firstMissing?` and `dupAt?`. The
 file I/O, the JSON parser and the field checks in `parseRecord` are not proved. Every line
-`check` and `cli` print that holds a file name, a field value, a message or an I/O error passes
-through `oneLine` (`gate/MitosGate/Util.lean`, with its proof), the gate's one sanitizer for
-untrusted text.
+`check` and `cli` print that holds a file name, a field value, a message or an I/O error is the
+gate's own `::error` command, with the text through `oneLine` and GitHub's escaping
+(`gate/MitosGate/Util.lean`, with its proof). The runner reads such a line as that one command, so
+the text in it starts none. The argument error is not a command, so it goes through `ciLine`.
 -/
 
 namespace MitosGate.RunLog
@@ -544,6 +545,6 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
       IO.println s!"::error::{escapeData (oneLine msg)}"
       return 1
   | .ok (_, none) => IO.eprintln "runlog needs --head <dir>"; IO.eprintln usage; return 2
-  | .error e => IO.eprintln (oneLine e); IO.eprintln usage; return 2
+  | .error e => IO.eprintln (ciLine e); IO.eprintln usage; return 2
 
 end MitosGate.RunLog

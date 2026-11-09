@@ -194,10 +194,17 @@ can only read the project and write to its `.lake`.
 `--model` must name a declaration (`def` or `abbrev`), not an `export` alias; an alias fails at gate 2
 ("Unknown identifier"). No gate enforces the rule yet: the gate 0 check is a pending follow-up in
 `tasks/gate3-qualified-challenge.md`.
-The gate prints text from the workspace, from Lean and from the comparator through an allowlist of
-printable code points (`MitosGate.oneLine` in `gate/MitosGate/Util.lean`, with its proof); every
-other code point prints as `\u{XXXX}`. So a file name or message stays on one line and cannot
-forge a `VERDICT:` line, move the cursor or reorder the text with bidi controls.
+The gate prints each line that holds text from the workspace, from Lean, from the comparator, from
+a file or from its arguments through `MitosGate.ciLine` (`gate/MitosGate/Util.lean`, with its
+proofs). It writes the text through an allowlist of printable code points (`oneLine`); every other
+code point prints as `\u{XXXX}`. So a file name or message stays on one line and cannot forge a
+`VERDICT:` line, move the cursor or reorder the text with bidi controls. `ciLine` also escapes
+what GitHub's runner reads as a workflow command: a `[` right after `##` anywhere in the line, and
+a `:` that would come first after the leading spaces. So the text cannot add an annotation, mask a
+word in the log or stop the runner from reading commands. Decoding the escapes gives back the
+original text. The `::error` lines of `runlog` and `lock-models` are the gate's own commands, with
+the text through `oneLine` and GitHub's escaping. `lake exe mitos-lint-test` runs the gate on
+hostile file names, lock lines and arguments and checks every line it prints.
 
 Gates 0–5 take the model as given: a plugin passes them by emitting the facts the model says
 hold. `Mitos.CompleteWrt` matches an emitted fact by kind and identity only, not by span or by how
