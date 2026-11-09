@@ -1,0 +1,5 @@
+why=Matches a provider by package name alone, so an npm requirement resolves to a pip package of the same name.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=  fs.filter (matchesB r)
+replace=  fs.filter fun p => r.fact.kind == .requires && p.fact.kind == .provides && r.fact.ident.key == p.fact.ident.key

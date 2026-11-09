@@ -1,0 +1,5 @@
+why=Starts the worklist at the second edge (an off-by-one), so a dependent reached only through the first edge is missed.
+breaks=impact_correct
+file=Mitos/Impl/Impact.lean
+find=impactGo x es []
+replace=impactGo x es.tail []

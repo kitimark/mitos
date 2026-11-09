@@ -1,0 +1,5 @@
+why=Starts the edge pass at the second fact (an off-by-one), so the first requirement gets no edge although it has a provider.
+breaks=resolve_complete resolve_total resolve_retract_exact
+file=Mitos/Impl/Resolve.lean
+find=edges := fs.flatMap
+replace=edges := fs.tail.flatMap

@@ -1,0 +1,5 @@
+why=Computes the status from the requirement's origin alone, so an edge whose provision an AI proposed is confirmed.
+breaks=resolve_status_honest
+file=Mitos/Impl/Resolve.lean
+find=status := statusOf fs r (assumptionsOf r p)
+replace=status := statusOf fs r [r.origin]

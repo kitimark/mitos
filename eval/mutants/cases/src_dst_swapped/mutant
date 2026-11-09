@@ -1,0 +1,5 @@
+why=Points the edge from the provider to the requirer, so impact analysis runs the wrong way.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=src := r.repo, dst := p.repo
+replace=src := p.repo, dst := r.repo

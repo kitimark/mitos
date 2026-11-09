@@ -35,11 +35,33 @@ jobs:
             --model Models.ToyRequire.model --paranoid
       - run: eval/cheats/run.sh
 
+      # Mutation testing (eval/mutants): each mutant of the resolver or impact analysis is rejected
+      # by the approved Challenge, and a refutation of the theorems it names is accepted.
+      - name: Build the mutant runner
+        run: lake --dir eval/mutants build
+
+      - name: Every resolver mutant breaks a Challenge theorem (paranoid)
+        shell: bash
+        run: |
+          status=0
+          lake --dir eval/mutants exe mitos-mutants --paranoid | tee "$RUNNER_TEMP/mutants.txt" \
+            || status=$?
+          { echo '### Mutation testing'; echo '```'; cat "$RUNNER_TEMP/mutants.txt"; echo '```'; } \
+            >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cheat-logs
           path: .lake/cheats/
+          if-no-files-found: ignore
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutant-logs
+          path: .lake/mutants/
           if-no-files-found: ignore
 
   resolve:
@@ -91,9 +113,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Point both lean-toolchain files at the candidate (this checkout only)
+      - name: Point the lean-toolchain files at the candidate (this checkout only)
         run: |
-          for f in lean-toolchain examples/acme/lean-toolchain; do
+          for f in lean-toolchain examples/acme/lean-toolchain eval/mutants/lean-toolchain; do
             echo "leanprover/lean4:$VERSION" > "$f"
           done
           git diff
@@ -110,4 +132,6 @@ jobs:
           lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
             --model Models.ToyRequire.model --paranoid
           eval/cheats/run.sh
+          lake --dir eval/mutants build
+          lake --dir eval/mutants exe mitos-mutants
           echo "### canary $VERSION: passed" >> "$GITHUB_STEP_SUMMARY"

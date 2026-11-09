@@ -1,0 +1,5 @@
+why=Never fills the unresolved list, so a requirement that nothing provides disappears silently.
+breaks=resolve_unresolved_exact resolve_total
+file=Mitos/Impl/Resolve.lean
+find=((fs.filter isRequirement).filter fun r => (providers fs r).isEmpty).map (·.id)
+replace=[]

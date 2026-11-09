@@ -1,0 +1,5 @@
+why=Forgets to keep only requirements, so a provision that nobody uses is reported as unresolved.
+breaks=resolve_unresolved_exact
+file=Mitos/Impl/Resolve.lean
+find=((fs.filter isRequirement).filter fun r
+replace=(fs.filter fun r

@@ -1,0 +1,8 @@
+why=Lists both origins even when they are the same, so an edge between two facts of one extractor names that extractor twice.
+survives=Spec.AssumptionsExact fixes which assumptions an edge lists, not how often: no theorem says an edge lists each assumption once.
+file=Mitos/Impl/Resolve.lean
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=[r.origin, p.origin]
+file=Mitos/Proofs/Resolve/Basic.lean
+find=  split <;> simp_all
+replace=  simp

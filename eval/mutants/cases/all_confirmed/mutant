@@ -1,0 +1,5 @@
+why=Marks every edge confirmed, so an ambiguous or AI-proposed edge looks certain.
+breaks=resolve_status_honest
+file=Mitos/Impl/Resolve.lean
+find=  else .inferred
+replace=  else .confirmed
