@@ -24,10 +24,15 @@ statement is wrong.
 
 Run-log files are append-only. `.gitattributes` sets `merge=union` for `ops/runs/*.ndjson`, so
 when two branches append different lines, a rebase or merge keeps the lines from both sides and
-does not stop on a conflict. Never edit or reorder a line that is already in a file: if both
-sides touch the same line, union keeps both versions. Do not correct a record by appending a
-second record for the same attempt either: the schema has no marker for which one wins, and
-union does not fix line order. Put a correction in the `note` of the next attempt's record.
+does not stop on a conflict. Never edit, delete or reorder a line that is already in a file, in
+any commit, even a line an earlier commit of the same branch added. A rebase, such as the PR
+updater's, replays a branch commit by commit, so a later commit that rewrites the line replays
+as an edit, and union keeps both versions: two records for one (task, role, attempt), which
+turn `gate` red, as on #62 twice (#74). A commit that deletes the stale copy does not hold,
+because the next rebase brings it back. A branch whose history already edits a line is rebuilt
+so that its run-log change is appended once. Do not correct a record by appending a second
+record for the same attempt either: the schema has no marker for which one wins, and union does
+not fix line order. Put an update or a correction in the `note` of the next attempt's record.
 
 ## Enforced by CI
 

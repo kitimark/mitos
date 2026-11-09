@@ -409,7 +409,8 @@ gate 6 now rejects it.
 
 ### Run log (one record per agent task attempt)
 
-Stored as NDJSON in `ops/runs/` (or as CI artifacts); schema in `ops/runs/README.md`:
+Stored as NDJSON in `ops/runs/` (or as CI artifacts); schema and append-only rules in
+`ops/runs/README.md`:
 
 ```json
 {"task":"P1-007","role":"builder","model":"…","attempt":2,"iterations":31,"wall_min":74,
