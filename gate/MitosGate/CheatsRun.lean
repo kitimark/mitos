@@ -12,9 +12,9 @@ each case's row (`table`), and the exit code (`exitCode`). Each line it prints t
 name, a value from an `expect` file, an argument or an I/O error goes through `ciLine`, so it stays
 one line and starts no workflow command in a CI log (`ciLine_not_startsCommand`). On an ASCII line
 `ciLine` changes only a `\`, a control character, a `:` that would come first and a `[` right after
-`##`. No line of the corpus's table holds one, so the table stays `run.sh`'s byte for byte, which CI
-checks. The gate's output goes only to the logs, and `timing.tsv` holds the case names through
-`oneLine`.
+`##`. No line of the corpus's table holds one, so the table stays `run.sh`'s byte for byte, as
+CI showed while #84 ran both runners. The gate's output goes only to the logs, and `timing.tsv`
+holds the case names through `oneLine`.
 
 The workspace is `run.sh`'s: the example workspace's `lakefile.toml`, `lean-toolchain`,
 `models.lock`, `Models/` and `Plugins/`, then the case's `Plugins/` and `Models/` over them. With

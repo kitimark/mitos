@@ -343,8 +343,9 @@ runs run alone. The logs are `.lake/cheats/<case>.full.log` and `<case>.comparat
 makes is in `gate/MitosGate/Cheats.lean`, with its proofs: the `expect` parser (a key it does not
 know, or a key given twice, is an error, except `lock_append`; `full` and `comparator_only` are
 required), the reading of the gate's verdict line, the pass rule, the table and the scheduler.
-`eval/cheats/run.sh`, the shell runner it replaces, runs one run at a time and stays until CI shows
-that both print the same table.
+`eval/cheats/run.sh`, the shell runner it replaces, runs one run at a time. Both printed the same
+table in every CI run of #84 that compared them, so CI runs only `mitos-gate cheats`. `run.sh`
+stays until `nightly.yml` no longer runs it (#103).
 
 A `comparator_only=accept` case may also have one `guards=R` line, such as
 `guards=banned:include_str`, naming the lint rule it pins. Each gate-1 violation ends with its
