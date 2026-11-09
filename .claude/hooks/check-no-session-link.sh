@@ -65,15 +65,18 @@ fi
 grep -Eq "$trailer_re" <<<"$cmd" && trailer_msg "this command"
 
 # One line per simple command, so a route and its method are read together: a backslash line
-# continuation is joined first, then the command is split at && || ; | and $(. A quoted | or ;
-# splits too, which at worst moves a flag away from its route. The route may name the repository in
-# any form, such as `repos/$repo/pulls`. gh must start the simple command, after any assignments,
-# keywords, `bash -c '` or `eval`, or a wrapper with any arguments (`timeout -s KILL 60`, `sudo -u
-# x`, `xargs -I {}`), so a commit message, an echo or a grep that only names `gh pr create` or the
-# route passes.
-segments=$(sed -e ':a' -e '/\\$/{N;s/\\\n/ /;ba' -e '}' <<<"$cmd" | sed -E 's/(&&|\|\||;|\||\$\()/\n/g')
-wrap='env|command|exec|nohup|nice|stdbuf|setsid|time|sudo|doas|xargs|timeout'
-lead="^[[:space:]({!]*((([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|if|then|else|elif|do|while|until)[[:space:]]+)|(($wrap)([[:space:]]+[^[:space:]]+)*[[:space:]]+)|(((ba|da|z)?sh[[:space:]]+-[A-Za-z]*c|eval)[[:space:]]+['\"]?))*([^[:space:]'\"]*/)?gh[[:space:]]+"
+# continuation is joined first, then the command is split at && || ; | $( <( >( and at a single &
+# that is not part of a redirection such as 2>&1. A quoted | ; or & splits too, which at worst moves
+# a flag away from its route. The route may name the repository in any form, such as
+# `repos/$repo/pulls`. gh must start the simple command, after any assignments, keywords, a
+# function or case-arm header (`f() {`, `x)`), `bash -c '` or `eval`, or a wrapper with any
+# arguments (`timeout -s KILL 60`, `sudo -u x`, `xargs -I {}`), so a commit message, an echo or a
+# grep that only names `gh pr create` or the route passes. Backticks do not split, so a Markdown
+# code span in a commit message passes, and so does a create in backticks.
+segments=$(sed -e ':a' -e '/\\$/{N;s/\\\n/ /;ba' -e '}' <<<"$cmd" | sed -E 's/(&&|\|\||;|\||\$\(|[<>]\()/\n/g' \
+  | sed -E -e ':a' -e 's/(^|[^<>&])&([^>&]|$)/\1\n\2/' -e 'ta')
+wrap='env|command|builtin|exec|coproc|nohup|nice|ionice|stdbuf|setsid|time|sudo|doas|xargs|timeout|flock|chronic|unbuffer'
+lead="^[[:space:]]*(([({!]|[^[:space:]]*\\))[[:space:]]*|(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|if|then|else|elif|do|while|until|case[[:space:]]+[^[:space:]]+[[:space:]]+in)[[:space:]]+)|(($wrap)([[:space:]]+[^[:space:]]+)*[[:space:]]+)|(((ba|da|z)?sh[[:space:]]+-[A-Za-z]*c|eval)[[:space:]]+['\"]?))*([^[:space:]'\"]*/)?\\\\?gh[[:space:]]+"
 route_re='(^|[[:space:]])['\''"]?/?repos/[^[:space:]'\''"]+/pulls/?(\?[^[:space:]'\''"]*)?['\''"]?([[:space:]]|$)'
 while IFS= read -r seg; do
   grep -Eq "$gh_re" <<<"$seg" || continue
