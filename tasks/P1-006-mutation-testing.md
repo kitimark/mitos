@@ -224,8 +224,10 @@ redirected the same way.
 **The premise this round makes true.**
 
 > Every name in every statement the runner generates resolves to the declaration of exactly that
-> name, whatever the case declares; and every name a case declares lies in a namespace the case
-> owns, so no generated statement could find it.
+> name, whatever the case declares.
+
+Round 4 also claimed that every name a case declares lies in a namespace the case owns. That was
+false for nested names, and round 5 (below) drops it.
 
 **Decision: both parts, each closing the shadow class at a different point.**
 - **The statements** (`Mutants.Challenge`). Every theorem the runner generates (each negation,
@@ -238,13 +240,15 @@ redirected the same way.
   enough, and the root namespace is what makes the lookup exact: inside `Mitos.Refute`, Lean tries
   `Mitos.Refute._root_.Mitos.Spec.X` first. `Mutants.Resolution` checks both facts about Lean at
   every build, so a toolchain that changes them fails the canary.
-- **The lint** (`Mutants.Lint`). It follows `namespace`, `section` and `end` as Lean does
-  (`walk`), and refuses a name a case declares outside its own namespaces: under `Mitos.Impl` in an
-  implementation file, under `Mitos.Refute` in a `Refute.lean`, under `Mitos` in a proof repair;
-  `_root_` only as a declaration's leading component. A `namespace` or an `open` (command, term or
-  tactic) must name a namespace under `Mitos`, which holds no scoped syntax: that makes the lint's
-  parse Lean's (B2 above). `deriving` is banned, the one allowed form that would add an instance,
-  which instance resolution in a module that imports the text could pick up.
+- **The lint** (`Mutants.Lint`), as defence in depth. It follows `namespace`, `section` and `end`
+  as Lean does (`walk`), and refuses a top-level `def`, `theorem` or `abbrev` named outside the
+  case's own namespaces: under `Mitos.Impl` in an implementation file, under `Mitos.Refute` in a
+  `Refute.lean`, under `Mitos` in a proof repair; `_root_` only as its leading component. It does
+  not read names declared inside a declaration (`let rec`, `where`; round 5). A `namespace` or an
+  `open` (command, term or tactic) must name a namespace under `Mitos`, which holds no scoped
+  syntax: that makes the lint's parse Lean's (B2 above). `deriving` is banned, the one allowed form
+  that would add an instance, which instance resolution in a module that imports the text could
+  pick up.
 - A `Refute.lean` may also declare an approved definition hole (`Mitos.Impl.resolve`). That is the
   attack the hole run and the comparison by value reject, and `cheat_own_hole`,
   `cheat_private_hole` and `cheat_hide_gap` pin those checks only if the lint lets them through;
@@ -254,8 +258,8 @@ redirected the same way.
 
 **Options considered.**
 - Chosen: both parts. The statements part does not depend on the lint's reading of Lean's parse,
-  which is not proved; the lint part also fixes B2, and keeps shadows out of every file, not only
-  the generated ones.
+  which is not proved; the lint part also fixes B2, and refuses a top-level shadow in every file,
+  not only the generated ones (not a nested one, round 5).
 - The statements part alone: it leaves B2, and a shadow in a file other than a generated one.
 - The lint part alone: the binding would rest on the lint's reading of scopes, which is unproved
   code, for a check whose failure fakes a REFUTED.
@@ -269,6 +273,26 @@ of `src_dst_swapped`, which only the lint stops). With the lint's name rules off
 names on, the four shadows are rejected at the refutation run (`Challenge and solution theorem
 statement do not match`), so the statements part closes the class alone; the two scoped-syntax
 cases are REFUTED, so the namespace and `open` rules are pinned by them.
+
+### Nested names (round 5)
+
+**What failed.** Round 4's second premise, "every name a case declares lies in a namespace the
+case owns". The lint reads only the names of top-level `def`, `theorem` and `abbrev` commands.
+`with_decl_name% N (let rec x … ; …)` declares `N.x` with `N` absolute, so an implementation edit
+declared `Mitos.Refute.Mitos.Spec.AssumptionsExact := False` and passed the lint; and Lean declares
+a `let rec` or `where` named `_root_.X` as `<decl>._root_.X` (review on #86, round 4, opus B1). No
+case came back REFUTED: the root-declared, absolute statements did not resolve to the shadow, and
+the refutation run rejected it on the statement mismatch. This is the second time the premise that
+the lint can list every name a case declares has failed.
+
+**Decision.** The guarantee rests on the statements part alone (round 4 above, checked by
+`Mutants.Resolution` at every build). The lint's name rules stay as defence in depth, and the docs
+now say what they check: the names of top-level declarations, and `namespace`s and `open`s. Nested
+names are not read, and no `let rec` or `where` tracking is added: it would rest the claim on more
+unproved reading of Lean's parse, for a class the statements part already closes. `with_decl_name`
+is banned, as the token `with_decl_name%` (`bannedComponent`: a banned word followed by `%`) and as
+a plain word in a `replace=` text, since it is the form that puts nested names under any namespace;
+`cheat_with_decl_name` pins the ban.
 
 ### Cases
 
@@ -323,6 +347,13 @@ default kernel):
 | `cheat_open_scoped` | a `Refute.lean` with `open Int`, so Lean reads `-[1+1]` as `Int.negSucc 1` and the lint as `-` of a list (opus B2) | lint: `open Int` | REFUTED (a genuine refutation) | REFUTED |
 | `cheat_namespace_scoped` | the same with `namespace Int` | lint: `namespace Int` | REFUTED (a genuine refutation) | REFUTED |
 
+Round 5 adds one, rejected at the lint. "Without" is the round-4 runner (98f2548, without the ban;
+one run, default kernel):
+
+| Case | The cheat | Rejected at, with | Without |
+|---|---|---|---|
+| `cheat_with_decl_name` | the known gap as `breaks=`; the implementation declares `Mitos.Refute.Mitos.Spec.AssumptionsExact := False` through `with_decl_name%` and a `let rec` (round 4, opus B1) | lint: `with_decl_name%`, and `with_decl_name` in the `replace=` text | refutation: statement mismatch |
+
 ### The rest
 
 **Lean first.** The runner is a small Lake package, `eval/mutants/` (`lean_exe mitos-mutants`),
@@ -339,10 +370,13 @@ a `sorry` fails it:
   (`Stage.fits`: `refutation` needs `breaks=`, `values` needs `survives=`).
 - `Mutants.Lint`: a source with no finding parses to the end, imports only under the kind's
   prefixes, holds only allowed commands, no attribute and no token outside `tokenOk`, enters and
-  opens only namespaces under `Mitos`, and declares only names its kind may (`Kind.declOk`), as
-  `walk` follows its scopes (`problems_eq_nil_iff`; `walk` itself is checked by `#guard`s); a `replace=` text the plain-text check passes holds no `#`, no `@[`, and
-  no banned word standing alone (`replaceProblems_banned`, from `mem_words`); every file an edit
-  changes is linted (`mem_targets`). Reading a source with Lean's parser is not proved.
+  opens only namespaces under `Mitos`, and gives each top-level declaration only a name its kind
+  may have (`Kind.declOk`), as `walk` follows its scopes (`problems_eq_nil_iff`; `walk` itself is
+  checked by `#guard`s); a token passes only if no component is a banned word or one followed by
+  `%` (`tokenOk_iff`); a `replace=` text the plain-text check passes holds no `#`, no `@[`, and no
+  banned word standing alone (`replaceProblems_banned`, from `mem_words`); every file an edit
+  changes is linted (`mem_targets`). Reading a source with Lean's parser is not proved, and names
+  declared inside a declaration are not read.
 - `Mutants.Challenge`: `qualify` accepts a statement exactly when it is a list of names under
   `Mitos`, and writes each as `_root_.<name>` (`qualify_eq_some`, `qualName_mitos`); the refutation
   Challenge holds only imports of the implementation modules, the approved Challenge's import and
@@ -405,9 +439,11 @@ runner being built in parallel has a job scheduler this runner could reuse later
 - [x] each check of the binding is pinned: a cheat case turns the run red without it
 - [x] a case's Lean text is linted before any build; the four ways round 2's reviews faked a
       REFUTED are cheat cases rejected at the lint, and REFUTED without it
-- [x] every generated statement is declared at the root with absolute names, and a case declares,
-      enters and opens names only in its own namespaces; round 3's namespace shadows and scoped
-      `open` are cheat cases rejected at the lint, REFUTED on the round-3 runner
+- [x] every generated statement is declared at the root with absolute names; a case names its
+      top-level declarations only in its own namespaces, and enters and opens only namespaces
+      under `Mitos` (nested names are not read, and `with_decl_name%` is banned); round 3's
+      namespace shadows and scoped `open` are cheat cases rejected at the lint, REFUTED on the
+      round-3 runner
 - [x] all `checks` pass locally
 - [x] run-log record written (ops/runs/)
 - [ ] the owner decides the known gaps `assumptions_dedupe_dropped` and `edges_duplicated`

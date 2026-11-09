@@ -2,7 +2,7 @@ import MitosGate.Lint
 import Mutants.Manifest
 
 /-!
-# The lint: a case's Lean text runs no code, declares no syntax, and declares names only where it may
+# The lint: a case's Lean text runs no code, declares no syntax, and names its top-level declarations only where it may
 
 A case supplies Lean source twice: the `replace=` text of its edits, which ends up in the mutated
 `Mitos/Impl/` modules (and, for a known gap, in its proof repairs under `Mitos/Proofs/`), and its
@@ -16,9 +16,11 @@ implementation elaborate to another resolver in the run that holds the case's fi
 `include_str` inside `first | … | …`, or `run_cmd` testing whether the file exists). So can a plain
 declaration: Lean resolves a name in the namespaces around it first, so an implementation that
 declared `Mitos.Refute.Mitos.Spec.AssumptionsExact := False` changed what the refutation Challenge,
-elaborated in namespace `Mitos.Refute`, stated (review on #86, round 3). The Challenges now state
-everything at the root with absolute names (`Mutants.qualify`); the lint also keeps every name a
-case declares inside the namespaces it owns.
+elaborated in namespace `Mitos.Refute`, stated (review on #86, round 3). The Challenges now declare
+every theorem at the root and write every name as `_root_.<name>` (`Mutants.qualify`), where Lean
+looks a name up exactly, and that is what keeps a shadow from changing a statement, whatever names
+a case declares (`Mutants.Resolution` checks it at every build). The lint's name rules below are
+defence in depth: they read the names of top-level declarations, not nested ones.
 
 So before any build, the runner lints every text a case wrote or changed, and judges no case the
 lint finds anything in. The lint is an allow-list, read from Lean's own parse (`read`, with the
@@ -36,16 +38,21 @@ implementation see, since a text that passes enters and opens only namespaces un
   1's plugin list (`MitosGate.Lint.banned`: `macro`, `macro_rules`, `syntax`, `notation`, `elab`,
   `run_cmd`, `initialize`, `include_str`, `instance`, `scoped`, `export`, `Lean`, `native_decide`,
   `sorry`, …), the term and tactic forms that run code inside an allowed declaration (`by_elab`,
-  `run_tac`), `set_option` and `attribute` anywhere, also inside a declaration, and `deriving`,
-  the one allowed form that would add an instance, which the elaboration of every module that
-  imports it could pick up;
+  `run_tac`), `set_option` and `attribute` anywhere, also inside a declaration, `deriving`, the
+  one allowed form that would add an instance, which the elaboration of every module that imports
+  it could pick up, and `with_decl_name`, also as the token `with_decl_name%` (`bannedComponent`),
+  which names the `let rec`s inside it under any absolute namespace (review on #86, round 4);
 - **names** (`Kind.declOk`, `nsOk`, `openOk`, over `walk`, which follows `namespace`, `section`
-  and `end` as Lean does): every name a declaration gets lies under `Mitos.Impl` in an
-  implementation file, under `Mitos.Refute` in a `Refute.lean` (or is an approved definition hole,
-  which the hole run and the comparison by value judge), and under `Mitos` in a proof repair; every
-  `namespace` and every `open` (in a command, a term or a tactic) names a namespace under `Mitos`,
-  and no name has a `_root_` component but a declaration's leading one. So no name a case declares
-  is one the generated Challenges could resolve to in place of the approved one, and the case
+  and `end` as Lean does): the name of every top-level `def`, `theorem` and `abbrev` lies under
+  `Mitos.Impl` in an implementation file, under `Mitos.Refute` in a `Refute.lean` (or is an
+  approved definition hole, which the hole run and the comparison by value judge), and under
+  `Mitos` in a proof repair, with no `_root_` component but its leading one; and every `namespace`
+  and every `open` (in a command, a term or a tactic) names a namespace under `Mitos`. Names
+  declared inside a declaration are not read: Lean declares a `let rec` or `where` name under the
+  declaration's own name, one written `_root_.X` as `<decl>._root_.X`, with an inner `_root_`
+  (review on #86, round 4). So these rules do not show that no name a case declares is one a
+  generated Challenge could resolve to; the root declarations and absolute names of
+  `Mutants.Challenge` show that. What the namespace and `open` rules do show is that the case
   switches on no scoped syntax: entering or opening a namespace switches on its scoped syntax
   (`open Int` adds `-[n+1]`, review on #86, round 3), and under `Mitos` there is none, since the
   approved core declares no syntax and a text that passes declares none.
@@ -62,8 +69,8 @@ imports, with the syntax of `Init`, and its elaboration runs no code of the case
 or instance. The lint limits those imports to the approved core and the implementation, whose texts
 are the same in every run (`Mutants.holeCore_impl`), so the implementation elaborates the same in
 every run, whichever other files a run holds; and the Challenges that import it state exactly the
-approved statements, since they name everything absolutely and nothing the case declares has an
-approved statement's name.
+approved statements, since they declare every theorem at the root and name everything absolutely,
+so Lean looks each name up exactly, whatever names the case declares (`Mutants.Challenge`).
 -/
 
 namespace Mutants.Lint
@@ -137,18 +144,27 @@ def allowedCommands : List String :=
 
 /-- Words no token may have as a component: gate 1's plugin list, the term and tactic forms that
 run code at elaboration inside an allowed declaration, `set_option` and `attribute`, which the
-command allow-list leaves out at the top level, also inside a term or a tactic block, and
-`deriving`, which would add an instance to every module that imports the text. -/
+command allow-list leaves out at the top level, also inside a term or a tactic block, `deriving`,
+which would add an instance to every module that imports the text, and `with_decl_name`: the term
+`with_decl_name% N (let rec x … ; …)` declares `N.x`, with `N` taken as an absolute name, a nested
+name that `walk` does not read (review on #86, round 4). -/
 def bans : List String :=
-  MitosGate.Lint.banned ++ ["by_elab", "run_tac", "set_option", "attribute", "deriving"]
+  MitosGate.Lint.banned ++
+    ["by_elab", "run_tac", "set_option", "attribute", "deriving", "with_decl_name"]
+
+/-- A component is banned when it is a word of `bans`, or one followed by `%`, the way the keyword
+of a term elaborator such as `with_decl_name%` ends. -/
+def bannedComponent (c : String) : Bool :=
+  bans.contains c || bans.any fun b => c == b ++ "%"
 
 /-- A token passes: it is no `#` command, and none of its components is banned. -/
 def tokenOk (t : String) : Bool :=
-  !t.startsWith "#" && (MitosGate.Lint.components t).all fun c => !bans.contains c
+  !t.startsWith "#" && (MitosGate.Lint.components t).all fun c => !bannedComponent c
 
 theorem tokenOk_iff {t : String} :
-    tokenOk t = true ↔ t.startsWith "#" = false ∧ ∀ c ∈ MitosGate.Lint.components t, c ∉ bans := by
-  simp [tokenOk]
+    tokenOk t = true ↔ t.startsWith "#" = false ∧
+      ∀ c ∈ MitosGate.Lint.components t, c ∉ bans ∧ ∀ b ∈ bans, c ≠ b ++ "%" := by
+  simp [tokenOk, bannedComponent]
 
 /-! ## Names -/
 
@@ -199,9 +215,10 @@ def strictlyUnder (pre name : List String) : Bool :=
 def nsOk (ns : List String) : Bool :=
   ns.head? == some "Mitos" && !ns.contains "_root_"
 
-/-- The names a source of each kind may declare: under `Mitos.Impl` in an implementation file,
-under `Mitos.Refute` or an approved hole in a `Refute.lean`, under `Mitos` in a proof repair; and
-never with a `_root_` component. -/
+/-- The names a top-level declaration may have, by the kind of source: under `Mitos.Impl` in an
+implementation file, under `Mitos.Refute` or an approved hole in a `Refute.lean`, under `Mitos` in a
+proof repair; and never with a `_root_` component. Names declared inside a declaration (`let rec`,
+`where`) are not read. -/
 def Kind.declOk (k : Kind) (name : List String) : Bool :=
   !name.contains "_root_" &&
     match k with
@@ -242,7 +259,7 @@ def shortKind (k : String) : String :=
 def tokenProblem (t : String) : String :=
   if t.startsWith "#" then s!"`{t}`: no `#` command is allowed"
   else
-    let c := ((MitosGate.Lint.components t).find? fun c => bans.contains c).getD t
+    let c := ((MitosGate.Lint.components t).find? bannedComponent).getD t
     s!"`{c}` is not allowed in a case's Lean text"
 
 /-- Everything the lint finds in a source of kind `k`, by position. -/
@@ -268,9 +285,9 @@ def problems (k : Kind) (s : Source) : List (Pos × String) :=
 /-- **What a source with no finding is**: Lean's parser reads it to the end; it has a plain header
 whose every import lies under the kind's prefixes; every top-level command is one of
 `allowedCommands`; it has no attribute; every token passes `tokenOk`; following its scopes, every
-namespace it enters lies under `Mitos` and every name it declares is one the kind may declare
-(`Kind.declOk`), with no unreadable name and no unbalanced `end`; and every namespace it opens lies
-under `Mitos`. -/
+namespace it enters lies under `Mitos` and every top-level declaration has a name the kind may
+declare (`Kind.declOk`), with no unreadable name and no unbalanced `end`; and every namespace it
+opens lies under `Mitos`. -/
 theorem problems_eq_nil_iff {k : Kind} {s : Source} :
     problems k s = [] ↔
       s.unparsed = none ∧ s.modifiers = [] ∧
@@ -568,5 +585,10 @@ def check (env : Environment) (k : Kind) (file src : String) : IO (List String) 
   !(Kind.refute [["Mitos", "Impl", "resolve"]]).declOk ["Mitos", "Impl", "helper"]
 #guard Kind.proofs.declOk ["Mitos", "Impl", "resolve"] && !Kind.proofs.declOk ["Int", "x"]
 #guard nsOk ["Mitos", "Impl"] && !nsOk ["Int"] && !nsOk ["Mitos", "_root_"] && !nsOk []
+-- `with_decl_name%` is refused as a token and, in a `replace=` text, as a plain word.
+#guard tokenOk "Mitos.Impl.resolve" && tokenOk "decl_name%" && !tokenOk "with_decl_name%" &&
+  !tokenOk "with_decl_name" && !tokenOk "macro_rules" && !tokenOk "Mitos.deriving"
+#guard replaceProblems "def a := with_decl_name% N (let rec x := 0; 0)" ==
+  ["`with_decl_name` is not allowed in a case's Lean text"]
 
 end Mutants.Lint
