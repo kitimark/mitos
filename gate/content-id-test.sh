@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tests for `mitos-gate content-id` (gate/MitosGate/ContentId.lean) on scratch repositories: what
-# changes the id and what keeps it, the run-log refusals, the git config and environment variants,
-# and a shell reference for the normalized diff. Then, when the commits are in this clone, a replay
-# of the PR heads of #79's morning. Run from anywhere: gate/content-id-test.sh
+# changes the id and what keeps it, where a hunk applies, the run-log refusals, the git config and
+# environment variants, and a shell reference for the normalized diff. Then, when the commits are
+# in this clone, a replay of the updater's rebases of open PRs. Run from anywhere:
+# gate/content-id-test.sh
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -27,6 +28,13 @@ old() {
   local mb
   mb=$(g merge-base "$1" "$2") || return 0
   { g diff "$mb" "$2" | g patch-id --verbatim | cut -d' ' -f1; } 2>/dev/null || true
+}
+# pdiff <from> <to>: the diff with the tool's pinned options, for the shell references.
+pdiff() {
+  g -c core.quotePath=true -c diff.suppressBlankEmpty=false diff --patch --no-color --no-ext-diff \
+    --no-textconv --no-renames --text --full-index --diff-algorithm=myers --indent-heuristic \
+    --unified=3 --inter-hunk-context=0 --src-prefix=a/ --dst-prefix=b/ --no-relative \
+    --ignore-submodules=none --submodule=short -O/dev/null "$@"
 }
 same() { if [ -n "$2" ] && [ "$2" = "$3" ]; then ok "$1"; else echo "  ids: '$2' '$3'"; bad "$1"; fi; }
 differ() { if [ -n "$2" ] && [ -n "$3" ] && [ "$2" != "$3" ]; then ok "$1"; else echo "  ids: '$2' '$3'"; bad "$1"; fi; }
@@ -95,6 +103,26 @@ for change in "binary byte:printf 'bin\\0arY\\377\\r\\n' >blob.bin" \
   g commit -qm var
   differ "a change changes the id: ${change%%:*}" "$id_pr" "$(cid main var)"
 done
+
+# Replace refs and grafts in the clone do not change the id: git reads the commits as they are.
+g replace "$(g rev-parse pr:A.lean)" "$(g rev-parse base:B.lean)"
+same "a replace ref for a head blob does not change the id" "$id_pr" "$(cid main pr)"
+g replace "$(g rev-parse pr)" "$(g rev-parse ws)"
+same "a replace ref for the head commit does not change the id" "$id_pr" "$(cid main pr)"
+g replace -l | while read -r r; do g replace -d "$r" >/dev/null; done
+g rev-parse pr >"$repo/.git/info/grafts"
+if g merge-base main pr >/dev/null 2>&1; then bad "  (the graft should hide the merge-base from plain git)"; fi
+same "a graft in info/grafts does not change the id" "$id_pr" "$(cid main pr)"
+rm "$repo/.git/info/grafts"
+
+# A run-log line with and without a final newline: two ids.
+g checkout -qB eol1 base
+rec D 1 >>"$repo/ops/runs/d1.ndjson"
+g commit -qam eol1
+g checkout -qB eol2 base
+rec D 1 | tr -d '\n' >>"$repo/ops/runs/d1.ndjson"
+g commit -qam eol2
+differ "a run-log record with and without a final newline gives two ids" "$(cid main eol1)" "$(cid main eol2)"
 
 # The run-log part ignores where the added lines are.
 g checkout -qB order base
@@ -184,6 +212,56 @@ g checkout -qB ctx pr
 g rebase -q main
 differ "a main change in the hunk's context changes the id" "$id_pr" "$(cid main ctx)"
 
+# Where a hunk applies. The same hunk text can apply at two places of a file; the marker `@@ <k>`
+# counts how many times the hunk's old-side lines occur above it in the merge-base file.
+repo="$tmp/pos"
+mkdir -p "$repo"
+g init -q -b main
+blk() { printf '  run lint\n  run build\n  run proofs\n  run axioms\n  run cheats\n  run lock\n'; }
+paranoid() { sed 's/^  run axioms$/  run axioms --paranoid/'; }
+{ echo 'strict() {'; blk; echo '}'; } >"$repo/check.sh"
+g add -A
+g commit -qm base
+g checkout -qb pr
+{ echo 'strict() {'; blk | paranoid; echo '}'; } >"$repo/check.sh"
+g commit -qam "pr: strict() checks axioms with --paranoid"
+id_pos=$(cid main pr)
+g checkout -q main
+{ echo 'strict() {'; blk; echo '}'; echo 'lax() {'; blk; echo '}'; } >"$repo/check.sh"
+g commit -qam "main: lax() with the same checks"
+g checkout -qb rebased pr
+g rebase -q main
+same "a rebase over a copy of the hunk's lines below it keeps the id" "$id_pos" "$(cid main rebased)"
+g checkout -qb other main
+{ echo 'strict() {'; blk; echo '}'; echo 'lax() {'; blk | paranoid; echo '}'; } >"$repo/check.sh"
+g commit -qam "the same line in lax() instead"
+differ "the same hunk in the other copy changes the id (verifier's rebase pair)" \
+  "$(cid main rebased)" "$(cid main other)"
+same "  (git patch-id --verbatim cannot see it)" "$(old main rebased)" "$(old main other)"
+# The same deletion in strict() and in lax(), at one merge-base.
+g checkout -qb h1 main
+awk '/^lax\(\) \{/{f=1} !(f && $0=="  run axioms")' "$repo/check.sh" >"$tmp/x" && mv "$tmp/x" "$repo/check.sh"
+g commit -qam "drop axioms from lax()"
+g checkout -qb h2 main
+awk '/^lax\(\) \{/{f=1} !(!f && $0=="  run axioms")' "$repo/check.sh" >"$tmp/x" && mv "$tmp/x" "$repo/check.sh"
+g commit -qam "drop axioms from strict()"
+differ "one deletion in strict() and in lax() gives two ids (verifier's pair)" "$(cid main h1)" "$(cid main h2)"
+same "  (git patch-id --verbatim cannot see it)" "$(old main h1)" "$(old main h2)"
+# The marker, against a shell reference: 1 for the copy in lax(), 0 for the one in strict().
+for c in "h1 1" "h2 0"; do
+  ref=$(pdiff main "${c% *}" | LC_ALL=C grep -av '^index ' |
+    LC_ALL=C sed "s/^@@ .*/@@ ${c#* }/" | sha256sum | cut -d' ' -f1)
+  (cd "$repo" && "$bin" content-id --verbose main "${c% *}" >/dev/null 2>"$out") || true
+  same "the marker of ${c% *} is @@ ${c#* } (shell reference)" "$ref" "$(sed -n 's/^rest \([0-9a-f]*\) .*/\1/p' "$out")"
+done
+# main adds a copy of the hunk's lines above it: the count moves, so the id changes (fail safe).
+g checkout -q main
+{ echo 'pre() {'; blk; echo '}'; echo 'strict() {'; blk; echo '}'; echo 'lax() {'; blk; echo '}'; } >"$repo/check.sh"
+g commit -qam "main: pre() with the same checks, above strict()"
+g checkout -qb above rebased
+g rebase -q main
+differ "a rebase over a copy of the hunk's lines above it changes the id" "$id_pos" "$(cid main above)"
+
 # Git config and environment. Each variant must give the id of the plain config. The repository
 # for these has a rename, a mode change, a binary file, a tab and a quote and a byte that is not
 # ASCII in a name, a CRLF line, blank lines in a hunk's context, and a .lean hunk.
@@ -252,17 +330,16 @@ cfgcase "core.attributesFile with -diff" "printf '*.lean -diff\n' >$tmp/attrs; g
 cfgcase "run from a subdirectory" "mkdir -p dir; cwd=$repo/dir" "cwd="
 
 # The shell reference: with no run-log change, `rest` is the SHA-256 of the pinned diff with its
-# index lines dropped and its hunk headers cut to `@@`. This checks the byte handling (a NUL, a
-# byte that is not UTF-8, a CR) and the normalization against an independent implementation.
+# index lines dropped and its hunk headers written as markers. Every hunk here applies at the only
+# place its old-side lines occur in the file, a submodule, a deleted file, a binary file and a new
+# file included, so each marker is `@@ 0`. This checks the byte handling (a NUL, a byte that is
+# not UTF-8, a CR) and the normalization against an independent implementation.
 g checkout -qB norl pr
 g checkout -q main -- ops/runs/d1.ndjson
 g commit -qm "no run-log change"
 mb=$(g merge-base main norl)
-ref=$(g -c core.quotePath=true -c diff.suppressBlankEmpty=false diff --patch --no-color --no-ext-diff \
-  --no-textconv --no-renames --text --full-index --diff-algorithm=myers --indent-heuristic \
-  --unified=3 --inter-hunk-context=0 --src-prefix=a/ --dst-prefix=b/ --no-relative \
-  --ignore-submodules=none --submodule=short -O/dev/null "$mb" norl |
-  LC_ALL=C grep -av '^index ' | LC_ALL=C sed 's/^@@ .*/@@/' | sha256sum | cut -d' ' -f1)
+ref=$(pdiff "$mb" norl | LC_ALL=C grep -av '^index ' | LC_ALL=C sed 's/^@@ .*/@@ 0/' | sha256sum |
+  cut -d' ' -f1)
 (cd "$repo" && "$bin" content-id --verbose main norl >/dev/null 2>"$out") || true
 same "rest is the SHA-256 of the normalized diff (shell reference)" "$ref" "$(sed -n 's/^rest \([0-9a-f]*\) .*/\1/p' "$out")"
 pre=$(printf 'rest %s\nruns\n' "$ref" | sha256sum | cut -d' ' -f1)
@@ -277,20 +354,36 @@ g checkout -q --orphan other
 g commit -qm "unrelated root"
 refused "commits with no merge-base are refused" 'no merge-base' main other
 
-# Replay #79's morning: the seven bot rebases whose previous head is known. Today's rule kept the
-# id on none of them; the content id keeps it on all but #65's rebase that replayed #62's commits.
-# Run only where those commits are in the clone (CI's checkout does not have them).
-heads="62 09a65980a7c56c0c535f906ea98a634cf8be8485 d60080fbadf74efc94a888743a60e72abc6e2536
+# Replay the updater's rebases: the 19 force-pushes by mitos-pr-updater[bot] on PRs #61 to #86 up
+# to 2026-11-09 09:25 UTC (the PR timelines), each with the head just before it (the last `ci`
+# run on the branch before the force-push, a plain push included). The old rule kept the id on
+# none of them. The content id keeps it on all but #62's two, where the rebase replayed an edit of
+# the PR's own run-log record and union kept both versions, a real change (#74). Run only where
+# those commits are in the clone (CI's checkout does not have them).
+heads="61 6ca77036fa2d3eaf5d5e53447d3af64c2a4668c3 11282769e7f0907593165eea6ef68150b9689269
+61 e197a4fcd997d9aa2b410ad93e0fd8dc76953f78 b14fa5a6ef8638b97d961ecff4e5200c8c92942f
+62 1d7d159db55b5532afdcfd579664619d19b1b6df 09a65980a7c56c0c535f906ea98a634cf8be8485
+62 d5828ef11311ab94cb17b704cdb97375d20d7d82 d60080fbadf74efc94a888743a60e72abc6e2536
 64 dd314f46093f8fb7e3147b3a10a9dfdc154086f8 c3184fe21eef9d0dfed1f34c1f64e940ce9022db
 64 c3184fe21eef9d0dfed1f34c1f64e940ce9022db d165747e5a037c5eb79c8b0c193a69653290644b
 65 4c2d2d36bbf8882f5857305c937b0dcb1e187bab 89c4d2d461e00c53e0c1aafbdaa941600b360e3d
-65 89c4d2d461e00c53e0c1aafbdaa941600b360e3d 882d62b7c9ffe14ee06756a1f18eaa395ecd8d7a
+65 d183ff725ba9a5c7d465b3e38e9f2fb7a499ef09 882d62b7c9ffe14ee06756a1f18eaa395ecd8d7a
 65 402874afeaad537b35da0d345cacffe3df3139d8 db3a359051b2c8b377f75e96517c78ec73bf75c3
-73 f206d1f2bdf1c084aba8932ea49b1b5a4c034fff 79e5479b3332bc667d7904d62b856b034d6e0a55"
+73 f206d1f2bdf1c084aba8932ea49b1b5a4c034fff 79e5479b3332bc667d7904d62b856b034d6e0a55
+78 16feff883e34988e2a9a04f79fc9f0eae7f6f00d a7f21be99478254795186249b6a37ce2328939d4
+78 430c4cb01c83d44192c68fbab753897d3021b921 07d9fadbec2b16f005199000681db568691a3d21
+81 5901fed8c81a3a41619bee29edc4578461dba7b3 935efda6bba23380375ba1bcc8e4980424399ed2
+81 935efda6bba23380375ba1bcc8e4980424399ed2 bf1d1384b37e891085440fd546d19a6ea530edbb
+82 fd137193d8eb35ef847cd314f315482e238d6ecc 5d32d52c100f554a475f6bd830fd1aaed8273958
+82 fddbc83f34e99a17fc0960b9803d6e94a7672c5d d358c86e0eda9316aa1798c0114b72431940f5a7
+83 b9771fdcd31e0df4763bc6ec83f8770062e9a80c d944a75a7d53c20ccf5b1baf3625af12dfa9b189
+84 e7d9347beb1cc18213e09dd708930debedadd634 00e437d9c8a684c7213e7f157c563fde429f93c7
+86 b7dde79703a85426661ce1563cc43f033e794bd0 20341e2b2eca7e6bbe33a28358aae86172317b77"
+total=$(echo "$heads" | wc -l)
 repo="$root"
 if git -C "$root" rev-parse -q --verify origin/main >/dev/null &&
   echo "$heads" | awk '{print $2; print $3}' | git -C "$root" cat-file --batch-check | grep -v ' commit ' >/dev/null; then
-  echo "skip replay: the morning's heads are not in this clone"
+  echo "skip replay: the replayed heads are not in this clone"
 elif git -C "$root" rev-parse -q --verify origin/main >/dev/null; then
   kept_old=0; kept_new=0; changed=""
   while read -r pr before after; do
@@ -301,11 +394,11 @@ elif git -C "$root" rev-parse -q --verify origin/main >/dev/null; then
     if [ "$n1" = "$n2" ]; then kept_new=$((kept_new + 1)); else changed="$changed #$pr:${after:0:7}"; fi
     echo "  #$pr ${before:0:7} -> ${after:0:7}  old $([ "$o1" = "$o2" ] && echo kept || echo changed)  new $([ "$n1" = "$n2" ] && echo kept || echo changed)"
   done <<<"$heads"
-  echo "  replay: old rule kept $kept_old of 7, content id kept $kept_new of 7; changed:$changed"
-  if [ "$kept_old" = 0 ] && [ "$kept_new" = 6 ] && [ "$changed" = " #65:882d62b" ]; then
-    ok "replay: old rule keeps 0 of 7 bot rebases, the content id 6 of 7"
+  echo "  replay: old rule kept $kept_old of $total, content id kept $kept_new of $total; changed:$changed"
+  if [ "$kept_old" = 0 ] && [ "$kept_new" = 17 ] && [ "$changed" = " #62:09a6598 #62:d60080f" ]; then
+    ok "replay: old rule keeps 0 of 19 updater rebases, the content id 17 of 19"
   else
-    bad "replay: old rule keeps 0 of 7 bot rebases, the content id 6 of 7"
+    bad "replay: old rule keeps 0 of 19 updater rebases, the content id 17 of 19"
   fi
 else
   echo "skip replay: no origin/main in this clone"
