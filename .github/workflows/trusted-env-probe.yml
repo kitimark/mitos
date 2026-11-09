@@ -1,0 +1,48 @@
+name: trusted-env-probe
+
+# Throwaway probe for #79 PR 2. It lives only on the branch claude/probe-trusted-env, whose draft
+# PR is closed unmerged. Each job says whether the updater app's key reached it, and prints
+# nothing of the key. `repo-level` fails when the key is readable. An `env-` job that runs at all
+# means the branch rule did not hold, so a refused (failed) `env-` job is the good result. A PR's own workflow chooses its own `environment:` form, so both forms are
+# probed.
+on:
+  pull_request:
+  push:
+    branches: [claude/probe-trusted-env]
+
+permissions: {}
+
+jobs:
+  repo-level:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Fail if the key is readable here
+        env:
+          KEY: ${{ secrets.PR_UPDATER_APP_KEY }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -n "$KEY" ]; then echo "probe: readable at $REF"; exit 1; fi
+          echo "probe: empty at $REF"
+
+  env-default:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    environment: trusted
+    steps:
+      - &probe
+        name: Say whether the key reached this job
+        env:
+          KEY: ${{ secrets.PR_UPDATER_APP_KEY }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -n "$KEY" ]; then echo "probe: readable at $REF"; else echo "probe: empty at $REF"; fi
+
+  env-no-deployment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    environment:
+      name: trusted
+      deployment: false
+    steps:
+      - *probe
