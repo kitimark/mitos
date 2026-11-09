@@ -7,6 +7,6 @@ alwaysApply: true
 
 `docs/process.md` is the process for people and agents. Read it before a spec change, a proof, a gate change, or a change to these rules.
 
-- A feature is two pull requests. The spec PR changes statements, models, lock files, `core/Challenge/`, or `core/Mitos/Core/`, and it needs the owner's `spec-approved` label. The implementation PR leaves those paths alone.
+- A feature is two pull requests. The spec PR changes `statements.lock`, a `models.lock`, `core/Challenge/`, `core/comparator.json`, `core/Mitos/Core.lean`, or `core/Mitos/Core/`, and it needs the owner's `spec-approved` label. The implementation PR leaves those paths alone. The full rule is in `docs/process.md`.
 - `statements.lock` and each `models.lock` pin meaning. A change to either is a spec change.
 - Work found along the way is an issue labelled `follow-up`. A finding about agent rules (`.claude/`, `.cursor/`, `CLAUDE.md`, `docs/process.md`) is labelled `process`. A label is not a status flag: any label change re-runs `gate`.
