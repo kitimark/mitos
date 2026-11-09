@@ -24,16 +24,19 @@ inside namespace `Mitos.Refute`, where `Mitos.Spec.X` in `T` resolves first to
 `Mitos.Refute.Mitos.Spec.X`, then to `Mitos.Mitos.Spec.X`, and only then to `Mitos.Spec.X`; an
 implementation edit that declared `Mitos.Refute.Mitos.Spec.AssumptionsExact := False` made the
 refutation Challenge state `¬ False` (review on #86, round 3). So the runner writes each generated
-statement with two guards, each enough on its own:
+statement in the root namespace and with absolute names:
 
 - **No namespace.** Every theorem the runner generates is declared as `_root_.Mitos.Refute.<t>` (or
   `_root_.Mitos.Proofs.<t>`, `_root_.Mitos.Refute.holes`). Lean opens no namespace for a
   declaration named with `_root_.`, and the generated files have no `namespace` or `open`, so the
-  statement is elaborated in the root namespace.
-- **Absolute names.** `qualify` writes every name of the statement as `_root_.<name>`. In the root
-  namespace with nothing open, Lean resolves `_root_.N` to the declaration `N` and nothing else
-  (`Lean.ResolveName.resolveGlobalName`: with the root namespace there are no surrounding
-  namespaces to try, and `_root_.` is then dropped and the name looked up exactly).
+  statement is elaborated in the root namespace. There a name with a `.` is looked up exactly
+  (`Lean.ResolveName.resolveGlobalName`: with no namespace around there are no surrounding
+  namespaces to try first, and nothing is open), so this alone keeps a shadow out.
+- **Absolute names.** `qualify` writes every name of the statement as `_root_.<name>`, which at the
+  root Lean also looks up exactly, after dropping `_root_.`, and which says so in the text.
+  `_root_.` alone would not be enough: inside namespace `Mitos.Refute`, Lean tries
+  `Mitos.Refute._root_.Mitos.Spec.X` before `Mitos.Spec.X`. `Mutants.Resolution` checks these
+  facts about Lean whenever this package builds.
 
 `qualify` accepts only a statement that is a list of names under `Mitos`, separated by single
 spaces, as every approved statement is (`Mitos.Spec.Sound Mitos.Impl.resolve`); anything else, such
