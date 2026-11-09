@@ -1,3 +1,5 @@
+import MitosGate.Cheats
+import MitosGate.GateId
 import MitosGate.Lint
 import MitosGate.Util
 
@@ -188,28 +190,6 @@ def judgeManifest : String :=
   "{\"version\": \"1.3.0\", \"packagesDir\": \".lake/packages\", \"packages\": [], " ++
   "\"name\": \"judge\", \"lakeDir\": \".lake\", \"fixedToolchain\": false}\n"
 
-/-- The gates `mitos-gate accept` runs, in the order it reports them (`docs/process.md`, "The
-acceptance gate"). -/
-inductive GateId
-  | provenance | lint | sandbox | statements | axioms | kernels | adequacy
-
-/-- The gate's number, as `docs/process.md` and the verdict line give it. -/
-def GateId.num : GateId → Nat
-  | .provenance => 0 | .lint => 1 | .sandbox => 2 | .statements => 3 | .axioms => 4
-  | .kernels => 5 | .adequacy => 6
-
-/-- The gate's name, as its lines print it. -/
-def GateId.name : GateId → String
-  | .provenance => "provenance" | .lint => "lint" | .sandbox => "sandbox build"
-  | .statements => "statements" | .axioms => "axioms" | .kernels => "kernels"
-  | .adequacy => "model adequacy"
-
-example : [GateId.provenance, .lint, .sandbox, .statements, .axioms, .kernels, .adequacy].map
-    GateId.num = List.range 7 := rfl
-
-/-- How the gate's lines start, such as `GATE 2 sandbox build`. -/
-def GateId.label (g : GateId) : String := s!"GATE {g.num} {g.name}"
-
 def report (g : GateId) (ok : Bool) (detail : String := "") : IO Unit := do
   let status := if ok then "PASS" else "FAIL"
   IO.println (ciLine s!"{g.label}: {status}{if detail.isEmpty then "" else " — " ++ detail}")
@@ -220,14 +200,6 @@ private def validIdent (s : String) : Bool :=
 /-- A rejection is the gate that failed and what failed in it when that was not the gate's own
 judgment (`I/O error`), otherwise `""`. -/
 abbrev GateM := ExceptT (GateId × String) IO
-
-/-- The verdict line for a rejection. `eval/cheats/run.sh` reads the gate number from it. It is
-printed through `ciLine`: every `why` is a literal today, but nothing in its type keeps it one. -/
-def rejectedLine (g : GateId) (why : String) : String :=
-  s!"VERDICT: REJECTED (gate {g.num}: {g.name}{if why.isEmpty then "" else ": " ++ why})"
-
-example : rejectedLine .adequacy "I/O error" =
-    "VERDICT: REJECTED (gate 6: model adequacy: I/O error)" := by decide +kernel
 
 /-- `x` as part of gate `g`: an I/O error in it fails `g`. -/
 def atGate (g : GateId) (x : GateM α) : GateM α :=
@@ -742,16 +714,16 @@ def runAccept (c : Config) : IO UInt32 := do
     let adequacyChal := adequacyChallenge i.models
     judge c i chal adequacyChal
     return writeRecord c i chal adequacyChal
-  match ← gates.run with
-  | .ok record =>
-    if c.record then
-      try record catch e =>
-        IO.println (ciLine s!"VERDICT: REJECTED (record: {e})")
-        return 1
-    IO.println "VERDICT: ACCEPTED"
-    return 0
-  | .error (g, why) =>
-    IO.println (ciLine (rejectedLine g why))
-    return 1
+  -- The verdict line is `Cheats.Verdict.render`'s, which the cheat runner reads back
+  -- (`Cheats.Verdict.parse_eq_some_iff`); its texts go through `ciLine`, so it is one line.
+  let v : Cheats.Verdict ← match ← gates.run with
+    | .ok record =>
+      if c.record then
+        try record; pure .accepted
+        catch e => pure (.unrecorded (ciLine (toString e)))
+      else pure .accepted
+    | .error (g, why) => pure (.rejected g (ciLine why))
+  IO.println v.render
+  return v.exitCode
 
 end MitosGate.Accept

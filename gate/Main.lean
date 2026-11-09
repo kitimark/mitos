@@ -5,6 +5,7 @@ import MitosGate.Accept
 import MitosGate.RunLog
 import MitosGate.ContentId
 import MitosGate.Carry
+import MitosGate.CheatsRun
 
 open MitosGate
 
@@ -29,7 +30,10 @@ def usage : String := "usage:
   mitos-gate carry <base> <verified-head> <head>  whether a verdict carries: the branch's pushes on
                                                  standard input (the REST activity route as TSV),
                                                  all updater rebases from the verified head to the
-                                                 head, and the same content id"
+                                                 head, and the same content id
+  mitos-gate cheats [--jobs N] [--timeout S] [case]...
+                                                 run the cheat corpus (eval/cheats/), N runs at a time
+                                                 (default 3), each stopped after S seconds (default 600)"
 
 partial def parseAccept (args : List String) (c : Accept.Config) : Except String Accept.Config :=
   match args with
@@ -114,6 +118,7 @@ def cli (args : List String) : IO UInt32 := do
   | "runlog" :: rest => RunLog.cli rest usage
   | "content-id" :: rest => ContentId.cli rest usage
   | "carry" :: rest => Carry.cli rest usage
+  | "cheats" :: rest => CheatsRun.cli rest usage
   | _ => IO.eprintln usage; return 2
 
 /-- `cli`, but an error it throws is printed through `ciLine`, with exit 1. The Lean runtime would
