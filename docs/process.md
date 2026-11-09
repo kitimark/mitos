@@ -201,9 +201,13 @@ code point prints as `\u{XXXX}`. So a file name or message stays on one line and
 `VERDICT:` line, move the cursor or reorder the text with bidi controls. `ciLine` also escapes
 what GitHub's runner reads as a workflow command: a `[` right after `##` anywhere in the line, and
 a `:` that would come first after the leading spaces. So the text cannot add an annotation, mask a
-word in the log or stop the runner from reading commands. Decoding the escapes gives back the
-original text. The `::error` lines of `runlog` and `lock-models` are the gate's own commands, with
-the text through `oneLine` and GitHub's escaping. `lake exe mitos-lint-test` runs the gate on
+word in the log or stop the runner from reading commands. This is proved for the runner's parsers
+read as ordinal, which is how they behave under the invariant and en-US cultures. The runner matches
+the markers culture-sensitively, so under some other cultures (ja-JP and th-TH shown) it reads more
+lines as commands, and a self-hosted runner with such a culture is out of scope. The culture of
+GitHub-hosted runners is inferred to be en-US or invariant, not logged. Decoding the escapes gives
+back the original text. The `::error` lines of `runlog` and `lock-models` are the gate's own
+commands, with the text through `oneLine` and GitHub's escaping. `lake exe mitos-lint-test` runs the gate on
 hostile file names, lock lines and arguments, and the comparator tail on hostile output, and
 checks every line printed.
 

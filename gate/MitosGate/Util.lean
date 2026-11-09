@@ -252,12 +252,14 @@ forged command can add an annotation, mask a word in the rest of the log, or sto
 reading commands. The runner splits lines at LF and CR. `startsCommand` models both parsers, and
 `ciLine` writes text so that neither can read it (`ciLine_not_startsCommand`).
 
-The runner matches `::` and `##[` with .NET's culture-sensitive `StartsWith` and `IndexOf`, which
-can skip ignorable code points such as U+200B. That does not widen the model: the runner reads the
-command name at a fixed offset after the marker (2 after the trimmed start, 3 after the `##[`), and
-every command it knows starts with a letter, so a command still needs the marker's code points in
-a row. `oneLine` also escapes the controls and format characters, such as U+200B, that are
-ignorable. -/
+Assumption: the model and the proofs hold for the runner's parsers read as ordinal, which is how
+they behave under the invariant and en-US cultures. The runner matches `::` and `##[` with .NET's
+culture-sensitive `StartsWith` and `IndexOf`, and under other cultures that matches more lines:
+under ja-JP a line that starts with a fullwidth colon (U+FF1A) before `:warning::` reads as a
+command, and under th-TH, which ignores punctuation, `abcwarning]x` reads as a legacy command. A
+self-hosted runner with such a culture is out of scope. The culture of a GitHub-hosted runner is
+inferred to be en-US or invariant, not logged. `oneLine` also escapes the controls and format
+characters, such as U+200B, that the matching can skip. -/
 
 /-- The code points .NET's `char.IsWhiteSpace` accepts, which `String.TrimStart()` removes:
 U+0009–U+000D, U+0085, and the space, line and paragraph separators (Unicode categories Zs, Zl and
