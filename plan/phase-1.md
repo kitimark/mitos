@@ -39,7 +39,7 @@ later phase relies on.
 | P1-006 | Mutation testing: `eval/mutants/` + runner; each mutant must break a theorem | tooling | [#30](https://github.com/kitimark/mitos/issues/30) |
 | P1-007 | Fixture repos + hand labels; scorer; PR scorecard comment | tooling | none, landed in [#18](https://github.com/kitimark/mitos/pull/18) |
 | P1-008 | Nightly scheduled job; next-toolchain canary | tooling | none, landed in [#5](https://github.com/kitimark/mitos/pull/5) |
-| P1-009 | Gate 6 for models: examples, vacuity checks (empty / emit-everything extractors) | gate | [#31](https://github.com/kitimark/mitos/issues/31) |
+| P1-009 | Gate 6 for models: examples, vacuity checks (empty / emit-everything extractors) | gate | none, landed in [#21](https://github.com/kitimark/mitos/pull/21) and [#26](https://github.com/kitimark/mitos/pull/26) |
 
 Each open row has an issue in the [Phase 1 milestone](https://github.com/kitimark/mitos/milestone/1),
 and its status lives in that issue and its PRs. Rows that landed before issues were used have

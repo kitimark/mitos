@@ -361,5 +361,5 @@ model is rejected at gate 0 (`model_tamper`, unchanged).
   failing at gate 2 before the move and at its expected gates after it; N2 fixed, with
   `model_dotdot_import` as its case; N1 pinned by `golden_model_in_examples`
 - [x] owner adds `spec-approved` to the spec PR and merges it (#20)
-- [ ] owner merges the gate PR
+- [x] owner merges the gate PR (#21)
 - [x] run-log record written (ops/runs/)
