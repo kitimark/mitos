@@ -11,16 +11,21 @@ permissions: {}
 
 # No concurrency group. A group cancels by arrival order, not by head: a re-run or a late-created
 # run of an old head joined the PR's group and cancelled the current head's run (#97). So the
-# `cancel-superseded` job cancels by head instead. A push to main and a run at the PR's current
-# head are never cancelled, a label run included, so a late `labeled` run cannot cancel the
-# `unlabeled` run that checks a spec-approved removal.
+# `cancel-superseded` job cancels by head instead. It never cancels a push to main. It cancels a
+# run at the current head of an open PR only if a REST read of that head stays stale for 10 s, or
+# if the head moves back to an older commit after the reads, a push that starts a run of its own.
+# So a late `labeled` run cannot cancel the `unlabeled` run that checks a spec-approved removal.
 jobs:
-  # Cancels the unfinished runs of this PR's branch whose head is not the PR's current head, this
-  # run included. It reads the head over REST, not from the event, so a re-run of an old head
-  # cancels itself. It lists the runs before it reads the head, so every run it judges existed at
-  # the read, and it acts only when two reads 10 s apart agree; a run at that head is never
-  # cancelled. `gate` does not need it, so a failure here (an API error) never holds `gate` back.
-  # A fork PR's token cannot cancel runs, so forks skip it and their old runs finish.
+  # Lists the unfinished runs of this PR's branch, then reads the PR's state and head over REST,
+  # not from the event, so a re-run of an old head sees that it is stale. Every run it judges
+  # existed before the reads, and it acts only when two reads 10 s apart agree.
+  # - Open PR: it cancels each listed run whose head differs, this run last. Another open PR from
+  #   the branch has the same head, so its runs at that head stay.
+  # - Closed or merged PR: its head stays where it was, while its branch may carry a new PR. So it
+  #   cancels only this run, and not even that when an open PR from the branch is at this run's
+  #   head, because a cancelled `gate` there would sit on that PR's head too.
+  # `gate` does not need it, so a failure here (an API error) never holds `gate` back. A fork PR's
+  # token cannot cancel runs, so forks skip it and their old runs finish.
   cancel-superseded:
     if: >-
       github.event_name == 'pull_request' &&
@@ -31,7 +36,7 @@ jobs:
       actions: write
       pull-requests: read
     steps:
-      - name: Cancel this branch's runs whose head is not the PR's current head
+      - name: Cancel this branch's superseded runs, or only this run when the PR is closed
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -51,20 +56,36 @@ jobs:
                 | "\(.id) \(.head_sha)"' > "$runs"
           echo "Unfinished runs of $branch (run id, head):"; cat "$runs"
 
-          head_now() { gh api "repos/$REPO/pulls/$PR" --jq .head.sha; }
+          # The PR's state and head from one read, such as "open <sha>".
+          pr_now() { gh api "repos/$REPO/pulls/$PR" --jq '"\(.state) \(.head.sha)"'; }
           stale_runs() {
             awk -v h="$1" -v own="$own_head" '$2 != h { n++ } END { exit !(n || own != h) }' "$runs"
           }
-          head=$(head_now); confirmed=
+          pr=$(pr_now); confirmed=
           for _ in 1 2 3; do
-            if ! stale_runs "$head"; then echo "Every unfinished run is at the current head $head."; exit 0; fi
+            if [ "${pr%% *}" = open ] && ! stale_runs "${pr#* }"; then
+              echo "Every unfinished run is at the current head ${pr#* }."; exit 0
+            fi
             sleep "$CONFIRM_SECONDS"
-            next=$(head_now)
-            if [ "$next" = "$head" ]; then confirmed=1; break; fi
-            echo "The head moved from $head to $next between two reads; reading again."
-            head=$next
+            next=$(pr_now)
+            if [ "$next" = "$pr" ]; then confirmed=1; break; fi
+            echo "The PR moved from $pr to $next between two reads; reading again."
+            pr=$next
           done
-          if [ -z "$confirmed" ]; then echo "::notice::The PR head kept moving; no run cancelled."; exit 0; fi
+          if [ -z "$confirmed" ]; then echo "::notice::The PR kept changing; no run cancelled."; exit 0; fi
+          state=${pr%% *} head=${pr#* }
+
+          if [ "$state" != open ]; then
+            open_heads=$(gh api -X GET "repos/$REPO/pulls" -f state=open \
+              -f head="${REPO%%/*}:$branch" -f per_page=100 --jq '.[].head.sha')
+            if grep -qxF "$own_head" <<< "$open_heads"; then
+              echo "PR #$PR is $state, and an open PR from $branch is at $own_head; this run goes on."
+              exit 0
+            fi
+            echo "Cancel this run ($RUN_ID): PR #$PR is $state; no other run is judged."
+            gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/cancel" --silent
+            exit 0
+          fi
 
           failed=0
           while read -r id sha <&3; do
