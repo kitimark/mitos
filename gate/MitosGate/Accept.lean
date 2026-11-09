@@ -212,7 +212,7 @@ def GateId.label (g : GateId) : String := s!"GATE {g.num} {g.name}"
 
 def report (g : GateId) (ok : Bool) (detail : String := "") : IO Unit := do
   let status := if ok then "PASS" else "FAIL"
-  IO.println s!"{g.label}: {status}{if detail.isEmpty then "" else " — " ++ oneLine detail}"
+  IO.println (ciLine s!"{g.label}: {status}{if detail.isEmpty then "" else " — " ++ detail}")
 
 private def validIdent (s : String) : Bool :=
   !s.isEmpty && s.toList.all (fun c => c.isAlphanum || c == '_') && (s.toList.head!).isAlpha
@@ -391,7 +391,7 @@ def lint (c : Config) (pluginFile : System.FilePath) (i : Inputs) : GateM Unit :
     for v in ← Lint.checkModel env pluginImports txt do
       shown := shown.push (v.render (c.workspace / rel).toString)
   report .lint shown.isEmpty s!"{shown.size} violation(s)"
-  for v in shown do IO.println s!"  {oneLine v}"
+  for v in shown do IO.println (ciLine s!"  {v}")
   unless shown.isEmpty do throw (.lint, "")
 
 /-! ## What a comparator run decided -/
@@ -608,7 +608,7 @@ def showComparatorTail (out : String) : IO Unit := do
   let frame (l : String) := l == "backtrace:" || (l.startsWith "/" && (l.splitOn " [0x").length > 1)
   let lines := (out.splitOn "\n").filter fun l =>
     !(l.startsWith "✔") && !(l.startsWith "Exporting") && !frame l
-  for l in lines.reverse.take 15 |>.reverse do IO.println s!"  | {oneLine l}"
+  for l in lines.reverse.take 15 |>.reverse do IO.println (ciLine s!"  | {l}")
 
 def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
   if let some g := pluginFailure j.outcome then
@@ -688,7 +688,7 @@ def judge (c : Config) (i : Inputs) (chal adequacyChal : String) : GateM Unit :=
   -- directory is only reported.
   let ((), ()) ← tryFinally' gates fun passed? => do
     let close : IO Unit :=
-      if c.keep then IO.println s!"  (judging directory kept: {oneLine dir.toString})"
+      if c.keep then IO.println (ciLine s!"  (judging directory kept: {dir})")
       else IO.FS.removeDirAll dir
     if passed?.isSome then atGate .sandbox close
     else tryCatchThe IO.Error close fun e => report .sandbox false s!"I/O error: {e}"
@@ -724,7 +724,7 @@ def writeRecord (c : Config) (i : Inputs) (chal adequacyChal : String) : IO Unit
   catch e =>
     try IO.FS.removeFile tmp catch _ => pure ()
     throw e
-  IO.println s!"recorded {oneLine file.toString}"
+  IO.println (ciLine s!"recorded {file}")
 
 def runAccept (c : Config) : IO UInt32 := do
   let pluginFile := c.pluginFile.getD (c.workspace / "Plugins" / s!"{c.plugin}.lean")
@@ -739,7 +739,7 @@ def runAccept (c : Config) : IO UInt32 := do
   | .ok record =>
     if c.record then
       try record catch e =>
-        IO.println s!"VERDICT: REJECTED (record: {oneLine (toString e)})"
+        IO.println (ciLine s!"VERDICT: REJECTED (record: {e})")
         return 1
     IO.println "VERDICT: ACCEPTED"
     return 0

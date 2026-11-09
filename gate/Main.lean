@@ -36,23 +36,22 @@ partial def parseAccept (args : List String) (c : Accept.Config) : Except String
   | a :: _ => .error s!"unknown argument {a}"
 
 /-- Writes the lock `txt` to `file`, or with `check` compares them and prints the lines only one of
-them has. -/
+them has. Every line that names the file or holds a lock line goes through `ciLine`. -/
 def writeOrCheck (file : System.FilePath) (txt : String) (check : Bool) (count stale : String) :
     IO UInt32 := do
-  let name := oneLine file.toString
   unless check do
     IO.FS.writeFile file txt
-    IO.println s!"wrote {name} ({count})"
+    IO.println (ciLine s!"wrote {file} ({count})")
     return 0
   let old ← IO.FS.readFile file
   if old == txt then
-    IO.println s!"{name} up to date ({count})"
+    IO.println (ciLine s!"{file} up to date ({count})")
     return 0
   let lines (s : String) := (s.splitOn "\n").filter (fun l => !l.startsWith "#" && !l.isEmpty)
   let (was, now) := (lines old, lines txt)
-  for l in was do unless now.contains l do IO.println s!"- {oneLine l}"
-  for l in now do unless was.contains l do IO.println s!"+ {oneLine l}"
-  IO.println s!"{name} is out of date: {stale}."
+  for l in was do unless now.contains l do IO.println (ciLine s!"- {l}")
+  for l in now do unless was.contains l do IO.println (ciLine s!"+ {l}")
+  IO.println (ciLine s!"{file} is out of date: {stale}.")
   return 1
 
 /-- Writes or checks `<workspace>/models.lock`. Gate 0's walker reads the models, and gate 0 reads
@@ -72,21 +71,21 @@ def lockModels (workspace : System.FilePath) (check : Bool) : IO UInt32 := do
     IO.println s!"::error::{RunLog.escapeData (oneLine msg)}"
     return 1
 
-def main (args : List String) : IO UInt32 := do
+def cli (args : List String) : IO UInt32 := do
   match args with
   | "lint" :: files@(_ :: _) =>
     let env ← Lint.syntaxEnv
     let mut bad := 0
     for f in files do
       let vs ← Lint.check env Accept.pluginImports (← IO.FS.readFile f)
-      for v in vs do IO.println (oneLine (v.render f))
+      for v in vs do IO.println (ciLine (v.render f))
       bad := bad + vs.size
     IO.println s!"{bad} violation(s)"
     return if bad == 0 then 0 else 1
   | ["imports"] =>
     let vs ← Imports.check "core" trustedCoreImports
     let vs := vs ++ (← Imports.check ("core" / "Mitos" / "Core") lockedSpecImports)
-    for v in vs do IO.println (oneLine v)
+    for v in vs do IO.println (ciLine v)
     IO.println s!"{vs.size} import violation(s) in core/"
     return if vs.isEmpty then 0 else 1
   | "lock" :: rest =>
@@ -97,10 +96,18 @@ def main (args : List String) : IO UInt32 := do
   | ["lock-models", "--workspace", ws, "--check"] => lockModels ws true
   | "accept" :: rest =>
     match parseAccept rest { workspace := "", plugin := "", model := "" } with
-    | .error e => IO.eprintln e; IO.eprintln usage; return 2
+    | .error e => IO.eprintln (ciLine e); IO.eprintln usage; return 2
     | .ok c =>
       if c.workspace.toString.isEmpty || c.plugin.isEmpty || c.model.isEmpty then
         IO.eprintln usage; return 2
       Accept.runAccept c
   | "runlog" :: rest => RunLog.cli rest usage
   | _ => IO.eprintln usage; return 2
+
+/-- `cli`, but an error it throws is printed through `ciLine`, with exit 1. The Lean runtime would
+print an uncaught one raw, and the error names the path it failed on, such as a `lint` argument. -/
+def main (args : List String) : IO UInt32 := do
+  try cli args
+  catch e =>
+    IO.eprintln (ciLine s!"uncaught exception: {e}")
+    return 1

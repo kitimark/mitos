@@ -46,9 +46,11 @@ escalation: hint → automation → stronger model → pair → split → revisi
 - **Only one problem per kind.** The check reports the first missing line of each file and the
   first duplicate key; fixing one and rerunning shows the next.
 - **Printing (#55, PR 3).** Every line `mitos-gate runlog` prints that holds a file name, a field
-  value, a message or an I/O error passes through `oneLine` (`gate/MitosGate/Util.lean`), the
-  gate's one sanitizer for untrusted text; `quote` only quotes. The earlier denylist here
-  (`unsafeChar`, `clean`) let the zero-width space and joiner, the soft hyphen and blank fillers
+  value, a message or an I/O error passes through `oneLine` (`gate/MitosGate/Util.lean`) inside
+  the gate's own `::error` command; the argument error, which is not a command, goes through
+  `ciLine` since #68, so a `##[` in an argument starts no legacy command; `quote` only quotes.
+  The earlier denylist here (`unsafeChar`, `clean`) let the zero-width space and joiner, the soft
+  hyphen and blank fillers
   through. `cli` catches the I/O errors `check` throws, since they name the path they failed on and
   the Lean runtime would print them raw: a file name with a newline and a byte that is not UTF-8
   made it print a forged `::warning::` line. `escapeData` and `escapeProperty` map one character at

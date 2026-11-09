@@ -261,6 +261,89 @@ def ratchet (guards : Array (String × String)) (unguarded : List String) : Arra
       errs := errs.push s!"eval/cheats/unguarded lists {r} more than once"
   return errs
 
+/-! ## Lines for a CI log
+
+Hostile text on each path where `mitos-gate` prints text it was given: a file name, a lock line, an
+argument, an I/O error. The gate runs as a separate process, as in CI, and every line it prints on
+standard output or standard error, split at LF and CR as GitHub's runner splits them, must start
+no workflow command (`startsCommand`, `gate/MitosGate/Util.lean`). The output must also show the
+hostile text, so a case cannot pass by printing none of it. -/
+
+structure CiCase where
+  name : String
+  args : List String
+  /-- Files to write in the case's own directory, which is the gate's working directory. -/
+  files : List (String × String) := []
+  /-- Whether the directory also gets the toy workspace's `lean-toolchain`, `models.lock` and
+  `Models/`, so that gate 0 passes. -/
+  toy : Bool := false
+
+/-- The hostile text: a command at the start of a line, the legacy form, and a carriage return
+before a command. -/
+def ciCases (root : String) : List CiCase :=
+  let plugin := "import Mitos.Core\n\ntheorem t : True := sorry\n"
+  [ { name := "lint, a file argument that starts with ::"
+      args := ["lint", "::warning::forged.lean"], files := [("::warning::forged.lean", plugin)] },
+    { name := "lint, the legacy form in a file argument"
+      args := ["lint", "x##[warning]forged.lean"], files := [("x##[warning]forged.lean", plugin)] },
+    { name := "lint, a missing file (an uncaught I/O error)"
+      args := ["lint", "##[warning]forged.lean"] },
+    { name := "imports, the legacy form in a core file name"
+      args := ["imports"], files := [("core/Mitos/x##[warning]forged.lean", "import Lean\n")] },
+    { name := "lock --check, the legacy form and a CR in statements.lock"
+      args := ["lock", "--check"],
+      files := [("statements.lock", "x##[warning]forged\nx\r::warning::forged\n")] },
+    { name := "lock-models --check, a workspace named ::, the legacy form in a model and its lock"
+      args := ["lock-models", "--workspace", "::warning::forged", "--check"],
+      files := [("::warning::forged/models.lock", "x##[warning]forged\n"),
+        ("::warning::forged/Models/x##[warning]forged.lean", "def x : Nat := 1\n")] },
+    { name := "accept, a CR in an unknown argument"
+      args := ["accept", "x\r::warning::forged"] },
+    { name := "runlog, the legacy form in an unknown argument"
+      args := ["runlog", "##[warning]forged"] },
+    { name := "accept, gate 0's line"
+      args := ["accept", "--workspace", ".", "--plugin", "P", "--model", "Models.X.model",
+        "--mitos-root", root, "--plugin-file", "##[warning]forged.lean"] },
+    { name := "accept, gate 1's lines, a plugin file that starts with ::"
+      args := ["accept", "--workspace", ".", "--plugin", "ToyRequire", "--model",
+        "Models.ToyRequire.model", "--mitos-root", root, "--plugin-file", "::warning::forged.lean"],
+      files := [("::warning::forged.lean", plugin)], toy := true } ]
+
+/-- The lines the runner reads from `out`: the pieces between LFs and CRs. -/
+def runnerLines (out : String) : List String :=
+  (out.splitOn "\n").flatMap (·.splitOn "\r")
+
+/-- Runs each case's `mitos-gate` and returns `(case, problem)` for each case that fails: a line
+that starts a command, output without the hostile text, or a case that could not be run. -/
+def ciLog (root : System.FilePath) : IO (Array (String × String)) := do
+  -- The binary must be the current source's, as it is in CI, where `lake build` runs first.
+  let lake := (← IO.getEnv "LAKE").getD "lake"
+  let b ← IO.Process.output { cmd := lake, args := #["build", "-q", "mitos-gate"], cwd := root }
+  if b.exitCode != 0 then
+    return #[("build", s!"lake build mitos-gate failed: {b.stdout}{b.stderr}")]
+  let gate := root / ".lake" / "build" / "bin" / "mitos-gate"
+  let mut fails := #[]
+  for c in ciCases root.toString do
+    let dir ← IO.FS.createTempDir
+    try
+      for (rel, txt) in c.files do
+        if let some p := (dir / rel).parent then IO.FS.createDirAll p
+        IO.FS.writeFile (dir / rel) txt
+      if c.toy then
+        let acme := root / "examples" / "acme"
+        copyFile (acme / "lean-toolchain") (dir / "lean-toolchain")
+        copyFile (acme / "models.lock") (dir / "models.lock")
+        copyLeanTree (acme / "Models") (dir / "Models")
+      let out ← IO.Process.output { cmd := gate.toString, args := c.args.toArray, cwd := dir }
+      let bad := (runnerLines out.stdout ++ runnerLines out.stderr).filter (startsCommand ·)
+      if let some l := bad.head? then
+        fails := fails.push (c.name, s!"a line starts a workflow command: {l}")
+      else unless ((out.stdout ++ out.stderr).splitOn "forged").length > 1 do
+        fails := fails.push (c.name, "the output does not show the hostile text")
+    catch e => fails := fails.push (c.name, s!"could not run: {e}")
+    IO.FS.removeDirAll dir
+  return fails
+
 structure Case where
   kind : String
   name : String
@@ -300,7 +383,7 @@ def main : IO UInt32 := do
     let mark := if ok == c.wantOk then "ok  " else "FAIL"
     if ok != c.wantOk then fails := fails + 1
     let verdict := if ok then "accepted" else s!"rejected: {(vs[0]?.map (·.render s!"<{c.kind}>")).getD ""}"
-    IO.println s!"{mark} {c.kind} {c.name}: {verdict}"
+    IO.println (ciLine s!"{mark} {c.kind} {c.name}: {verdict}")
   for (kind, src, want) in ruleCases do
     let got := (← lintAs kind src).toList.map (·.rule) |>.eraseDups
     let ok := got.length == want.length && want.all got.contains
@@ -316,13 +399,19 @@ def main : IO UInt32 := do
   let guards ← cheatGuards
   let unguarded ← unguardedRules
   let errs := ratchet guards unguarded
-  for e in errs do IO.println s!"FAIL ratchet: {e}"
+  for e in errs do IO.println (ciLine s!"FAIL ratchet: {e}")
   let guarded := (Lint.banned.filter fun b => guards.any (·.2 == (Lint.Rule.banned b).id)).length
-  IO.println s!"{if errs.isEmpty then "ok  " else "FAIL"} ratchet: {Lint.banned.length} bans, {guarded} guarded by a cheat case, {unguardedBans.length} in unguardedBans, {unguarded.length} in eval/cheats/unguarded; guards: {", ".intercalate (guards.toList.map fun (c, r) => s!"{c}={r}")}"
+  IO.println (ciLine s!"{if errs.isEmpty then "ok  " else "FAIL"} ratchet: {Lint.banned.length} bans, {guarded} guarded by a cheat case, {unguardedBans.length} in unguardedBans, {unguarded.length} in eval/cheats/unguarded; guards: {", ".intercalate (guards.toList.map fun (c, r) => s!"{c}={r}")}")
   unless errs.isEmpty do fails := fails + 1
-  let total := cases.length + ruleCases.length + 1
+  let ci ← ciLog (← IO.currentDir)
+  for (n, why) in ci do IO.println (ciLine s!"FAIL ci-log {n}: {why}")
+  let nci := (ciCases "").length
+  IO.println (s!"{if ci.isEmpty then "ok  " else "FAIL"} ci-log: {nci - ci.size} of {nci} " ++
+    "hostile cases print no workflow command")
+  fails := fails + ci.size
+  let total := cases.length + ruleCases.length + 1 + nci
   let count (k : String) (w : Bool) := (cases.filter fun c => c.kind == k && c.wantOk == w).length
-  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet"
+  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet; {nci} CI-log cases"
   if fails == 0 then
     IO.println s!"gate-1 lint: all {total} cases behave as expected ({summary})"
     return 0
