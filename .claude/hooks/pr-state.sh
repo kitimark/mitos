@@ -27,6 +27,10 @@
 # issues line, only the newest 100 issue comments and the newest 100 review comments of the
 # repository, and watch-github.sh reads whole threads.
 #
+# Session links (#98). It names each listed open PR whose body holds claude.ai/code/session_, from
+# the open list it already reads. This catches a create that check-no-session-link.sh could not see
+# in a command's text, such as one built from variables, at the next prompt.
+#
 # Cost per run, at every prompt and monitor wake: 7 REST calls, 2 per open owner PR, 3 or more per
 # PR whose verdict covers its head, and 1 compare when a commit is not local (19 with 6 owner PRs).
 #
@@ -313,7 +317,9 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
 
   [$o[] | {n: (.number | num), draft: (.draft | bool), sha: (.head.sha | hex),
            labels: [.labels | arr | .[] | .name | clean],
-           who: [.assignees | arr | .[] | .login | clean]}] as $op |
+           who: [.assignees | arr | .[] | .login | clean],
+           link: (.body // "" | if type == "string" then test("claude\\.ai/code/session_")
+                               else error("bad body") end)}] as $op |
   [$cl[] | {n: (.number | num), closed: (.closed_at | tsn), merged: (.merged_at | tsn),
             upd: (.updated_at | ts), sha: (.head.sha | hex)}] as $cp |
   ([$cp[] | select(.closed != null and .closed >= $cutoff)] | sort_by([.closed, .n]) | reverse) as $c |
@@ -342,6 +348,9 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
       else empty end)
    end),
   (if ($op | length) > 10 then "open PRs: more than 10, the rest are not listed" else empty end),
+  ([$op[0:10][] | select(.link) | "#\(.n)"]
+   | if length == 0 then empty
+     else "session link in the body of open \(join(", ")): patch each clean with gh api -X PATCH repos/\($repo)/pulls/<n> -F body=@<clean file>, then read it back (open-pr.sh does both)" end),
   (($unans // {}) | to_entries | map(select(.key as $k | $ex | has($k) | not))
    | if length == 0 then empty
      else "owner comments with no later footer comment, elsewhere: "

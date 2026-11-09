@@ -185,7 +185,8 @@ default" names the same exception.
 3. Open the PR without asking, with `.claude/scripts/open-pr.sh --head <branch> --title <title>
    --body-file <file>`. The session proxy adds a session link to the body of every PR create,
    and the script reads the body back and cleans it; `check-no-session-link.sh` refuses any other
-   create. The first revision in the body's edit history keeps the link, and only the user can
+   command whose text names a create, even one that only mentions it, so run the script alone.
+   The first revision in the body's edit history keeps the link, and only the user can
    delete it, in the browser, so the owner's report names the PR for that list (#91, call 3).
    Wait for CI and the bots as
    **Watchers** says for a PR owner: at most two bounded calls, then report "pushed, waiting on

@@ -9,7 +9,7 @@
 # Usage: open-pr.sh --head <branch> --title <title> --body-file <file> [--base <branch>] [--draft]
 # The base defaults to main. It prints the PR number and URL and whether the create was rewritten,
 # and exits 1 if any call fails or the body still holds a session link after the PATCH.
-# check-no-session-link.sh refuses any other way to create a PR.
+# check-no-session-link.sh refuses a command whose text names any other way to create a PR.
 set -u
 
 say() { printf 'open-pr: %s\n' "$1"; }
