@@ -273,11 +273,10 @@ watcher's echo filter and the merge rule below rely on both.
 - PRs that build on each other form a GitHub stack, not a base-branch chain retargeted by hand.
   A chain that exists anyway, such as #73 on #62's branch, gets no rebase and no `needs-rebase`
   label, because the updater takes only PRs based on `main`. When its base merges, the root gives
-  it to a PR owner. The owner fetches `main`, rebases only the PR's own commits with
-  `git rebase --onto origin/main <old-base> <branch>`, force-pushes with a lease, and only then
-  retargets the PR to `main`, so the updater cannot rebase it first. `<old-base>` is the commit
-  its own first commit sits on, not the base branch's last tip, which the updater may have
-  rebased since.
+  it to a PR owner. The owner retargets it to `main`, then rebases and pushes it as the next
+  bullet does a stack's bottom branch, so the push starts `gate` against `main`, and the pinned
+  lease refuses it if the updater pushed in between. Its old base is the commit its own first
+  commit sits on, not the base branch's last tip, which the updater may have rebased since.
   These sessions block GraphQL, and `gh stack submit` and `gh stack link` find and open PRs over
   GraphQL, so they fail here. Open each PR through the REST create route in **Forge** instead, the
   bottom one on `main` and each next one on the branch below it. Then make the stack with
