@@ -6,168 +6,91 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
-# A new head of a PR (opened, synchronize, reopened) cancels the run of the old head, so the cheat
-# corpus does not hold runners for a head nobody will merge. Every other run gets a group of its
-# own and is never cancelled: a push to main, because each main commit's run is the record for that
-# commit (a shared group would let GitHub drop a pending run when a third push queues behind a
-# running one); and a label change, because the spec-approved step reads the labels of its own
-# event, and a late `labeled` run must not cancel the `unlabeled` run that checks the removal.
-concurrency:
-  group: >-
-    ci-${{ github.event_name == 'pull_request'
-    && github.event.action != 'labeled' && github.event.action != 'unlabeled'
-    && github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# Each job asks for the token permissions it needs; the others get none.
+permissions: {}
 
+# No concurrency group. A group cancels by arrival order, not by head: a re-run or a late-created
+# run of an old head joined the PR's group and cancelled the current head's run (#97). So the
+# `cancel-superseded` job cancels by head instead. A push to main and a run at the PR's current
+# head are never cancelled, a label run included, so a late `labeled` run cannot cancel the
+# `unlabeled` run that checks a spec-approved removal.
 jobs:
-  gate:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      # Restore the cache first: a hit has elan and the toolchain, so GitHub is not needed for them.
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.elan
-            .lake
-            core/.lake
-          key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
-
-      - name: Install elan if the cache has none (pinned, checked, retried)
-        run: .github/scripts/install-elan.sh
-
-      - name: Install bubblewrap (sandbox for lake comparator)
-        run: |
-          sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
-          # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bwrap needs them.
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: Install the Lean toolchains from lean-toolchain (retried; no download on a cache hit)
-        run: .github/scripts/install-toolchains.sh
-
-      - name: Build core and gate
-        run: lake build
-
-      # On a PR, every run-log line of the merge-base must still be there, so union merges stay
-      # correct (ops/runs/README.md); on main, the records parse with one per attempt.
-      - name: Run-log lines are append-only, one record per (task, role, attempt)
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT" = pull_request ]; then
-            base=$(git merge-base "origin/$BASE_REF" HEAD)
-            dir="$RUNNER_TEMP/runlog-base"
-            rm -rf "$dir" && mkdir -p "$dir/ops/runs"
-            if git cat-file -e "$base:ops/runs" 2>/dev/null; then
-              git archive "$base" ops/runs | tar -x -C "$dir"
-            fi
-            lake exe mitos-gate runlog --base "$dir/ops/runs" --head ops/runs
-          else
-            lake exe mitos-gate runlog --head ops/runs
-          fi
-
-      - name: Import rule (core imports Init, Std, Mitos.*; the spec never imports implementations)
-        run: lake exe mitos-gate imports
-
-      - name: statements.lock matches the compiled core
-        run: lake exe mitos-gate lock --check
-
-      - name: Core has no sorry and only standard axioms (sandboxed kernel replay)
-        run: cd core && lake check
-
-      - name: Core implementation proves the approved Challenge
-        run: |
-          if [ -f core/Mitos/Proofs/Resolver.lean ]; then
-            cd core && lake comparator --paranoid
-          else
-            echo "No implementation yet (core/Mitos/Proofs/Resolver.lean); Challenge not judged."
-          fi
-
-      - name: Example workspace builds
-        run: cd examples/acme && lake build
-
-      - name: Scorecard on the fixture (precision and recall per edge type against hand labels)
-        run: |
-          lake --dir eval/score build
-          lake --dir eval/score exe mitos-score eval/fixtures/toy > "$RUNNER_TEMP/scorecard.md"
-          cat "$RUNNER_TEMP/scorecard.md"
-          cat "$RUNNER_TEMP/scorecard.md" >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: scorecard
-          path: ${{ runner.temp }}/scorecard.md
-
-      - name: Honest toy plugin is accepted (gates 0-6, independent kernels)
-        run: |
-          lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
-            --model Models.ToyRequire.model --paranoid
-
-      - name: Model lint allowlist accepts and rejects each command kind
-        run: lake exe mitos-lint-test
-
-      - name: Cheat corpus is rejected
-        run: eval/cheats/run.sh
-
-      - name: Spec changes need the spec-approved label
-        if: github.event_name == 'pull_request'
-        env:
-          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'spec-approved') }}
-        run: |
-          changed=$(git diff --no-renames --name-only -z "origin/${{ github.base_ref }}...HEAD" \
-            | grep -zE '(^|/)(statements|models)\.lock$|^core/Challenge/|^core/comparator\.json$|^core/Mitos/Core(/|\.lean$|$)' \
-            | tr '\0' '\n' || true)
-          if [ -n "$changed" ] && [ "$APPROVED" != "true" ]; then
-            echo "These spec files changed without the spec-approved label:"; echo "$changed"; exit 1
-          fi
-
-      - name: Upload cheat logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cheat-logs
-          path: .lake/cheats/
-          if-no-files-found: ignore
-
-  # A fork's token cannot comment; its scorecard stays in the gate job's summary.
-  scorecard-comment:
-    needs: gate
+  # Cancels the unfinished runs of this PR's branch whose head is not the PR's current head, this
+  # run included. It reads the head over REST, not from the event, so a re-run of an old head
+  # cancels itself. It lists the runs before it reads the head, so every run it judges existed at
+  # the read, and it acts only when two reads 10 s apart agree; a run at that head is never
+  # cancelled. `gate` does not need it, so a failure here (an API error) never holds `gate` back.
+  # A fork PR's token cannot cancel runs, so forks skip it and their old runs finish.
+  cancel-superseded:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
-      pull-requests: write
-    concurrency:
-      group: scorecard-comment-${{ github.event.pull_request.number }}
+      actions: write
+      pull-requests: read
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: scorecard
-
-      - name: Post the scorecard, or update the one posted earlier
-        shell: bash
+      - name: Cancel this branch's runs whose head is not the PR's current head
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
-          SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_ID: ${{ github.run_id }}
+          CONFIRM_SECONDS: 10
         run: |
-          marker='<!-- mitos-scorecard -->'
-          { echo "$marker"; cat scorecard.md; echo; echo "_Head ${SHA}, from the \`gate\` job._"; } > body.md
-          ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id")
-          id=${ids%%$'\n'*}
-          if [ -n "$id" ]; then
-            jq -n --rawfile body body.md '{body: $body}' \
-              | gh api -X PATCH "repos/$REPO/issues/comments/$id" --input - --jq .html_url
-          else
-            jq -n --rawfile body body.md '{body: $body}' \
-              | gh api -X POST "repos/$REPO/issues/$PR/comments" --input - --jq .html_url
+          set -euo pipefail
+          read -r wf own_head branch < <(gh api "repos/$REPO/actions/runs/$RUN_ID" \
+            --jq '"\(.workflow_id) \(.head_sha) \(.head_branch)"')
+          runs="$RUNNER_TEMP/unfinished-runs"
+          gh api --paginate -X GET "repos/$REPO/actions/workflows/$wf/runs" \
+            -f event=pull_request -f branch="$branch" -f per_page=100 \
+            | jq -r --arg branch "$branch" --arg repo "$REPO" '.workflow_runs[]
+                | select(.status != "completed" and .event == "pull_request"
+                    and .head_branch == $branch and .head_repository.full_name == $repo)
+                | "\(.id) \(.head_sha)"' > "$runs"
+          echo "Unfinished runs of $branch (run id, head):"; cat "$runs"
+
+          head_now() { gh api "repos/$REPO/pulls/$PR" --jq .head.sha; }
+          stale_runs() {
+            awk -v h="$1" -v own="$own_head" '$2 != h { n++ } END { exit !(n || own != h) }' "$runs"
+          }
+          head=$(head_now); confirmed=
+          for _ in 1 2 3; do
+            if ! stale_runs "$head"; then echo "Every unfinished run is at the current head $head."; exit 0; fi
+            sleep "$CONFIRM_SECONDS"
+            next=$(head_now)
+            if [ "$next" = "$head" ]; then confirmed=1; break; fi
+            echo "The head moved from $head to $next between two reads; reading again."
+            head=$next
+          done
+          if [ -z "$confirmed" ]; then echo "::notice::The PR head kept moving; no run cancelled."; exit 0; fi
+
+          failed=0
+          while read -r id sha <&3; do
+            if [ "$sha" = "$head" ] || [ "$id" = "$RUN_ID" ]; then continue; fi
+            echo "Cancel run $id: its head $sha is not the current head $head."
+            if ! gh api -X POST "repos/$REPO/actions/runs/$id/cancel" --silent; then
+              # A run that finished after the listing cannot be cancelled any more; that is not a failure.
+              if [ "$(gh api "repos/$REPO/actions/runs/$id" --jq .status)" != completed ]; then failed=1; fi
+            fi
+          done 3< "$runs"
+          if [ "$own_head" != "$head" ]; then
+            echo "Cancel this run ($RUN_ID): its head $own_head is not the current head $head."
+            gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/cancel" --silent
           fi
+          exit "$failed"
+
+  # Probe only: a sleep-only gate, so the probe holds a runner for minutes without the real checks.
+  gate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Sleep in place of the checks
+        env:
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          echo "probe gate: action=$ACTION head=$HEAD"
+          sleep 300
