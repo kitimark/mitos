@@ -4,6 +4,7 @@ import MitosGate.Lock
 import MitosGate.Accept
 import MitosGate.RunLog
 import MitosGate.ContentId
+import MitosGate.Carry
 
 open MitosGate
 
@@ -24,7 +25,11 @@ def usage : String := "usage:
   mitos-gate content-id <base> <head> [--verbose]
                                                  the id a verdict covers: the diff from the merge-base
                                                  outside ops/runs/*.ndjson, plus the run-log lines the
-                                                 PR adds; refuses a run-log edit"
+                                                 PR adds; refuses a run-log edit
+  mitos-gate carry <base> <verified-head> <head>  whether a verdict carries: the branch's pushes on
+                                                 standard input (the REST activity route as TSV),
+                                                 all updater rebases from the verified head to the
+                                                 head, and the same content id"
 
 partial def parseAccept (args : List String) (c : Accept.Config) : Except String Accept.Config :=
   match args with
@@ -108,6 +113,7 @@ def cli (args : List String) : IO UInt32 := do
       Accept.runAccept c
   | "runlog" :: rest => RunLog.cli rest usage
   | "content-id" :: rest => ContentId.cli rest usage
+  | "carry" :: rest => Carry.cli rest usage
   | _ => IO.eprintln usage; return 2
 
 /-- `cli`, but an error it throws is printed through `ciLine`, with exit 1. The Lean runtime would
