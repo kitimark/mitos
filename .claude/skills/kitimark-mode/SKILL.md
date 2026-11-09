@@ -272,8 +272,9 @@ watcher's echo filter and the merge rule below rely on both.
 - PRs that build on each other form a GitHub stack, not a base-branch chain retargeted by hand.
   A chain that exists anyway, such as #73 on #62's branch, gets no rebase and no `needs-rebase`
   label, because the updater takes only PRs based on `main`. When its base merges, the root gives
-  it to a PR owner, who retargets it to `main` and rebases only its own commits
-  (`git rebase --onto origin/main <old-base-tip>`).
+  it to a PR owner, who retargets it to `main` and rebases only its own commits with
+  `git rebase --onto origin/main <old-base> <branch>`. `<old-base>` is the commit its own first
+  commit sits on, not the base branch's last tip, which the updater may have rebased since.
   These sessions block GraphQL, and `gh stack submit` and `gh stack link` find and open PRs over
   GraphQL, so they fail here. Open each PR through the REST create route in **Forge** instead, the
   bottom one on `main` and each next one on the branch below it. Then make the stack with
@@ -448,8 +449,9 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   tell the user once, in one line.
 - Each merge moves `main`, and the updater then rebases every open PR based on `main`. A merge
   command pinned to the old head then fails with 409, as on #61 and #62 after #63 merged. So
-  after each merge, the root re-reads over REST the head of every PR that waits on the user's
-  merge, once the monitor prints its new head, and posts a new catch-up pinned to that head.
+  after each merge, the root re-reads over REST every PR that waits on the user's merge, once the
+  monitor prints its new head or its `needs-rebase` label. It posts a new catch-up pinned to the
+  new head, or one that says to hold the merge until the rebase lands.
 - The user may merge before a verdict. The verifier then still runs, on the merged head. Its
   verdict goes in the PR's merged line under the In flight table, such as `#44 merged 09:30 UTC,
   then PASS opus-xhigh at 04fcb83; follow-ups #47`. A FAIL also becomes a `follow-up` issue and a
