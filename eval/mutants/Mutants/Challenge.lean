@@ -74,9 +74,14 @@ from the approved core alone and declare every hole publicly. Its implementation
 other runs' (`holeCore_impl`), and the lint ensures they run no code and read no file while Lean
 elaborates them, so they elaborate the same in every run, whatever other files a run holds.
 
-The reader fails closed: every line of the Challenge must be blank, a comment, an `import`, a
-definition hole in the form below or a one-line theorem in the form above, so no line that could
-change what a statement means (`open`, `namespace`, notation) is dropped or moved.
+The reader fails closed: every line of the Challenge must be blank, a comment, an import of one
+module and nothing else, a definition hole in the form below or a one-line theorem in the form
+above, so no line that could change what a statement means (`open`, `namespace`, notation) is
+dropped or moved. An import line is exactly `import <module>` (`importForm`, `readLine_imp`):
+Lean's `import` takes one module name (`Lean.Parser.Module.import`), and Lean reads anything after
+it on the line as another import or as commands after the header. So the reader took
+`import Mitos.Core namespace Mitos.Refute` for an import and kept it, and the generated Challenges
+then declared their statements inside that namespace (review on #86 by CodeRabbit at e9fa024).
 
 It reads block comments as Lean does, or refuses the line. Lean ends a block comment at its first
 closer and nests a comment opened inside one, so the line `/- note -/ open Foo` runs `open Foo`,
@@ -345,6 +350,13 @@ theorem holeForm_spec {cs n ty : List Char} (h : holeForm cs = some (n, ty)) :
     exact hc
   · simp at h
 
+/-- Whether a code line is an import in the one form the reader takes: exactly `import <module>`,
+where the module name is one or more `qualPart`s joined by `.`. Lean reads anything after the module
+name on the same line as another import or as commands after the header, so
+`import Mitos.Core namespace Foo` is refused (review on #86 by CodeRabbit at e9fa024). -/
+def importForm (cs : List Char) : Bool :=
+  "import ".toList.isPrefixOf cs && ((String.ofList (cs.drop 7)).splitOn ".").all qualPart
+
 def lexError (l : String) : String :=
   s!"the Challenge has a line whose comments, strings or escaped names the refutation reader does not follow: {l}"
 
@@ -362,7 +374,7 @@ def readLine (inDoc : Bool) (l : String) : Except String (Line × Bool) :=
   else if "--".toList.isPrefixOf cs then .ok (.keep l, false)
   else if hasPair '/' '-' cs || hasPair '-' '/' cs || spansLines cs then .error (lexError l)
   else if cs.all (· == ' ') then .ok (.keep l, false)
-  else if "import ".toList.isPrefixOf cs then .ok (.imp l, false)
+  else if importForm cs then .ok (.imp l, false)
   else if (holeForm cs).isSome then .ok (.hole l, false)
   else match theoremHole cs with
     | some (n, s) => .ok (.thm n s l, false)
@@ -465,6 +477,41 @@ theorem readLine_hole {inDoc inDoc' : Bool} {l t : String}
       simp only [Except.ok.injEq, Prod.mk.injEq, Line.hole.injEq] at h
       obtain ⟨⟨n, ty⟩, hnt⟩ := Option.isSome_iff_exists.mp hh
       exact ⟨rfl, h.2.symm, h.1.symm, n, ty, holeForm_spec hnt⟩
+    · split at h <;> simp at h
+
+/-- **A line the reader takes as an import is one import and nothing else**: it is outside a
+comment, kept as it is, and is exactly `import <module>`, every component of the module name a
+`qualPart`. -/
+theorem readLine_imp {inDoc inDoc' : Bool} {l t : String}
+    (h : readLine inDoc l = .ok (.imp t, inDoc')) :
+    inDoc = false ∧ inDoc' = false ∧ t = l ∧ ∃ m, l.toList = "import ".toList ++ m ∧
+      ∀ c ∈ (String.ofList m).splitOn ".", qualPart c = true := by
+  unfold readLine at h
+  cases inDoc with
+  | true =>
+    simp only [ite_true] at h
+    split at h <;> simp at h
+  | false =>
+    simp only [Bool.false_eq_true, ite_false] at h
+    split at h
+    · split at h <;> simp at h
+    split at h
+    · simp at h
+    split at h
+    · simp at h
+    split at h
+    · simp at h
+    split at h
+    · rename_i hi
+      simp only [Except.ok.injEq, Prod.mk.injEq, Line.imp.injEq] at h
+      simp only [importForm, Bool.and_eq_true, List.all_eq_true] at hi
+      refine ⟨rfl, h.2.symm, h.1.symm, l.toList.drop 7, ?_, hi.2⟩
+      have hp := List.prefix_iff_eq_append.mp (List.isPrefixOf_iff_prefix.mp hi.1)
+      have h7 : "import ".toList.length = 7 := by decide
+      rw [h7] at hp
+      exact hp.symm
+    split at h
+    · simp at h
     · split at h <;> simp at h
 
 /-! The facts about Lean's block comments that `leanScan` transcribes, checked whenever this
@@ -1032,6 +1079,14 @@ def holesSolution (paths : List String) : String :=
     .hole "def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry"]
 #guard holeForm "def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry".toList ==
   some ("Mitos.Impl.impact".toList, "List Mitos.Edge → String → List String".toList)
+-- An import line holds one module and nothing else (review on #86 by CodeRabbit at e9fa024): Lean
+-- reads what follows the module name as commands after the header, such as a `namespace` around
+-- the generated statements, an `open`, or a theorem the reader would neither negate nor drop.
+#guard (readChallenge "import Mitos.Core namespace Mitos.Refute\ntheorem Mitos.Proofs.u : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core open Foo\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core theorem Mitos.Proofs.t : False := sorry\ntheorem Mitos.Proofs.u : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\nimport Mitos.Impl.Resolve").toOption ==
+  some [.imp "import Mitos.Core", .imp "import Mitos.Impl.Resolve"]
 -- Lines Lean reads unambiguously are read as Lean reads them: a comment on one line, a closer at
 -- the end of a line comment inside a comment, and an opener whose next character Lean skips.
 #guard (readChallenge "/-- doc -/\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption ==
