@@ -221,7 +221,8 @@ private def validIdent (s : String) : Bool :=
 judgment (`I/O error`), otherwise `""`. -/
 abbrev GateM := ExceptT (GateId × String) IO
 
-/-- The verdict line for a rejection. `eval/cheats/run.sh` reads the gate number from it. -/
+/-- The verdict line for a rejection. `eval/cheats/run.sh` reads the gate number from it. It is
+printed through `ciLine`: every `why` is a literal today, but nothing in its type keeps it one. -/
 def rejectedLine (g : GateId) (why : String) : String :=
   s!"VERDICT: REJECTED (gate {g.num}: {g.name}{if why.isEmpty then "" else ": " ++ why})"
 
@@ -744,7 +745,7 @@ def runAccept (c : Config) : IO UInt32 := do
     IO.println "VERDICT: ACCEPTED"
     return 0
   | .error (g, why) =>
-    IO.println (rejectedLine g why)
+    IO.println (ciLine (rejectedLine g why))
     return 1
 
 end MitosGate.Accept
