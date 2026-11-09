@@ -7,8 +7,8 @@
 #
 # What it reads:
 #   - a Bash command that runs `gh api`, `gh pr`, `gh issue` or `git commit`: the command text, and
-#     the files it names with `-F <field>=@<file>`, `--body-file <file>`, `--input <file>` and, for
-#     `git commit`, `-F <file>` or `--file <file>`. A relative path is taken from the hook's cwd, or
+#     the files it names with `-F <field>=@<file>`, `--body-file <file>`, `--input <file>`, `-F <file>`
+#     (gh pr, gh issue, git commit) and `--file <file>`. A relative path is taken from the hook's cwd, or
 #     from a leading `cd <dir> &&`. A path with a variable in it cannot be read, so it is skipped;
 #   - any GitHub MCP tool that is not a read (get_, list_, search_, *_read): its whole input.
 # A Claude-Session: line counts at the start of a line (a trailer); in a `git commit` command any
@@ -89,10 +89,10 @@ files=$(
   {
     grep -oE -- '(-F|--field)[[:space:]=]+['\''"]?[A-Za-z_][A-Za-z0-9_]*(\[\])?=@[^[:space:]'\''"]+' <<<"$cmd" | sed -E 's/.*=@//'
     grep -oE -- '--(body-file|input)[[:space:]=]+['\''"]?[^[:space:]'\''"]+' <<<"$cmd" | sed -E 's/^--(body-file|input)[[:space:]=]+['\''"]?//'
-    if [ "$is_commit" = 1 ]; then
-      grep -oE -- '(^|[[:space:]])(-F|--file)[[:space:]=]+['\''"]?[^[:space:]'\''"=]+([[:space:]'\''"]|$)' <<<"$cmd" \
-        | sed -E 's/^[[:space:]]*(-F|--file)[[:space:]=]+['\''"]?//; s/['\''"[:space:]]+$//'
-    fi
+    # `-F <file>` is the body file of gh pr and gh issue and the message file of git commit. A
+    # path with `=` in it is left out, so gh api's `-F name=value` fields never match.
+    grep -oE -- '(^|[[:space:]])(-F|--file)[[:space:]=]+['\''"]?[^[:space:]'\''"=]+([[:space:]'\''"]|$)' <<<"$cmd" \
+      | sed -E 's/^[[:space:]]*(-F|--file)[[:space:]=]+['\''"]?//; s/['\''"[:space:]]+$//'
   } 2>/dev/null
 )
 while IFS= read -r f; do

@@ -59,6 +59,14 @@ check "gh api --input with the link in the JSON" \
   "$(bash_in "gh api -X PATCH repos/o/r/pulls/5 --input $work/input.json")" block "input.json"
 check "gh issue comment --body-file with the link" \
   "$(bash_in "gh issue comment 5 --body-file $work/link.md")" block "link.md"
+check "gh issue comment -F with the link" \
+  "$(bash_in "gh issue comment 5 -F $work/link.md")" block "link.md"
+check "gh pr edit -F, relative, after cd" \
+  "$(bash_in "cd scratch && gh pr edit 5 -F bad.md")" block "bad.md"
+check "gh issue comment -F with a clean file" \
+  "$(bash_in "gh issue comment 5 -F $work/clean.md")" allow
+check "gh api -F fields are not files" \
+  "$(bash_in "gh api -X PATCH repos/o/r/pulls/5 -F draft=true -F body=@$work/clean.md")" allow
 check "gh api with a clean body file" \
   "$(bash_in "gh api -X PATCH repos/o/r/pulls/5 -F body=@$work/clean.md")" allow
 check "clean body after cd" \

@@ -9,8 +9,9 @@
 # is cut to a small safe charset and a length cap, and a field of the wrong type or shape makes the
 # whole answer "unavailable" instead of a half-trusted one.
 #
-# Rules freshness (#91, B2). At SessionStart it records the commit whose rules the session loaded
-# (HEAD of the project checkout) under the session id from the hook input. On every run it names
+# Rules freshness (#91, B2). At a SessionStart that starts or clears a conversation it records the
+# commit whose rules the session loaded (HEAD of the project checkout) under the session id from
+# the hook input; a resume or a compaction keeps the record. On every run it names
 # the rule files (.claude/, CLAUDE.md, docs/process.md) that changed on main since that commit and
 # says to read them, and it leaves the same note where check-agent-spawn.sh adds it to each spawn.
 # A session with no record yet records HEAD at its first prompt.
@@ -21,9 +22,10 @@
 # is green there and no owner comment is unanswered, it prints a merge command pinned to that head.
 # It never prints one that reads the head when it runs, because that drops the link to the head the
 # verifiers checked. An owner comment is unanswered (B3) when it does not end with the Claude Code
-# footer and is newer than the latest footer comment on the same PR, read from the newest 100 issue
-# comments and the newest 100 review comments of the repository; older ones and reviews are left to
-# watch-github.sh, which reads whole threads.
+# footer and is newer than the latest footer post anywhere on the same PR. For a PR whose verdict
+# covers its head, every comment, review comment and review is read; for the others, and for the
+# issues line, only the newest 100 issue comments and the newest 100 review comments of the
+# repository, and watch-github.sh reads whole threads.
 #
 # Environment: MITOS_OWNER, the owner's login (default kitimark); MITOS_HOOK_STATE, the directory
 # for the per-session records (default $TMPDIR/mitos-hook-state).
@@ -39,19 +41,24 @@ input=''
 [ -t 0 ] || input=$(cat 2>/dev/null)
 sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)
 event=$(jq -r '.hook_event_name // empty' <<<"$input" 2>/dev/null)
+source=$(jq -r '.source // empty' <<<"$input" 2>/dev/null)
 [[ $sid =~ ^[A-Za-z0-9_-]{1,100}$ ]] || sid=''
 owner=${MITOS_OWNER:-kitimark}
 [[ $owner =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]] || unavailable "MITOS_OWNER is not a GitHub login"
 proj=${CLAUDE_PROJECT_DIR:-.}
 
-# The commit whose rules this session loaded: HEAD at SessionStart, or at the first run that finds
-# no record. Without a session id there is nothing to key it by, so freshness is skipped.
+# The commit whose rules this session loaded: HEAD at a SessionStart that starts or clears the
+# conversation, or at the first run that finds no record. A resumed or compacted session keeps the
+# record, because the rule text it read earlier can still be in its context. Without a session id
+# there is nothing to key it by, so freshness is skipped.
 loaded='' state=''
+fresh_start=0
+[ "$event" = SessionStart ] && [ "$source" != resume ] && [ "$source" != compact ] && fresh_start=1
 if [ -n "$sid" ]; then
   state=${MITOS_HOOK_STATE:-${TMPDIR:-/tmp}/mitos-hook-state}
   if mkdir -p "$state" 2>/dev/null; then
     loaded=$(cat "$state/$sid.sha" 2>/dev/null)
-    if [ "$event" = SessionStart ] || ! [[ $loaded =~ ^[0-9a-f]{40}$ ]]; then
+    if [ "$fresh_start" = 1 ] || ! [[ $loaded =~ ^[0-9a-f]{40}$ ]]; then
       loaded=$(git -C "$proj" rev-parse HEAD 2>/dev/null)
       if [[ $loaded =~ ^[0-9a-f]{40}$ ]]; then printf '%s\n' "$loaded" >"$state/$sid.sha"; else loaded=''; fi
     fi
@@ -110,14 +117,51 @@ for n in open closed main ci; do
   [ -e "$dir/$n.failed" ] && unavailable "gh api for $n failed or timed out"
 done
 
-# The owner's PRs among the ten listed, and their heads.
+# The verdict head per PR from the In flight table of the owner's "Owner dashboard" issue. The row's
+# last cell is the verdict: `PASS <who> at <head>`, `wording-only at <head>`, or `PASS carried
+# from <old>`, which covers the row's Head cell (kitimark-mode, Verdicts). Anything else is none.
+verdicts=null
+if [ ! -e "$dir/dash.failed" ]; then
+  verdicts=$(jq -c --arg owner "$owner" '
+    [.[] | select(type == "object" and .title == "Owner dashboard" and .pull_request == null
+                  and .user.login == $owner)][0]
+    | if . == null then {} else
+      [(.body // "") | if type == "string" then . else error("bad body") end | split("\n")[]
+       | select(test("^\\s*\\|\\s*#[0-9]+"))
+       | (capture("^\\s*\\|\\s*#(?<n>[0-9]+)").n) as $n
+       | [split("|")[] | gsub("^\\s+|\\s+$"; "") | select(. != "")] as $cells
+       | ($cells[-1] | gsub("^[*_]+"; "")) as $v
+       | (($cells[1] // "" | capture("(?<h>[0-9a-f]{7,40})").h)? // null) as $headcell
+       | (if ($v | test("^PASS\\b")) or ($v | test("^wording-only\\b"; "i")) then
+            (if ($v | test("\\bcarried\\b")) then
+               (($v | capture("carried (from `?[0-9a-f]{7,40}`? )?to `?(?<h>[0-9a-f]{7,40})").h)? // $headcell)
+             else (($v | capture("\\bat `?(?<h>[0-9a-f]{7,40})\\b").h)? // null) end)
+          else null end) as $h
+       | {key: $n, value: $h}] | from_entries end' "$dir/dash.json" 2>/dev/null) || verdicts=null
+  [ -n "$verdicts" ] || verdicts=null
+fi
+
+# The owner's PRs among the ten listed, and their heads. A PR whose verdict covers its head is a
+# merge candidate, so all its comments and reviews are read too, not only the newest 100 of the
+# repository: its merge line must not miss an older unanswered comment.
 jq -r --arg owner "$owner" '.[0:10][]
   | select(type == "object" and (.user.login? // "") == $owner and (.number | type) == "number"
            and ((.head.sha // "") | type == "string" and test("^[0-9a-f]{40}$")))
   | "\(.number) \(.head.sha)"' "$dir/open.json" >"$dir/heads" 2>/dev/null || : >"$dir/heads"
+fetchp() { # name, route; every page, as one array of pages
+  timeout -k 1 5 gh api "$2" --paginate --slurp >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
+}
+: >"$dir/candidates"
 while read -r n sha; do
   fetch "gate-$n" "repos/$repo/commits/$sha/check-runs?check_name=gate&per_page=30" &
   fetch "files-$n" "repos/$repo/pulls/$n/files?per_page=100" &
+  v=$(jq -r --arg n "$n" '.[$n] // empty' <<<"$verdicts" 2>/dev/null)
+  if [[ $v =~ ^[0-9a-f]{7,40}$ && $sha == "$v"* ]]; then
+    echo "$n" >>"$dir/candidates"
+    fetchp "thread-ic-$n" "repos/$repo/issues/$n/comments?per_page=100" &
+    fetchp "thread-rc-$n" "repos/$repo/pulls/$n/comments?per_page=100" &
+    fetchp "thread-rv-$n" "repos/$repo/pulls/$n/reviews?per_page=100" &
+  fi
 done <"$dir/heads"
 
 # Rules freshness: the rule files main changed since the loaded commit, from local objects when
@@ -185,33 +229,31 @@ while read -r n sha; do
   fi
   [ -n "$gate" ] || gate='?'
   [ -n "$kept" ] || kept='?'
-  jq -cn --argjson n "$n" --arg sha "$sha" --arg gate "$gate" --arg kept "$kept" \
-    '{n: $n, sha: $sha, gate: $gate, kept: $kept}' >>"$dir/extra.ndjson"
+  # A candidate's unanswered owner posts from all of its comments, review comments and reviews.
+  exact=null
+  if grep -qx "$n" "$dir/candidates"; then
+    exact='"?"'
+    if [ ! -e "$dir/thread-ic-$n.failed" ] && [ ! -e "$dir/thread-rc-$n.failed" ] && [ ! -e "$dir/thread-rv-$n.failed" ]; then
+      exact=$(jq -n -c --arg owner "$owner" --slurpfile ic "$dir/thread-ic-$n.json" \
+        --slurpfile rc "$dir/thread-rc-$n.json" --slurpfile rv "$dir/thread-rv-$n.json" '
+        def footer: test("_Generated by \\[Claude Code\\]\\(https://claude\\.ai/code\\)_\\s*$");
+        def ts: select(type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"));
+        def num: if type == "number" and . >= 0 and . == floor then . else error("bad number") end;
+        def items: if type == "array" then .[] | if type == "array" then .[] else error("not a page") end
+                   else error("not an array") end;
+        def post($t): select(type == "object" and .user.login == $owner)
+          | {id: (.id | num), t: ($t | ts), agent: (.body // "" | if type == "string" then footer else error("bad body") end)};
+        [($ic[0] | items | post(.created_at)), ($rc[0] | items | post(.created_at)),
+         ($rv[0] | items | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or (.body // "") != "")
+                 | post(.submitted_at))]
+        | (map(select(.agent) | .t) | max) as $f
+        | [.[] | select((.agent | not) and ($f == null or .t > $f)) | .id] | unique' 2>/dev/null) || exact='"?"'
+      [ -n "$exact" ] || exact='"?"'
+    fi
+  fi
+  jq -cn --argjson n "$n" --arg sha "$sha" --arg gate "$gate" --arg kept "$kept" --argjson exact "$exact" \
+    '{n: $n, sha: $sha, gate: $gate, kept: $kept, exact: $exact}' >>"$dir/extra.ndjson"
 done <"$dir/heads"
-
-# The verdict head per PR from the In flight table of the owner's "Owner dashboard" issue. The row's
-# last cell is the verdict: `PASS <who> at <head>`, `wording-only at <head>`, or `PASS carried
-# from <old>`, which covers the row's Head cell (kitimark-mode, Verdicts). Anything else is none.
-verdicts=null
-if [ ! -e "$dir/dash.failed" ]; then
-  verdicts=$(jq -c --arg owner "$owner" '
-    [.[] | select(type == "object" and .title == "Owner dashboard" and .pull_request == null
-                  and .user.login == $owner)][0]
-    | if . == null then {} else
-      [(.body // "") | if type == "string" then . else error("bad body") end | split("\n")[]
-       | select(test("^\\s*\\|\\s*#[0-9]+"))
-       | (capture("^\\s*\\|\\s*#(?<n>[0-9]+)").n) as $n
-       | [split("|")[] | gsub("^\\s+|\\s+$"; "") | select(. != "")] as $cells
-       | ($cells[-1] | gsub("^[*_]+"; "")) as $v
-       | (($cells[1] // "" | capture("(?<h>[0-9a-f]{7,40})").h)? // null) as $headcell
-       | (if ($v | test("^PASS\\b")) or ($v | test("^wording-only\\b"; "i")) then
-            (if ($v | test("\\bcarried\\b")) then
-               (($v | capture("carried (from `?[0-9a-f]{7,40}`? )?to `?(?<h>[0-9a-f]{7,40})").h)? // $headcell)
-             else (($v | capture("\\bat `?(?<h>[0-9a-f]{7,40})\\b").h)? // null) end)
-          else null end) as $h
-       | {key: $n, value: $h}] | from_entries end' "$dir/dash.json" 2>/dev/null) || verdicts=null
-  [ -n "$verdicts" ] || verdicts=null
-fi
 
 # The owner's unanswered comments per issue or PR, from the newest 100 of each kind.
 unans=null
@@ -283,8 +325,10 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
    else $op[0:10][] | .n as $n | $ex[$n] as $e |
      (if $e == null then null else
         ($verdicts | if . == null then "?" else (.[$n] // "none") end) as $v |
-        ($unans | if . == null then "?"
-                  else ((.[$n] // []) | if length == 0 then "-" else map(tostring) | lst end) end) as $u |
+        (if $e.exact != null
+         then ($e.exact | if . == "?" then "?" elif length == 0 then "-" else map(tostring) | lst end)
+         else ($unans | if . == null then "?"
+                        else ((.[$n] // []) | if length == 0 then "-" else map(tostring) | lst end) end) end) as $u |
         {v: $v, u: $u, head: ($v != "?" and $v != "none" and ($e.sha | startswith($v)))} end) as $r |
      "open #\($n) head \(.sha) \(if .draft then "draft" else "ready" end) labels=\(.labels | lst) assignees=\(.who | lst)\(
        if $r == null then ""

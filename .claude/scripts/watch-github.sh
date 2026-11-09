@@ -138,12 +138,14 @@ poll() {
   since=$(date -u -d "@$((cursor - 300))" +%Y-%m-%dT%H:%M:%SZ) || return 1
   now=$(now_s)
   printf '%s\n' "$now" >"$w/now"
+  # The runs first: every run read then predates the heads read after it, so a push in between
+  # cannot make a run on a current head look stale.
+  api runs.json "repos/$repo/actions/workflows/ci.yml/runs?per_page=100" || return 1
   api open.json --paginate "repos/$repo/pulls?state=open&per_page=100" || return 1
   api closed.json "repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=50" || return 1
   api main.json "repos/$repo/branches/main" || return 1
   api icomments.json --paginate --slurp "repos/$repo/issues/comments?since=$since&per_page=100" || return 1
   api rcomments.json --paginate --slurp "repos/$repo/pulls/comments?since=$since&per_page=100" || return 1
-  api runs.json "repos/$repo/actions/workflows/ci.yml/runs?per_page=100" || return 1
   # Only the owner's account's PRs get calls of their own (see Cost and outside text above).
   jq -r --arg owner "$owner" "$defs"'
     .[] | select((.number | type) == "number" and (.head.sha // "" | test("^[0-9a-f]{40}$")) and ours)
@@ -164,8 +166,11 @@ poll() {
       "$w/icomments.json" "$w/rcomments.json" >"$w/threads.raw" 2>/dev/null || return 1
   else
     api issues.json --paginate --slurp "repos/$repo/issues?state=open&sort=updated&direction=desc&per_page=100" || return 1
-    jq -r '[.[][] | select((.comments // 0) > 0 or .pull_request != null) | .number | tostring
-            | select(test("^[0-9]+$"))] | .[0:60] | .[]' "$w/issues.json" >"$w/threads.raw" 2>/dev/null || return 1
+    # PRs from other accounts go before the cap, so a flood of them cannot push an issue out.
+    jq -r --rawfile out "$w/outside" '($out | split("\n") | map(select(. != ""))) as $o
+      | [.[][] | select((.comments // 0) > 0 or .pull_request != null) | .number | tostring
+         | select(test("^[0-9]+$")) | select(IN($o[]) | not)] | .[0:60] | .[]' \
+      "$w/issues.json" >"$w/threads.raw" 2>/dev/null || return 1
   fi
   grep -vxF -f "$w/outside" "$w/threads.raw" >"$w/threads" || :
   echo '[[]]' >"$w/none.json"
