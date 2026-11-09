@@ -10,6 +10,16 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-agent-spawn.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash|mcp__.*github.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-no-session-link.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

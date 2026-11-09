@@ -47,7 +47,7 @@ Move any Accepted item that a lint rule, script, metadata flag, or runtime check
 
 Present the synthesizer's full Accepted / Rejected / Backlog output and wait for explicit approval before applying any Accepted edit. The user picks the subset and may redirect routings. Skill changes affect every future agent in the org. Do not auto-apply.
 
-File each Backlog item to your team's devex or backlog tracker without waiting, unless the **kitimark-mode** skill applies: there, filing outside the repository is the owner's call, so list each item in the reply instead. Only the Accepted list waits for approval.
+File each Backlog item to your team's devex or backlog tracker without waiting. Under the **kitimark-mode** skill, each Backlog item the user approves becomes an issue in this repository labelled `process`, naming its target path, the cause it fixes and its owner (the PR owner who builds it, or the user for a path only they change). The parent files them right after approval and links them in the reply. Only the Accepted list and, under kitimark-mode, the Backlog wait for approval.
 
 Never edit a skill under `~/.claude/plugins/`. Before approval, show its destination, `.claude/skills/<skill>/` or `~/.claude/skills/<skill>/`. After approval, copy the skill folder there and edit the copy. Never open a PR or push, unless the **kitimark-mode** skill applies. There the skills are this repository's files, so the parent hands the approved rows to a PR owner, which makes the edits below on a branch and opens a PR for the user to merge.
 
@@ -67,5 +67,5 @@ Short list, no preamble:
 
 - Edits applied: `<skill path>`. What changed, one line each.
 - New skills created: `<skill path>`. One line each (rare).
-- Backlog filed to the devex tracker, or listed for the owner: `<issue title>` (`<tags>`). One line each.
+- Backlog filed to the devex tracker, or under kitimark-mode as `process` issues: `<issue title>` (`<tags>`). One line each.
 - Dropped: one line per rejected finding + reason from the synthesizer.

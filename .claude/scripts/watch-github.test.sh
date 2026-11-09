@@ -34,6 +34,16 @@ case "$route" in
   repos/acme/widgets/branches/main) cat "$f/main.json" ;;
   repos/acme/widgets/issues/comments\?since=*) cat "$f/icomments.json" ;;
   repos/acme/widgets/pulls/comments\?since=*) cat "$f/rcomments.json" ;;
+  repos/acme/widgets/actions/workflows/ci.yml/runs*)
+    if [ -e "$f/runs.json" ]; then cat "$f/runs.json"; else echo '{"workflow_runs":[]}'; fi ;;
+  repos/acme/widgets/issues\?state=open*)
+    if [ -e "$f/issues.json" ]; then cat "$f/issues.json"; else echo '[[]]'; fi ;;
+  repos/acme/widgets/issues/*/comments*)
+    n=${route#repos/acme/widgets/issues/}; n=${n%%/*}
+    if [ -e "$f/tic-$n.json" ]; then cat "$f/tic-$n.json"; else echo '[[]]'; fi ;;
+  repos/acme/widgets/pulls/*/comments*)
+    n=${route#repos/acme/widgets/pulls/}; n=${n%%/*}
+    if [ -e "$f/trc-$n.json" ]; then cat "$f/trc-$n.json"; else echo '[[]]'; fi ;;
   repos/acme/widgets/commits/*/check-runs*)
     s=${route#repos/acme/widgets/commits/}; s=${s%%/*}
     if [ -e "$f/checks-$s.json" ]; then cat "$f/checks-$s.json"; else echo '{"check_runs":[]}'; fi ;;
@@ -304,6 +314,175 @@ is "a re-arm right after that kill works" ""
 
 out=$(cd "$work/repo" && env PATH="$path" FAKE_DIR="$work" "$script" 2>&1)
 is "no state directory: usage line" "watch-github: usage: watch-github.sh <state-dir>"
+
+# --- Unanswered owner comments (#91, B3) ---
+# A comment from the owner's account without the footer that is newer than the latest footer post
+# on its issue or PR is unanswered, so a new state directory prints it instead of swallowing it.
+b3=$work/b3
+mkdir -p "$b3/f"
+cat >"$b3/f/open.json" <<EOF
+[{"number":45,"user":{"login":"kitimark"},"head":{"sha":"$A"},"labels":[],"assignees":[]},
+ {"number":60,"user":{"login":"mallory"},"head":{"sha":"$D"},"labels":[],"assignees":[]}]
+EOF
+echo '[]' >"$b3/f/closed.json"
+echo "{\"commit\":{\"sha\":\"$M1\"}}" >"$b3/f/main.json"
+echo '[[]]' >"$b3/f/icomments.json"
+echo '[[]]' >"$b3/f/rcomments.json"
+jq -n '[[{number:45, comments:2, pull_request:{}}, {number:91, comments:3}, {number:60, comments:1, pull_request:{}},
+        {number:92, comments:0}]]' >"$b3/f/issues.json"
+jq -n --arg f "$footer" '[[
+  {id:801, user:{login:"kitimark"}, created_at:"2026-11-09T09:00:00Z", body:"please fix X"},
+  {id:802, user:{login:"kitimark"}, created_at:"2026-11-09T09:05:00Z", body:("Fixed in abc." + $f)}]]' >"$b3/f/tic-45.json"
+jq -n --arg f "$footer" '[[
+  {id:810, user:{login:"kitimark"}, created_at:"2026-11-09T08:00:00Z", body:("Opened." + $f)},
+  {id:803, user:{login:"kitimark"}, created_at:"2026-11-09T09:10:00Z", body:"what about B4?"},
+  {id:804, user:{login:"mallory"}, created_at:"2026-11-09T09:11:00Z", body:"me too"}]]' >"$b3/f/tic-91.json"
+jq -n '[[{id:805, user:{login:"kitimark"}, created_at:"2026-11-09T09:06:00Z", body:"nit: this line"}]]' >"$b3/f/trc-45.json"
+jq -n '[[{id:806, user:{login:"kitimark"}, state:"COMMENTED", submitted_at:"2026-11-09T09:07:00Z", body:"looks off"},
+        {id:807, user:{login:"kitimark"}, state:"COMMENTED", submitted_at:"2026-11-09T09:08:00Z", body:""}]]' >"$b3/f/reviews-45.json"
+jq -n '[[{id:808, user:{login:"kitimark"}, created_at:"2026-11-09T09:12:00Z", body:"on a fork PR"}]]' >"$b3/f/tic-60.json"
+b3run() { STATE=${B3STATE:-$b3/state} run FAKE_DIR="$b3" "$@"; }
+b3new="owner review comment 805 on #45: nit: this line
+owner review 806 on #45: commented: looks off
+owner comment 803 on #91: what about B4?"
+: >"$b3/calls"
+b3run
+is "a new directory prints the owner's unanswered comments, review comments and reviews" "$b3new"
+if grep -q -e 'issues/60/' -e 'pulls/60/' "$b3/calls"; then echo "FAIL  a PR from another account was read in full"; failed=1
+else echo "ok    a PR from another account is not read in full"; fi
+if grep -q 'issues/92/' "$b3/calls"; then echo "FAIL  an issue with no comments was read"; failed=1
+else echo "ok    an issue with no comments is not read"; fi
+b3run
+is "no repeat after a re-arm" ""
+jq '.[0] += [{id:809, user:{login:"kitimark"}, created_at:"2026-11-09T09:15:00Z", body:"and B5"}]' "$b3/f/tic-91.json" >"$b3/f/t" && mv "$b3/f/t" "$b3/f/tic-91.json"
+jq -n --arg u "$U" '[[{id:809, user:{login:"kitimark"}, issue_url:"\($u)/issues/91", created_at:"2026-11-09T09:15:00Z", body:"and B5"}]]' >"$b3/f/icomments.json"
+: >"$b3/calls"
+b3run
+is "a later owner comment prints once" "owner comment 809 on #91: and B5"
+if grep -q 'issues/91/comments' "$b3/calls" && ! grep -q 'issues/45/comments' "$b3/calls"; then
+  echo "ok    a later poll reads in full only the thread with a new owner comment"
+else echo "FAIL  later poll thread reads: $(grep -c comments "$b3/calls")"; failed=1; fi
+jq --arg f "$footer" '.[0] += [{id:811, user:{login:"kitimark"}, created_at:"2026-11-09T09:20:00Z", body:("Answered both." + $f)}]' "$b3/f/tic-91.json" >"$b3/f/t" && mv "$b3/f/t" "$b3/f/tic-91.json"
+jq -n --arg u "$U" --arg f "$footer" '[[{id:811, user:{login:"kitimark"}, issue_url:"\($u)/issues/91", created_at:"2026-11-09T09:20:00Z", body:("Answered both." + $f)}]]' >"$b3/f/icomments.json"
+b3run
+is "an agent's answer prints nothing" ""
+rm -rf "$b3/state2"
+B3STATE=$b3/state2 b3run
+is "a new directory after the answer: only what is still unanswered" "owner review comment 805 on #45: nit: this line
+owner review 806 on #45: commented: looks off"
+jq -n --arg f "$footer" '[[
+  {id:820, user:{login:"kitimark"}, created_at:"2026-11-09T09:30:00Z", body:("> Fixed." + ($f | gsub("\n"; "\n> ")) + "\n\nNo, keep it.")}]]' >"$b3/f/tic-93.json"
+jq '.[0] += [{number:93, comments:1}]' "$b3/f/issues.json" >"$b3/f/t" && mv "$b3/f/t" "$b3/f/issues.json"
+rm -rf "$b3/state3"
+B3STATE=$b3/state3 b3run
+is "a reply that quotes an agent's footer is unanswered" "owner review comment 805 on #45: nit: this line
+owner review 806 on #45: commented: looks off
+owner comment 820 on #93: > Fixed. > > --- > _Generated by [Claude Code](https://claude.ai/code)_ No, keep it."
+
+# WATCH_SINCE seeds a new directory: its first poll also prints merges, closes and owner comments
+# since then. It is ignored for a directory already in use.
+jq -n '[{number:30, user:{login:"kitimark"}, closed_at:"2026-11-09T09:50:00Z", merged_at:"2026-11-09T09:50:00Z"},
+        {number:29, user:{login:"kitimark"}, closed_at:"2026-11-09T09:40:00Z", merged_at:null}]' >"$b3/f/closed.json"
+jq -n --arg u "$U" --arg f "$footer" '[[
+  {id:812, user:{login:"kitimark"}, issue_url:"\($u)/issues/91", created_at:"2026-11-09T09:50:00Z", body:"ship it"},
+  {id:813, user:{login:"kitimark"}, issue_url:"\($u)/issues/91", created_at:"2026-11-09T09:51:00Z", body:("Shipped." + $f)}]]' >"$b3/f/icomments.json"
+jq --arg f "$footer" '.[0] += [{id:812, user:{login:"kitimark"}, created_at:"2026-11-09T09:50:00Z", body:"ship it"},
+  {id:813, user:{login:"kitimark"}, created_at:"2026-11-09T09:51:00Z", body:("Shipped." + $f)}]' "$b3/f/tic-91.json" >"$b3/f/t" && mv "$b3/f/t" "$b3/f/tic-91.json"
+rm -rf "$b3/seeded" "$b3/unseeded"
+: >"$b3/calls"
+B3STATE=$b3/seeded b3run WATCH_SINCE=2026-11-09T09:45:00Z
+is "WATCH_SINCE: the first poll prints what happened since then" "owner review comment 805 on #45: nit: this line
+owner review 806 on #45: commented: looks off
+owner comment 820 on #93: > Fixed. > > --- > _Generated by [Claude Code](https://claude.ai/code)_ No, keep it.
+owner comment 812 on #91: ship it
+pr #30 merged at 2026-11-09T09:50Z"
+if grep -q 'issues/comments?since=2026-11-09T09:45:00Z&' "$b3/calls"; then echo "ok    WATCH_SINCE starts the comment window"
+else echo "FAIL  comment window: $(grep 'issues/comments?since' "$b3/calls")"; failed=1; fi
+B3STATE=$b3/seeded b3run WATCH_SINCE=2026-11-09T09:00:00Z
+is "WATCH_SINCE on a directory in use: ignored, nothing repeats" ""
+B3STATE=$b3/unseeded b3run
+is "the same new directory without WATCH_SINCE: only the unanswered comments" "owner review comment 805 on #45: nit: this line
+owner review 806 on #45: commented: looks off
+owner comment 820 on #93: > Fixed. > > --- > _Generated by [Claude Code](https://claude.ai/code)_ No, keep it."
+B3STATE=$b3/bad b3run WATCH_SINCE=yesterday
+is "a WATCH_SINCE that is not a UTC time is refused" "watch-github: WATCH_SINCE must be a UTC time such as 2026-11-09T09:45:00Z"
+
+# --- CI health (#91, B4) ---
+# The regression case is #84's real history on 2026-11-09, from the REST runs route and the PR's
+# timeline. Its first run was queued from 08:32:34 to 09:45:08. Head 3c6e3bb was pushed at 09:45:51,
+# and its run was created at 10:02:06, 16 minutes later; the queue was found only when the owner asked.
+b4=$work/b4
+mkdir -p "$b4/f"
+H0=3bdfdc1bc0d92712677f709875f90335280f958b H1=cea3370e0474f7896748663776beccf7da58d724
+H2=e7d9347beb1cc18213e09dd708930debedadd634 H3=00e437d9c8a684c7213e7f157c563fde429f93c7
+H4=3c6e3bb934967455ec0463ccc11457402e649c2e
+cat >"$b4/history.json" <<EOF
+[{"id":42586698295,"sha":"$H0","created":"2026-11-09T08:32:34Z","started":"2026-11-09T09:45:08Z","done":"2026-11-09T10:26:10Z"},
+ {"id":42590851579,"sha":"$H1","created":"2026-11-09T09:06:38Z","started":"2026-11-09T09:06:38Z","done":"2026-11-09T09:38:28Z"},
+ {"id":42592607751,"sha":"$H2","created":"2026-11-09T09:20:04Z","started":"2026-11-09T09:20:04Z","done":"2026-11-09T09:58:40Z"},
+ {"id":42593639834,"sha":"$H3","created":"2026-11-09T09:28:05Z","started":"2026-11-09T09:28:05Z","done":"2026-11-09T10:08:19Z"},
+ {"id":42597881928,"sha":"$H4","created":"2026-11-09T10:02:06Z","started":"2026-11-09T10:02:06Z","done":"2026-11-09T10:42:31Z"}]
+EOF
+echo '[]' >"$b4/f/closed.json"
+echo "{\"commit\":{\"sha\":\"$M1\"}}" >"$b4/f/main.json"
+echo '[[]]' >"$b4/f/icomments.json"
+echo '[[]]' >"$b4/f/rcomments.json"
+at() { # HH:MM:SS on 2026-11-09, #84's head then -> the fixtures at that time, and $now
+  now=$(date -u -d "2026-11-09T$1Z" +%s)
+  jq -n --arg h "$2" '[{number:84, user:{login:"kitimark"}, head:{sha:$h}, labels:[], assignees:[]}]' >"$b4/f/open.json"
+  jq --argjson now "$now" '{workflow_runs: [.[] | select((.created | fromdateiso8601) <= $now)
+    | {id, head_sha: .sha, event: "pull_request", created_at: .created,
+       status: (if (.done | fromdateiso8601) <= $now then "completed"
+                elif (.started | fromdateiso8601) <= $now then "in_progress" else "queued" end)}] | reverse}' \
+    "$b4/history.json" >"$b4/f/runs.json"
+}
+b4run() { STATE=$b4/state run FAKE_DIR="$b4" WATCH_NOW="$now" "$@"; }
+stale() { echo "ci: run $1 is $2 on ${3:0:7}, which is no longer the head of any open PR or main"; }
+at 08:33:00 "$H0"; b4run
+is "#84 at 08:33: a new PR whose run is queued, nothing yet" ""
+at 08:43:00 "$H0"; b4run
+is "#84 at 08:43: its run has been queued 10 minutes" "ci: run 42586698295 queued for 10 min on pr #84 head 3bdfdc1"
+at 08:44:00 "$H0"; b4run
+is "#84 at 08:44: printed once" ""
+at 09:07:00 "$H1"; b4run
+is "#84 at 09:07: a push leaves the old run queued on a commit that is no longer a head" \
+  "$(stale 42586698295 queued "$H0")
+pr #84 head cea3370 checks -"
+at 09:20:30 "$H2"; b4run
+is "#84 at 09:20: the run on the head before still runs" "$(stale 42590851579 in_progress "$H1")
+pr #84 head e7d9347 checks -"
+at 09:26:00 "$H3"; b4run
+is "#84 at 09:26" "$(stale 42592607751 in_progress "$H2")
+pr #84 head 00e437d checks -"
+at 09:46:00 "$H4"; b4run
+is "#84 at 09:46: head 3c6e3bb; a run that left the queue keeps its one stale line" "$(stale 42593639834 in_progress "$H3")
+pr #84 head 3c6e3bb checks -"
+at 09:55:00 "$H4"; b4run
+is "#84 at 09:55: 9 minutes without a run is not yet reported" ""
+at 09:56:00 "$H4"; b4run
+is "#84 at 09:56: 3c6e3bb has no ci run 10 minutes after its push" "ci: pr #84 head 3c6e3bb has no ci run 10 min after its push"
+at 10:03:00 "$H4"; b4run
+is "#84 at 10:03: its run exists; nothing more" ""
+at 10:30:00 "$H4"; b4run
+is "#84 at 10:30: nothing repeats" ""
+
+# The threshold, main's own runs, and runs that are not stale.
+rm -rf "$b4/state"
+at 10:03:00 "$H4"; b4run WATCH_CI_MINUTES=5
+is "a new directory reports a run already stale at its first poll" "$(stale 42593639834 in_progress "$H3")
+$(stale 42586698295 in_progress "$H0")"
+jq -n --arg m "$M1" --arg o "$D" '{workflow_runs: [
+  {id: 7, head_sha: $m, event: "push", status: "queued", created_at: "2026-11-09T09:55:00Z"},
+  {id: 8, head_sha: $o, event: "pull_request", status: "in_progress", created_at: "2026-11-09T09:55:00Z"},
+  {id: 9, head_sha: ("f" * 40), event: "pull_request", status: "completed", created_at: "2026-11-09T09:00:00Z"}]}' >"$b4/f/runs.json"
+jq --arg d "$D" '. + [{number: 61, user: {login: "mallory"}, head: {sha: $d}, labels: [], assignees: []}]' "$b4/f/open.json" >"$b4/f/t" && mv "$b4/f/t" "$b4/f/open.json"
+b4run WATCH_CI_MINUTES=5
+is "a run queued on main; nothing for an outside PR's run or a finished run" "ci: run 7 queued for 8 min on main head ${M1:0:7}
+pr #61 outside labels=- assignees=-"
+b4run WATCH_CI_MINUTES=0
+is "a WATCH_CI_MINUTES of 0 is refused" "watch-github: WATCH_CI_MINUTES must be a whole number from 1 to 9999"
+b4run WATCH_NOW=soon
+is "a WATCH_NOW that is not epoch seconds is refused" "watch-github: WATCH_NOW must be epoch seconds"
 
 if grep -q -e SECRET123 -e 127.0.0.1:1234 "$work/all"; then
   echo "FAIL  the origin URL was printed"; failed=1

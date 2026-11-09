@@ -29,17 +29,18 @@ root. It does its brief's work itself and follows the parts of this file for its
   foreground on a long run, it stops and hands the job to an agent instead. A root that does the
   work goes quiet for the user and fills its context with logs. The root's `Monitor` on the
   GitHub watcher script (see Watchers) is not such a wait: it runs beside the root, which stays
-  free to answer the user, so the root arms it itself.
+  free to answer the user, so the root arms it itself. Repairs to shared GitHub state, such as
+  body rewrites, bulk fixes or reply sweeps, go to an agent too. The root's own GitHub writes are
+  only catch-ups, the dashboard, assignments, filing one issue and the merge call.
 - A program of many PRs also follows the Orchestrate playbook
   (`.claude/skills/poteto-mode/playbooks/orchestrate.md`) for sub-coordinators and supervision.
 
 ## Roles
 
 Set `model` and `effort` on every Agent call from this table. This is the explicit request the
-Agent tool needs before it takes either field. Run every spawn in the background
-(`run_in_background: true`). Only the root spawns agents. A subagent spawns one only after a
-probe in the current environment shows it can, because a subagent's toolset may have no Agent
-tool.
+Agent tool needs before it takes either field. Only the root spawns agents. A subagent spawns one
+only after a probe in the current environment shows it can, because a subagent's toolset may have
+no Agent tool.
 
 | Role | Job | `subagent_type` | `model` | `effort` |
 |---|---|---|---|---|
@@ -50,9 +51,8 @@ tool.
 | Researcher | reads docs or prior art, or diagnoses a failure, and edits nothing | `general-purpose` | `sonnet`, or `opus` for a judgment call | `medium`, or `high` on `opus` |
 
 - **Briefs.** Each brief states the user's goal, the task, the paths the agent may write, the
-  evidence that proves the job done, and where the agent stops. A worktree spawn sets
-  `isolation: "worktree"` and names the commit to start from, because an isolated worktree starts
-  from the default branch.
+  evidence that proves the job done, and where the agent stops. A worktree spawn names the commit
+  to start from, because an isolated worktree starts from the default branch.
 - **Other spawns.** A spawn whose model a routed skill (`how`, `swarm`, `reflect` and the like)
   or an agent file names keeps that model and takes the closest row's `effort`. Under the
   **poteto-mode** skill, `poteto-agent` replaces `general-purpose` for PR owners. If the Agent
@@ -67,13 +67,18 @@ tool.
   `.claude/scripts/watch-github.sh <state-dir>`, and no agent runs for them. One monitor covers
   every open PR. Every 60 s the script reads REST and prints one line per change: a merge or
   close, a new PR, its labels or assignees, the head and finished checks of a PR from the user's
-  account (agents open theirs through it), a move of `main`, and a comment or review from the
-  user's account that does not end with the footer, with its id. While nothing changes it prints
-  nothing, so it costs no tokens. The root gives it a new subdirectory of the session's
-  scratchpad that no other monitor uses, such as `<scratchpad>/watch-github`, not the scratchpad
-  itself, because the script keeps its lock, snapshot and cursor there. So a re-armed monitor
-  neither repeats nor misses an event. It arms the monitor with `timeout_ms` 1800000, the cap,
-  and re-arms it with one call in the turn it expires or exits, unless it cannot run (see below).
+  account (agents open theirs through it), a move of `main`, a comment or review from the
+  user's account that does not end with the footer, with its id, and `ci:` lines for a head with
+  no `ci` run, a long queue or a run on an old head. A `ci:` line is a failure no PR owns (see
+  The root orchestrates). While nothing changes it prints nothing, so it costs no tokens. The
+  root keeps one state directory for the whole session, `<scratchpad>/watch-github`: it makes it
+  at the first arm, passes the same one at every re-arm and never makes a second one, because the
+  script keeps its lock, snapshot and cursor there. So a re-armed monitor neither repeats nor
+  misses an event. A new directory's first poll prints the user's comments that no footer comment
+  follows; a new session also sets `WATCH_SINCE` to the dashboard's last update, so the first
+  poll prints the merges and comments since then. It arms the monitor with `timeout_ms` 1800000,
+  the cap, and re-arms it with one call in the turn it expires or exits, unless it cannot run
+  (see below).
   The root holds it because a subagent cannot keep a Monitor once it returns. The script's lines
   are already filtered to state changes, so this does not bring back the flood that PR-activity
   subscriptions caused.
@@ -131,8 +136,10 @@ tool.
   catch-up waits on a reply, the root also reads the comment routes at each re-arm.
 - Nobody subscribes to PR activity, because subscription events land in the root.
 
-`.claude/hooks/check-agent-spawn.sh` warns when an Agent call leaves out `model` or `effort`, or
-when a fork sets either.
+`.claude/hooks/check-agent-spawn.sh` warns when an Agent call leaves out `model` or `effort`,
+when a fork sets either, when `run_in_background` is not true, and when a PR owner or verifier
+spawn has no `isolation: "worktree"`. It also repeats `pr-state.sh`'s note when rule files changed
+on `main` after the session loaded its rules; put that note in the brief.
 
 ## Decide, don't ask
 
@@ -145,6 +152,9 @@ when a fork sets either.
   user.
 - Choose between implementation options on your own; record the choice and the reason in the
   task file or PR body, not as a question.
+- On a problem's second occurrence, or a call to the user repeated in two catch-ups, file one
+  `process` issue at once. It names the cause and the structural fix, and has an owner. Every
+  catch-up or dashboard line about that problem links it.
 
 ## PR owners carry their PR
 
@@ -170,9 +180,12 @@ default" names the same exception.
 2. Before pushing, run locally every check in the `docs/process.md` check matrix that the change
    can affect. For Lean work that includes `cd core && lake check` and
    `lake comparator --paranoid`.
-3. Open the PR without asking. Wait for CI and the bots as **Watchers** says for a PR owner: at
-   most two bounded calls, then report "pushed, waiting on CI" and return until the root resumes
-   you. Batch known fixes into one push, because each push starts CI and a paid bot review.
+3. Open the PR without asking, with `.claude/scripts/open-pr.sh`. The session proxy adds a
+   session link to the body of every PR create, and the script reads the body back and cleans
+   it; `check-no-session-link.sh` refuses any other create. Wait for CI and the bots as
+   **Watchers** says for a PR owner: at most two bounded calls, then report "pushed, waiting on
+   CI" and return until the root resumes you. Batch known fixes into one push, because each push
+   starts CI and a paid bot review.
 4. CI red: reproduce locally, fix, push. Never weaken a theorem, gate or cheat expectation to
    get green; that is a spec change and goes to the user. A `gate` cancelled at the current head
    is not red unless its log shows it timed out: re-run the head's latest run, and only that one
@@ -277,14 +290,17 @@ watcher's echo filter and the merge rule below rely on both.
   **Blocking only**, this rule holds in the playbooks too: where Autopilot-full step 4 says
   verifiers re-run the gates, they read the cheat corpus from these logs.
 - The root writes each verdict into the PR's In flight row on the Owner dashboard, or into its
-  merged line once the PR has merged (see Catching the user up): pass or fail, the short head it
-  covers and who gave it, such as `PASS sonnet-xhigh + opus-xhigh at 43fc333`.
-  At a head that only rebases, the row says `PASS carried from 43fc333`. A `verdict` commit
-  status would show in the PR's checks, but the session proxy refuses status writes (#42).
+  merged line once the PR has merged (see Catching the user up). The verdict cell starts with
+  `PASS`, `FAIL` or `wording-only`, then who gave it and the short head it covers, such as
+  `PASS sonnet-xhigh + opus-xhigh at 43fc333`. At a head that only rebases, the row's Head cell
+  is the new head and the verdict cell says `PASS carried from 43fc333`. `pr-state.sh` reads the
+  verdict head from that cell. A `verdict` commit status would show in the PR's checks, but the
+  session proxy refuses status writes (#42).
 - A PR merges when four things hold at its current head. It has a passing verdict or is a
   wording-only change. Its `gate` is green. No review comment from the user is unanswered, read
   from the comment routes in **Forge**. It touches nothing the user keeps (see What stays with
-  the user).
+  the user). `pr-state.sh` shows all four on each open PR's line, and a `merge-ready #N` line
+  with the merge command pinned to the head only when the first three hold.
 - It merges with rebase and merge, pinned to that head, through
   `gh api -X PUT repos/{owner}/{repo}/pulls/<pr>/merge -f merge_method=rebase -f sha=<head>` or the GitHub
   MCP merge tool with `expectedHeadSha`. `gh pr merge` fails in these sessions (see **Forge** in
@@ -395,6 +411,9 @@ watcher's echo filter and the merge rule below rely on both.
   `examples/acme/Models/`, so GitHub shows the user those PRs. The spec inside them needs
   `spec-approved`, and agents merge the rest. `plan/` holds no trusted code, so
   CODEOWNERS leaves it out.
+- When a cause sits in a path the user keeps, the PR owner who patches the symptom also opens the
+  structural PR next to that patch. Rule and tool changes waiting for the user are batched in one
+  open PR per batch.
 - **Outside the repo.** GitHub settings, branch protection, environment network access, pinning
   an issue, anything that sends messages or costs money. Automation that multiplies pushes, such
   as a bot that rebases every open PR on each merge, costs money too. Each push starts CI and a
@@ -408,8 +427,9 @@ overrides the chat catch-ups in other skills and playbooks: where one says to ca
 per the **ketchup** skill, such as an Autopilot-full tick or its Reply, the root rewrites the
 dashboard instead. `/ketchup` still answers in chat when the user types it, because then it
 answers their question. The repository is public, so no post holds IDs of any kind (session,
-agent, request, environment or other), a session link, a key, a token, a code, an email or a
-private URL. Issue and PR numbers, commit SHAs and links to public GitHub comments are fine. The
+agent, request, environment or other), a key, a token, a code, an email or a private URL;
+`check-no-session-link.sh` refuses a session link (CLAUDE.md, Attribution). Issue and PR
+numbers, commit SHAs and links to public GitHub comments are fine. The
 comment ids an agent lists go in its report to the root, not in a post. The routes are in
 **Forge**.
 
@@ -476,11 +496,11 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   condition yourself over REST, unassign the user if their part is done, and carry on without
   waiting to be told. A merge the root did not expect is a state change: update the dashboard and
   tell the user once, in one line.
-- Each merge moves `main`, and the updater then rebases every open PR based on `main`. A merge
-  command pinned to the old head then fails with 409, as on #61 and #62 after #63 merged. So
-  after each merge, the root re-reads over REST every PR that waits on the user's merge, once the
-  monitor prints its new head or its `needs-rebase` label. It posts a new catch-up pinned to the
-  new head, or one that says to hold the merge until the rebase lands.
+- A merge command in a catch-up is the one on `pr-state.sh`'s `merge-ready #N` line. Each merge
+  moves `main` and the updater rebases every open PR, so a command pinned to the old head fails
+  with 409, as on #61 and #62. When that line changes or goes away for a PR waiting on the user's
+  merge, post a new catch-up with the new command, or one that says to hold the merge until a
+  verdict covers the new head.
 - The user may merge before a verdict. The verifier then still runs, on the merged head. Its
   verdict goes in the PR's merged line under the In flight table, such as `#44 merged 09:30 UTC,
   then PASS opus-xhigh at 04fcb83; follow-ups #47`. A FAIL also becomes a `follow-up` issue and a
