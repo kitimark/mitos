@@ -3,7 +3,7 @@
 phase: 1
 goal: The cheat corpus runs in parallel in CI, through a runner written in Lean whose decisions (the `expect` parser, the reading of the gate's verdict line, the pass rule with `guards=`, the table and the scheduler) are proved, and no case's verdict changes.
 statement: none (tooling task); theorems in `gate/MitosGate/Cheats.lean`, outside the lock
-touches: gate/MitosGate/Cheats.lean (new, pure), gate/MitosGate/CheatsRun.lean (new, I/O), gate/MitosGate/GateId.lean (new, `GateId` moved from Accept.lean), gate/MitosGate/Accept.lean (the verdict line is `Cheats.Verdict.render`), gate/Main.lean (the `cheats` subcommand), gate/LintTest.lean (the runner's timeout cases), eval/cheats/model_include_str_src/expect (`heavy=yes` only), .github/workflows/ci.yml (the corpus step), docs/process.md (running the corpus), ops/runs/2026-11-09.ndjson (appended lines only), tasks/cheat-runner.md
+touches: gate/MitosGate/Cheats.lean (new, pure), gate/MitosGate/CheatsRun.lean (new, I/O), gate/MitosGate/GateId.lean (new, `GateId` moved from Accept.lean), gate/MitosGate/Accept.lean (the verdict line is `Cheats.Verdict.render` of `Verdict.ofGate`), gate/Main.lean (the `cheats` subcommand), gate/LintTest.lean (the runner's timeout cases and its CI-log cases), eval/cheats/model_include_str_src/expect (`heavy=yes` only), .github/workflows/ci.yml (the corpus step), docs/process.md (running the corpus), ops/runs/2026-11-09.ndjson (appended lines only), tasks/cheat-runner.md
 must_not_touch: statements.lock, models.lock, core/, lakefile.toml, other `expect` lines, models
 checks: build, imports, lock, lint test, runlog on main's data, gate/runlog-test.sh, cheats (both runners, tables compared)
 budget: 25 iterations · 6h wall · 2M tokens
@@ -66,9 +66,22 @@ escalation: hint → automation → stronger model → pair → split → revisi
   - **Out of reach.** A descendant that starts a session of its own leaves the group. If it holds a
     pipe, the run lasts until it exits, and CI's job timeout fails it. #103 tracks it, with the
     verdicts' minor findings and what the PR that deletes `run.sh` must update.
-- **Prints.** Every line with a case name, an `expect` value or gate output goes through
-  `oneLine`. #68 adds a CI-safe line function that also escapes `##[` and a leading `::`; it takes
-  over these prints.
+- **Prints.** Every line the runner prints with a case name, an `expect` value, an argument or an
+  I/O error goes through `ciLine` (#82, which merged first), so it starts no workflow command in a
+  CI log. On the corpus's ASCII table `ciLine` changes nothing, so the table stays `run.sh`'s byte
+  for byte. `mitos-lint-test` runs the runner on a case named `::warning::forged`, one named
+  `x##[warning]forged` and a `--jobs` value with the legacy form (`ciCases`).
+- **The verdict line after #82.** #82 printed `ciLine (rejectedLine g why)` and
+  `ciLine "VERDICT: REJECTED (record: …)"`. Here the gate makes its verdict with
+  `Cheats.Verdict.ofGate`, which writes the text, the record error or the gate's `why`, with
+  `ciLine`, and prints `v.render` as it is, so `parse_eq_some_iff` still describes what is printed.
+  `Verdict.ofGate_not_startsCommand`, `ofGate_no_break` and `ofGate_printable` prove for every
+  verdict the gate can print what `ciLine`'s theorems prove for a line through it. Printing
+  `ciLine v.render` would not work: `ciLine` escapes the `\` of an escape again, so a record error
+  with a newline would print as a line the runner reads as no verdict (an example in `Cheats.lean`
+  checks this). The rejection lines are unchanged byte for byte, because every `why` is `""` or
+  `I/O error`. The record line differs from #82's only when the error starts with a `:`, which
+  `ciLine` on the text alone escapes.
 - **Scheduler.** FIFO over a fixed order: heavy jobs, then runs expected to reach the comparator,
   then the rest. A heavy job starts only when nothing runs, and nothing starts while it runs.
   The short runs go last, so the slots stay full to the end.

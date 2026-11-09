@@ -207,9 +207,12 @@ the markers culture-sensitively, so under some other cultures (ja-JP and th-TH s
 lines as commands, and a self-hosted runner with such a culture is out of scope. The culture of
 GitHub-hosted runners is inferred to be en-US or invariant, not logged. Decoding the escapes gives
 back the original text. The `::error` lines of `runlog` and `lock-models` are the gate's own
-commands, with the text through `oneLine` and GitHub's escaping. `lake exe mitos-lint-test` runs the gate on
-hostile file names, lock lines and arguments, and the comparator tail on hostile output, and
-checks every line printed.
+commands, with the text through `oneLine` and GitHub's escaping. The verdict line is printed as
+`Cheats.Verdict.render` makes it, so that `mitos-gate cheats` reads it back; `Verdict.ofGate`
+writes its text with `ciLine`, and `Verdict.ofGate_not_startsCommand` and `Verdict.ofGate_no_break`
+prove that the whole line starts no command and stays one line. `lake exe mitos-lint-test` runs the
+gate on hostile file names, lock lines and arguments, the cheat runner on hostile case names and
+options, and the comparator tail on hostile output, and checks every line printed.
 
 Gates 0–5 take the model as given: a plugin passes them by emitting the facts the model says
 hold. `Mitos.CompleteWrt` matches an emitted fact by kind and identity only, not by span or by how

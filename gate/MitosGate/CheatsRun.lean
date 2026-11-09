@@ -8,8 +8,13 @@ import MitosGate.Util
 This lists the cases, copies a workspace for each run, starts the gate in a child process, stops
 it at the timeout, writes the logs and prints the table. `Cheats` makes every decision: which runs
 are jobs (`jobs`), their order (`order`), when one may start (`Sched.start?`), each run's verdict and
-each case's row (`table`), and the exit code (`exitCode`). Each printed line that holds a case name,
-a value from an `expect` file or gate output goes through `oneLine`.
+each case's row (`table`), and the exit code (`exitCode`). Each line it prints that holds a case
+name, a value from an `expect` file, an argument or an I/O error goes through `ciLine`, so it stays
+one line and starts no workflow command in a CI log (`ciLine_not_startsCommand`). On an ASCII line
+`ciLine` changes only a `\`, a control character, a `:` that would come first and a `[` right after
+`##`. No line of the corpus's table holds one, so the table stays `run.sh`'s byte for byte, which CI
+checks. The gate's output goes only to the logs, and `timing.tsv` holds the case names through
+`oneLine`.
 
 The workspace is `run.sh`'s: the example workspace's `lakefile.toml`, `lean-toolchain`,
 `models.lock`, `Models/` and `Plugins/`, then the case's `Plugins/` and `Models/` over them. With
@@ -151,7 +156,7 @@ def inRunDir (act : System.FilePath → IO Run) : IO Run := do
       act dir
     catch err => pure { exitCode := 255, output := s!"mitos-gate cheats: {err}\n", timedOut := false }
   try IO.FS.removeDirAll dir
-  catch err => IO.eprintln (oneLine s!"warning: could not remove the job directory {dir}: {err}")
+  catch err => IO.eprintln (ciLine s!"warning: could not remove the job directory {dir}: {err}")
   return run
 
 /-- One job: its run, and when it started and ended, in ms since the runner started. -/
@@ -169,7 +174,7 @@ def runJob (gate : String) (root logs : System.FilePath) (t0 : Nat) (timeout : N
     prepare root c e (dir / "ws")
     runGate gate root (dir / "ws") (dir / "tmp") m timeout
   try IO.FS.writeFile (logs / s!"{c}.{m.logName}.log") run.output
-  catch err => IO.eprintln (oneLine s!"warning: could not write the log of {c}: {err}")
+  catch err => IO.eprintln (ciLine s!"warning: could not write the log of {c}: {err}")
   return { run, startMs, endMs := (← IO.monoMsNow) - t0 }
 
 abbrev Pending := Task (Job × Except IO.Error Done)
@@ -221,7 +226,7 @@ def runCorpus (o : Options) : IO UInt32 := do
     finished.modify (· + 1)
     let (j, d) := jd
     let secs := (d.endMs - d.startMs) / 1000
-    IO.eprintln (oneLine (s!"[{← finished.get}/{js.length}] {names[j.case]!} {j.mode.logName}: " ++
+    IO.eprintln (ciLine (s!"[{← finished.get}/{js.length}] {names[j.case]!} {j.mode.logName}: " ++
       s!"{d.run.shown} ({secs} s)"))
   let done ← schedule o.jobs launch progress (.init js) [] #[]
   let res (i : Nat) (m : Mode) : Option Run :=
@@ -233,22 +238,22 @@ def runCorpus (o : Options) : IO UInt32 := do
       s!"{d.run.timedOut}\n"
   let header := "case\tmode\tstart_ms\tend_ms\texit\ttimed_out\n"
   try IO.FS.writeFile (logs / "timing.tsv") (String.join (header :: tsv))
-  catch err => IO.eprintln (oneLine s!"warning: could not write timing.tsv: {err}")
-  for l in report rows do IO.println (oneLine l)
+  catch err => IO.eprintln (ciLine s!"warning: could not write timing.tsv: {err}")
+  for l in report rows do IO.println (ciLine l)
   let secs := ((← IO.monoMsNow) - t0) / 1000
   IO.eprintln (s!"cheat corpus: {done.size} runs of {cases.length} cases in {secs} s, " ++
     s!"--jobs {o.jobs}, --timeout {o.timeout}")
   return exitCode rows
 
-/-- `runCorpus`, but an I/O error it throws is printed through `oneLine`, with exit 2: the Lean
+/-- `runCorpus`, but an I/O error it throws is printed through `ciLine`, with exit 2: the Lean
 runtime would print it raw, and it names the path it failed on. -/
 def cli (args : List String) (usage : String) : IO UInt32 := do
   match parseArgs args {} with
-  | .error e => IO.eprintln (oneLine e); IO.eprintln usage; return 2
+  | .error e => IO.eprintln (ciLine e); IO.eprintln usage; return 2
   | .ok o =>
     try runCorpus o
     catch e =>
-      IO.eprintln (oneLine s!"mitos-gate cheats stopped on an I/O error: {e}")
+      IO.eprintln (ciLine s!"mitos-gate cheats stopped on an I/O error: {e}")
       return 2
 
 end MitosGate.CheatsRun

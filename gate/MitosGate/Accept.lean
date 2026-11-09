@@ -714,15 +714,21 @@ def runAccept (c : Config) : IO UInt32 := do
     let adequacyChal := adequacyChallenge i.models
     judge c i chal adequacyChal
     return writeRecord c i chal adequacyChal
-  -- The verdict line is `Cheats.Verdict.render`'s, which the cheat runner reads back
-  -- (`Cheats.Verdict.parse_eq_some_iff`); its texts go through `ciLine`, so it is one line.
-  let v : Cheats.Verdict ← match ← gates.run with
+  -- How the run ended: `.ok none`, `.ok (some e)` when the record could not be written, or the
+  -- gate that rejected.
+  let ended : Except (GateId × String) (Option String) ← match ← gates.run with
     | .ok record =>
       if c.record then
-        try record; pure .accepted
-        catch e => pure (.unrecorded (ciLine (toString e)))
-      else pure .accepted
-    | .error (g, why) => pure (.rejected g (ciLine why))
+        try record; pure (.ok none)
+        catch e => pure (.ok (some (toString e)))
+      else pure (.ok none)
+    | .error (g, why) => pure (.error (g, why))
+  -- The verdict line is `Cheats.Verdict.render`'s, which the cheat runner reads back
+  -- (`Cheats.Verdict.parse_eq_some_iff`). `Verdict.ofGate` writes its text with `ciLine`, so the
+  -- line starts no workflow command and stays one line (`Cheats.Verdict.ofGate_not_startsCommand`,
+  -- `Cheats.Verdict.ofGate_no_break`). It is printed as it is: `ciLine` would escape the `\` of an
+  -- escape in it again.
+  let v := Cheats.Verdict.ofGate ended
   IO.println v.render
   return v.exitCode
 
