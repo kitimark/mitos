@@ -5,9 +5,9 @@ goal: Every mutant of the resolver and impact analysis in `eval/mutants/` that n
   (`breaks=`) breaks each of them, shown by the sandboxed `lake comparator` about the mutant's own
   definitions; a realistic mutant the theorems miss is kept as a known gap (`survives=`) for the
   owner; cheat cases (`rejects=`) show that a refutation or a gap counts only for the mutant's own
-  definitions and the approved statements, and that a case's Lean text runs no code and declares no
-  syntax while Lean elaborates it; the nightly job checks all three (Phase 1 exit criterion 3, which
-  stays open while a known gap does).
+  definitions and the approved statements, and that a case's Lean text runs no code, declares no
+  syntax and declares no name a generated statement could resolve to while Lean elaborates it; the
+  nightly job checks all three (Phase 1 exit criterion 3, which stays open while a known gap does).
 statement: none (tooling task); proves the runner's own logic in `eval/mutants/Mutants/`
 touches: eval/mutants/, .github/workflows/nightly.yml, tasks/P1-006-mutation-testing.md,
   ops/runs/
@@ -51,9 +51,9 @@ comparator runs, each in a fresh copy of `core/` sources (no build outputs), rem
    mutant's own definitions.
    After a rejection, for a `breaks=` case, **refutation:** a Challenge generated from
    `core/Challenge/Resolver.lean` with each named theorem negated
-   (`theorem Mitos.Refute.<t> : ¬ (<approved statement>)`), the holes as values and the approved
-   permitted axioms. It must accept: each named theorem is proved false for the mutant's own
-   definitions.
+   (`theorem _root_.Mitos.Refute.<t> : ¬ (<approved statement, each name as _root_.<name>>)`, round
+   4 below), the holes as values and the approved permitted axioms. It must accept: each named
+   theorem is proved false for the mutant's own definitions.
 
 A control run first judges the unmutated core as run 2 does, and must accept, so a rejection comes
 from the mutant and not from the workspace.
@@ -167,8 +167,8 @@ core and the implementation see:
   (`banned`: `macro_rules`, `include_str`, `Lean`, `native_decide`, `sorry`, …), nor `by_elab` or
   `run_tac`, the forms that run code inside an allowed declaration, nor `set_option` or
   `attribute` inside a declaration either; and no `#` token. A term-level `open … in` stays
-  allowed: it changes name resolution in one term, and no module a case may import declares scoped
-  syntax for it to open.
+  allowed, for a namespace under `Mitos` only (round 4): `Init` declares scoped syntax that `open`
+  switches on (`open Int` adds `-[n+1]`), which the lint's parse would not see.
 
 A text Lean's parser cannot read to the end is refused. Each `replace=` text is also checked as
 plain text, without Lean's parser: no `#`, no `@[`, no banned word standing alone. The lint allows
@@ -195,8 +195,80 @@ judge what they declare, so the cheat cases that pin those checks (`cheat_privat
 
 **What this does not cover.** Lean's built-in elaborators for the allowed commands, tactics such as
 `decide` and `simp`, and the parser are trusted, as they are for the gate. The lint parses with
-`Init`'s syntax; that is the syntax Lean elaborates a case's text with, because the approved core
-declares none and a text that passes adds none.
+`Init`'s syntax and none of its scoped syntax. That is the syntax Lean parses a case's text with
+because the approved core declares none, a text that passes adds none, and, since round 4, a text
+that passes enters and opens only namespaces under `Mitos`, so it switches on none of `Init`'s
+scoped syntax. Round 3 said this without the last condition, and it was false: `open Int` or
+`namespace Int` switches on `-[n+1]` (review on #86, round 3, opus B2).
+
+### Names in the generated statements (round 4)
+
+**What failed.** Round 3's premise ended with "the generated Challenges that import it state exactly
+the approved statements", because the implementation declares no syntax. A statement's names are
+part of what it states too, and Lean resolves them against every declaration in scope, the
+implementation's included. Lean elaborates `theorem Mitos.Refute.<t> : <stmt>` inside namespace
+`Mitos.Refute`, so `Mitos.Spec.X` in it resolves first to `Mitos.Refute.Mitos.Spec.X`, then to
+`Mitos.Mitos.Spec.X`, and only then to `Mitos.Spec.X`. An implementation edit adding
+`def Mitos.Refute.Mitos.Spec.AssumptionsExact (_ : Mitos.Resolver) : Prop := False` made the
+refutation Challenge state `¬ False`: the known gap and a correct implementation were REFUTED, also
+with `--paranoid` (review on #86, round 3, opus B1). The same route points `Mitos.Impl.resolve`, in
+the statement and in `Mitos.Refute.holes` alike, at a shadow resolver, so the comparison by value
+checks the shadow; and the values run's statements, elaborated in namespace `Mitos.Proofs`, can be
+redirected the same way.
+
+**The premise that failed.**
+
+> A generated line means what the approved line means, as long as nothing in scope declares
+> syntax.
+
+**The premise this round makes true.**
+
+> Every name in every statement the runner generates resolves to the declaration of exactly that
+> name, whatever the case declares; and every name a case declares lies in a namespace the case
+> owns, so no generated statement could find it.
+
+**Decision: both parts, each closing the shadow class at a different point.**
+- **The statements** (`Mutants.Challenge`). Every theorem the runner generates (each negation,
+  `Mitos.Refute.holes`, the values run's theorems and the solution module's proof of the holes) is
+  declared as `_root_.Mitos.Refute.<t>` or `_root_.Mitos.Proofs.<t>`, so Lean elaborates it in the
+  root namespace, where a dotted name is looked up exactly; and `qualify` writes each name in it as
+  `_root_.<name>`. `qualify` takes only a statement that is a list of names under `Mitos`
+  separated by single spaces, as all eight approved ones are, and the runner stops (exit 2) on any
+  other, rather than qualify a statement it does not understand. `_root_.` alone would not be
+  enough, and the root namespace is what makes the lookup exact: inside `Mitos.Refute`, Lean tries
+  `Mitos.Refute._root_.Mitos.Spec.X` first. `Mutants.Resolution` checks both facts about Lean at
+  every build, so a toolchain that changes them fails the canary.
+- **The lint** (`Mutants.Lint`). It follows `namespace`, `section` and `end` as Lean does
+  (`walk`), and refuses a name a case declares outside its own namespaces: under `Mitos.Impl` in an
+  implementation file, under `Mitos.Refute` in a `Refute.lean`, under `Mitos` in a proof repair;
+  `_root_` only as a declaration's leading component. A `namespace` or an `open` (command, term or
+  tactic) must name a namespace under `Mitos`, which holds no scoped syntax: that makes the lint's
+  parse Lean's (B2 above). `deriving` is banned, the one allowed form that would add an instance,
+  which instance resolution in a module that imports the text could pick up.
+- A `Refute.lean` may also declare an approved definition hole (`Mitos.Impl.resolve`). That is the
+  attack the hole run and the comparison by value reject, and `cheat_own_hole`,
+  `cheat_private_hole` and `cheat_hide_gap` pin those checks only if the lint lets them through;
+  refusing them at the lint would leave those checks with no case. A `Refute.lean` is imported by
+  no Challenge, only by the solution module, whose statements the comparator compares with the
+  Challenge's. Likewise a proof repair may declare under `Mitos.Impl` (`cheat_proofs_own_hole`).
+
+**Options considered.**
+- Chosen: both parts. The statements part does not depend on the lint's reading of Lean's parse,
+  which is not proved; the lint part also fixes B2, and keeps shadows out of every file, not only
+  the generated ones.
+- The statements part alone: it leaves B2, and a shadow in a file other than a generated one.
+- The lint part alone: the binding would rest on the lint's reading of scopes, which is unproved
+  code, for a check whose failure fakes a REFUTED.
+- Comparing each generated statement with one elaborated without the implementation (opus's third
+  option): one more elaboration or comparator run per case, to detect what the two parts prevent.
+- `_root_.` names inside the namespace, without declaring at the root: not enough, as above.
+
+**Test of the premise.** The round-3 runner (131cc15) reports each new case below REFUTED, one run
+each, default kernel: the four shadows (fake) and the two scoped-syntax cases (genuine refutations
+of `src_dst_swapped`, which only the lint stops). With the lint's name rules off and the absolute
+names on, the four shadows are rejected at the refutation run (`Challenge and solution theorem
+statement do not match`), so the statements part closes the class alone; the two scoped-syntax
+cases are REFUTED, so the namespace and `open` rules are pinned by them.
 
 ### Cases
 
@@ -238,6 +310,19 @@ passes those cases. Round 1's runner (a08b51b) reported `cheat_private_hole`, `c
 `cheat_impl_imports_case` and `cheat_include_str` REFUTED and `cheat_proofs_own_hole` as a known
 gap.
 
+Round 4 adds six, all rejected at the lint. "Without" is the result with the lint's name rules off
+(no scope or `open` read) and the absolute names on; "Round 3 runner" is 131cc15's (one run each,
+default kernel):
+
+| Case | The cheat | Rejected at, with | Without | Round 3 runner |
+|---|---|---|---|---|
+| `cheat_impl_shadow_gap` | the known gap as `breaks=`; the implementation declares `Mitos.Refute.Mitos.Spec.AssumptionsExact := False` and a clashing `Mitos.Proofs.resolve_sound` (opus B1) | lint: names outside `Mitos.Impl` | refutation: statement mismatch | REFUTED |
+| `cheat_impl_shadow_nobug` | no bug, the same two declarations (opus B1) | lint: as above | refutation: statement mismatch | REFUTED |
+| `cheat_impl_shadow_theorem` | `src_dst_swapped` claimed to break `StatusHonest`; the implementation declares `Mitos.Refute.Mitos.Spec.StatusHonest := False` (opus B1) | lint: as above | refutation: statement mismatch | REFUTED |
+| `cheat_impl_shadow_resolve` | `src_dst_swapped` claimed to break `AssumptionsExact`; the implementation declares a shadow resolver `Mitos.Mitos.Impl.resolve`, which the statement and `Mitos.Refute.holes` named | lint: as above | refutation: statement mismatch | REFUTED |
+| `cheat_open_scoped` | a `Refute.lean` with `open Int`, so Lean reads `-[1+1]` as `Int.negSucc 1` and the lint as `-` of a list (opus B2) | lint: `open Int` | REFUTED (a genuine refutation) | REFUTED |
+| `cheat_namespace_scoped` | the same with `namespace Int` | lint: `namespace Int` | REFUTED (a genuine refutation) | REFUTED |
+
 ### The rest
 
 **Lean first.** The runner is a small Lake package, `eval/mutants/` (`lean_exe mitos-mutants`),
@@ -253,15 +338,19 @@ a `sorry` fails it:
   `Mitos/Proofs/` (`valid_area`, `inArea_head`), and a `rejects=` run fits the claim
   (`Stage.fits`: `refutation` needs `breaks=`, `values` needs `survives=`).
 - `Mutants.Lint`: a source with no finding parses to the end, imports only under the kind's
-  prefixes, holds only allowed commands, no attribute and no token outside `tokenOk`
-  (`problems_eq_nil_iff`); a `replace=` text the plain-text check passes holds no `#`, no `@[`, and
+  prefixes, holds only allowed commands, no attribute and no token outside `tokenOk`, enters and
+  opens only namespaces under `Mitos`, and declares only names its kind may (`Kind.declOk`), as
+  `walk` follows its scopes (`problems_eq_nil_iff`; `walk` itself is checked by `#guard`s); a `replace=` text the plain-text check passes holds no `#`, no `@[`, and
   no banned word standing alone (`replaceProblems_banned`, from `mem_words`); every file an edit
   changes is linted (`mem_targets`). Reading a source with Lean's parser is not proved.
-- `Mutants.Challenge`: the refutation Challenge holds only imports of the implementation modules,
-  the approved Challenge's import and comment lines, negations of named Challenge statements and
-  `Mitos.Refute.holes`, each named theorem stated exactly once (`mem_refutation`,
-  `refutation_once`); the approved Challenge by value holds the approved theorem lines verbatim
-  (`mem_approvedByValue`); neither holds a definition hole line. The hole run's core holds no file
+- `Mutants.Challenge`: `qualify` accepts a statement exactly when it is a list of names under
+  `Mitos`, and writes each as `_root_.<name>` (`qualify_eq_some`, `qualName_mitos`); the refutation
+  Challenge holds only imports of the implementation modules, the approved Challenge's import and
+  comment lines, root-declared negations of named Challenge statements, qualified, and
+  `Mitos.Refute.holes`, each named theorem stated exactly once and its negation there
+  (`mem_refutation`, `refutation_once`, `refutation_states`); the approved Challenge by value holds
+  each approved theorem, root-declared and qualified, and nothing else of theirs
+  (`mem_approvedByValue`, `approvedByValue_states`); neither holds a definition hole line. The hole run's core holds no file
   under `Mitos/Proofs/` and only the implementation edited (`holeCore_spec`). The reader refuses
   any Challenge line that could change a statement's meaning if dropped (`open`, `namespace`, a
   multi-line statement). The hole run's `Mitos/Impl/` files are the other runs' (`holeCore_impl`).
@@ -274,6 +363,8 @@ a `sorry` fails it:
   no comparator run (`passes_refused`).
 - `Mutants.Implied`: `Total` follows from `Complete` and `UnresolvedExact`, and `RetractExact`
   from `Sound`, `Complete` and `AssumptionsExact`. So no mutant can break either alone.
+- `Mutants.Resolution`: Lean's name resolution as the generated statements rely on it (a dotted
+  name is exact at the root; `_root_.` alone is not enough inside a namespace), checked at build.
 
 The file I/O, the process calls and the printing in `Main.lean` are not proved.
 
@@ -292,10 +383,11 @@ uses). Round 1 had both holes in every export because they were definition holes
 it.
 
 **CI.** Nightly only (`nightly.yml`, job `full`, with `--paranoid`, and the canary without it), as
-the check matrix in `docs/process.md` already says. A local run of the 35 cases took 751 s with
-`--paranoid` (one run, round 3): 27 to 31 s for a refuted case (three comparator runs), about 38 s
-for a known gap, about 6 s for a cheat case the hole run stops, and under 0.1 s for one the lint
-refuses (the lint of all 35 cases, Lean's syntax loaded once, takes about 0.5 s). On the nightly runner, round 1's 21 cases with two runs each
+the check matrix in `docs/process.md` already says. A local run of the 41 cases took 879 s
+with `--paranoid` (one run, round 4; round 3's 35 cases took 751 s): 25 to 43 s for a refuted case
+(three comparator runs), 36 and 48 s for the two known gaps, about 6 s for a cheat case the hole
+run stops, and under 0.1 s for one the lint refuses (the lint and `--prepare` of all 41 cases,
+Lean's syntax loaded once, take under 1 s). On the nightly runner, round 1's 21 cases with two runs each
 took 263 s with `--paranoid` (a `workflow_dispatch` run at 2ff0df3); the latest dispatch of this
 branch is reported on #86. That is too slow to add to every PR's `gate` for a check whose result
 changes only when `core/Mitos/Impl/`, the Challenge or the cases change.
@@ -313,6 +405,9 @@ runner being built in parallel has a job scheduler this runner could reuse later
 - [x] each check of the binding is pinned: a cheat case turns the run red without it
 - [x] a case's Lean text is linted before any build; the four ways round 2's reviews faked a
       REFUTED are cheat cases rejected at the lint, and REFUTED without it
+- [x] every generated statement is declared at the root with absolute names, and a case declares,
+      enters and opens names only in its own namespaces; round 3's namespace shadows and scoped
+      `open` are cheat cases rejected at the lint, REFUTED on the round-3 runner
 - [x] all `checks` pass locally
 - [x] run-log record written (ops/runs/)
 - [ ] the owner decides the known gaps `assumptions_dedupe_dropped` and `edges_duplicated`
