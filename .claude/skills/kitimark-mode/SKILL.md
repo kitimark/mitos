@@ -174,7 +174,8 @@ default" names the same exception.
    most two bounded calls, then report "pushed, waiting on CI" and return until the root resumes
    you. Batch known fixes into one push, because each push starts CI and a paid bot review.
 4. CI red: reproduce locally, fix, push. Never weaken a theorem, gate or cheat expectation to
-   get green; that is a spec change and goes to the user.
+   get green; that is a spec change and goes to the user. A `gate` cancelled at the current head
+   is not red: re-run that head's run (`gh api -X POST repos/{owner}/{repo}/actions/runs/<id>/rerun`).
 5. Check each bot finding against the code. Fix the real blocking ones and file the real minor
    ones (see Rounds). Reply on every thread with the fixing commit, the follow-up issue or the
    reason the code stays. Leave a security finding's thread open for the user.
