@@ -181,14 +181,16 @@ default" names the same exception.
 5. Check each bot finding against the code. Fix the real blocking ones and file the real minor
    ones (see Rounds). Reply on every thread with the fixing commit, the follow-up issue or the
    reason the code stays. Leave a security finding's thread open for the user.
-6. Update the task file and the run log (`ops/runs/`) in the same PR. Every commit only appends
-   to the run log. An update to your record goes in the next attempt's record (each round is
-   one), and no commit edits or deletes a line, even one an earlier commit of the PR added
-   (`ops/runs/README.md`, Merging). Before each push, every line of
-   `git log --format= --numstat origin/main..HEAD -- 'ops/runs/*.ndjson'` shows 0 in its second
-   column, the deleted lines. The PR body says `Closes #n` for the task's issue when the PR
-   finishes the task, and `Part of #n` otherwise. The plan holds no status, so a task PR leaves
-   `plan/` alone.
+6. Update the task file and the run log in the same PR. The run log is one new file per attempt,
+   `ops/runs/<date>/<task>-<role>-<attempt>.json`, holding the record on one line
+   (`ops/runs/README.md`). Each round is an attempt and adds its own file. The PR may rewrite its
+   own files until it merges, and a file on `main` never changes: an update to an earlier record
+   goes in the next attempt's `note`. Before each push,
+   `git diff --name-status --no-renames origin/main...HEAD -- ops/runs ':!ops/runs/README.md'`
+   shows only `A` lines, except an `M` line for a day file that a PR opened before this rule
+   appended to and keeps until it lands (`ops/runs/README.md`, Transition). The PR body says
+   `Closes #n` for the task's issue when the PR finishes the task, and `Part of #n` otherwise.
+   The plan holds no status, so a task PR leaves `plan/` alone.
 7. Push every known fix, then report the head as merge-ready or as waiting on the user.
 
 Every agent that posts to GitHub ends each post with the footer, a `---` line and then
