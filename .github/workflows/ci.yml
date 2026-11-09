@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      actions: write
+      actions: read  # probe (d): a token that cannot cancel, as on a fork
       pull-requests: read
     steps:
       - name: Cancel this branch's runs whose head is not the PR's current head
