@@ -457,7 +457,14 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   `@kitimark this needs you:` and a line as `github-actions[bot]` on each assignment of the user
   made from the user's account. The line is the first line of the item's latest catch-up, in a
   code span with every `@` and every invisible character taken out, so it mentions nobody, links
-  nothing and hides no text. Before each assignment, of an issue or a PR, post a comment on it
+  nothing and hides no text. Before a catch-up that hands the user a PR, run
+  `.claude/scripts/bot-review.sh <pr>`, and hand the PR over only on `reviewed` or `refused`. On
+  `paused` or `behind`, run it again with `--request`. Then wait for CodeRabbit's finished check
+  at that head on the monitor, and have the PR's owner answer its threads in the same round. The
+  catch-up names the head CodeRabbit last reviewed, or the `refused:` reason. A monitor line
+  `pr #N coderabbit skipped at <head> while assigned` means a PR reached the user without that
+  review: unassign them and do the same.
+  Before each assignment, of an issue or a PR, post a comment on it
   whose first line is `## Catch-up: <what the user must do>`. When the action needed from the
   user changes on an item already assigned to them, post a new catch-up, then unassign and
   assign them again so the ping carries it. Assignment starts no CI. Never label a PR to show the user its state, because any
