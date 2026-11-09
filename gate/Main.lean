@@ -56,12 +56,21 @@ def writeOrCheck (file : System.FilePath) (txt : String) (check : Bool) (count s
   return 1
 
 /-- Writes or checks `<workspace>/models.lock`. Gate 0's walker reads the models, and gate 0 reads
-back what this writes (`Accept.lockEntries_renderLock`). -/
+back what this writes (`Accept.lockEntries_renderLock`). An I/O error is printed as one `::error::`
+line through `oneLine`, with exit 1, as `RunLog.cli` prints one. The Lean runtime would print an
+uncaught one raw, and the error names the path it failed on: a model file's name, which can hold a
+newline and a workflow command. A model file that is not UTF-8 throws one, and so does a name that
+is not: Lean reads the name back with U+FFFD, and no file has that name. -/
 def lockModels (workspace : System.FilePath) (check : Bool) : IO UInt32 := do
-  let files ← Accept.modelFiles workspace
-  let es ← files.toList.mapM fun (rel, txt) => return (rel, ← sha256 txt)
-  writeOrCheck (workspace / "models.lock") (Accept.renderLock es) check s!"{es.length} models"
-    "it does not match the models"
+  try
+    let files ← Accept.modelFiles workspace
+    let es ← files.toList.mapM fun (rel, txt) => return (rel, ← sha256 txt)
+    writeOrCheck (workspace / "models.lock") (Accept.renderLock es) check s!"{es.length} models"
+      "it does not match the models"
+  catch e =>
+    let msg := s!"lock-models stopped on an I/O error: {e}"
+    IO.println s!"::error::{RunLog.escapeData (oneLine msg)}"
+    return 1
 
 def main (args : List String) : IO UInt32 := do
   match args with
