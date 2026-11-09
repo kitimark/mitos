@@ -167,6 +167,22 @@ check "gh by its path, in a subshell" \
   "$(bash_in "( /usr/bin/gh pr create --title t --body x )")" block "open-pr.sh"
 check "env -i gh pr create" \
   "$(bash_in "env -i gh pr create --title t --body x")" block "open-pr.sh"
+check "timeout -s KILL 60 gh pr create (a wrapper flag with a value)" \
+  "$(bash_in "timeout -s KILL 60 gh pr create --title t --body x")" block "open-pr.sh"
+check "sudo -u bob gh pr create" \
+  "$(bash_in "sudo -u bob gh pr create --title t --body x")" block "open-pr.sh"
+check "xargs -I {} gh api" \
+  "$(bash_in "echo t | xargs -I {} gh api -X POST repos/o/r/pulls -f title={}")" block "open-pr.sh"
+check "nice -n 5 gh pr create" \
+  "$(bash_in "nice -n 5 gh pr create --title t --body x")" block "open-pr.sh"
+check "eval 'gh pr create ...'" \
+  "$(bash_in "eval 'gh pr create --title t --body x'")" block "open-pr.sh"
+check "timeout 60 bash -c 'gh pr create ...'" \
+  "$(bash_in "timeout 60 bash -c 'gh pr create --title t --body x'")" block "open-pr.sh"
+check "a grep with flags for gh pr create" \
+  "$(bash_in "grep -rn -e 'gh pr create' .claude")" allow
+check "a grep for gh pr create, words unquoted" \
+  "$(bash_in "grep -rn gh\\ pr\\ create .claude")" allow
 # Text that only names a create, the route or the link pattern (verifier finding 1 on #98).
 check "a commit message that names gh pr create" \
   "$(bash_in "git commit -m 'docs: never gh pr create here'")" allow
