@@ -27,6 +27,9 @@
 # issues line, only the newest 100 issue comments and the newest 100 review comments of the
 # repository, and watch-github.sh reads whole threads.
 #
+# Cost per run, at every prompt and monitor wake: 7 REST calls, 2 per open owner PR, 3 or more per
+# PR whose verdict covers its head, and 1 compare when a commit is not local (19 with 6 owner PRs).
+#
 # Environment: MITOS_OWNER, the owner's login (default kitimark); MITOS_HOOK_STATE, the directory
 # for the per-session records (default $TMPDIR/mitos-hook-state).
 set -u

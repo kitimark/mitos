@@ -23,7 +23,8 @@ input=$(cat)
 tool=$(jq -r '.tool_name // empty' <<<"$input" 2>/dev/null) || exit 0
 [ -n "$tool" ] || exit 0
 
-link_re='claude\.ai/code/session_'
+# An id must follow, so a pattern or prose that names the link without one passes.
+link_re='claude\.ai/code/session_[A-Za-z0-9]'
 trailer_re='(^|\\n|["'\''])[[:space:]>]*Claude-Session:'
 open_pr_msg="Blocked: open a PR with .claude/scripts/open-pr.sh --head <branch> --title <title> --body-file <file>, not with a direct POST to the pulls route, gh pr create or the MCP create tool. The session proxy adds a session link to the body of every PR create; the script reads the body back and cleans it."
 
@@ -64,17 +65,20 @@ fi
 grep -Eq "$trailer_re" <<<"$cmd" && trailer_msg "this command"
 
 # One line per simple command, so a route and its method are read together: a backslash line
-# continuation is joined first, then the command is split at && || ; and |. A quoted | or ; splits
-# too, which at worst moves a flag away from its route. The route may name the repository in any
-# form, such as `repos/$repo/pulls`.
-segments=$(sed -e ':a' -e '/\\$/{N;s/\\\n/ /;ba' -e '}' <<<"$cmd" | sed -E 's/(&&|\|\||;|\|)/\n/g')
+# continuation is joined first, then the command is split at && || ; | and $(. A quoted | or ;
+# splits too, which at worst moves a flag away from its route. The route may name the repository in
+# any form, such as `repos/$repo/pulls`. gh must start the simple command, after any assignments,
+# keywords and wrappers (env, timeout 60, xargs -I{}, bash -c '), so a commit message, an echo or a
+# grep that only names `gh pr create` or the route passes.
+segments=$(sed -e ':a' -e '/\\$/{N;s/\\\n/ /;ba' -e '}' <<<"$cmd" | sed -E 's/(&&|\|\||;|\||\$\()/\n/g')
+lead='^[[:space:]({!]*((([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|if|then|else|elif|do|while|until|env|command|exec|nohup|time|sudo|xargs|timeout|-[^[:space:]]*|[0-9][0-9.]*[smhd]?)[[:space:]]+)|((ba|da|z)?sh[[:space:]]+-[A-Za-z]*c[[:space:]]+['\''"]?))*([^[:space:]'\''"]*/)?gh[[:space:]]+'
 route_re='(^|[[:space:]])['\''"]?/?repos/[^[:space:]'\''"]+/pulls/?(\?[^[:space:]'\''"]*)?['\''"]?([[:space:]]|$)'
 while IFS= read -r seg; do
   grep -Eq "$gh_re" <<<"$seg" || continue
-  grep -Eq '(^|[^[:alnum:]_.-])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' <<<"$seg" && block "$open_pr_msg"
-  grep -Eq '(^|[^[:alnum:]_.-])gh[[:space:]]+api([[:space:]]|$)' <<<"$seg" || continue
+  grep -Eq "${lead}pr[[:space:]]+create([[:space:]]|$)" <<<"$seg" && block "$open_pr_msg"
+  grep -Eq "${lead}api([[:space:]]|$)" <<<"$seg" || continue
   grep -Eq "$route_re" <<<"$seg" || continue
-  if grep -Eq '(-X|--method)[[:space:]=]*['\''"]?POST' <<<"$seg"; then block "$open_pr_msg"; fi
+  if grep -Eiq '(-X|--method)[[:space:]=]*['\''"]?POST' <<<"$seg"; then block "$open_pr_msg"; fi
   grep -Eq '(-X|--method)[[:space:]=]*['\''"]?[A-Za-z]' <<<"$seg" && continue
   # gh api sends POST when a field or an input is given and no method is.
   grep -Eq '(^|[[:space:]])(-f|-F|--field|--raw-field|--input)([[:space:]=]|$)' <<<"$seg" && block "$open_pr_msg"

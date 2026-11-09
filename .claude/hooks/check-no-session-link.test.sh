@@ -139,6 +139,53 @@ check "a merge pinned to a head" \
   "$(bash_in "gh api -X PUT repos/o/r/pulls/91/merge -f merge_method=rebase -f sha=abc")" allow
 check "open-pr.sh" \
   "$(bash_in ".claude/scripts/open-pr.sh --head h --title t --body-file $work/clean.md")" allow
+# gh sends the method in upper case whatever case it is given.
+check "gh api -X post, lower case" \
+  "$(bash_in "gh api -X post repos/o/r/pulls -f title=t -f head=h -f base=main")" block "open-pr.sh"
+check "gh api --method post" \
+  "$(bash_in "gh api --method post repos/o/r/pulls --input body.json")" block "open-pr.sh"
+check "gh api --method=Post, mixed case" \
+  "$(bash_in "gh api --method=Post 'repos/{owner}/{repo}/pulls' -f title=t")" block "open-pr.sh"
+check "gh api -X pOsT, mixed case" \
+  "$(bash_in "gh api -X pOsT repos/o/r/pulls -f title=t")" block "open-pr.sh"
+check "gh api -X get with a field is a read" \
+  "$(bash_in "gh api -X get repos/o/r/pulls -f state=open")" allow
+# gh starts the simple command, after assignments, keywords and wrappers.
+check "an env assignment before gh api" \
+  "$(bash_in "GH_TOKEN=x gh api -X POST repos/o/r/pulls -f title=t")" block "open-pr.sh"
+check "xargs -I{} gh api" \
+  "$(bash_in "echo t | xargs -I{} gh api -X POST repos/o/r/pulls -f title={}")" block "open-pr.sh"
+check "bash -c 'gh api ...'" \
+  "$(bash_in "bash -c 'gh api -X POST repos/o/r/pulls -f title=t'")" block "open-pr.sh"
+check "timeout 60 gh pr create" \
+  "$(bash_in "timeout 60 gh pr create --title t --body x")" block "open-pr.sh"
+check "gh pr create in \$( )" \
+  "$(bash_in "url=\$(gh pr create --title t --body x) && echo \$url")" block "open-pr.sh"
+check "if gh pr create" \
+  "$(bash_in "if gh pr create --title t --body x; then echo ok; fi")" block "open-pr.sh"
+check "gh by its path, in a subshell" \
+  "$(bash_in "( /usr/bin/gh pr create --title t --body x )")" block "open-pr.sh"
+check "env -i gh pr create" \
+  "$(bash_in "env -i gh pr create --title t --body x")" block "open-pr.sh"
+# Text that only names a create, the route or the link pattern (verifier finding 1 on #98).
+check "a commit message that names gh pr create" \
+  "$(bash_in "git commit -m 'docs: never gh pr create here'")" allow
+check "a commit message that names the POST route" \
+  "$(bash_in "git commit -m 'docs: gh api -X POST repos/o/r/pulls is refused'")" allow
+check "a heredoc commit message that names gh pr create" \
+  "$(bash_in $'git commit -m "$(cat <<\'EOF\'\nSubject\n\nAgents must not run gh pr create; use open-pr.sh.\nEOF\n)"')" allow
+check "an echo that names gh pr create" \
+  "$(bash_in "echo use open-pr.sh not gh pr create words")" allow
+check "a grep for gh pr create" \
+  "$(bash_in "grep -rn \"gh pr create .*body\" .claude")" allow
+check "a grep for the link pattern after a gh api read" \
+  "$(bash_in "gh api repos/o/r/pulls/98 --jq .body | grep -c 'claude.ai/code/session_'")" allow
+check "an rg for the link pattern, then gh api" \
+  "$(bash_in "rg 'claude.ai/code/session_' .claude && gh api rate_limit")" allow
+check "a comment that names the link pattern with no id" \
+  "$(bash_in "gh issue comment 5 --body 'the hook looks for claude.ai/code/session_ ids'")" allow
+check "a comment with a link and an id" \
+  "$(bash_in "gh issue comment 5 --body 'see https://claude.ai/code/session_x1'")" block "session link"
 
 # The GitHub MCP tools.
 check "MCP create_pull_request" \
