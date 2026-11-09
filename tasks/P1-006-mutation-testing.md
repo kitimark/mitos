@@ -396,6 +396,19 @@ two holes, with their names and types. Every earlier `#guard` stays as it was, r
 round 7's refused forms included. The approved Challenge reads to the same 23 lines, 2 of them
 holes, with the reader at debeac7 and the new one.
 
+**Import lines (CodeRabbit at e9fa024).** CodeRabbit's review of this round's first head found the
+same gap in import lines: the reader took any line that starts with `import ` for an import and
+kept it. Lean's `import` takes one module name and reads what follows it as another import or as
+commands after the header, so `import Mitos.Core namespace Mitos.Refute` put every generated
+statement inside that namespace, against the module doc's "the generated files have no
+`namespace` or `open`", and `import Mitos.Core theorem Mitos.Proofs.t : …` hid a theorem the reader
+neither negates nor drops. CodeRabbit marked it minor; I judged it blocking as B1, because a doc
+line of this PR is false for such a Challenge, and fixed it the same positive way: an import line
+is exactly `import <module>`, each component a `qualPart` (`importForm`). `readLine_imp` proves
+that every line read as an import is exactly that. Three `#guard`s refuse the forms above (the
+reader at e9fa024 takes all three), and one accepts two plain imports; the approved Challenge's
+`import Mitos.Core` reads as before.
+
 ### Cases
 
 `eval/mutants/cases/<name>/` holds a manifest `mutant` (`why=`, `breaks=` or `survives=`, an
@@ -496,7 +509,8 @@ a `sorry` fails it:
   `def <name> : <type> := sorry` with a name under `Mitos` and a type of `typeChar`s and
   `typeWord`s (`readLine_hole`, `holeForm_spec`); that Lean reads its value as the `sorry` is not
   proved, and `Mutants.Tokens` checks at build that no Lean token is a word such a line may hold
-  but `→`. The hole run's `Mitos/Impl/` files are the other runs' (`holeCore_impl`).
+  but `→`. Every line it takes as an import is exactly `import <module>` (`readLine_imp`). The
+  hole run's `Mitos/Impl/` files are the other runs' (`holeCore_impl`).
 - `Mutants.Verdict`: the run passes exactly when the control is accepted, every case is judged
   exactly once and meets its expectation (`passes_iff`). Then every `breaks=` case passed the lint,
   had its hole run accepted, its gate run rejected and its refutation accepted (`passes_refuted`);
