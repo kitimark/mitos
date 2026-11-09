@@ -203,17 +203,35 @@ is "no check at the head, the summary says review skipped: refused, and no reque
   "coderabbit #86: refused: Too many files!" 1
 not_posted "--request on refused posts nothing"
 
+# Only the file limit is a refusal. Any other skip, such as a draft, reads behind, so a request is
+# tried before the owner gets the PR.
+summary "$summary_tag
+> ## Review skipped
+>
+> Draft detected."
+run 86 --request
+is "no check at the head, the summary says skipped for a draft: behind, and a request" \
+  "coderabbit #86: behind: last reviewed ${B:0:7}, head ${A:0:7}
+coderabbit #86: requested a review in comment 4242" 1
+posted "--request on a draft skip posts"
+
 check "$A" "[$(cr 5 completed '"skipped"' 'Review skipped: 375 files exceed the limit of 300')]"
 summary "$summary_tag walkthrough"
 run 86
-is "a check skipped for a reason other than a pause: refused, with its reason" \
+is "a check skipped for the file limit: refused, with its reason" \
   "coderabbit #86: refused: 375 files exceed the limit of 300" 1
+check "$A" "[$(cr 5 completed '"skipped"' 'Review skipped: manual review required for this OSS repository')]"
+run 86 --request
+is "a check skipped for another reason: behind, and a request" \
+  "coderabbit #86: behind: last reviewed ${B:0:7}, head ${A:0:7}
+coderabbit #86: requested a review in comment 4242" 1
+posted "--request on another skip posts"
 
-jq -n --arg h "$A" --arg t $'Review skipped: x\xe2\x80\xae\x1b[31my\nz '"$(printf 'w%.0s' $(seq 200))" \
+jq -n --arg h "$A" --arg t $'Review skipped: Too many files x\xe2\x80\xae\x1b[31my\nz '"$(printf 'w%.0s' $(seq 200))" \
   '{check_runs:[{id:5,name:"CodeRabbit",app:{slug:"coderabbitai"},head_sha:$h,status:"completed",conclusion:"skipped",output:{title:$t}}]}' \
   >"$work/f/checks-$A.json"
 run 86
-reason="x 31my z $(printf 'w%.0s' $(seq 200))"
+reason="Too many files x 31my z $(printf 'w%.0s' $(seq 200))"
 is "a refusal reason is cut to plain characters and 80 of them" "coderabbit #86: refused: ${reason:0:80}" 1
 
 check "$A" "[$(cr 5 completed '"skipped"' 'Review paused')]"
@@ -231,9 +249,14 @@ run 86
 is "another app's check, another account's review or summary: still paused" \
   "coderabbit #86: paused: last reviewed ${B:0:7}, head ${A:0:7}" 1
 
-# A review from CodeRabbit with a body at the head counts as reviewed, even with no check.
+# CodeRabbit posts its review minutes before its run ends (#120: review 19:51, run still going), so
+# a review of the head counts only once no run is going.
 jq --arg a "$A" '.[0] += [{id:4,user:{login:"coderabbitai[bot]"},state:"COMMENTED",commit_id:$a,submitted_at:"2026-11-09T12:00:00Z",body:"**Actionable comments posted: 1**"}]' \
   "$work/f/reviews.json" >"$work/f/r.new" && mv "$work/f/r.new" "$work/f/reviews.json"
+check "$A" "[$(cr 5 in_progress null 'Review in progress')]"
+run 86
+is "CodeRabbit's review of the head while its run still goes: pending" \
+  "coderabbit #86: pending: last reviewed ${A:0:7}, head ${A:0:7}" 1
 rm "$work/f/checks-$A.json"
 run 86
 is "CodeRabbit's review of the head with no check: reviewed" "coderabbit #86: reviewed ${A:0:7}" 0
