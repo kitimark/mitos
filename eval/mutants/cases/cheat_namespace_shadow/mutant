@@ -1,0 +1,6 @@
+why=The known gap assumptions_dedupe_dropped as a breaks= case, refuted through a shadow Mitos.Refute.Impl.resolve that Impl.resolve names inside namespace Mitos.Refute.
+breaks=resolve_assumptions_exact
+rejects=refutation
+file=Mitos/Impl/Resolve.lean
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=[r.origin, p.origin]

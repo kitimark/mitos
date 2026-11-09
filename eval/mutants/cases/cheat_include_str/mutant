@@ -1,0 +1,8 @@
+why=The known gap assumptions_dedupe_dropped as a breaks= case, plus a resolve that reads the case's own file with include_str and turns bogus when it is there: the refutation run, which holds the file, judges a resolver the gate's run never built.
+breaks=resolve_assumptions_exact
+rejects=holes
+file=Mitos/Impl/Resolve.lean
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=[r.origin, p.origin]
+find=def resolve : Resolver := fun fs =>
+replace=def resolve : Resolver := if (include_str "../Proofs/RefuteCase.lean") = (include_str "../Proofs/RefuteCase.lean") then (fun _ => { edges := [{ src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, req := 0, prov := 1, assumes := [], status := .inferred }], unresolved := [] }) else fun fs =>

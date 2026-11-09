@@ -1,0 +1,6 @@
+why=Makes the core's resolve private, behaviour unchanged, so Refute.lean can declare a public Mitos.Impl.resolve of its own and refute that (it was REFUTED before the hole run, #86 review).
+breaks=resolve_sound
+rejects=holes
+file=Mitos/Impl/Resolve.lean
+find=def resolve : Resolver := fun fs =>
+replace=private def resolve : Resolver := fun fs =>

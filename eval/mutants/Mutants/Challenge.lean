@@ -1,7 +1,7 @@
 import Mutants.Manifest
 
 /-!
-# The refutation Challenge
+# The Challenges and solution modules the runner generates
 
 A mutant is caught when the comparator accepts a proof that a Challenge theorem is **false** for
 it. The statement to refute is taken from the approved Challenge (`core/Challenge/Resolver.lean`),
@@ -16,6 +16,27 @@ keeps every other line and drops the theorems not named. The comparator then com
 `Refute.lean` with this Challenge as kernel terms, so a refutation of anything but the approved
 statement is rejected.
 
+## The holes are compared by value
+
+The approved Challenge declares the definition holes (`def Mitos.Impl.resolve : … := sorry`), and
+the comparator compares a hole by its name and **type** only. If the refutation Challenge kept
+those lines, any declaration of that name and type in the solution's environment would do, such as
+one the case's `Refute.lean` makes itself. So the Challenges the runner generates drop the hole
+lines and **import the mutated core's `Mitos/Impl/` modules** instead, and their configurations
+name no definition holes. Each hole is then an ordinary constant of the Challenge, which the
+comparator compares by **value**: the solution's `Mitos.Impl.resolve`, with every constant it uses,
+must be exactly the one the mutated implementation declares. Whatever the case declares, a
+different hole is rejected.
+
+Every refutation Challenge also states `Mitos.Refute.holes`, an equation naming every definition
+hole, which the runner's own solution module proves by `rfl`. So every hole is compared by value
+in every refutation run, also one the named theorems do not mention, and every hole's definition is
+in the export the kernels replay (without `Mitos.Impl.impact`'s, Lean's replay kernel could not
+reduce the `decide` in `src_dst_swapped`'s refutation).
+
+The **hole run** (`Mutants.Verdict`) shows separately that the mutated `Mitos/Impl/` modules build
+from the approved core alone, so the values compared here do not depend on the case's other files.
+
 The reader fails closed: every line of the Challenge must be blank, a comment, an `import`, a
 one-line definition hole (`def … := sorry`) or a one-line theorem in the form above, so no line
 that could change what a statement means (`open`, `namespace`, notation) is dropped or moved.
@@ -25,10 +46,14 @@ namespace Mutants
 
 /-- One line of the Challenge. -/
 inductive Line where
-  /-- Kept as it is: blank, a comment, an `import`, or a definition hole. -/
+  /-- `import …`, outside a comment. -/
+  | imp (text : String)
+  /-- Kept as it is: blank, or a comment. -/
   | keep (text : String)
-  /-- `theorem Mitos.Proofs.<name> : <stmt> := sorry` -/
-  | thm (name stmt : String)
+  /-- A one-line definition hole, `def … := sorry`. -/
+  | hole (text : String)
+  /-- `theorem Mitos.Proofs.<name> : <stmt> := sorry`, the whole line being `text`. -/
+  | thm (name stmt text : String)
   deriving Repr, DecidableEq
 
 def thmPrefix : List Char := "theorem Mitos.Proofs.".toList
@@ -52,11 +77,11 @@ def readLine (inDoc : Bool) (l : String) : Except String (Line × Bool) :=
   let closes := "-/".toList.isSuffixOf cs
   if inDoc then .ok (.keep l, !closes)
   else if "/-".toList.isPrefixOf cs then .ok (.keep l, !closes)
-  else if cs.all (· == ' ') || "--".toList.isPrefixOf cs || "import ".toList.isPrefixOf cs then
-    .ok (.keep l, false)
-  else if "def ".toList.isPrefixOf cs && sorrySuffix.isSuffixOf cs then .ok (.keep l, false)
+  else if cs.all (· == ' ') || "--".toList.isPrefixOf cs then .ok (.keep l, false)
+  else if "import ".toList.isPrefixOf cs then .ok (.imp l, false)
+  else if "def ".toList.isPrefixOf cs && sorrySuffix.isSuffixOf cs then .ok (.hole l, false)
   else match theoremHole cs with
-    | some (n, s) => .ok (.thm n s, false)
+    | some (n, s) => .ok (.thm n s l, false)
     | none => .error s!"the Challenge has a line the refutation reader does not handle: {l}"
 
 def readLines (inDoc : Bool) : List String → Except String (List Line)
@@ -69,28 +94,93 @@ def readChallenge (src : String) : Except String (List Line) :=
   readLines false (src.splitOn "\n")
 
 def Line.isThm (name : String) : Line → Bool
-  | .thm n _ => n == name
-  | .keep _ => false
+  | .thm n _ _ => n == name
+  | _ => false
 
 def negated (name stmt : String) : String :=
   s!"theorem Mitos.Refute.{name} : ¬ ({stmt}) := sorry"
 
-/-- A line of the refutation Challenge: kept lines as they are, the named theorems negated, the
-other theorems dropped. -/
-def render (names : List String) : Line → Option String
-  | .keep t => some t
-  | .thm n s => if names.contains n then some (negated n s) else none
+/-! ## Modules and imports -/
 
-/-- The lines of the refutation Challenge for `names`. Every name must be a theorem the Challenge
-states exactly once. -/
-def refutation (ls : List Line) (names : List String) : Except String (List String) :=
+/-- The module of a `.lean` path: `Mitos/Impl/Resolve.lean` is `Mitos.Impl.Resolve`. -/
+def moduleOf (path : String) : String :=
+  ".".intercalate ((String.ofList (path.toList.take (path.length - 5))).splitOn "/")
+
+/-- The implementation modules of a core, given its paths: every module under `Mitos/Impl/`. -/
+def implModules (paths : List String) : List String :=
+  (paths.filter (inArea "Impl")).map moduleOf
+
+theorem mem_implModules {paths : List String} {m : String} :
+    m ∈ implModules paths ↔ ∃ p ∈ paths, inArea "Impl" p = true ∧ m = moduleOf p := by
+  simp only [implModules, List.mem_map, List.mem_filter]
+  constructor
+  · rintro ⟨p, ⟨hp, hi⟩, rfl⟩; exact ⟨p, hp, hi, rfl⟩
+  · rintro ⟨p, hp, hi, rfl⟩; exact ⟨p, ⟨hp, hi⟩, rfl⟩
+
+def importLine (m : String) : String := s!"import {m}"
+
+/-! ## The Challenges with the holes as values -/
+
+/-- A Challenge with the holes as values: an import of each implementation module, then the
+approved Challenge's lines with the hole lines dropped and each theorem line as `thm` renders it,
+then `extra`. -/
+def byValue (impls : List String) (thm : String → String → String → Option String)
+    (ls : List Line) (extra : List String) : List String :=
+  impls.map importLine ++
+    ls.filterMap (fun
+      | .imp t => some t
+      | .keep t => some t
+      | .hole _ => none
+      | .thm n s t => thm n s t) ++
+    extra
+
+theorem mem_byValue {impls : List String} {thm : String → String → String → Option String}
+    {ls : List Line} {extra : List String} {x : String} :
+    x ∈ byValue impls thm ls extra ↔
+      (∃ m ∈ impls, x = importLine m) ∨ Line.imp x ∈ ls ∨ Line.keep x ∈ ls ∨
+        (∃ n s t, Line.thm n s t ∈ ls ∧ thm n s t = some x) ∨ x ∈ extra := by
+  simp only [byValue, List.mem_append, List.mem_map, List.mem_filterMap]
+  constructor
+  · rintro ((⟨m, hm, rfl⟩ | ⟨l, hl, hr⟩) | he)
+    · exact .inl ⟨m, hm, rfl⟩
+    · cases l with
+      | imp t => simp only [Option.some.injEq] at hr; exact .inr (.inl (hr ▸ hl))
+      | keep t => simp only [Option.some.injEq] at hr; exact .inr (.inr (.inl (hr ▸ hl)))
+      | hole t => simp at hr
+      | thm n s t => exact .inr (.inr (.inr (.inl ⟨n, s, t, hl, hr⟩)))
+    · exact .inr (.inr (.inr (.inr he)))
+  · rintro (⟨m, hm, rfl⟩ | hi | hk | ⟨n, s, t, hl, hr⟩ | he)
+    · exact .inl (.inl ⟨m, hm, rfl⟩)
+    · exact .inl (.inr ⟨_, hi, rfl⟩)
+    · exact .inl (.inr ⟨_, hk, rfl⟩)
+    · exact .inl (.inr ⟨_, hl, hr⟩)
+    · exact .inr he
+
+/-- The statement that names every definition hole: `(h₁, h₂, …) = (h₁, h₂, …)`. -/
+def holesStatement (defs : List String) : String :=
+  let t := s!"({", ".intercalate defs})"
+  s!"{t} = {t}"
+
+def holesName : String := "Mitos.Refute.holes"
+
+/-- The extra line of a refutation Challenge, if the Challenge has definition holes. -/
+def holesHole (defs : List String) : List String :=
+  if defs.isEmpty then [] else [s!"theorem {holesName} : {holesStatement defs} := sorry"]
+
+/-- The refutation Challenge for `names`: the holes as values, the named theorems negated, the
+others dropped, and `Mitos.Refute.holes`. Every name must be a theorem the Challenge states exactly
+once. -/
+def refutation (impls defs : List String) (ls : List Line) (names : List String) :
+    Except String (List String) :=
   match names.find? (fun b => (ls.filter (·.isThm b)).length != 1) with
   | some b => .error s!"breaks= names {b}, which the Challenge states {(ls.filter (·.isThm b)).length} times"
-  | none => .ok (ls.filterMap (render names))
+  | none => .ok (byValue impls (fun n s _ => if names.contains n then some (negated n s) else none)
+      ls (holesHole defs))
 
 /-- Every name a refutation is built for is a theorem the Challenge states exactly once. -/
-theorem refutation_once {ls : List Line} {names : List String} {out : List String}
-    (h : refutation ls names = .ok out) : ∀ b ∈ names, (ls.filter (·.isThm b)).length = 1 := by
+theorem refutation_once {impls defs : List String} {ls : List Line} {names : List String}
+    {out : List String} (h : refutation impls defs ls names = .ok out) :
+    ∀ b ∈ names, (ls.filter (·.isThm b)).length = 1 := by
   unfold refutation at h
   split at h
   · simp at h
@@ -99,87 +189,135 @@ theorem refutation_once {ls : List Line} {names : List String} {out : List Strin
     have := List.find?_eq_none.mp hnone b hb
     simpa using this
 
-/-- **The refutation Challenge states only approved text.** Each of its lines is a line the
-Challenge keeps, or the negation of the statement of a named Challenge theorem; and each named
-theorem's negation is there. -/
-theorem mem_refutation {ls : List Line} {names : List String} {out : List String}
-    (h : refutation ls names = .ok out) (x : String) :
-    x ∈ out ↔ (Line.keep x ∈ ls ∨ ∃ n ∈ names, ∃ s, Line.thm n s ∈ ls ∧ x = negated n s) := by
+/-- **The refutation Challenge states only approved text, with the holes as values.** Each of its
+lines is an import of an implementation module, an import or comment line of the Challenge, the
+negation of the statement of a named Challenge theorem, or the `Mitos.Refute.holes` line; and each
+named theorem's negation is there. -/
+theorem mem_refutation {impls defs : List String} {ls : List Line} {names : List String}
+    {out : List String} (h : refutation impls defs ls names = .ok out) (x : String) :
+    x ∈ out ↔ ((∃ m ∈ impls, x = importLine m) ∨ Line.imp x ∈ ls ∨ Line.keep x ∈ ls ∨
+      (∃ n ∈ names, ∃ s t, Line.thm n s t ∈ ls ∧ x = negated n s) ∨ x ∈ holesHole defs) := by
   unfold refutation at h
   split at h
   · simp at h
   · simp only [Except.ok.injEq] at h
     subst h
-    simp only [List.mem_filterMap]
+    rw [mem_byValue]
     constructor
-    · rintro ⟨l, hl, hr⟩
-      cases l with
-      | keep t =>
-        simp only [render, Option.some.injEq] at hr
-        exact .inl (hr ▸ hl)
-      | thm n s =>
-        simp only [render] at hr
-        split at hr
+    · rintro (h | h | h | ⟨n, s, t, hl, hr⟩ | h)
+      · exact .inl h
+      · exact .inr (.inl h)
+      · exact .inr (.inr (.inl h))
+      · split at hr
         · rename_i hn
           simp only [Option.some.injEq] at hr
-          exact .inr ⟨n, by simpa using hn, s, hl, hr.symm⟩
+          exact .inr (.inr (.inr (.inl ⟨n, by simpa using hn, s, t, hl, hr.symm⟩)))
         · simp at hr
-    · rintro (hk | ⟨n, hn, s, hl, rfl⟩)
-      · exact ⟨_, hk, rfl⟩
-      · exact ⟨_, hl, by simp [render, hn]⟩
+      · exact .inr (.inr (.inr (.inr h)))
+    · rintro (h | h | h | ⟨n, hn, s, t, hl, rfl⟩ | h)
+      · exact .inl h
+      · exact .inr (.inl h)
+      · exact .inr (.inr (.inl h))
+      · exact .inr (.inr (.inr (.inl ⟨n, s, t, hl, by simpa using hn⟩)))
+      · exact .inr (.inr (.inr (.inr h)))
 
-/-! ## The refutation's solution module
+/-- The approved Challenge with the holes as values: every theorem line kept verbatim. -/
+def approvedByValue (impls : List String) (ls : List Line) : List String :=
+  byValue impls (fun _ _ t => some t) ls []
 
-The case's `Refute.lean` is written as `Mitos.Proofs.RefuteCase`, and the solution module the
-comparator judges, `Mitos.Proofs.Refute`, is generated: it imports every module under
-`Mitos/Impl/` of the mutated core, then the case's file. The comparator compares the definition
-holes (`Mitos.Impl.resolve`, `Mitos.Impl.impact`) by type only, so these imports are what bind
-them to the mutated core: a case file that declared a hole itself would clash with the imported
-declaration, and the solution would not build. -/
+/-- **The approved Challenge by value states the approved theorems verbatim.** Each of its lines is
+an import of an implementation module or a line of the approved Challenge that is not a hole, and
+every theorem line of the approved Challenge is there. -/
+theorem mem_approvedByValue {impls : List String} {ls : List Line} {x : String} :
+    x ∈ approvedByValue impls ls ↔
+      (∃ m ∈ impls, x = importLine m) ∨ Line.imp x ∈ ls ∨ Line.keep x ∈ ls ∨
+        ∃ n s, Line.thm n s x ∈ ls := by
+  rw [approvedByValue, mem_byValue]
+  constructor
+  · rintro (h | h | h | ⟨n, s, t, hl, hr⟩ | h)
+    · exact .inl h
+    · exact .inr (.inl h)
+    · exact .inr (.inr (.inl h))
+    · simp only [Option.some.injEq] at hr
+      exact .inr (.inr (.inr ⟨n, s, hr ▸ hl⟩))
+    · simp at h
+  · rintro (h | h | h | ⟨n, s, hl⟩)
+    · exact .inl h
+    · exact .inr (.inl h)
+    · exact .inr (.inr (.inl h))
+    · exact .inr (.inr (.inr (.inl ⟨n, s, x, hl, rfl⟩)))
 
-/-- The module of a `.lean` path: `Mitos/Impl/Resolve.lean` is `Mitos.Impl.Resolve`. -/
-def moduleOf (path : String) : String :=
-  ".".intercalate ((String.ofList (path.toList.take (path.length - 5))).splitOn "/")
+/-! ## The hole run's core -/
 
-/-- The case's own module, imported last. -/
+/-- Outside `Mitos/Proofs/`, where the proofs, a known gap's proof repairs and the case's
+`Refute.lean` go. -/
+def outsideProofs (path : String) : Bool := !"Mitos/Proofs/".toList.isPrefixOf path.toList
+
+/-- The core of the hole run: the core without `Mitos/Proofs/`, with the mutant's edits under
+`Mitos/Impl/` and no others. -/
+def holeCore (files : List (String × String)) (m : Mutant) : Except String (List (String × String)) :=
+  applyEdits (files.filter fun f => outsideProofs f.1) m.implEdits
+
+/-- **The hole run's core is the approved core without `Mitos/Proofs/`, with only the mutant's
+implementation edited**: each of its paths is a path of the core outside `Mitos/Proofs/`, and
+each file outside `Mitos/Impl/` is the core's. So it holds no file the case wrote for its proofs.
+-/
+theorem holeCore_spec {files out : List (String × String)} {m : Mutant}
+    (h : holeCore files m = .ok out) :
+    (∀ p ∈ out.map (·.1), outsideProofs p = true ∧ p ∈ files.map (·.1)) ∧
+      ∀ p, inArea "Impl" p = false → out.lookup p = (files.filter fun f => outsideProofs f.1).lookup p := by
+  unfold holeCore at h
+  refine ⟨?_, fun p hp => applyEdits_lookup h ?_⟩
+  · rw [applyEdits_paths h]
+    intro p hp
+    simp only [List.mem_map, List.mem_filter] at hp
+    obtain ⟨f, ⟨hf, ho⟩, rfl⟩ := hp
+    exact ⟨ho, List.mem_map_of_mem hf⟩
+  · simp only [Mutant.implEdits, List.mem_map, List.mem_filter, not_exists, not_and]
+    intro e he hpe
+    rw [hpe] at he
+    simp [hp] at he
+
+/-! ## The solution modules -/
+
+/-- The case's `Refute.lean` is written as this module. -/
 def caseModule : String := "Mitos.Proofs.RefuteCase"
 
-/-- The modules the refutation's solution imports, given the core's paths. -/
-def solutionImports (paths : List String) : List String :=
-  (paths.filter (inArea "Impl")).map moduleOf ++ [caseModule]
+/-- The refutation's solution module: the case's module, and the proof of `Mitos.Refute.holes`.
+It imports nothing else: the binding to the mutant is the comparison by value, not an import. -/
+def refutationSolution (defs : List String) : String :=
+  s!"{importLine caseModule}\n" ++
+    if defs.isEmpty then "" else s!"\ntheorem {holesName} : {holesStatement defs} := rfl\n"
 
-/-- **The solution imports every implementation module of the core**, and the case's module, and
-nothing else. -/
-theorem mem_solutionImports {paths : List String} {m : String} :
-    m ∈ solutionImports paths ↔ m = caseModule ∨ ∃ p ∈ paths, inArea "Impl" p = true ∧ m = moduleOf p := by
-  simp only [solutionImports, List.mem_append, List.mem_map, List.mem_filter, List.mem_singleton]
-  constructor
-  · rintro (⟨p, ⟨hp, hi⟩, rfl⟩ | rfl)
-    · exact .inr ⟨p, hp, hi, rfl⟩
-    · exact .inl rfl
-  · rintro (rfl | ⟨p, hp, hi, rfl⟩)
-    · exact .inr rfl
-    · exact .inl ⟨p, ⟨hp, hi⟩, rfl⟩
+/-- The hole run's solution module: it imports every implementation module of the core, and nothing
+else. -/
+def holesSolution (paths : List String) : String :=
+  String.join ((implModules paths).map fun m => importLine m ++ "\n")
 
-def refutationSolution (paths : List String) : String :=
-  String.join ((solutionImports paths).map fun m => s!"import {m}\n")
-
-#guard refutationSolution ["Challenge/Resolver.lean", "Mitos/Core/Graph.lean",
+#guard holesSolution ["Challenge/Resolver.lean", "Mitos/Core/Graph.lean",
     "Mitos/Impl/Impact.lean", "Mitos/Impl/README.md", "Mitos/Impl/Resolve.lean",
     "Mitos/Proofs/Resolver.lean", "comparator.json"] =
-  "import Mitos.Impl.Impact\nimport Mitos.Impl.Resolve\nimport Mitos.Proofs.RefuteCase\n"
+  "import Mitos.Impl.Impact\nimport Mitos.Impl.Resolve\n"
+#guard refutationSolution ["Mitos.Impl.resolve", "Mitos.Impl.impact"] =
+  "import Mitos.Proofs.RefuteCase\n\ntheorem Mitos.Refute.holes : (Mitos.Impl.resolve, Mitos.Impl.impact) = (Mitos.Impl.resolve, Mitos.Impl.impact) := rfl\n"
 
 #guard (readChallenge "import Mitos.Core\n\n/-!\n# Doc\ntheorem below, said in prose\n-/\n\ndef Mitos.Impl.f : Nat := sorry\ntheorem Mitos.Proofs.t_1 : Mitos.Spec.P Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.u : ∀ x, x = x := sorry\n").toOption ==
-  some [.keep "import Mitos.Core", .keep "", .keep "/-!", .keep "# Doc",
-    .keep "theorem below, said in prose", .keep "-/", .keep "", .keep "def Mitos.Impl.f : Nat := sorry",
-    .thm "t_1" "Mitos.Spec.P Mitos.Impl.f", .thm "u" "∀ x, x = x", .keep ""]
-#guard ((readChallenge "import Mitos.Core\ntheorem Mitos.Proofs.t : P := sorry\ntheorem Mitos.Proofs.u : Q := sorry").toOption.bind
-    fun ls => (refutation ls ["u"]).toOption) ==
-  some ["import Mitos.Core", "theorem Mitos.Refute.u : ¬ (Q) := sorry"]
+  some [.imp "import Mitos.Core", .keep "", .keep "/-!", .keep "# Doc",
+    .keep "theorem below, said in prose", .keep "-/", .keep "", .hole "def Mitos.Impl.f : Nat := sorry",
+    .thm "t_1" "Mitos.Spec.P Mitos.Impl.f" "theorem Mitos.Proofs.t_1 : Mitos.Spec.P Mitos.Impl.f := sorry",
+    .thm "u" "∀ x, x = x" "theorem Mitos.Proofs.u : ∀ x, x = x := sorry", .keep ""]
+-- The refutation drops the hole, imports the implementation and states the holes.
+#guard ((readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := sorry\ntheorem Mitos.Proofs.t : P := sorry\ntheorem Mitos.Proofs.u : Q := sorry").toOption.bind
+    fun ls => (refutation ["Mitos.Impl.F"] ["Mitos.Impl.f"] ls ["u"]).toOption) ==
+  some ["import Mitos.Impl.F", "import Mitos.Core", "theorem Mitos.Refute.u : ¬ (Q) := sorry",
+    "theorem Mitos.Refute.holes : (Mitos.Impl.f) = (Mitos.Impl.f) := sorry"]
+#guard ((readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := sorry\ntheorem Mitos.Proofs.t : P := sorry").toOption.map
+    (approvedByValue ["Mitos.Impl.F"])) ==
+  some ["import Mitos.Impl.F", "import Mitos.Core", "theorem Mitos.Proofs.t : P := sorry"]
 -- A line that could change what a statement means is refused, and so is an unknown theorem.
 #guard (readChallenge "import Mitos.Core\nopen Mitos\ntheorem Mitos.Proofs.t : P := sorry").toOption == none
 #guard (readChallenge "theorem Mitos.Proofs.t : P :=\n  sorry").toOption == none
 #guard ((readChallenge "theorem Mitos.Proofs.t : P := sorry").toOption.bind
-    fun ls => (refutation ls ["v"]).toOption) == none
+    fun ls => (refutation [] [] ls ["v"]).toOption) == none
 
 end Mutants

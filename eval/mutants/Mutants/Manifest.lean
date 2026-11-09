@@ -9,6 +9,7 @@ Each case `eval/mutants/cases/<name>/` has a manifest file `mutant`, one `key=va
 ```
 why=<the bug, one line>
 breaks=<Challenge theorem> <Challenge theorem> ...     or     survives=<what no theorem states>
+rejects=<holes | values | refutation>                         (a cheat case only)
 file=<path under core/, e.g. Mitos/Impl/Resolve.lean>
 find=<text that occurs exactly once in that file>
 replace=<its replacement>
@@ -22,6 +23,12 @@ replace=<its replacement>
 - **`survives=`**: a known gap. The real proofs, with edits under `Mitos/Proofs/` where a proof
   needs repair, still prove every Challenge theorem for the mutant, and the value says what no
   theorem states. At least one edit must touch `Mitos/Impl/`.
+- **`rejects=<stage>`**, with `breaks=` or `survives=`: a **cheat case**. Its claim must not be
+  counted, and the runner must reject it at the named stage (`Mutants.Verdict`, `Stage.rejected`):
+  `holes` (the mutated implementation alone does not build the approved holes), `values` (with a
+  `survives=` claim: the gate accepts proofs that are not about the mutant's holes) or `refutation`
+  (with a `breaks=` claim: the refutation is not about the mutant's holes). Each such case pins one
+  check of the runner: without the check, its claim would be counted.
 
 `parse` returns only manifests that pass `Mutant.valid` (`parse_valid`).
 -/
@@ -40,10 +47,33 @@ def Expect.theorems : Expect → List String
   | .breaks ts => ts
   | .survives _ => []
 
+/-- The run at which a cheat case must be rejected (`Mutants.Verdict`). -/
+inductive Stage where
+  /-- The hole run: the mutated implementation alone, against the approved definition holes. -/
+  | holes
+  /-- The approved Challenge with the holes as values, after the gate accepted the mutant. -/
+  | values
+  /-- The refutation Challenge, with the holes as values, after the gate rejected the mutant. -/
+  | refutation
+  deriving Repr, DecidableEq
+
+def Stage.ofString? : String → Option Stage
+  | "holes" => some .holes
+  | "values" => some .values
+  | "refutation" => some .refutation
+  | _ => none
+
+def Stage.name : Stage → String
+  | .holes => "holes"
+  | .values => "values"
+  | .refutation => "refutation"
+
 structure Mutant where
-  why    : String
-  expect : Expect
-  edits  : List Edit
+  why     : String
+  expect  : Expect
+  /-- For a cheat case, where the runner must reject its claim. -/
+  rejects : Option Stage := none
+  edits   : List Edit
   deriving Repr, DecidableEq
 
 /-- A plain name: letters, digits and `_`, at least one. -/
@@ -72,14 +102,27 @@ def allowedFile : Expect → String → Bool
   | .breaks _, p => inArea "Impl" p
   | .survives _, p => inArea "Impl" p || inArea "Proofs" p
 
+/-- The edits under `Mitos/Impl/`: the mutant itself, without any proof repair. -/
+def Mutant.implEdits (m : Mutant) : List Edit :=
+  m.edits.filter fun e => inArea "Impl" e.file
+
+/-- A stage at which a case with this claim can be rejected: the refutation run follows a
+`breaks=` claim, and only a `survives=` case can repair the proofs the values run judges. -/
+def Stage.fits : Stage → Expect → Bool
+  | .holes, _ => true
+  | .values, .survives _ => true
+  | .refutation, .breaks _ => true
+  | _, _ => false
+
 /-- What every manifest the runner acts on satisfies. -/
 def Mutant.valid (m : Mutant) : Bool :=
   !m.why.isEmpty &&
   m.edits.any (fun e => inArea "Impl" e.file) &&
   m.edits.all (fun e => !e.find.isEmpty && e.find != e.replace && allowedFile m.expect e.file) &&
-  match m.expect with
+  (match m.expect with
   | .breaks ts => !ts.isEmpty && ts.Nodup && ts.all (fun t => plainName t.toList)
-  | .survives g => !g.isEmpty
+  | .survives g => !g.isEmpty) &&
+  m.rejects.all (·.fits m.expect)
 
 /-- The first reason `m` is not valid. -/
 def Mutant.problem (m : Mutant) : String :=
@@ -95,14 +138,19 @@ def Mutant.problem (m : Mutant) : String :=
   | .breaks ts =>
     if ts.isEmpty then "breaks= names no theorem"
     else if !ts.Nodup then "breaks= names a theorem twice"
-    else "breaks= names something that is not a plain theorem name"
-  | .survives _ => "survives= is empty"
+    else if !ts.all (fun t => plainName t.toList) then
+      "breaks= names something that is not a plain theorem name"
+    else "rejects=values needs survives= (only a survives= case repairs proofs)"
+  | .survives g =>
+    if g.isEmpty then "survives= is empty"
+    else "rejects=refutation needs breaks= (only a breaks= case has a refutation run)"
 
 /-- The parser's state: the lines read so far. -/
 structure Raw where
   why      : List String := []
   breaks   : List String := []
   survives : List String := []
+  rejects  : List String := []
   file     : Option String := none
   find     : Option String := none
   edits    : Array Edit := #[]
@@ -120,6 +168,7 @@ def step (r : Raw) (n : Nat) (line : String) : Except String Raw :=
   | some ("why", v) => .ok { r with why := r.why ++ [v] }
   | some ("breaks", v) => .ok { r with breaks := r.breaks ++ [v] }
   | some ("survives", v) => .ok { r with survives := r.survives ++ [v] }
+  | some ("rejects", v) => .ok { r with rejects := r.rejects ++ [v] }
   | some ("file", v) =>
     if r.find.isSome then at_ "file= between find= and replace=" else .ok { r with file := some v }
   | some ("find", v) =>
@@ -141,6 +190,14 @@ def words (s : String) : List String :=
 def checked (m : Mutant) : Except String Mutant :=
   if m.valid then .ok m else .error m.problem
 
+/-- The `rejects=` value: none, or one stage. -/
+def rejectsOf : List String → Except String (Option Stage)
+  | [] => .ok none
+  | [v] => match Stage.ofString? v with
+    | some s => .ok (some s)
+    | none => .error s!"rejects= names {v}, not holes, values or refutation"
+  | _ => .error "more than one rejects= line"
+
 /-- The `why=` value and the expectation. -/
 def parts (r : Raw) : Except String (String × Expect) :=
   if r.find.isSome then .error "find= without replace=" else
@@ -151,9 +208,10 @@ def parts (r : Raw) : Except String (String × Expect) :=
   | _, _, _ => .error "needs exactly one why= line"
 
 def finish (r : Raw) : Except String Mutant :=
-  match parts r with
-  | .ok (why, expect) => checked { why, expect, edits := r.edits.toList }
-  | .error e => .error e
+  match parts r, rejectsOf r.rejects with
+  | .ok (why, expect), .ok rejects => checked { why, expect, rejects, edits := r.edits.toList }
+  | .error e, _ => .error e
+  | _, .error e => .error e
 
 def parseLines (r : Raw) : Nat → List String → Except String Raw
   | _, [] => .ok r
@@ -181,6 +239,7 @@ theorem finish_valid {r : Raw} {m : Mutant} (h : finish r = .ok m) : m.valid = t
   split at h
   · exact checked_valid h
   · simp at h
+  · simp at h
 
 /-- **Every manifest the runner acts on is valid**: it names at least one edit under
 `Mitos/Impl/`, every edit is non-empty, changes something and touches only an allowed file, and a
@@ -196,7 +255,7 @@ theorem valid_breaks_impl {m : Mutant} {ts : List String} (hv : m.valid = true)
     (he : m.expect = .breaks ts) : ∀ e ∈ m.edits, inArea "Impl" e.file = true := by
   intro e hmem
   simp only [Mutant.valid, Bool.and_eq_true, List.all_eq_true] at hv
-  have := (hv.1.2 e hmem).2
+  have := (hv.1.1.2 e hmem).2
   rw [he] at this
   exact this
 
@@ -205,7 +264,7 @@ theorem valid_area {m : Mutant} (hv : m.valid = true) :
     ∀ e ∈ m.edits, inArea "Impl" e.file = true ∨ inArea "Proofs" e.file = true := by
   intro e hmem
   simp only [Mutant.valid, Bool.and_eq_true, List.all_eq_true] at hv
-  have := (hv.1.2 e hmem).2
+  have := (hv.1.1.2 e hmem).2
   cases hexp : m.expect with
   | breaks ts => rw [hexp] at this; exact .inl this
   | survives g => rw [hexp] at this; simpa [allowedFile] using this
@@ -234,6 +293,19 @@ theorem inArea_head {area path : String} (h : inArea area path = true) :
 #guard (parse "why=w\nbreaks=t\nfile=../Challenge/Resolver.lean\nfind=a\nreplace=b").toOption == none
 -- A known gap must still change the implementation.
 #guard (parse "why=w\nsurvives=g\nfile=Mitos/Proofs/Resolver.lean\nfind=a\nreplace=b").toOption == none
+-- A cheat case names the stage that must reject it, one that fits its claim.
+#guard (parse "why=w\nbreaks=t\nrejects=refutation\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption ==
+  some { why := "w", expect := .breaks ["t"], rejects := some .refutation,
+         edits := [⟨"Mitos/Impl/Resolve.lean", "a", "b"⟩] }
+#guard (parse "why=w\nsurvives=g\nrejects=holes\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption.map (·.rejects) ==
+  some (some .holes)
+#guard (parse "why=w\nbreaks=t\nrejects=values\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption == none
+#guard (parse "why=w\nsurvives=g\nrejects=refutation\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption == none
+#guard (parse "why=w\nbreaks=t\nrejects=gate\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption == none
+#guard (parse "why=w\nbreaks=t\nrejects=holes\nrejects=holes\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption == none
+-- The hole run applies only the edits under Mitos/Impl/.
+#guard ((parse "why=w\nsurvives=g\nfile=Mitos/Impl/A.lean\nfind=x\nreplace=y\nfile=Mitos/Proofs/B.lean\nfind=p\nreplace=q").toOption.map
+    (·.implEdits)) == some [⟨"Mitos/Impl/A.lean", "x", "y"⟩]
 -- A theorem named twice, an edit that changes nothing, a find= without replace=, a stray key.
 #guard (parse "why=w\nbreaks=t t\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption == none
 #guard (parse "why=w\nbreaks=t\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=a").toOption == none

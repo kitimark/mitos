@@ -8,9 +8,10 @@ Run from the repository root: `lake --dir eval/mutants exe mitos-mutants [--para
 
 For each case in `eval/mutants/cases/`, it applies the case's edits to a copy of `core/` (sources
 only, no build outputs) and judges it with the sandboxed `lake comparator`, as
-`Mutants.Verdict` describes. Each run gets a fresh copy, which is removed afterwards. The pure
-parts (manifest, edits, refutation Challenge, verdict) are in `Mutants/` with their proofs; this
-file only reads, writes and runs.
+`Mutants.Verdict` describes: the hole run, the gate's run, then the values or the refutation run.
+Each run gets a fresh copy, which is removed afterwards. The pure parts (manifest, edits, the
+generated Challenges and solution modules, verdict) are in `Mutants/` with their proofs; this file
+only reads, writes and runs.
 -/
 
 open Mutants Lean
@@ -20,7 +21,10 @@ def usage : String := "usage: mitos-mutants [--paranoid] [--keep] [<case>...]
   Run from the repository root. Judges every case in eval/mutants/cases/, or the named ones, with
   the sandboxed lake comparator. --paranoid also runs the external kernels. --keep keeps the
   workspaces. Logs go to .lake/mutants/. Exit 0: every case as expected; 1: not; 2: could not run.
-  --prepare writes each named case's workspace to <dir>/<case>/ and judges nothing."
+  --prepare writes each named case's workspaces to <dir>/<case>/ (refutation or values run) and
+  <dir>/<case>.holes/ (hole run), and judges nothing.
+  UNBOUND: the mutant's implementation alone does not build the approved definition holes, or the
+  gate accepts proofs that are not about them."
 
 structure Config where
   paranoid : Bool := false
@@ -85,23 +89,44 @@ structure Approved where
   config     : Json
   challenge  : List Line
   theorems   : List String
+  /-- The approved configuration's definition holes. -/
+  defs       : List String
 
-/-- The refutation configuration: the approved one with the generated Challenge, the generated
-solution module (`Mutants.refutationSolution`) and the refuted theorems; definition holes and
-permitted axioms stay as approved. -/
-def refutationConfig (a : Approved) (ts : List String) : String :=
-  let names := Json.arr (ts.toArray.map fun t => Json.str s!"Mitos.Refute.{t}")
+def strs (xs : List String) : Json := Json.arr (xs.toArray.map Json.str)
+
+/-- The hole run's configuration: the approved Challenge, definition holes and permitted axioms,
+no theorem, and the generated module that imports every implementation module as the solution. -/
+def holesConfig (a : Approved) : String :=
+  ((a.config.setObjVal! "solution_module" (.str "Mitos.Proofs.Holes")).setObjVal!
+    "theorem_names" (strs [])).pretty
+
+/-- The values run's configuration: the approved one with the approved Challenge by value
+(`Mutants.approvedByValue`), so no definition holes. -/
+def valuesConfig (a : Approved) : String :=
   ((a.config.setObjVal! "challenge_module" (.str "Challenge.Mutant")).setObjVal!
-    "solution_module" (.str "Mitos.Proofs.Refute") |>.setObjVal! "theorem_names" names).pretty
+    "definition_names" (strs [])).pretty
+
+/-- The refutation configuration: the generated Challenge, the generated solution module
+(`Mutants.refutationSolution`), `Mitos.Refute.holes` and the refuted theorems, no definition holes;
+the permitted axioms stay as approved. -/
+def refutationConfig (a : Approved) (ts : List String) : String :=
+  let names := (if a.defs.isEmpty then [] else [holesName]) ++ ts.map (s!"Mitos.Refute.{·}")
+  ((((a.config.setObjVal! "challenge_module" (.str "Challenge.Mutant")).setObjVal!
+    "solution_module" (.str "Mitos.Proofs.Refute")).setObjVal! "theorem_names" (strs names)).setObjVal!
+    "definition_names" (strs [])).pretty
 
 def generated : List String :=
-  ["Challenge/Mutant.lean", "Mitos/Proofs/Refute.lean", "Mitos/Proofs/RefuteCase.lean", "mutant.json"]
+  ["Challenge/Mutant.lean", "Mitos/Proofs/Holes.lean", "Mitos/Proofs/Refute.lean",
+    "Mitos/Proofs/RefuteCase.lean", "holes.json", "values.json", "mutant.json"]
 
-/-- A case, ready to judge: its manifest, the mutated core for the approved run, and for a
-`breaks=` case the files the refutation run adds to it. -/
+/-- A case, ready to judge: its manifest, the hole run's workspace, the mutated core for the gate's
+run, the files the values run adds to it, and for a `breaks=` case the files the refutation run
+adds to it. -/
 structure Prepared where
   mutant     : Mutant
+  holes      : List (String × String)
   approved   : List (String × String)
+  values     : List (String × String)
   refutation : Option (List (String × String))
 
 def prepare (a : Approved) (casesDir : System.FilePath) (name : String) :
@@ -122,23 +147,33 @@ def prepare (a : Approved) (casesDir : System.FilePath) (name : String) :
   let files ← match applyEdits a.files m.edits with
     | .ok fs => pure fs
     | .error e => throw e
+  -- The hole run's core: no `Mitos/Proofs/`, no file of the case, only the implementation edits
+  -- (`Mutants.holeCore_spec`).
+  let core ← match holeCore a.files m with
+    | .ok fs => pure fs
+    | .error e => throw e
+  let holes := core ++ [("Mitos/Proofs/Holes.lean", holesSolution (core.map (·.1))),
+    ("holes.json", holesConfig a)]
+  -- The generated Challenges import the mutated implementation, so the comparator compares the
+  -- holes by value.
+  let impls := implModules (files.map (·.1))
+  let values := [("Challenge/Mutant.lean", "\n".intercalate (approvedByValue impls a.challenge)),
+    ("values.json", valuesConfig a)]
   match m.expect with
-  | .survives _ => return { mutant := m, approved := files, refutation := none }
+  | .survives _ => return { mutant := m, holes, approved := files, values, refutation := none }
   | .breaks ts =>
-    let chal ← match refutation a.challenge ts with
+    let chal ← match refutation impls a.defs a.challenge ts with
       | .ok ls => pure ("\n".intercalate ls)
       | .error e => throw e
-    -- The case's file is imported by a solution module that also imports the mutated core's
-    -- implementation, so the definition holes are the mutant's (`Mutants.refutationSolution`).
     let extra := [("Challenge/Mutant.lean", chal),
       ("Mitos/Proofs/RefuteCase.lean", ← IO.FS.readFile (dir / "Refute.lean")),
-      ("Mitos/Proofs/Refute.lean", refutationSolution (files.map (·.1))),
+      ("Mitos/Proofs/Refute.lean", refutationSolution a.defs),
       ("mutant.json", refutationConfig a ts)]
-    return { mutant := m, approved := files, refutation := some extra }
+    return { mutant := m, holes, approved := files, values, refutation := some extra }
 
 /-- A case's log files, newest run first. -/
 def caseLogs (logDir : System.FilePath) (name : String) : List System.FilePath :=
-  ["refutation", "approved"].map fun s => logDir / s!"{name}.{s}.log"
+  ["refutation", "values", "approved", "holes"].map fun s => logDir / s!"{name}.{s}.log"
 
 def runCase (cfg : Config) (a : Approved) (casesDir logDir : System.FilePath) (name : String) :
     IO Judged := do
@@ -148,15 +183,33 @@ def runCase (cfg : Config) (a : Approved) (casesDir logDir : System.FilePath) (n
   let p ← match ← (prepare a casesDir name).run with
     | .ok p => pure p
     | .error e => return .invalid e
+  let ran := Judged.ran p.mutant.expect p.mutant.rejects
+  let holes ← judge cfg a.toolchain p.holes (some "holes.json") (logDir / s!"{name}.holes.log")
+  if holes != .accepted then return ran { holes }
   let approved ← judge cfg a.toolchain p.approved none (logDir / s!"{name}.approved.log")
-  let some extra := p.refutation | return .ran p.mutant.expect { approved }
-  if approved != .rejected then return .ran p.mutant.expect { approved }
-  let refutation ← judge cfg a.toolchain (p.approved ++ extra) (some "mutant.json")
-    (logDir / s!"{name}.refutation.log")
-  return .ran p.mutant.expect { approved, refutation }
+  match approved with
+  | .accepted =>
+    let values ← judge cfg a.toolchain (p.approved ++ p.values) (some "values.json")
+      (logDir / s!"{name}.values.log")
+    return ran { holes, approved, values }
+  | .rejected =>
+    let some extra := p.refutation | return ran { holes, approved }
+    let refutation ← judge cfg a.toolchain (p.approved ++ extra) (some "mutant.json")
+      (logDir / s!"{name}.refutation.log")
+    return ran { holes, approved, refutation }
+  | .failed => return ran { holes, approved }
 
-/-- Writes each case's workspace to `<out>/<case>/` without judging it, the refutation run's for a
-`breaks=` case, so a case's author can build it: `lake build Mitos.Proofs.Refute` there. -/
+def writeFiles (toolchain : String) (dir : System.FilePath) (files : List (String × String)) :
+    IO Unit := do
+  IO.FS.createDirAll dir
+  IO.FS.writeFile (dir / "lean-toolchain") toolchain
+  for (rel, txt) in files do
+    if let some d := (dir / rel).parent then IO.FS.createDirAll d
+    IO.FS.writeFile (dir / rel) txt
+
+/-- Writes each case's workspaces without judging them, so a case's author can build them:
+`<out>/<case>/` is the refutation run's for a `breaks=` case (`lake build Mitos.Proofs.Refute`
+there) and the values run's for a `survives=` case; `<out>/<case>.holes/` is the hole run's. -/
 def writeWorkspaces (a : Approved) (casesDir out : System.FilePath) (cases : List String) :
     IO UInt32 := do
   let mut code := 0
@@ -164,24 +217,22 @@ def writeWorkspaces (a : Approved) (casesDir out : System.FilePath) (cases : Lis
     match ← (prepare a casesDir name).run with
     | .error e => IO.eprintln s!"{clean name}: {clean e}"; code := 1
     | .ok p =>
-      let dir := out / name
-      IO.FS.createDirAll dir
-      IO.FS.writeFile (dir / "lean-toolchain") a.toolchain
-      for (rel, txt) in p.approved ++ p.refutation.getD [] do
-        if let some d := (dir / rel).parent then IO.FS.createDirAll d
-        IO.FS.writeFile (dir / rel) txt
-      IO.println s!"{clean name}: {dir}"
+      writeFiles a.toolchain (out / name) (p.approved ++ p.refutation.getD p.values)
+      writeFiles a.toolchain (out / s!"{name}.holes") p.holes
+      IO.println s!"{clean name}: {out / name}"
   return code
 
 def expectText : Judged → String
-  | .ran (.breaks ts) .. => "breaks " ++ ", ".intercalate ts
-  | .ran (.survives _) .. => "survives (known gap)"
+  | .ran _ (some s) _ => s!"rejected at {s.name} (cheat case)"
+  | .ran (.breaks ts) none _ => "breaks " ++ ", ".intercalate ts
+  | .ran (.survives _) none _ => "survives (known gap)"
   | .invalid _ => "-"
 
 def outcomeText : Outcome → String
   | .refuted => "REFUTED"
   | .rejected => "REJECTED, NOT REFUTED"
   | .survived => "SURVIVED"
+  | .unbound => "UNBOUND"
   | .failed => "NO JUDGMENT"
   | .invalid => "INVALID"
 
@@ -202,8 +253,11 @@ def readApproved (root : System.FilePath) : ExceptT String IO Approved := do
   let challenge ← match readChallenge chalSrc with
     | .ok ls => pure ls
     | .error e => throw s!"core/{chalPath}: {e}"
-  let theorems := challenge.filterMap fun | .thm n _ => some n | .keep _ => none
-  return { toolchain, files, config, challenge, theorems }
+  let theorems := challenge.filterMap fun | .thm n _ _ => some n | _ => none
+  let defs ← match config.getObjValAs? (Array String) "definition_names" with
+    | .ok ds => pure ds.toList
+    | .error _ => pure []
+  return { toolchain, files, config, challenge, theorems, defs }
 
 def main (args : List String) : IO UInt32 := do
   let cfg ← match parseArgs args {} with
@@ -240,12 +294,16 @@ def main (args : List String) : IO UInt32 := do
     let mark := if r.ok then "" else "  <-- FAIL"
     let why := match j with | .invalid w => s!" ({clean w})" | _ => ""
     IO.println s!"{pad (clean name) w}{pad (outcomeText r.outcome) 23}{pad s!"{secs / 10}.{secs % 10}s" 8}{expectText j}{why}{mark}"
-    -- For a run that did not go as expected, the first error line of its last comparator run.
-    if !r.ok && (r.outcome == .rejected || r.outcome == .failed) then
+    -- The first error line of the case's last comparator run: for a case that did not go as
+    -- expected, and for every cheat case, as the evidence of its rejection.
+    let cheat := j matches .ran _ (some _) _
+    if cheat || (!r.ok && (r.outcome == .rejected || r.outcome == .failed || r.outcome == .unbound)) then
       for log in caseLogs logDir name do
         if ← log.pathExists then
           let lines := (← IO.FS.readFile log).splitOn "\n"
-          if let some l := lines.find? (fun l => (splitFirst "error".toList l.toList).isSome) then
+          -- The exporter's panic names a constant the solution lacks, such as a hidden hole.
+          let has (pat : String) (l : String) := (splitFirst pat.toList l.toList).isSome
+          if let some l := lines.find? (has "PANIC") <|> lines.find? (has "error") then
             IO.println s!"{pad "" w}{clean (l.take 150).toString}"
           break
     results := results.push r
@@ -254,10 +312,12 @@ def main (args : List String) : IO UInt32 := do
   for t in a.theorems do
     let bs := breakers rs t
     IO.println s!"{pad t 32}{if bs.isEmpty then "none" else s!"{bs.length}: " ++ ", ".intercalate bs}"
+  -- A known gap is a `survives=` case that is no cheat case; any other survivor is unexpected.
   let survivors (known : Bool) := rs.filterMap fun r =>
     match r.judged with
-    | .ran e x =>
-      if outcome x == .survived && (e matches .survives _) == known then some (r.name, e) else none
+    | .ran e c x =>
+      let gap := (e matches .survives _) && c.isNone
+      if outcome x == .survived && gap == known then some (r.name, e) else none
     | .invalid _ => none
   let gaps := survivors true
   unless gaps.isEmpty do
@@ -270,8 +330,9 @@ def main (args : List String) : IO UInt32 := do
     for (n, _) in unexpected do IO.println (clean n)
   let total := ((← IO.monoMsNow) - start) / 1000
   let refuted := (rs.filter (·.outcome == .refuted)).length
+  let cheats := (rs.filter fun r => r.ok && r.judged matches .ran _ (some _) _).length
   if passes control cases rs then
-    IO.println s!"\nmutants: all {rs.length} cases as expected, {refuted} refuted, {gaps.length} known gap(s) ({total}s)"
+    IO.println s!"\nmutants: all {rs.length} cases as expected, {refuted} refuted, {gaps.length} known gap(s), {cheats} cheat case(s) rejected ({total}s)"
     return 0
   else
     IO.println s!"\nmutants: FAILURES (logs in .lake/mutants/) ({total}s)"
