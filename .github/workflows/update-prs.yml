@@ -15,6 +15,12 @@ concurrency:
 jobs:
   rebase:
     runs-on: ubuntu-24.04
+    # The app's private key is a secret of the `trusted` environment, whose deployment branch rule
+    # admits only `main` (GitHub matches it against GITHUB_REF). So this job gets the key on a push
+    # to main or a dispatch on main. GitHub refuses the job before its first step anywhere else: a
+    # dispatch on another branch, and the same job in a PR's own workflow (refs/pull/N/merge) or
+    # on a pushed branch. Each run leaves a deployment record in `trusted` with its ref and commit.
+    environment: trusted
     steps:
       # Pushes made with GITHUB_TOKEN do not start CI, so rebased PRs would never get a `gate`
       # check. The updater pushes with a short-lived installation token of a GitHub App that is
@@ -27,7 +33,7 @@ jobs:
           APP_KEY: ${{ secrets.PR_UPDATER_APP_KEY }}
         run: |
           if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
-            echo "::warning::PR_UPDATER_APP_ID (variable) or PR_UPDATER_APP_KEY (secret) is not set; PR branches were not updated."
+            echo "::warning::PR_UPDATER_APP_ID (variable) or PR_UPDATER_APP_KEY (secret of the trusted environment) is not set; PR branches were not updated."
             echo "ok=false" >> "$GITHUB_OUTPUT"
           else
             echo "ok=true" >> "$GITHUB_OUTPUT"
