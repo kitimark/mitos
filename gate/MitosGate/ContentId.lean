@@ -177,7 +177,7 @@ open RunLog (quote addedSorted? firstMissing? splitLines)
 
 /-- `ops/runs/*.ndjson` as `.gitattributes` matches it: the files directly in `ops/runs/` whose
 name ends in `.ndjson`, a name that starts with a dot and the bare `.ndjson` included. The same
-set as `RunLog.ndjsonNames`, which `mitos-gate runlog` reads. -/
+set as the day files `RunLog.readTree` reads, which `mitos-gate runlog` checks. -/
 def isRunLog (p : String) : Bool :=
   let cs := p.toList
   "ops/runs/".toList.isPrefixOf cs && ".ndjson".toList.isSuffixOf cs && !(cs.drop 9).contains '/'
