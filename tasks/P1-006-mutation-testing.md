@@ -294,6 +294,32 @@ is banned, as the token `with_decl_name%` (`bannedComponent`: a banned word foll
 a plain word in a `replace=` text, since it is the form that puts nested names under any namespace;
 `cheat_with_decl_name` pins the ban.
 
+### Block comments in the Challenge (round 6)
+
+**What failed.** `Mutants.Challenge` said its reader of the approved Challenge fails closed, but it
+took a block comment to end only when a line ended with the closer, and did not nest. Lean ends a
+comment at its first closer and nests one opened inside it. So on `/- note -/ open Foo` the reader
+stayed in the comment while Lean ran `open Foo`, and the reader kept the lines after it verbatim: a
+hole line stayed (compared by type only) and a theorem line stayed un-negated. With a nested
+comment, or an opener in the middle of a hole line, it read a theorem that Lean reads as a comment,
+and it negated that statement although the approved Challenge does not make it (review on #86 by
+CodeRabbit at 24b19e4). A string literal or an escaped name (`«`) in a hole line does the same,
+since Lean reads both on past the line's end (found in this round). Each needs an owner edit of the
+approved Challenge, which has one comment (`/-!` to `-/`, nothing else on those lines) and reads
+the same before and after the fix.
+
+**Decision.** The reader follows Lean's comments or refuses the line, with a clear error. Inside a
+comment it takes a line only if the line holds no opener, and no closer but in its last two
+characters; a line that opens a comment, only if the same holds after the opener and the closer does
+not come right after the opener (`/--/` does not close, because Lean skips the character after an
+opener); any other line, only if it is a line comment or holds neither, nor a `"` or a `«`.
+`readLine_comments` proves that on every line the reader takes, `leanScan`, a transcription of Lean's
+`Lean.Parser.finishCommentBlock`, ends where the reader goes on. The transcription is not proved;
+`CommentProbe.probes` checks its premises against Lean at every build (code after a closer is read;
+comments nest; the character after an opener is skipped, for `/-` and `/--`). The scratch inputs of
+the review, and five more, are `#guard`s: the reader at 24b19e4 accepts all nine, the new one
+refuses them.
+
 ### Cases
 
 `eval/mutants/cases/<name>/` holds a manifest `mutant` (`why=`, `breaks=` or `survives=`, an
@@ -387,7 +413,11 @@ a `sorry` fails it:
   (`mem_approvedByValue`, `approvedByValue_states`); neither holds a definition hole line. The hole run's core holds no file
   under `Mitos/Proofs/` and only the implementation edited (`holeCore_spec`). The reader refuses
   any Challenge line that could change a statement's meaning if dropped (`open`, `namespace`, a
-  multi-line statement). The hole run's `Mitos/Impl/` files are the other runs' (`holeCore_impl`).
+  multi-line statement), and on every line it takes, Lean's scan of a block comment (`leanScan`)
+  ends where the reader goes on (`readLine_comments`, from `commentLine_scan` and
+  `openerLine_scan`); `leanScan` transcribes Lean's lexer without proof, and `CommentProbe.probes`
+  checks its premises at build. The hole run's `Mitos/Impl/` files are the other runs'
+  (`holeCore_impl`).
 - `Mutants.Verdict`: the run passes exactly when the control is accepted, every case is judged
   exactly once and meets its expectation (`passes_iff`). Then every `breaks=` case passed the lint,
   had its hole run accepted, its gate run rejected and its refutation accepted (`passes_refuted`);
