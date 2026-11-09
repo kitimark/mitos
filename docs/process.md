@@ -166,7 +166,7 @@ which covers what no kernel term references, such as a structure field's default
 | Plugin lint (gate 1) | `lake exe mitos-gate lint <file>` | ✓ | ✓ | | yes |
 | Model lint allowlist accepts and rejects each command kind | `lake exe mitos-lint-test` | when touching `gate/` | ✓ | | yes |
 | Honest plugin accepted, gates 0–6 | `lake exe mitos-gate accept … --paranoid` | ✓ | ✓ | ✓ | yes |
-| Cheat corpus rejected | `eval/cheats/run.sh` | when touching `gate/` | ✓ | ✓ | yes |
+| Cheat corpus rejected | `lake exe mitos-gate cheats` | when touching `gate/` | ✓ | ✓ | yes |
 | Fixture scorecard: precision and recall per edge type against hand labels | `lake --dir eval/score exe mitos-score eval/fixtures/toy` | when touching the resolver, a plugin, the fixture or the scorer | ✓, posted on the PR | | the numbers no; a scorer error yes |
 | Full evaluation scorecard | Phase 1 | | | ✓ | — |
 | Differential tests against real tools | Phase 2 | | | ✓ | — |
@@ -328,10 +328,20 @@ the runner re-pins `models.lock` to every model under the workspace's `Models/`,
 gate 0 walks it, so gate 0 passes and the later gates
 are what is tested.
 
-`eval/cheats/run.sh` runs every case twice: through the full gate, and with `--skip-lint`, to
-record what the later gates catch on their own. Every full run must reject at the expected gate.
-The comparator-only expectation is checked as well, so a change in what each layer catches is
-noticed and recorded on purpose.
+`lake exe mitos-gate cheats` runs every case twice: through the full gate, and with
+`--skip-lint`, to record what the later gates catch on their own. Every full run must reject at the
+expected gate. The comparator-only expectation is checked as well, so a change in what each layer
+catches is noticed and recorded on purpose. Each run is its own `mitos-gate accept` process in a
+fresh copy of the workspace, `--jobs N` of them at a time (default 3), each stopped after
+`--timeout S` seconds (default 600) and then failed. Naming cases runs only those. A case whose
+`expect` has `heavy=yes` needs much memory (`model_include_str_src` peaks at about 13 GB), so its
+runs run alone. The logs are `.lake/cheats/<case>.full.log` and `<case>.comparator.log`, with
+`timing.tsv` beside them, and CI uploads them as the `cheat-logs` artifact. Every decision the runner
+makes is in `gate/MitosGate/Cheats.lean`, with its proofs: the `expect` parser (a key it does not
+know, or a key given twice, is an error, except `lock_append`; `full` and `comparator_only` are
+required), the reading of the gate's verdict line, the pass rule, the table and the scheduler.
+`eval/cheats/run.sh`, the shell runner it replaces, runs one run at a time and stays until CI shows
+that both print the same table.
 
 A `comparator_only=accept` case may also have one `guards=R` line, such as
 `guards=banned:include_str`, naming the lint rule it pins. Each gate-1 violation ends with its
@@ -523,7 +533,7 @@ lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire --model
 ```
 
 ```bash
-eval/cheats/run.sh
+lake exe mitos-gate cheats
 ```
 
 ## 7. Findings that changed the design during Phase 0
