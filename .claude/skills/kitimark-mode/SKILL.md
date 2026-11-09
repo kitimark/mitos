@@ -179,12 +179,13 @@ default" names the same exception.
    ones (see Rounds). Reply on every thread with the fixing commit, the follow-up issue or the
    reason the code stays. Leave a security finding's thread open for the user.
 6. Update the task file and the run log (`ops/runs/`) in the same PR. Every commit only appends
-   to the run log: to update your record, append the next attempt, and never edit or delete a
-   line, even one an earlier commit of the PR added (`ops/runs/README.md`, Merging). Before each
-   push, every line of `git log --format= --numstat origin/main..HEAD -- 'ops/runs/*.ndjson'`
-   shows 0 in its second column, the deleted lines.
-   The PR body says `Closes #n` for the task's issue when the PR finishes the task, and
-   `Part of #n` otherwise. The plan holds no status, so a task PR leaves `plan/` alone.
+   to the run log. An update to your record goes in the next attempt's record (each round is
+   one), and no commit edits or deletes a line, even one an earlier commit of the PR added
+   (`ops/runs/README.md`, Merging). Before each push, every line of
+   `git log --format= --numstat origin/main..HEAD -- 'ops/runs/*.ndjson'` shows 0 in its second
+   column, the deleted lines. The PR body says `Closes #n` for the task's issue when the PR
+   finishes the task, and `Part of #n` otherwise. The plan holds no status, so a task PR leaves
+   `plan/` alone.
 7. Push every known fix, then report the head as merge-ready or as waiting on the user.
 
 Every agent that posts to GitHub ends each post with the footer, a `---` line and then
@@ -272,9 +273,11 @@ watcher's echo filter and the merge rule below rely on both.
 - PRs that build on each other form a GitHub stack, not a base-branch chain retargeted by hand.
   A chain that exists anyway, such as #73 on #62's branch, gets no rebase and no `needs-rebase`
   label, because the updater takes only PRs based on `main`. When its base merges, the root gives
-  it to a PR owner, who retargets it to `main` and rebases only its own commits with
-  `git rebase --onto origin/main <old-base> <branch>`. `<old-base>` is the commit its own first
-  commit sits on, not the base branch's last tip, which the updater may have rebased since.
+  it to a PR owner. The owner fetches `main`, rebases only the PR's own commits with
+  `git rebase --onto origin/main <old-base> <branch>`, force-pushes with a lease, and only then
+  retargets the PR to `main`, so the updater cannot rebase it first. `<old-base>` is the commit
+  its own first commit sits on, not the base branch's last tip, which the updater may have
+  rebased since.
   These sessions block GraphQL, and `gh stack submit` and `gh stack link` find and open PRs over
   GraphQL, so they fail here. Open each PR through the REST create route in **Forge** instead, the
   bottom one on `main` and each next one on the branch below it. Then make the stack with
