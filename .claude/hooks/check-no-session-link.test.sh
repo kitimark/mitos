@@ -98,6 +98,16 @@ check "git commit --file= after cd" \
   "$(bash_in "cd scratch && git commit --file=msg.txt")" block "msg.txt"
 check "git commit with a clean message file" \
   "$(bash_in "cd scratch && git commit -F okmsg.txt")" allow
+check "git -C dir commit -F reads the message file in dir" \
+  "$(bash_in "git -C scratch commit -F msg.txt")" block "msg.txt"
+check "git -C dir commit --file= reads the message file in dir" \
+  "$(bash_in "git -C scratch commit --file=msg.txt")" block "msg.txt"
+check "git -C dir with a -c option and a quoted dir" \
+  "$(bash_in "git -c user.name=x -C 'scratch' commit -F msg.txt")" block "msg.txt"
+check "git -C . -C dir joins the two" \
+  "$(bash_in "git -C . -C scratch commit -F msg.txt")" block "msg.txt"
+check "git -C dir commit -F with a clean message file" \
+  "$(bash_in "git -C scratch commit -F okmsg.txt")" allow
 check "git commit -m without the trailer" \
   "$(bash_in "git commit -m 'Fix the thing' -m 'Co-Authored-By: A <a@example.com>'")" allow
 check "git commit-tree is not git commit" \
