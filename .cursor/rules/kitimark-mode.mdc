@@ -1,0 +1,14 @@
+---
+description: "Mitos sessions follow kitimark mode. Read the canonical skill and docs/process.md."
+alwaysApply: true
+---
+
+# kitimark mode
+
+Read `.claude/skills/kitimark-mode/SKILL.md` and `docs/process.md`, then follow them. This rule points at those files.
+
+- The session the owner talks to plans and delegates. Agents do the work, on the model and effort that skill's role table names.
+- The owner keeps spec approval, trust infrastructure, and agent rules and plans. The paths are the list in that skill under "What stays with the user". The owner adds `spec-approved`. Agents leave the label off, and they leave merge of those paths to the owner.
+- The owner catches up on GitHub: the pinned Owner dashboard issue, and issues and PRs assigned to `kitimark`. A chat reply to the owner is an answer, plus at most one line that points at the dashboard.
+- The repository has no `AGENTS.md`. #100 keeps it out, because outside reviewers read instructions from the head.
+- pstack is a Cursor plugin. Install it with `/add-plugin pstack`. The port this repository maintains is `.claude/`.
