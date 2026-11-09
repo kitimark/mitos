@@ -74,18 +74,23 @@ from the approved core alone and declare every hole publicly. Its implementation
 other runs' (`holeCore_impl`), and the lint ensures they run no code and read no file while Lean
 elaborates them, so they elaborate the same in every run, whatever other files a run holds.
 
-The reader fails closed: every line of the Challenge must be blank, a comment, an import of one
-module and nothing else, a definition hole in the form below or a one-line theorem in the form
-above, so no line that could change what a statement means (`open`, `namespace`, notation) is
-dropped or moved. An import line is exactly `import <module>` (`importForm`, `readLine_imp`):
-Lean's `import` takes one module name (`Lean.Parser.Module.import`), and Lean reads anything after
-it on the line as another import or as commands after the header. So the reader took
+The reader takes only a few forms: every line of the Challenge must be blank, a comment, an import
+of one module and nothing else, a definition hole in the form below or a one-line theorem in the
+form above, and any other line stops the runner, so no line that could change what a statement
+means (`open`, `namespace`, notation) is dropped or moved, as long as the reader reads comments as
+Lean does. It does not always (below). The reader is a fast first pass: what stops the runner when
+it misreads is the cross-check (`Mutants.CrossCheck`), which requires the declarations, holes and
+imports of the Challenge as Lean built it to be exactly the ones the reader read.
+
+An import line is exactly `import <module>` (`importForm`, `readLine_imp`): Lean's `import` takes
+one module name (`Lean.Parser.Module.import`), and Lean reads anything after it on the line as
+another import or as commands after the header. So the reader took
 `import Mitos.Core namespace Mitos.Refute` for an import and kept it, and the generated Challenges
 then declared their statements inside that namespace (review on #86 by CodeRabbit at e9fa024).
 
-It reads block comments as Lean does, or refuses the line. Lean ends a block comment at its first
-closer and nests a comment opened inside one, so the line `/- note -/ open Foo` runs `open Foo`,
-and a theorem line between an inner and an outer closer is no theorem. A reader that took a comment
+It reads block comments as `leanScan` does, or refuses the line. Lean ends a block comment at its
+first closer and nests a comment opened inside one, so the line `/- note -/ open Foo` runs
+`open Foo`, and a theorem line between an inner and an outer closer is no theorem. A reader that took a comment
 to end only with its line kept such lines as comment lines, so a hole line stayed (compared by type
 only) and a theorem line stayed un-negated, or it negated a statement the Challenge does not make
 (review on #86, round 6). So inside a comment the reader takes a line only if it holds no opener,
@@ -96,6 +101,14 @@ literal or an escaped name (`«…»`), which Lean also reads on past a line's e
 transcription of `Lean.Parser.finishCommentBlock`) ends where the reader goes on: still in the
 comment, or closed at the end of the line. The probes after it check that transcription's premises
 whenever this package builds.
+
+`leanScan` is how Lean reads a comment's text, but not all of how Lean reads a comment. Lean reads a
+doc comment's opener (a module doc's or a declaration's) as a token, and skips the whitespace and
+line comments after it before the text begins. So a line comment that ends with a closer, on the
+line after such an opener, does not close it; the reader took that closer as the comment's end,
+and the theorem line after it as one the Challenge states, which Lean reads as doc comment text
+(review on #86, round 9, the opus verifier at 1265f31; `CrossCheck.decoySource`). Rounds 6 to 9
+each found such a form; instead of one more rule here, the cross-check stops the runner on any.
 
 ## Definition hole lines
 
@@ -120,13 +133,16 @@ is not checked at build. So no contract clause (`given`, `requires`, `ensures`) 
 value, and the value is `:= sorry`, the first of the three forms of `declVal` (`declValSimple`; the
 other two are equations, `| … => …`, and structure fields after `where`). The line ends with the
 `sorry`, and the reader takes the next line only as a blank line, a comment, an `import`, another
-hole or a theorem, so no `termination_by`, `where` or `deriving` continues the declaration.
+hole or a theorem, so no `termination_by`, `where` or `deriving` continues the declaration. What is
+not proved is checked at every run: the cross-check requires each hole's value, as Lean built it,
+to be exactly `sorry` of its type, and the hole to declare no other constant.
 
-Rounds 7 and 8 of the review on #86 each refused more forms whose value Lean reads as something
-other than the `sorry`, and each missed some: round 7 the `:= sorry` in a line comment
-(`def f : T := 0 -- := sorry`) and after a `where` or a tactic; round 8 equations
-(`def f : T → T | _ => 0 where g : T := sorry`) and structure fields (`def c : S where b := sorry`).
-So the reader no longer lists what a hole may not hold, but what it may.
+Round 7 of the review on #86 found hole lines whose value Lean reads as something other than the
+`sorry`: the `:= sorry` in a line comment (`def f : T := 0 -- := sorry`), and after a `where` or a
+tactic. Round 7's fix refused those forms, and round 8 found two more forms that the fix still
+took: equations (`def f : T → T | _ => 0 where g : T := sorry`) and structure fields
+(`def c : S where b := sorry`). So the reader no longer lists what a hole may not hold, but what it
+may.
 -/
 
 namespace Mutants
@@ -380,11 +396,13 @@ def readLine (inDoc : Bool) (l : String) : Except String (Line × Bool) :=
     | some (n, s) => .ok (.thm n s l, false)
     | none => .error s!"the Challenge has a line the refutation reader does not handle: {l}"
 
-/-- **The reader follows Lean's block comments.** On a line inside a comment, and on a line that
-opens one, it keeps the line as it is, and Lean's scan of the comment ends where the reader goes
+/-- **The reader follows `leanScan`.** On a line inside a comment, and on a line that opens one, it
+keeps the line as it is, and `leanScan` (Lean's scan of a comment's text) ends where the reader goes
 on: still in the comment, or closed exactly at the end of the line. Every other line it takes leaves
 it outside a comment, and is a line comment or holds no opener, no closer and no character that
-starts a string literal or an escaped name, which Lean may read on past the line's end. -/
+starts a string literal or an escaped name, which Lean may read on past the line's end. Where Lean
+reads a comment otherwise than `leanScan` (after a doc comment's opener), `Mutants.CrossCheck`
+stops the runner. -/
 theorem readLine_comments {inDoc inDoc' : Bool} {l : String} {x : Line}
     (h : readLine inDoc l = .ok (x, inDoc')) :
     (inDoc = true →

@@ -1,6 +1,7 @@
 import Mutants.Edit
 import Mutants.Manifest
 import Mutants.Challenge
+import Mutants.CrossCheck
 import Mutants.Verdict
 import Mutants.Implied
 import Mutants.Lint

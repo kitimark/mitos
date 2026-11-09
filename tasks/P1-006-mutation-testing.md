@@ -409,6 +409,90 @@ that every line read as an import is exactly that. Three `#guard`s refuse the fo
 reader at e9fa024 takes all three), and one accepts two plain imports; the approved Challenge's
 `import Mitos.Core` reads as before.
 
+### Lean cross-check (round 9)
+
+**What failed.** The reader read a doc comment otherwise than Lean (present since e852fd5). Lean
+reads `/--` and `/-!` as tokens and skips the whitespace and `--` line comments after them before
+the comment's text begins (`docComment` is `"/--" >> ppSpace >> commentBody`, `moduleDoc` is
+`"/-!" >> commentBody`). So after a line `/--`, a line `-- -/` is a line comment, and the doc
+comment runs on to the next closer. The reader took that `-/` as the end, so on the lines
+`/--`, `-- -/`, `theorem Mitos.Proofs.decoy : Mitos.Spec.Sound Mitos.Impl.resolve := sorry`,
+`-- -/` it read a theorem that Lean reads as doc text; with a `breaks=decoy` case, `--prepare` at
+1265f31 exited 0 and wrote a negated theorem the approved Challenge does not state. The reverse
+shape, a hole line in such a comment, was dropped as a hole that Lean never declares (review on
+#86, round 9, the opus verifier at 1265f31, B1). Each needs an owner edit of the approved
+Challenge.
+
+**Premise.** Rounds 6, 7, 8 and 9 each found one more Lean form that the hand-written line reader
+misreads: block comments, a `:= sorry` in a comment, equations and `where`, doc comment openers.
+Emulating Lean's lexer by hand keeps failing, so this round adds no lexer rule. Round 8 rejected
+asking Lean at run time ("proves nothing about the reader"); that was the wrong question. The
+reader need not be proved right if every misread stops the runner, and Lean is the one reader
+that cannot misread its own syntax.
+
+**Decision.** `Mutants.CrossCheck`. Before it prepares or judges anything, the runner builds the
+approved Challenge module (`lake build Challenge.Resolver`) in a fresh copy of the approved core,
+loads it as Lean built it (`Lean.importModules`, `ModuleData`), and compares it with the reader's
+lines (`problems`). Any difference stops the runner with exit 2 and names each difference. It
+requires:
+
+1. Lean's constants of the module, all of them (no auxiliary name is filtered out, so a `where`
+   or a `match` stops the runner), are exactly the reader's theorems and holes: the same names,
+   each name starting on the line the reader read it from and at its column (Lean's selection
+   range), each theorem's statement a constant applied to constants named by the statement's
+   words, and each hole a safe definition whose value is exactly `sorry` of its type
+   (`sorryAx T s`, or the labeled `sorryAx (τ → T) s tag` that `sorry` elaborates to here).
+2. The holes the reader read are exactly `definition_names` of `core/comparator.json` (this
+   covers m3).
+3. The module's imports are `Init` and the reader's import lines.
+
+The positions are what the root's brief did not ask for: without them, a theorem Lean declares
+from a line the reader keeps as a comment, and a same-named one the reader reads where Lean sees a
+comment, would match by name and statement. `problems_nil` proves what an empty result means:
+Lean's declarations are exactly `expected` (each a theorem or hole line at its line,
+`mem_expected`), the holes are exactly the configured ones, and the imports are exactly `Init` and
+the reader's. `readLines_getElem?` proves the reader's line at index `i` is its reading of source
+line `i + 1`, and `holeName_of_holeForm` that the hole name compared is the one `holeForm` took.
+Lean's side (`declOf`: the constants, their positions, the `sorry`) is not proved.
+
+**Probes.** So that the check cannot go blind unnoticed, the same `lake build` builds three scratch
+Challenge modules, and the comparison must find each one's known misread, every run: the decoy
+(`undeclared Mitos.Proofs.decoy`), the reverse with `def Mitos.Impl.extra : Nat := sorry`
+(`undeclared Mitos.Impl.extra`), and round 8's value hole
+`def Mitos.Impl.f : Nat → Nat | _ => 0 where g : Nat := sorry` (`differs Mitos.Impl.f`, value not
+`sorry`, and `unread Mitos.Impl.f.g`). The first two lists of lines are what `readChallenge`
+reads (a `#guard`); the value line the reader refuses, so that probe reads it as a hole, as a
+looser reader would. On the approved Challenge the runner prints
+`challenge (reader against Lean's build): AGREE on 10 declarations, 3 probes caught`.
+
+**The reader.** Its lexer stays as it is. Its docs now claim only what holds: it reads comments as
+`leanScan` does, which is not all of how Lean reads them; it is a fast first pass, and the
+cross-check is what stops the runner on a misread. m1's sentence on rounds 7 and 8 is reworded.
+
+**Evidence** (one local run each, default kernel; the check does not depend on `--paranoid`).
+`--prepare decoy_case` on a copy of the repository whose approved Challenge holds, before the
+`resolve` hole: the decoy (exit 2, `the reader read Mitos.Proofs.decoy, a theorem stating
+Mitos.Spec.Sound Mitos.Impl.resolve, at line 14, column 8; Lean declares nothing of that name`, no
+workspace written); the same after a `/-!` opener (exit 2, the same); the reverse (exit 2,
+`Mitos.Impl.extra ... Lean declares nothing of that name`, and not in `definition_names`); round
+8's value line (exit 2, the reader's error, before the check). On the approved Challenge it agrees
+and goes on (exit 1 there only because `decoy_case` names a theorem the Challenge does not state).
+With the check switched off in three ways in a scratch build, the probes stop the runner: `sorryOf`
+always true (exit 2, the value probe's `differs Mitos.Impl.f` missing), no positions read (exit 2,
+every approved theorem and hole differs), and no `unread` problems (the build fails on a
+`#guard`).
+
+**Cost.** 4.4 to 5.5 s per runner run (9 local runs: one `lake build` of the approved core's
+`Mitos.Core`, the Challenge and three probes in a fresh workspace, about 3 s, and four imports).
+The full run of the cases took 879 s with `--paranoid` (41 cases, round 4, one local run), so the
+check adds under 1%.
+
+**Considered.** One more lexer rule for doc comment openers: the brief rules it out, and rounds 6
+to 9 show why. Filtering auxiliary names (`match_`, `proof_`, `_private`): the approved
+Challenge's module holds none, and a filter is one more list that can miss, so every constant must
+be read. Elaborating the Challenge in the runner's own process instead of `lake build`: faster, but
+it would read `Mitos.Core` from the repository's build outputs, which the runner never trusts.
+
 ### Cases
 
 `eval/mutants/cases/<name>/` holds a manifest `mutant` (`why=`, `breaks=` or `survives=`, an
@@ -502,15 +586,23 @@ a `sorry` fails it:
   (`mem_approvedByValue`, `approvedByValue_states`); neither holds a definition hole line. The hole run's core holds no file
   under `Mitos/Proofs/` and only the implementation edited (`holeCore_spec`). The reader refuses
   any Challenge line that could change a statement's meaning if dropped (`open`, `namespace`, a
-  multi-line statement), and on every line it takes, Lean's scan of a block comment (`leanScan`)
+  multi-line statement), and on every line it takes, `leanScan` (Lean's scan of a comment's text)
   ends where the reader goes on (`readLine_comments`, from `commentLine_scan` and
   `openerLine_scan`); `leanScan` transcribes Lean's lexer without proof, and `CommentProbe.probes`
-  checks its premises at build. Every line it takes as a definition hole is exactly
+  checks its premises at build. It is not all of how Lean reads a comment (a doc comment's opener,
+  round 9), so the reader is a first pass and `Mutants.CrossCheck` stops the runner when it
+  misreads. Every line it takes as a definition hole is exactly
   `def <name> : <type> := sorry` with a name under `Mitos` and a type of `typeChar`s and
   `typeWord`s (`readLine_hole`, `holeForm_spec`); that Lean reads its value as the `sorry` is not
   proved, and `Mutants.Tokens` checks at build that no Lean token is a word such a line may hold
   but `→`. Every line it takes as an import is exactly `import <module>` (`readLine_imp`). The
   hole run's `Mitos/Impl/` files are the other runs' (`holeCore_impl`).
+- `Mutants.CrossCheck`: when the comparison of the reader's lines with the Challenge as Lean built
+  it finds nothing, Lean's declarations are exactly the reader's theorems and holes, each at the
+  line it was read from, with the read statement or a `sorry` value, the holes are exactly the
+  configured ones, and the imports are exactly `Init` and the reader's (`problems_nil`,
+  `mem_expected`, `readLines_getElem?`, `holeName_of_holeForm`). Reading the constants, their
+  positions and the `sorry` from Lean's build is not proved; three probes check it at every run.
 - `Mutants.Verdict`: the run passes exactly when the control is accepted, every case is judged
   exactly once and meets its expectation (`passes_iff`). Then every `breaks=` case passed the lint,
   had its hole run accepted, its gate run rejected and its refutation accepted (`passes_refuted`);
@@ -567,6 +659,10 @@ runner being built in parallel has a job scheduler this runner could reuse later
       under `Mitos` (nested names are not read, and `with_decl_name%` is banned); round 3's
       namespace shadows and scoped `open` are cheat cases rejected at the lint, REFUTED on the
       round-3 runner
+- [x] the runner stops when its reading of the approved Challenge differs from the Challenge as
+      Lean built it (declarations, their lines, statements, `sorry` values, definition holes,
+      imports); round 9's decoy and its reverse stop `--prepare`, and three probes keep the check
+      from going blind
 - [x] all `checks` pass locally
 - [x] run-log record written (ops/runs/)
 - [ ] the owner decides the known gaps `assumptions_dedupe_dropped` and `edges_duplicated`
