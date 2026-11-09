@@ -1,0 +1,8 @@
+why=src_dst_swapped, which breaks only resolve_sound, claimed to break resolve_assumptions_exact. The implementation also declares a shadow resolver Mitos.Mitos.Impl.resolve whose one edge lists no assumption; inside namespace Mitos.Refute, Mitos.Impl.resolve names it, in the refutation Challenge's statement and in Mitos.Refute.holes alike, so the comparison by value checks the shadow and the claim would read as REFUTED.
+breaks=resolve_assumptions_exact
+rejects=lint
+file=Mitos/Impl/Resolve.lean
+find=src := r.repo, dst := p.repo
+replace=src := p.repo, dst := r.repo
+find=end Mitos.Impl
+replace=end Mitos.Impl def Mitos.Mitos.Impl.resolve : Mitos.Resolver := fun _ => { edges := [{ src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, req := 0, prov := 1, assumes := [], status := .inferred }], unresolved := [] }

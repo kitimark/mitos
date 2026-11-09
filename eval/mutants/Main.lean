@@ -25,7 +25,8 @@ def usage : String := "usage: mitos-mutants [--paranoid] [--keep] [<case>...]
   --prepare writes each named case's workspaces to <dir>/<case>/ (refutation or values run) and
   <dir>/<case>.holes/ (hole run), and judges nothing; it writes none for a case the lint refuses.
   REFUSED BY LINT: the case's Lean text holds code that runs or declares syntax while Lean
-  elaborates it, or imports a module outside the approved core and the implementation.
+  elaborates it, imports a module outside the approved core and the implementation, or declares,
+  enters or opens a name outside the namespaces it may use.
   UNBOUND: the mutant's implementation alone does not build the approved definition holes, or the
   gate accepts proofs that are not about them."
 
@@ -136,9 +137,10 @@ structure Prepared where
   refutation : Option (List (String × String))
 
 /-- What the lint finds in a case's Lean text: each `replace=` text as plain text, each file the
-edits change as a whole (`Lint.targets`), and the case's `Refute.lean`. -/
+edits change as a whole (`Lint.targets`), and the case's `Refute.lean`, which may declare the
+approved definition holes `defs` besides names under `Mitos.Refute`. -/
 def lintCase (env : Environment) (m : Mutant) (files : List (String × String))
-    (refute : Option String) : ExceptT String IO (List String) := do
+    (refute : Option String) (defs : List String) : ExceptT String IO (List String) := do
   let mut found := #[]
   for e in m.edits do
     for w in Lint.replaceProblems e.replace do
@@ -147,7 +149,7 @@ def lintCase (env : Environment) (m : Mutant) (files : List (String × String))
     let some txt := files.lookup p | throw s!"{p}: no such file in core/"
     found := found ++ (← Lint.check env k s!"core/{p} (edited)" txt)
   if let some src := refute then
-    found := found ++ (← Lint.check env .refute "Refute.lean" src)
+    found := found ++ (← Lint.check env (.refute (defs.map (·.splitOn "."))) "Refute.lean" src)
   return found.toList
 
 def prepare (env : Environment) (a : Approved) (casesDir : System.FilePath) (name : String) :
@@ -172,7 +174,7 @@ def prepare (env : Environment) (a : Approved) (casesDir : System.FilePath) (nam
     | .breaks _ => some <$> IO.FS.readFile (dir / "Refute.lean")
     | .survives _ => pure none
   -- Before anything is built: the case's Lean text runs no code and declares no syntax.
-  let lint ← lintCase env m files refuteSrc
+  let lint ← lintCase env m files refuteSrc a.defs
   -- The hole run's core: no `Mitos/Proofs/`, no file of the case, only the implementation edits
   -- (`Mutants.holeCore_spec`).
   let core ← match holeCore a.files m with
@@ -183,8 +185,10 @@ def prepare (env : Environment) (a : Approved) (casesDir : System.FilePath) (nam
   -- The generated Challenges import the mutated implementation, so the comparator compares the
   -- holes by value.
   let impls := implModules (files.map (·.1))
-  let values := [("Challenge/Mutant.lean", "\n".intercalate (approvedByValue impls a.challenge)),
-    ("values.json", valuesConfig a)]
+  let byValue ← match approvedByValue impls a.challenge with
+    | .ok ls => pure ("\n".intercalate ls)
+    | .error e => throw e
+  let values := [("Challenge/Mutant.lean", byValue), ("values.json", valuesConfig a)]
   match m.expect with
   | .survives _ => return { mutant := m, lint, holes, approved := files, values, refutation := none }
   | .breaks ts =>
@@ -290,6 +294,9 @@ def readApproved (root : System.FilePath) : ExceptT String IO Approved := do
   let defs ← match config.getObjValAs? (Array String) "definition_names" with
     | .ok ds => pure ds.toList
     | .error _ => pure []
+  -- Every generated statement names everything absolutely (`Mutants.qualify`); a Challenge whose
+  -- statements the runner cannot write that way is not judged at all.
+  if let some e := unqualified challenge defs then throw s!"core/{chalPath}: {e}"
   return { toolchain, files, config, challenge, theorems, defs }
 
 def main (args : List String) : IO UInt32 := do

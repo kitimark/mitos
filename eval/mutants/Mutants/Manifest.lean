@@ -26,7 +26,8 @@ replace=<its replacement>
 - **`rejects=<stage>`**, with `breaks=` or `survives=`: a **cheat case**. Its claim must not be
   counted, and the runner must reject it at the named stage (`Mutants.Verdict`, `Stage.rejected`):
   `lint` (the case's Lean text holds code that runs or declares syntax while Lean elaborates it,
-  `Mutants.Lint`; nothing is built), `holes` (the mutated implementation alone does not build the
+  or declares, enters or opens a name outside the namespaces it may use, `Mutants.Lint`; nothing
+  is built), `holes` (the mutated implementation alone does not build the
   approved holes), `values` (with a
   `survives=` claim: the gate accepts proofs that are not about the mutant's holes) or `refutation`
   (with a `breaks=` claim: the refutation is not about the mutant's holes). Each such case pins one

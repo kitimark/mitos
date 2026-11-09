@@ -1,0 +1,8 @@
+why=The known gap assumptions_dedupe_dropped as a breaks= case. The implementation also declares Mitos.Refute.Mitos.Spec.AssumptionsExact := False, which the refutation Challenge's statement, elaborated in namespace Mitos.Refute, resolved to, and Mitos.Proofs.resolve_sound, a clash that makes the gate reject; so the gap read as REFUTED, also with --paranoid (#86 review, round 3, opus B1).
+breaks=resolve_assumptions_exact
+rejects=lint
+file=Mitos/Impl/Resolve.lean
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=[r.origin, p.origin]
+find=end Mitos.Impl
+replace=end Mitos.Impl def Mitos.Refute.Mitos.Spec.AssumptionsExact (_ : Mitos.Resolver) : Prop := False def Mitos.Proofs.resolve_sound : Nat := 0

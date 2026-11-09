@@ -5,8 +5,9 @@ import Mutants.Manifest
 
 First the **lint** (`Mutants.Lint`) reads every Lean text the case wrote or changed: the
 `replace=` texts, each file its edits change, and its `Refute.lean`. If it finds code that runs or
-declares syntax while Lean elaborates, or an import outside the approved core and the
-implementation, the case is refused and nothing is built. Otherwise it gets up to three sandboxed
+declares syntax while Lean elaborates, an import outside the approved core and the implementation,
+or a name declared, entered or opened outside the namespaces the text may use, the case is refused
+and nothing is built. Otherwise it gets up to three sandboxed
 `lake comparator` runs, each in a fresh copy of the core:
 
 1. **holes**: the mutated core with only the edits under `Mitos/Impl/`, without `Mitos/Proofs/`
@@ -93,8 +94,9 @@ inductive Outcome where
   | failed
   /-- The case could not be set up: its manifest, its files, its edits or its Challenge. -/
   | invalid
-  /-- The lint found code that runs or declares syntax while Lean elaborates, or an import outside
-  the approved core and the implementation, in the case's Lean text; nothing was built. -/
+  /-- The lint found code that runs or declares syntax while Lean elaborates, an import outside
+  the approved core and the implementation, or a name outside the namespaces the text may use, in
+  the case's Lean text; nothing was built. -/
   | refused
   deriving Repr, DecidableEq
 
