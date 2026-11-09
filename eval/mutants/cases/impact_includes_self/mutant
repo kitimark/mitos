@@ -1,0 +1,5 @@
+why=Seeds the affected list with the changed repo, so it reports itself as affected without a cycle.
+breaks=impact_correct
+file=Mitos/Impl/Impact.lean
+find=impactGo x es []
+replace=impactGo x es [x]

@@ -1,0 +1,5 @@
+why=Inverts the unresolved test, so requirements with a provider are listed as unresolved and those without one vanish.
+breaks=resolve_unresolved_exact resolve_total
+file=Mitos/Impl/Resolve.lean
+find=(providers fs r).isEmpty
+replace=!(providers fs r).isEmpty

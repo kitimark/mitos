@@ -1,0 +1,5 @@
+why=Asks that some assumption, not every one, is free of AI proposals, so an edge on an AI-proposed requirement is confirmed.
+breaks=resolve_status_honest
+file=Mitos/Impl/Resolve.lean
+find=assumes.all (fun a => !a.isAI)
+replace=assumes.any (fun a => !a.isAI)

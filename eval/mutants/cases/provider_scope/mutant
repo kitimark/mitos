@@ -1,0 +1,5 @@
+why=Takes the edge's scope from the provision, so a dev dependency is reported as a runtime one.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=scope := r.fact.scope
+replace=scope := p.fact.scope

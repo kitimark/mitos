@@ -1,0 +1,5 @@
+why=Looks up providers for every fact, not only requirements, so a provision gets an edge to itself.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=  fs.filter (matchesB r)
+replace=  fs.filter fun p => p.fact.kind == .provides && p.fact.ident == r.fact.ident

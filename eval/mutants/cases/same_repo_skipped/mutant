@@ -1,0 +1,5 @@
+why=Skips providers in the requirer's own repo, so a requirement met inside its repo gets no edge and is reported as unresolved.
+breaks=resolve_complete resolve_unresolved_exact
+file=Mitos/Impl/Resolve.lean
+find=  fs.filter (matchesB r)
+replace=  fs.filter fun p => matchesB r p && p.repo != r.repo

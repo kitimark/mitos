@@ -1,0 +1,5 @@
+why=Swaps the branches of the shared-origin test, so an edge between facts of different origins drops the provision's origin.
+breaks=resolve_assumptions_exact resolve_retract_exact
+file=Mitos/Impl/Resolve.lean
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=if r.origin = p.origin then [r.origin, p.origin] else [r.origin]

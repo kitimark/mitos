@@ -1,0 +1,17 @@
+name = "mitos-mutants"
+defaultTargets = ["mitos-mutants"]
+
+# A `sorry` or any other warning in the runner's proofs fails the build.
+[leanOptions]
+warningAsError = true
+
+[[require]]
+name = "mitos-core"
+path = "../../core"
+
+[[lean_lib]]
+name = "Mutants"
+
+[[lean_exe]]
+name = "mitos-mutants"
+root = "Main"

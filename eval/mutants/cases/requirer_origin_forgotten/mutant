@@ -1,0 +1,5 @@
+why=Records only the provision's origin, so retracting the requirement's declaration leaves its edge in place.
+breaks=resolve_assumptions_exact resolve_retract_exact
+file=Mitos/Impl/Resolve.lean
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=[p.origin]

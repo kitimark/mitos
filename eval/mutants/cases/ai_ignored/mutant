@@ -1,0 +1,5 @@
+why=Confirms any single-provider edge, even one that rests on an AI-proposed fact.
+breaks=resolve_status_honest
+file=Mitos/Impl/Resolve.lean
+find=if assumes.all (fun a => !a.isAI) && (providers fs r)
+replace=if (providers fs r)
