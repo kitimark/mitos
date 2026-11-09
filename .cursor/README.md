@@ -9,7 +9,7 @@ For compatibility it also discovers `.claude/skills/`.
 | File | When Cursor loads it | What it tells the agent |
 |---|---|---|
 | `rules/kitimark-mode.mdc` | every chat (`alwaysApply: true`) | roles, the paths the owner keeps, `spec-approved`, catch-up, no `AGENTS.md` |
-| `rules/process-pointers.mdc` | every chat (`alwaysApply: true`) | two-PR flow, lock files, `follow-up` and `process` labels |
+| `rules/process-pointers.mdc` | every chat (`alwaysApply: true`) | two-PR flow, lock files, `follow-up` and `process` labels, pstack yields to the mitos process |
 | `rules/lean-trust.mdc` | a `.lean` file is in context (`globs`, `alwaysApply: false`) | proved Lean, no `sorry` or `admit` to get green, no weakened cheat or theorem |
 | `skills/kitimark-mode/SKILL.md` | the agent judges the skill relevant, or someone types `/kitimark-mode` | read and follow the canonical skill and `docs/process.md` |
 
@@ -21,10 +21,29 @@ matches the parent folder. The format is the current Cursor docs:
 
 ## pstack
 
-Install pstack in Cursor with `/add-plugin pstack`. The plugin lives at
+pstack skills and agents are vendored in this directory, from
 [cursor/plugins `pstack/`](https://github.com/cursor/plugins/tree/main/pstack).
-This repository keeps its own port under `.claude/` (see `.claude/README.md`).
-The upstream plugin stays the copy Cursor installs.
+A Cursor session or a cloud agent on this repository loads them without
+`/add-plugin pstack`. Each upstream skill is `.cursor/skills/<name>/`, helper
+files included. The two upstream agents are `.cursor/agents/` (`poteto-agent`,
+`comment-sicko`). The plugin manifest loads those two trees and no rules.
+Upstream has no `kitimark-mode` skill.
+
+On mitos, kitimark mode and `docs/process.md` win over generic pstack guidance.
+That includes a playbook that says to merge, assign someone, or skip a check.
+`rules/process-pointers.mdc` states the same precedence. The Claude Code port
+under `.claude/` is a separate, edited copy (see `.claude/README.md`).
+
+Provenance, the license, and what was left out are in
+`skills/PSTACK_SOURCE.md`. Re-sync from the repository root:
+
+```bash
+.cursor/skills/resync-pstack.sh
+.cursor/skills/resync-pstack.sh <commit>
+```
+
+The script copies `pstack/skills/` and `pstack/agents/` again and leaves
+`skills/kitimark-mode/` in place.
 
 ## Same skill name twice
 

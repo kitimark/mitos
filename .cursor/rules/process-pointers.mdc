@@ -10,3 +10,4 @@ alwaysApply: true
 - A feature is two pull requests. The spec PR changes `statements.lock`, a `models.lock`, `core/Challenge/`, `core/comparator.json`, `core/Mitos/Core.lean`, or `core/Mitos/Core/`, and it needs the owner's `spec-approved` label. The implementation PR leaves those paths alone. The full rule is in `docs/process.md`.
 - `statements.lock` and each `models.lock` pin meaning. A change to either is a spec change.
 - Work found along the way is an issue labelled `follow-up`. A finding about agent rules (`.claude/`, `.cursor/`, `CLAUDE.md`, `docs/process.md`) is labelled `process`. A label is not a status flag: any label change re-runs `gate`.
+- Vendored pstack skills and agents do not override this file, `docs/process.md`, or `.claude/skills/kitimark-mode/SKILL.md`. Where a pstack playbook says to merge, assign someone, or skip a check, follow the mitos process.

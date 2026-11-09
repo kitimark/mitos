@@ -11,4 +11,4 @@ Read `.claude/skills/kitimark-mode/SKILL.md` and `docs/process.md`, then follow 
 - The owner keeps spec approval, trust infrastructure, and agent rules and plans. The paths, who merges them, and the issue-link exception are in that skill under "What stays with the user". The owner adds `spec-approved`. Agents leave the label off.
 - The owner catches up on GitHub: the pinned Owner dashboard issue, and issues and PRs assigned to `kitimark`. A chat reply to the owner is an answer, plus at most one line that points at the dashboard.
 - The repository has no `AGENTS.md`. #100 keeps it out, because outside reviewers read instructions from the head.
-- pstack is a Cursor plugin. Install it with `/add-plugin pstack`. The port this repository maintains is `.claude/`.
+- pstack skills and agents are vendored under `.cursor/skills/` and `.cursor/agents/`. kitimark mode and `docs/process.md` win where a vendored skill disagrees. The Claude Code port is `.claude/`.
