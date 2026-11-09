@@ -24,9 +24,10 @@
 #   - `pr create` or `pr new`, with any spaces, quotes, backslashes, commas or `$` between the
 #     words and any flags with a value (`gh pr create`, `gh -R o/r pr create`, `gh pr -R o/r
 #     create`, `gh "pr" create`, ['gh','pr','create']), or `createPullRequest`; or
-#   - the pulls list route (`/pulls` at the end of a path, before `?`, a quote or a space) together
-#     with the word POST, a field or body flag (-f, -F, -d, --field, --raw-field, --input, --data*,
-#     --json, --form) or a method flag (-X, --method, --request) whose value is not GET or HEAD.
+#   - the pulls list route (`/pulls` at the end of a path, before `?`, a quote that ends the path or
+#     a space; `pulls/"$n"` is one PR's route) together with the word POST, a field or body flag
+#     (-f, -F, -d, a short cluster such as -if, --field, --raw-field, --input, --data*, --json,
+#     --form, each with or without a quote after it) or a method flag (-X, --method, --request) whose value is not GET or HEAD.
 # These words anywhere in the command count, in a commit message, an echo or a grep as much as in a
 # real create, so such a command is blocked too. The message says to put the text in a file or
 # reword it. What the text check cannot see, a create built at run time (a route or a subcommand in
@@ -45,7 +46,7 @@ tool=$(jq -r '.tool_name // empty' <<<"$input" 2>/dev/null) || exit 0
 
 link_re='claude\.ai/code/session_'
 trailer_re='(^|\\n|["'\''])[[:space:]>]*Claude-Session:'
-open_pr_msg="Blocked: this command names a PR create: pr create or pr new, createPullRequest, or the pulls list route (/pulls) with POST, a field flag (-f, -F, --field, --input, ...) or a method other than GET. The session proxy adds a session link to the body of every PR create, so open a PR only with .claude/scripts/open-pr.sh --head <branch> --title <title> --body-file <file>, run as a command of its own; the script reads the body back and cleans it. The hook reads the text, not the shell, so a command that only mentions these words is blocked too: put the text in a file (git commit -F <file>, --body-file <file>, grep -f <file>), use the Grep tool, or reword it. A read of the pulls list takes its filters in the query string ('repos/<owner>/<repo>/pulls?state=open'), with no -f or -X."
+open_pr_msg="Blocked: this command names a PR create: pr create or pr new, createPullRequest, or the pulls list route (/pulls) with POST, a field flag (-f, -F, --field, --input, ...) or a method other than GET. The session proxy adds a session link to the body of every PR create, so open a PR only with .claude/scripts/open-pr.sh --head <branch> --title <title> --body-file <file>, run as a command of its own; the script reads the body back and cleans it. The hook reads the text, not the shell, so a command that only mentions these words is blocked too: put the text in a file that you write with the Write tool, not with a heredoc (a heredoc holds the same words and is blocked again), then use git commit -F <file>, --body-file <file> or grep -f <file>; or use the Grep tool, or reword it. A read of the pulls list takes its filters in the query string ('repos/<owner>/<repo>/pulls?state=open'), with no -f or -X. The hook reads the whole command, so another tool's flag in the same command as a pulls read (cut -d, grep -F, jq -f, a second gh call with -X or -f) blocks it too: split the command into two calls."
 
 block() { printf '%s\n' "$1" >&2; exit 2; }
 link_msg() { # where
@@ -96,9 +97,12 @@ if [ "$alone" = 0 ]; then
   flat=${cmd//$'\n'/ }
   grep -Eiq -- '(^|[^[:alnum:]_])pr[[:space:]'\''"\\,$]+(-[^[:space:]]*[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*(create|new)([^[:alnum:]_]|$)|createpullrequest' <<<"$flat" \
     && block "$open_pr_msg"
-  if grep -Eiq -- '/pulls/?($|[?#'\''"`[:space:];&|)<>\\])' <<<"$flat"; then
+  # The list route: /pulls, an optional /, then the end of the path. A quote ends it only if no word
+  # character, $, quote or backtick follows: `pulls/"$n"` is one PR's route, `"repos/o/r/pulls"` the list.
+  if grep -Eiq -- '/pulls/?($|[?#`[:space:];&|)<>\\]|['\''"]($|[^[:alnum:]_$`'\''"]))' <<<"$flat"; then
     grep -Eiq -- '(^|[^[:alnum:]_])post([^[:alnum:]_]|$)' <<<"$flat" && block "$open_pr_msg"
-    grep -Eq -- '(^|[[:space:]'\''"])(-[fFd]|(--field|--raw-field|--input|--data[a-z-]*|--json|--form)([[:space:]=]|$))' <<<"$flat" \
+    # A short cluster (`-if title=t`) counts, and a quote after a long flag does (`"--input"` in a list).
+    grep -Eq -- '(^|[[:space:]'\''"])(-[A-Za-z]*[fFd]|(--field|--raw-field|--input|--data[a-z-]*|--json|--form)([[:space:]='\''"]|$))' <<<"$flat" \
       && block "$open_pr_msg"
     # Each method flag's value, quotes taken out; any value but GET or HEAD counts, an empty or
     # variable one too.

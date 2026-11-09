@@ -130,6 +130,10 @@ check "a continued read of the pulls list" \
   "$(bash_in $'gh api \\\n  \'repos/o/r/pulls?state=open\' --jq \'.[].number\'')" allow
 check "gh pr create" \
   "$(bash_in "gh pr create --title t --body-file $work/clean.md")" block "open-pr.sh"
+check "the create message names the Write tool" \
+  "$(bash_in "gh pr create --title t --body-file $work/clean.md")" block "Write tool"
+check "the create message says to split a pulls read from another tool's flags" \
+  "$(bash_in "gh api 'repos/o/r/pulls?state=open' --jq '.[].title' | cut -d' ' -f1")" block "split the command into two calls"
 check "the pulls list is a read" \
   "$(bash_in "gh api 'repos/o/r/pulls?state=open&per_page=100' --jq '.[] | .number'")" allow
 # The hook reads text, so a field on the pulls list route blocks even with -X GET; a read takes its
@@ -240,6 +244,67 @@ check "curl -d to the pulls route" \
   "$(bash_in "curl -d @b.json https://api.github.com/repos/o/r/pulls")" block "open-pr.sh"
 check "requests.post to the pulls route" \
   "$(bash_in "python3 -c \"import requests; requests.post('https://api.github.com/repos/o/r/pulls', json={})\"")" block "open-pr.sh"
+# A quote after a long field flag (a list form of a script language, or a quoted shell word) or a
+# short flag cluster must not end the match (round 4, B1).
+check "gh api route with a quoted --input" \
+  "$(bash_in 'gh api repos/o/r/pulls "--input" q.json')" block "open-pr.sh"
+check "gh api route with a single-quoted --input" \
+  "$(bash_in "gh api repos/o/r/pulls '--input' q.json")" block "open-pr.sh"
+check "gh api route with a quoted --field" \
+  "$(bash_in 'gh api repos/o/r/pulls "--field" title=t')" block "open-pr.sh"
+check "python subprocess list with --input" \
+  "$(bash_in "python3 -c 'import subprocess; subprocess.run([\"gh\",\"api\",\"repos/o/r/pulls\",\"--input\",\"q.json\"])'")" block "open-pr.sh"
+check "python subprocess list with --field" \
+  "$(bash_in "python3 -c 'import subprocess; subprocess.run([\"gh\",\"api\",\"repos/o/r/pulls\",\"--field\",\"title=t\"])'")" block "open-pr.sh"
+check "python subprocess list with --raw-field" \
+  "$(bash_in "python3 -c \"import subprocess; subprocess.run(['gh','api','repos/o/r/pulls','--raw-field','title=t'])\"")" block "open-pr.sh"
+check "python heredoc running a list with --input -" \
+  "$(bash_in $'python3 - <<\'EOF\'\nimport subprocess\nsubprocess.run(["gh","api","repos/o/r/pulls","--input","-"])\nEOF')" block "open-pr.sh"
+check "node execFileSync list with --input" \
+  "$(bash_in "node -e 'require(\"child_process\").execFileSync(\"gh\",[\"api\",\"repos/o/r/pulls\",\"--input\",\"q.json\"])'")" block "open-pr.sh"
+check "ruby system with --input" \
+  "$(bash_in "ruby -e 'system(\"gh\",\"api\",\"repos/o/r/pulls\",\"--input\",\"q.json\")'")" block "open-pr.sh"
+check "perl system with --input" \
+  "$(bash_in "perl -e 'system(\"gh\",\"api\",\"repos/o/r/pulls\",\"--input\",\"q.json\")'")" block "open-pr.sh"
+check "python subprocess list of curl with --json" \
+  "$(bash_in "python3 -c \"import subprocess; subprocess.run(['curl','--json','@q.json','https://api.github.com/repos/o/r/pulls'])\"")" block "open-pr.sh"
+check "python subprocess list of curl with --data-binary" \
+  "$(bash_in "python3 -c \"import subprocess; subprocess.run(['curl','--data-binary','@q.json','https://api.github.com/repos/o/r/pulls'])\"")" block "open-pr.sh"
+check "python subprocess list with --form" \
+  "$(bash_in "python3 -c \"import subprocess; subprocess.run(['curl','--form','a=b','https://api.github.com/repos/o/r/pulls'])\"")" block "open-pr.sh"
+check "gh api with -if glued before a field" \
+  "$(bash_in "gh api repos/o/r/pulls -if title=t -if head=h")" block "open-pr.sh"
+check "gh api with -iF glued before a field" \
+  "$(bash_in "gh api repos/o/r/pulls -iF body=@b.md")" block "open-pr.sh"
+# One case for each long flag, bare and with =, so that dropping one from the list fails a test.
+check "curl --json to the pulls route" \
+  "$(bash_in "curl --json @b.json https://api.github.com/repos/o/r/pulls")" block "open-pr.sh"
+check "curl --data-binary to the pulls route" \
+  "$(bash_in "curl --data-binary @b.json https://api.github.com/repos/o/r/pulls")" block "open-pr.sh"
+check "curl --form to the pulls route" \
+  "$(bash_in "curl --form a=b https://api.github.com/repos/o/r/pulls")" block "open-pr.sh"
+check "gh api --field= to the pulls route" \
+  "$(bash_in "gh api repos/o/r/pulls --field=title=t")" block "open-pr.sh"
+check "gh api --raw-field to the pulls route" \
+  "$(bash_in "gh api repos/o/r/pulls --raw-field title=t")" block "open-pr.sh"
+check "gh api --input to the pulls route" \
+  "$(bash_in "gh api repos/o/r/pulls --input q.json")" block "open-pr.sh"
+# A quote after /pulls ends the list route only when it ends the path; a PR number in quotes after
+# /pulls/ makes the route one PR's, as the process's own commands write it (round 4).
+check "a quoted pulls list route with -f still blocks" \
+  "$(bash_in 'gh api -X POST "repos/o/r/pulls" -f title=t')" block "open-pr.sh"
+check "a single-quoted pulls list route with -f still blocks" \
+  "$(bash_in "gh api -X POST 'repos/o/r/pulls' -f title=t")" block "open-pr.sh"
+check "a pulls list route with a trailing slash and a quote still blocks" \
+  "$(bash_in 'gh api "repos/o/r/pulls/" -f title=t')" block "open-pr.sh"
+check "a PATCH on pulls/\"\$n\" with a body file passes" \
+  "$(bash_in "gh api -X PATCH repos/kitimark/mitos/pulls/\"\$n\" -F body=@$work/clean.md")" allow
+check "a PATCH on 'pulls/'\"\$n\" with a body file passes" \
+  "$(bash_in "gh api -X PATCH 'repos/kitimark/mitos/pulls/'\"\$n\" -F body=@$work/clean.md")" allow
+check "the merge PUT on pulls/\"\$pr\"/merge passes" \
+  "$(bash_in "gh api -X PUT repos/kitimark/mitos/pulls/\"\$pr\"/merge -f merge_method=rebase -f sha=\"\$head\"")" allow
+check "a review reply on pulls/\"\$n\"/comments/\"\$c\"/replies passes" \
+  "$(bash_in "gh api repos/kitimark/mitos/pulls/\"\$n\"/comments/\"\$c\"/replies -F body=@$work/clean.md")" allow
 # open-pr.sh run alone passes whatever its title says; run with anything else, it does not.
 check "open-pr.sh alone with a title that names gh pr create" \
   "$(bash_in ".claude/scripts/open-pr.sh --head h --title 'kitimark-mode: block gh pr create' --body-file $work/clean.md")" allow
@@ -253,6 +318,18 @@ check "open-pr.sh with gh pr create in a \$( ) title" \
   "$(bash_in ".claude/scripts/open-pr.sh --head h --title \"\$(gh pr create --fill)\" --body-file b.md")" block "open-pr.sh"
 check "open-pr.sh with gh pr create in a backtick title" \
   "$(bash_in ".claude/scripts/open-pr.sh --head h --title \"\`gh pr create --fill\`\" --body-file b.md")" block "open-pr.sh"
+# Each character that ends the open-pr.sh exemption has its own case, holding no other excluded
+# character, so a hook that drops one of them fails exactly one case (round 4, B2).
+check "open-pr.sh then ; gh pr create" \
+  "$(bash_in ".claude/scripts/open-pr.sh --head h --title t --body-file b.md; gh pr create --fill")" block "open-pr.sh"
+check "open-pr.sh piped to gh pr create" \
+  "$(bash_in ".claude/scripts/open-pr.sh --head h --title t --body-file b.md | gh pr create --fill")" block "open-pr.sh"
+check "open-pr.sh with a <( ) process substitution" \
+  "$(bash_in ".claude/scripts/open-pr.sh --head h --title t --body-file <(gh pr create --fill)")" block "open-pr.sh"
+check "open-pr.sh with a >( ) process substitution" \
+  "$(bash_in ".claude/scripts/open-pr.sh --head h --title t --body-file b.md >(gh pr create --fill)")" block "open-pr.sh"
+check "open-pr.sh then a curl --json create" \
+  "$(bash_in ".claude/scripts/open-pr.sh --head h --title t --body-file b.md; curl --json @b.json https://api.github.com/repos/o/r/pulls")" block "open-pr.sh"
 check "open-pr.sh after a cd, with a title that names gh pr create" \
   "$(bash_in "cd /x && .claude/scripts/open-pr.sh --head h --title 'block gh pr create' --body-file b.md")" block "open-pr.sh"
 check "open-pr.sh by a path with a variable, with a title that names gh pr create" \
