@@ -1,6 +1,6 @@
 why=The known gap assumptions_dedupe_dropped as a breaks= case, plus a resolve that reads the case's own file with include_str and turns bogus when it is there: the refutation run, which holds the file, judges a resolver the gate's run never built.
 breaks=resolve_assumptions_exact
-rejects=holes
+rejects=lint
 file=Mitos/Impl/Resolve.lean
 find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
 replace=[r.origin, p.origin]

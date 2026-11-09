@@ -7,22 +7,25 @@ import Mutants
 Run from the repository root: `lake --dir eval/mutants exe mitos-mutants [--paranoid] [<case>...]`.
 
 For each case in `eval/mutants/cases/`, it applies the case's edits to a copy of `core/` (sources
-only, no build outputs) and judges it with the sandboxed `lake comparator`, as
-`Mutants.Verdict` describes: the hole run, the gate's run, then the values or the refutation run.
-Each run gets a fresh copy, which is removed afterwards. The pure parts (manifest, edits, the
-generated Challenges and solution modules, verdict) are in `Mutants/` with their proofs; this file
-only reads, writes and runs.
+only, no build outputs), lints the case's Lean text (`Mutants.Lint`), and judges it with the
+sandboxed `lake comparator`, as `Mutants.Verdict` describes: the hole run, the gate's run, then the
+values or the refutation run. Each run gets a fresh copy, which is removed afterwards. The pure
+parts (manifest, edits, lint decisions, the generated Challenges and solution modules, verdict) are
+in `Mutants/` with their proofs; this file only reads, parses, writes and runs.
 -/
 
 open Mutants Lean
 
 def usage : String := "usage: mitos-mutants [--paranoid] [--keep] [<case>...]
        mitos-mutants --prepare <dir> <case>...
-  Run from the repository root. Judges every case in eval/mutants/cases/, or the named ones, with
-  the sandboxed lake comparator. --paranoid also runs the external kernels. --keep keeps the
-  workspaces. Logs go to .lake/mutants/. Exit 0: every case as expected; 1: not; 2: could not run.
+  Run from the repository root. Lints each case's Lean text, then judges every case in
+  eval/mutants/cases/, or the named ones, with the sandboxed lake comparator. --paranoid also runs
+  the external kernels. --keep keeps the workspaces. Logs go to .lake/mutants/. Exit 0: every case
+  as expected; 1: not; 2: could not run.
   --prepare writes each named case's workspaces to <dir>/<case>/ (refutation or values run) and
-  <dir>/<case>.holes/ (hole run), and judges nothing.
+  <dir>/<case>.holes/ (hole run), and judges nothing; it writes none for a case the lint refuses.
+  REFUSED BY LINT: the case's Lean text holds code that runs or declares syntax while Lean
+  elaborates it, or imports a module outside the approved core and the implementation.
   UNBOUND: the mutant's implementation alone does not build the approved definition holes, or the
   gate accepts proofs that are not about them."
 
@@ -124,12 +127,30 @@ run, the files the values run adds to it, and for a `breaks=` case the files the
 adds to it. -/
 structure Prepared where
   mutant     : Mutant
+  /-- What the lint found in the case's Lean text (`Mutants.Lint`); nothing is built unless it is
+  empty. -/
+  lint       : List String
   holes      : List (String × String)
   approved   : List (String × String)
   values     : List (String × String)
   refutation : Option (List (String × String))
 
-def prepare (a : Approved) (casesDir : System.FilePath) (name : String) :
+/-- What the lint finds in a case's Lean text: each `replace=` text as plain text, each file the
+edits change as a whole (`Lint.targets`), and the case's `Refute.lean`. -/
+def lintCase (env : Environment) (m : Mutant) (files : List (String × String))
+    (refute : Option String) : ExceptT String IO (List String) := do
+  let mut found := #[]
+  for e in m.edits do
+    for w in Lint.replaceProblems e.replace do
+      found := found.push s!"mutant: replace= in {e.file}: {w}"
+  for (p, k) in Lint.targets m do
+    let some txt := files.lookup p | throw s!"{p}: no such file in core/"
+    found := found ++ (← Lint.check env k s!"core/{p} (edited)" txt)
+  if let some src := refute then
+    found := found ++ (← Lint.check env .refute "Refute.lean" src)
+  return found.toList
+
+def prepare (env : Environment) (a : Approved) (casesDir : System.FilePath) (name : String) :
     ExceptT String IO Prepared := do
   let dir := casesDir / name
   unless ← dir.isDir do throw "no such case directory"
@@ -147,6 +168,11 @@ def prepare (a : Approved) (casesDir : System.FilePath) (name : String) :
   let files ← match applyEdits a.files m.edits with
     | .ok fs => pure fs
     | .error e => throw e
+  let refuteSrc ← match m.expect with
+    | .breaks _ => some <$> IO.FS.readFile (dir / "Refute.lean")
+    | .survives _ => pure none
+  -- Before anything is built: the case's Lean text runs no code and declares no syntax.
+  let lint ← lintCase env m files refuteSrc
   -- The hole run's core: no `Mitos/Proofs/`, no file of the case, only the implementation edits
   -- (`Mutants.holeCore_spec`).
   let core ← match holeCore a.files m with
@@ -160,30 +186,32 @@ def prepare (a : Approved) (casesDir : System.FilePath) (name : String) :
   let values := [("Challenge/Mutant.lean", "\n".intercalate (approvedByValue impls a.challenge)),
     ("values.json", valuesConfig a)]
   match m.expect with
-  | .survives _ => return { mutant := m, holes, approved := files, values, refutation := none }
+  | .survives _ => return { mutant := m, lint, holes, approved := files, values, refutation := none }
   | .breaks ts =>
     let chal ← match refutation impls a.defs a.challenge ts with
       | .ok ls => pure ("\n".intercalate ls)
       | .error e => throw e
     let extra := [("Challenge/Mutant.lean", chal),
-      ("Mitos/Proofs/RefuteCase.lean", ← IO.FS.readFile (dir / "Refute.lean")),
+      ("Mitos/Proofs/RefuteCase.lean", refuteSrc.getD ""),
       ("Mitos/Proofs/Refute.lean", refutationSolution a.defs),
       ("mutant.json", refutationConfig a ts)]
-    return { mutant := m, holes, approved := files, values, refutation := some extra }
+    return { mutant := m, lint, holes, approved := files, values, refutation := some extra }
 
 /-- A case's log files, newest run first. -/
 def caseLogs (logDir : System.FilePath) (name : String) : List System.FilePath :=
   ["refutation", "values", "approved", "holes"].map fun s => logDir / s!"{name}.{s}.log"
 
-def runCase (cfg : Config) (a : Approved) (casesDir logDir : System.FilePath) (name : String) :
-    IO Judged := do
+def runCase (cfg : Config) (env : Environment) (a : Approved) (casesDir logDir : System.FilePath)
+    (name : String) : IO Judged := do
   -- Logs from an earlier run must not be read as this one's.
   for log in caseLogs logDir name do
     if ← log.pathExists then IO.FS.removeFile log
-  let p ← match ← (prepare a casesDir name).run with
+  let p ← match ← (prepare env a casesDir name).run with
     | .ok p => pure p
     | .error e => return .invalid e
   let ran := Judged.ran p.mutant.expect p.mutant.rejects
+  -- A case the lint finds anything in is not built at all.
+  unless p.lint.isEmpty do return ran { lint := p.lint }
   let holes ← judge cfg a.toolchain p.holes (some "holes.json") (logDir / s!"{name}.holes.log")
   if holes != .accepted then return ran { holes }
   let approved ← judge cfg a.toolchain p.approved none (logDir / s!"{name}.approved.log")
@@ -210,13 +238,17 @@ def writeFiles (toolchain : String) (dir : System.FilePath) (files : List (Strin
 /-- Writes each case's workspaces without judging them, so a case's author can build them:
 `<out>/<case>/` is the refutation run's for a `breaks=` case (`lake build Mitos.Proofs.Refute`
 there) and the values run's for a `survives=` case; `<out>/<case>.holes/` is the hole run's. -/
-def writeWorkspaces (a : Approved) (casesDir out : System.FilePath) (cases : List String) :
-    IO UInt32 := do
+def writeWorkspaces (env : Environment) (a : Approved) (casesDir out : System.FilePath)
+    (cases : List String) : IO UInt32 := do
   let mut code := 0
   for name in cases do
-    match ← (prepare a casesDir name).run with
+    match ← (prepare env a casesDir name).run with
     | .error e => IO.eprintln s!"{clean name}: {clean e}"; code := 1
     | .ok p =>
+      unless p.lint.isEmpty do
+        for l in p.lint do IO.eprintln s!"{clean name}: lint: {clean l}"
+        code := 1
+        continue
       writeFiles a.toolchain (out / name) (p.approved ++ p.refutation.getD p.values)
       writeFiles a.toolchain (out / s!"{name}.holes") p.holes
       IO.println s!"{clean name}: {out / name}"
@@ -235,6 +267,7 @@ def outcomeText : Outcome → String
   | .unbound => "UNBOUND"
   | .failed => "NO JUDGMENT"
   | .invalid => "INVALID"
+  | .refused => "REFUSED BY LINT"
 
 def pad (s : String) (n : Nat) : String := s ++ String.ofList (List.replicate (n - s.length) ' ')
 
@@ -270,9 +303,11 @@ def main (args : List String) : IO UInt32 := do
   let a ← match ← (readApproved root).run with
     | .ok a => pure a
     | .error e => IO.eprintln s!"mitos-mutants: {clean e}"; return 2
+  let env ← try Lint.syntaxEnv catch e =>
+    IO.eprintln s!"mitos-mutants: cannot load Lean's syntax for the lint: {clean (toString e)}"; return 2
   if let some out := cfg.prepare then
     if cfg.cases.isEmpty then IO.eprintln usage; return 2
-    return ← writeWorkspaces a casesDir out cfg.cases
+    return ← writeWorkspaces env a casesDir out cfg.cases
   let cases ← if cfg.cases.isEmpty then do
       unless ← casesDir.isDir do IO.eprintln "mitos-mutants: no eval/mutants/cases/"; return 2
       pure (((← casesDir.readDir).map (·.fileName)).qsort (· < ·)).toList
@@ -288,22 +323,29 @@ def main (args : List String) : IO UInt32 := do
   let mut results := #[]
   for name in cases do
     let t0 ← IO.monoMsNow
-    let j ← runCase cfg a casesDir logDir name
+    let j ← runCase cfg env a casesDir logDir name
     let r : Result := { name, judged := j }
     let secs := ((← IO.monoMsNow) - t0 + 50) / 100
     let mark := if r.ok then "" else "  <-- FAIL"
     let why := match j with | .invalid w => s!" ({clean w})" | _ => ""
     IO.println s!"{pad (clean name) w}{pad (outcomeText r.outcome) 23}{pad s!"{secs / 10}.{secs % 10}s" 8}{expectText j}{why}{mark}"
-    -- The first error line of the case's last comparator run: for a case that did not go as
-    -- expected, and for every cheat case, as the evidence of its rejection.
+    -- The evidence of a rejection: for a case that did not go as expected, and for every cheat
+    -- case, the lint's first finding, or the first error line of the case's last comparator run.
     let cheat := j matches .ran _ (some _) _
+    if let .ran _ _ x := j then
+      if let l :: more := x.lint then
+        let rest := if more.isEmpty then "" else s!" (and {more.length} more)"
+        IO.println s!"{pad "" w}{clean (l.take 150).toString}{rest}"
     if cheat || (!r.ok && (r.outcome == .rejected || r.outcome == .failed || r.outcome == .unbound)) then
       for log in caseLogs logDir name do
         if ← log.pathExists then
           let lines := (← IO.FS.readFile log).splitOn "\n"
-          -- The exporter's panic names a constant the solution lacks, such as a hidden hole.
+          -- The exporter's panic names a constant the solution lacks, such as a hidden hole; else
+          -- Lean's first error in a file (a bad import, say), or the comparator's verdict.
           let has (pat : String) (l : String) := (splitFirst pat.toList l.toList).isSome
-          if let some l := lines.find? (has "PANIC") <|> lines.find? (has "error") then
+          let err (l : String) := l.startsWith "error:"
+          if let some l := lines.find? (has "PANIC") <|> lines.find? (fun l => err l && has ".lean:" l) <|>
+              lines.find? err then
             IO.println s!"{pad "" w}{clean (l.take 150).toString}"
           break
     results := results.push r

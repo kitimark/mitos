@@ -9,7 +9,7 @@ Each case `eval/mutants/cases/<name>/` has a manifest file `mutant`, one `key=va
 ```
 why=<the bug, one line>
 breaks=<Challenge theorem> <Challenge theorem> ...     or     survives=<what no theorem states>
-rejects=<holes | values | refutation>                         (a cheat case only)
+rejects=<lint | holes | values | refutation>                  (a cheat case only)
 file=<path under core/, e.g. Mitos/Impl/Resolve.lean>
 find=<text that occurs exactly once in that file>
 replace=<its replacement>
@@ -25,7 +25,9 @@ replace=<its replacement>
   theorem states. At least one edit must touch `Mitos/Impl/`.
 - **`rejects=<stage>`**, with `breaks=` or `survives=`: a **cheat case**. Its claim must not be
   counted, and the runner must reject it at the named stage (`Mutants.Verdict`, `Stage.rejected`):
-  `holes` (the mutated implementation alone does not build the approved holes), `values` (with a
+  `lint` (the case's Lean text holds code that runs or declares syntax while Lean elaborates it,
+  `Mutants.Lint`; nothing is built), `holes` (the mutated implementation alone does not build the
+  approved holes), `values` (with a
   `survives=` claim: the gate accepts proofs that are not about the mutant's holes) or `refutation`
   (with a `breaks=` claim: the refutation is not about the mutant's holes). Each such case pins one
   check of the runner: without the check, its claim would be counted.
@@ -49,6 +51,8 @@ def Expect.theorems : Expect → List String
 
 /-- The run at which a cheat case must be rejected (`Mutants.Verdict`). -/
 inductive Stage where
+  /-- The lint of the case's Lean text (`Mutants.Lint`), before anything is built. -/
+  | lint
   /-- The hole run: the mutated implementation alone, against the approved definition holes. -/
   | holes
   /-- The approved Challenge with the holes as values, after the gate accepted the mutant. -/
@@ -58,12 +62,14 @@ inductive Stage where
   deriving Repr, DecidableEq
 
 def Stage.ofString? : String → Option Stage
+  | "lint" => some .lint
   | "holes" => some .holes
   | "values" => some .values
   | "refutation" => some .refutation
   | _ => none
 
 def Stage.name : Stage → String
+  | .lint => "lint"
   | .holes => "holes"
   | .values => "values"
   | .refutation => "refutation"
@@ -109,6 +115,7 @@ def Mutant.implEdits (m : Mutant) : List Edit :=
 /-- A stage at which a case with this claim can be rejected: the refutation run follows a
 `breaks=` claim, and only a `survives=` case can repair the proofs the values run judges. -/
 def Stage.fits : Stage → Expect → Bool
+  | .lint, _ => true
   | .holes, _ => true
   | .values, .survives _ => true
   | .refutation, .breaks _ => true
@@ -195,7 +202,7 @@ def rejectsOf : List String → Except String (Option Stage)
   | [] => .ok none
   | [v] => match Stage.ofString? v with
     | some s => .ok (some s)
-    | none => .error s!"rejects= names {v}, not holes, values or refutation"
+    | none => .error s!"rejects= names {v}, not lint, holes, values or refutation"
   | _ => .error "more than one rejects= line"
 
 /-- The `why=` value and the expectation. -/
@@ -299,6 +306,8 @@ theorem inArea_head {area path : String} (h : inArea area path = true) :
          edits := [⟨"Mitos/Impl/Resolve.lean", "a", "b"⟩] }
 #guard (parse "why=w\nsurvives=g\nrejects=holes\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption.map (·.rejects) ==
   some (some .holes)
+#guard (parse "why=w\nbreaks=t\nrejects=lint\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption.map (·.rejects) ==
+  some (some .lint)
 #guard (parse "why=w\nbreaks=t\nrejects=values\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption == none
 #guard (parse "why=w\nsurvives=g\nrejects=refutation\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption == none
 #guard (parse "why=w\nbreaks=t\nrejects=gate\nfile=Mitos/Impl/Resolve.lean\nfind=a\nreplace=b").toOption == none

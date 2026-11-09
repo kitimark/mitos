@@ -1,0 +1,12 @@
+why=The known gap assumptions_dedupe_dropped as a breaks= case, plus an implementation that imports Lean and runs code at elaboration (run_cmd) to declare a bogus resolve only when the case's file is in the workspace (review on #86, round 2, opus m1).
+breaks=resolve_assumptions_exact
+rejects=lint
+file=Mitos/Impl/Resolve.lean
+find=import Mitos.Core
+replace=import Mitos.Core import Lean
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=[r.origin, p.origin]
+find=def resolve : Resolver := fun fs =>
+replace=def realResolve : Resolver := fun fs =>
+find=end Mitos.Impl
+replace=set_option hygiene false in run_cmd (do if (← System.FilePath.pathExists "Mitos/Proofs/RefuteCase.lean") then Lean.Elab.Command.elabCommand (← `(def resolve : Resolver := fun _ => { edges := [{ src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, req := 0, prov := 1, assumes := [], status := .inferred }], unresolved := [] })) else Lean.Elab.Command.elabCommand (← `(def resolve : Resolver := realResolve))) end Mitos.Impl

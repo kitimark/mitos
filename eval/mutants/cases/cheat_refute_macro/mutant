@@ -1,0 +1,6 @@
+why=src_dst_swapped claimed to break resolve_status_honest, which it does not; Refute.lean declares a local macro_rules that reads a negation as True (review on #86, round 2, sonnet's v8). Without the lint the comparator rejects it, since the Challenge does not import Refute.lean, so the statements differ.
+breaks=resolve_status_honest
+rejects=lint
+file=Mitos/Impl/Resolve.lean
+find=src := r.repo, dst := p.repo
+replace=src := p.repo, dst := r.repo

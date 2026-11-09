@@ -1,0 +1,8 @@
+why=The known gap assumptions_dedupe_dropped as a breaks= case, plus the macro_rules of cheat_impl_macro, so the gap would read as refuted, also with --paranoid (review on #86, round 2, opus B1).
+breaks=resolve_assumptions_exact
+rejects=lint
+file=Mitos/Impl/Resolve.lean
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=[r.origin, p.origin]
+find=end Mitos.Impl
+replace=end Mitos.Impl macro_rules | `(Mitos.Spec.AssumptionsExact $x) => `(False)
