@@ -23,7 +23,7 @@ open Cheats
 
 structure Options where
   /-- How many runs may run at once. -/
-  jobs : Nat := 3
+  jobs : Nat := 4
   /-- Seconds a run may take before the runner stops it. -/
   timeout : Nat := 600
   cases : List String := []

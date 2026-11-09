@@ -44,7 +44,12 @@ escalation: hint → automation → stronger model → pair → split → revisi
   over these prints.
 - **Scheduler.** FIFO over a fixed order: heavy jobs, then runs expected to reach the comparator,
   then the rest. A heavy job starts only when nothing runs, and nothing starts while it runs.
-  `--jobs` default and timing: see the PR.
+  The short runs go last, so the slots stay full to the end.
+- **`--jobs` default: 4, from measurements.** On a 4-core, 15 GB machine, on the 46 cases but
+  `model_include_str_src`: `run.sh` 1582 s; `--jobs` 2, 3, 4: 765, 555, 432 s, each run 0.97,
+  1.05, 1.08 times its time alone. On CI (4 vCPU, 15 GiB) at `--jobs 3`: 549 s against `run.sh`'s
+  1023 s in the same job; the heavy run takes 118 s alone, and the other runs, 2.98 at a time, each
+  take 1.43 times their time alone. The PR reports CI at 3 and 4, and the default follows that.
 - **Migration.** CI runs both runners and diffs their tables. `run.sh`, the comparison and the
   nightly job's `run.sh` step go in a follow-up PR once a CI run shows the tables match.
 
