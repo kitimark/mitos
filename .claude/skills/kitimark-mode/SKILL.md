@@ -38,9 +38,10 @@ root. It does its brief's work itself and follows the parts of this file for its
 ## Roles
 
 Set `model` and `effort` on every Agent call from this table. This is the explicit request the
-Agent tool needs before it takes either field. Only the root spawns agents. A subagent spawns one
-only after a probe in the current environment shows it can, because a subagent's toolset may have
-no Agent tool.
+Agent tool needs before it takes either field. Run every spawn in the background
+(`run_in_background: true`). Only the root spawns agents. A subagent spawns one only after a
+probe in the current environment shows it can, because a subagent's toolset may have no Agent
+tool.
 
 | Role | Job | `subagent_type` | `model` | `effort` |
 |---|---|---|---|---|
@@ -51,8 +52,9 @@ no Agent tool.
 | Researcher | reads docs or prior art, or diagnoses a failure, and edits nothing | `general-purpose` | `sonnet`, or `opus` for a judgment call | `medium`, or `high` on `opus` |
 
 - **Briefs.** Each brief states the user's goal, the task, the paths the agent may write, the
-  evidence that proves the job done, and where the agent stops. A worktree spawn names the commit
-  to start from, because an isolated worktree starts from the default branch.
+  evidence that proves the job done, and where the agent stops. A worktree spawn sets
+  `isolation: "worktree"` and names the commit to start from, because an isolated worktree starts
+  from the default branch.
 - **Other spawns.** A spawn whose model a routed skill (`how`, `swarm`, `reflect` and the like)
   or an agent file names keeps that model and takes the closest row's `effort`. Under the
   **poteto-mode** skill, `poteto-agent` replaces `general-purpose` for PR owners. If the Agent

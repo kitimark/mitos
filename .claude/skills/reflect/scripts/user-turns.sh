@@ -2,7 +2,8 @@
 # The user's own turns in a Claude Code transcript, one JSON object per line: {"t": <timestamp>,
 # "c": <text>}. A transcript's user lines also hold tool results, task notifications (`<task...`),
 # messages from other sessions (`Another Claude ...`) and local command output (`<local-command...`);
-# none of those are the user's words, so they are left out, and so are lines marked isMeta.
+# none of those are the user's words, so they are left out, and so are lines marked isMeta and the
+# model-written summaries a compaction leaves (isCompactSummary).
 #
 # Usage: user-turns.sh <transcript.jsonl> [since]
 # `since` is a timestamp such as 2026-11-09T00:00:00Z; only turns at or after it are printed,
@@ -14,6 +15,7 @@ set -u
 command -v jq >/dev/null 2>&1 || { echo "user-turns.sh: jq is not installed" >&2; exit 2; }
 jq -R -c --arg since "${2:-}" '
   fromjson? | select(type == "object" and .type == "user" and (.isMeta | not))
+  | select(.isCompactSummary | not)
   | select($since == "" or ((.timestamp // "") | .[0:19]) >= ($since | .[0:19]))
   | (.message.content
      | if type == "string" then .

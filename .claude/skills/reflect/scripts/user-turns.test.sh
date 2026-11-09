@@ -16,6 +16,7 @@ t=$work/t.jsonl
   jq -cn '{type:"user", timestamp:"2026-11-09T00:17:00Z", message:{content:"<local-command-stdout>Compacted </local-command-stdout>"}}'
   jq -cn '{type:"user", timestamp:"2026-11-09T00:18:00Z", isMeta:true, message:{content:"<local-command-caveat>The command below</local-command-caveat>"}}'
   jq -cn '{type:"user", timestamp:"2026-11-09T00:19:00Z", isMeta:true, message:{content:"a meta line"}}'
+  jq -cn '{type:"user", timestamp:"2026-11-09T00:20:00Z", isMeta:null, isCompactSummary:true, isVisibleInTranscriptOnly:true, message:{content:"This session is being continued from a previous conversation that ran out of context."}}'
   echo 'not json at all'
   jq -cn '{type:"user", timestamp:"2026-11-09T09:00:00Z", message:{content:[{type:"text", text:"approve all"}, {type:"image", source:{}}]}}'
   jq -cn '{type:"user", timestamp:"2026-11-09T09:30:00Z", message:{content:"  <task-notification>indented</task-notification>"}}'
@@ -37,6 +38,8 @@ is "since after every turn" "$("$script" "$t" 2026-11-10T00:00:00Z)" ""
 jq -cn '{type:"user", timestamp:"2026-11-09T11:00:00.500Z", message:{content:"right at the cutoff"}}' >"$work/frac.jsonl"
 is "a turn with a fraction of a second at the cutoff second" "$("$script" "$work/frac.jsonl" 2026-11-09T11:00:00Z)" \
   '{"t":"2026-11-09T11:00:00.500Z","c":"right at the cutoff"}'
+jq -cn '{type:"user", timestamp:"2026-11-09T12:00:00Z", isCompactSummary:true, message:{content:[{type:"text", text:"This session is being continued from a previous conversation."}]}}' >"$work/compact.jsonl"
+is "a compaction summary is not a user turn" "$("$script" "$work/compact.jsonl")" ""
 "$script" >/dev/null 2>&1; is "no argument: exit 2" "$?" 2
 "$script" "$work/none.jsonl" >/dev/null 2>&1; is "a missing file: exit 2" "$?" 2
 is "an empty file: no output" "$(: >"$work/e.jsonl"; "$script" "$work/e.jsonl")" ""

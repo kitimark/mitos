@@ -113,7 +113,7 @@ cursor=$(cat "$dir/cursor")
 # shellcheck disable=SC2016 # jq variables, not shell ones
 defs='
 def clean($n): tostring
-  | gsub("[\\p{Cf}͏ᅟᅠ឴឵᠋-᠏ㅤ︀-️ﾠ\\x{E0000}-\\x{E007F}\\x{E0100}-\\x{E01EF}]"; "")
+  | gsub("[\\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u3164\ufe00-\ufe0f\uffa0\\x{E0000}-\\x{E007F}\\x{E0100}-\\x{E01EF}]"; "")
   | gsub("[\\p{Cc}\\p{Zl}\\p{Zp}\\p{Zs}]+"; " ")
   | sub("^ "; "") | sub(" $"; "") | .[0:$n];
 def lst: if length == 0 then "-" else .[0:20] | join(",") end;
