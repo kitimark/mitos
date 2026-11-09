@@ -68,10 +68,12 @@ grep -Eq "$trailer_re" <<<"$cmd" && trailer_msg "this command"
 # continuation is joined first, then the command is split at && || ; | and $(. A quoted | or ;
 # splits too, which at worst moves a flag away from its route. The route may name the repository in
 # any form, such as `repos/$repo/pulls`. gh must start the simple command, after any assignments,
-# keywords and wrappers (env, timeout 60, xargs -I{}, bash -c '), so a commit message, an echo or a
-# grep that only names `gh pr create` or the route passes.
+# keywords, `bash -c '` or `eval`, or a wrapper with any arguments (`timeout -s KILL 60`, `sudo -u
+# x`, `xargs -I {}`), so a commit message, an echo or a grep that only names `gh pr create` or the
+# route passes.
 segments=$(sed -e ':a' -e '/\\$/{N;s/\\\n/ /;ba' -e '}' <<<"$cmd" | sed -E 's/(&&|\|\||;|\||\$\()/\n/g')
-lead='^[[:space:]({!]*((([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|if|then|else|elif|do|while|until|env|command|exec|nohup|time|sudo|xargs|timeout|-[^[:space:]]*|[0-9][0-9.]*[smhd]?)[[:space:]]+)|((ba|da|z)?sh[[:space:]]+-[A-Za-z]*c[[:space:]]+['\''"]?))*([^[:space:]'\''"]*/)?gh[[:space:]]+'
+wrap='env|command|exec|nohup|nice|stdbuf|setsid|time|sudo|doas|xargs|timeout'
+lead="^[[:space:]({!]*((([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|if|then|else|elif|do|while|until)[[:space:]]+)|(($wrap)([[:space:]]+[^[:space:]]+)*[[:space:]]+)|(((ba|da|z)?sh[[:space:]]+-[A-Za-z]*c|eval)[[:space:]]+['\"]?))*([^[:space:]'\"]*/)?gh[[:space:]]+"
 route_re='(^|[[:space:]])['\''"]?/?repos/[^[:space:]'\''"]+/pulls/?(\?[^[:space:]'\''"]*)?['\''"]?([[:space:]]|$)'
 while IFS= read -r seg; do
   grep -Eq "$gh_re" <<<"$seg" || continue
