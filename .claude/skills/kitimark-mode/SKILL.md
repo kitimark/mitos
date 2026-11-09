@@ -210,10 +210,13 @@ watcher's echo filter and the merge rule below rely on both.
   only when it is one line in a file that round already touches.
 - A verifier marks each finding blocking or minor. Only a blocking one fails the verdict, so a
   pass with minor findings starts no round.
-- **Round budget.** A PR gets two rounds. A round that only rebases, with the same content id
-  (see Verdicts), does not count. Before a third round starts, the root narrows or
-  splits the PR. The PR keeps its task's change and the blocking fixes, and the rest moves to
-  separate PRs or the follow-up issue. The third brief names what is left.
+- **Round budget.** A PR gets two rounds. A round in which its owner only rebases, a stack's
+  restack included, does not count when the new head keeps the content id (see Verdicts) of the
+  head the round started from, both from one build of `main`'s tool, with the parent PR's branch
+  in place of `origin/main` for a PR in a stack. That head still needs a verifier, as Verdicts
+  says. Before a third round starts, the root narrows or splits the PR. The PR keeps its task's
+  change and the blocking fixes, and the rest moves to separate PRs or the follow-up issue. The
+  third brief names what is left.
 
 ## Verdicts
 
@@ -227,26 +230,30 @@ watcher's echo filter and the merge rule below rely on both.
   gets an `opus` verifier at `xhigh` or above at every head that needs a verifier, so an
   `opus`-written one gets two. Trust-critical means the PR needs `spec-approved` or touches a
   trust-infrastructure path (see What stays with the user).
-- A verdict covers one head. Take the change's content id at each head with
-  `lake exe mitos-gate content-id origin/main <head>`, or with the parent PR's branch in place of
-  `origin/main` for a PR in a stack. Build and run the tool in a checkout of `origin/main`, such
-  as a worktree kept for it (`git worktree add --detach <dir> origin/main`, and after each
+- A verdict covers one head. A later head keeps it only when it only rebases: every push to the
+  PR's branch since the verified head is a force-push by `mitos-pr-updater[bot]`, the first one
+  from the verified head and each later one from the commit the one before it left, up to the
+  current head, and the two heads have the same content id. An owner's push in between stops the
+  carry even after the updater rebased it, because the content id binds where a hunk applies only
+  within one merge-base (#83). `mitos-gate carry` decides both, and only its exit 0 carries the
+  verdict: `gh api --paginate
+  "repos/{owner}/{repo}/activity?ref=refs/heads/<branch>&direction=desc&per_page=100"
+  --jq '.[] | [.timestamp, .activity_type, .actor.login, .before, .after] | @tsv' |
+  lake exe mitos-gate carry origin/main <verified-head> <head>`, with the branch and the head from
+  `gh api repos/{owner}/{repo}/pulls/<pr> --jq '.head.ref, .head.sha'`. The activity route lists
+  plain pushes too, which the PR timeline does not. Run the tool in a checkout of `origin/main`,
+  such as a worktree kept for it (`git worktree add --detach <dir> origin/main`, and after each
   `git fetch origin main`, `git -C <dir> checkout --detach origin/main`), never in the head being
-  compared, because a head that edits the tool would compute its own id. Fetch the PR's branch
-  too, and the parent branch for a stack, because the tool refuses a commit the clone lacks. Ids
-  from different builds of the tool are not comparable: compute the verified head's id and the
-  new head's id with the same build of `main`, and never compare an id with one an earlier build
-  printed. The id covers the exact diff from the merge-base outside `ops/runs/*.ndjson`,
-  whitespace included because Lean reads indentation, where in its file each hunk applies, and
-  the run-log lines the PR adds, wherever union put them. Git config does not change it
-  (`gate/MitosGate/ContentId.lean`). The tool refuses a run-log edit: it exits 1 and prints no
-  id, and then the verdict does not carry. A later head that only rebases, with the same content
-  id, keeps the verdict because the change is the same, even when the rebase moved `main`'s
-  run-log lines next to the PR's. Only rebases means the updater's rebase pushed it, not a PR
-  owner: the PR's timeline shows its force-push by `mitos-pr-updater[bot]` (`gh api --paginate
-  repos/{owner}/{repo}/issues/<pr>/timeline --jq '.[] | select(.event == "head_ref_force_pushed") |
-  [.actor.login, .commit_id] | @tsv'`). It still needs its own green `gate` because the base is
-  not. Any other new head needs a new verifier.
+  judged, because a head that edits the tool would judge itself. Fetch the branch and the verified
+  head first (`git fetch origin <branch> <verified-head>`), because the tool refuses a commit the
+  clone lacks. The content id (`lake exe mitos-gate content-id origin/main <head>`) covers the
+  exact diff from the merge-base outside `ops/runs/*.ndjson`, whitespace included because Lean
+  reads indentation, where in its file each hunk applies, and the run-log lines the PR adds,
+  wherever union put them. Git config does not change it (`gate/MitosGate/ContentId.lean`). Ids
+  from different builds are not comparable, and `carry` computes both with one. A carried head
+  still needs its own green `gate` because the base is not the same. No PR in a stack carries a
+  verdict, because the updater skips stacks: a stack needs a verifier at every head after a
+  restack. Any other new head needs a new verifier.
 - A conflict resolution is new content, not a rebase. A PR owner that resolved a conflict lists
   each resolved file in its report. The verifier at that head reads each resolution as new code
   against both sides, and confirms that every check either side added survives it. A check that
@@ -447,8 +454,8 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   carry on with an independent task. The comment starts with the `## Catch-up:` line (see Needs
   you), then has:
   - **Status:** each check and verdict at the current head, with its evidence. A verdict names
-    the head it covers, says whether later heads only rebase (the updater's rebase, with the same
-    content id) or change content, and names who gave it: a verifier agent and its model, a bot,
+    the head it covers, says whether later heads only rebase (`mitos-gate carry` exits 0, see
+    Verdicts) or change content, and names who gave it: a verifier agent and its model, a bot,
     or the root itself.
     Never call a bot's verdict or your own independent.
   - **Next steps:** numbered, with a `gh` command (one per code block) wherever one exists; say
