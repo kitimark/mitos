@@ -1,0 +1,9 @@
+why=A bug the theorems catch (src_dst_swapped) claimed as a known gap: the proof repair makes Mitos/Proofs/Resolve/Basic.lean declare a correct resolver of its own instead of importing Mitos.Impl.Resolve, so the gate's run accepts proofs about that one and the bug would read as a gap.
+survives=none: the proofs are about the proof module's own resolver, not the mutant's.
+rejects=values
+file=Mitos/Impl/Resolve.lean
+find=src := r.repo, dst := p.repo
+replace=src := p.repo, dst := r.repo
+file=Mitos/Proofs/Resolve/Basic.lean
+find=import Mitos.Impl.Resolve
+replace=import Mitos.Core namespace Mitos.Impl def providers (fs : List Located) (r : Located) : List Located := fs.filter (matchesB r) def assumptionsOf (r p : Located) : List Assumption := if r.origin = p.origin then [r.origin] else [r.origin, p.origin] def statusOf (fs : List Located) (r : Located) (assumes : List Assumption) : Status := if assumes.all (fun a => !a.isAI) && (providers fs r).length == 1 then .confirmed else .inferred def mkEdge (fs : List Located) (r p : Located) : Edge := { src := r.repo, dst := p.repo, ident := r.fact.ident, scope := r.fact.scope, req := r.id, prov := p.id, assumes := assumptionsOf r p, status := statusOf fs r (assumptionsOf r p) } def isRequirement (l : Located) : Bool := l.fact.kind == .requires def resolve : Resolver := fun fs => { edges := fs.flatMap fun r => (providers fs r).map (mkEdge fs r), unresolved := ((fs.filter isRequirement).filter fun r => (providers fs r).isEmpty).map (·.id) } end Mitos.Impl

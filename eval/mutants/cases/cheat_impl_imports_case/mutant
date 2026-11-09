@@ -1,0 +1,10 @@
+why=The known gap assumptions_dedupe_dropped as a breaks= case, plus an implementation that imports the case's own module and takes resolve and its refutation from there: the refutation run, which holds that module, judges code the case wrote, and a core the gate's run could not build.
+breaks=resolve_assumptions_exact
+rejects=holes
+file=Mitos/Impl/Resolve.lean
+find=import Mitos.Core
+replace=import Mitos.Proofs.RefuteCase
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=[r.origin, p.origin]
+find=def resolve : Resolver := fun fs =>
+replace=def resolve : Resolver := Mitos.Refute.bogusResolver theorem _root_.Mitos.Refute.resolve_assumptions_exact : ¬ Spec.AssumptionsExact resolve := Mitos.Refute.bogus_not_exact def realResolve : Resolver := fun fs =>

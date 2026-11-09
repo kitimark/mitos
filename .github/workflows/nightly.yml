@@ -40,7 +40,7 @@ jobs:
       - name: Build the mutant runner
         run: lake --dir eval/mutants build
 
-      - name: Every resolver mutant breaks a Challenge theorem (paranoid)
+      - name: Mutation testing (paranoid)
         shell: bash
         run: |
           status=0

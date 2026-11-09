@@ -212,6 +212,26 @@ theorem lookup_replaceFile_of_ne {files : List (String × String)} {path text p 
       simp only [this, Bool.false_eq_true, ite_false, List.lookup]
       split <;> simp_all
 
+/-- **Edits add and remove no file**: the paths are the same, in the same order. -/
+theorem applyEdits_paths :
+    ∀ {files out : List (String × String)} {es : List Edit},
+      applyEdits files es = .ok out → out.map (·.1) = files.map (·.1)
+  | files, out, [], h => by
+    simp only [applyEdits, Except.ok.injEq] at h
+    rw [h]
+  | files, out, e :: es, h => by
+    simp only [applyEdits] at h
+    split at h
+    · simp at h
+    · split at h
+      · simp at h
+      · rw [applyEdits_paths h]
+        simp only [replaceFile, List.map_map]
+        congr 1
+        funext f
+        simp only [Function.comp]
+        split <;> rfl
+
 /-- **Files no edit names are unchanged**, whatever the edits do to the others. -/
 theorem applyEdits_lookup {p : String} :
     ∀ {files out : List (String × String)} {es : List Edit},

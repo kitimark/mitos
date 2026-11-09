@@ -1,0 +1,6 @@
+why=The known gap assumptions_dedupe_dropped as a breaks= case; Refute.lean does not import Mitos.Impl.Resolve, declares a Mitos.Impl.resolve of its own and refutes that, so with holes compared by type only the gap would read as refuted.
+breaks=resolve_assumptions_exact
+rejects=refutation
+file=Mitos/Impl/Resolve.lean
+find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
+replace=[r.origin, p.origin]

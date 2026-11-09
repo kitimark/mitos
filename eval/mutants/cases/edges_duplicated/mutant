@@ -1,0 +1,8 @@
+why=Walks the facts twice, so the resolver emits every edge twice.
+survives=No theorem says an edge is emitted once: Sound, Complete and RetractExact speak of membership in the edge list, so a resolver that emits each edge twice meets them all (the multiplicity class of assumptions_dedupe_dropped, for edges; #101).
+file=Mitos/Impl/Resolve.lean
+find=edges := fs.flatMap fun r =>
+replace=edges := (fs ++ fs).flatMap fun r =>
+file=Mitos/Proofs/Resolve/Basic.lean
+find=  simp only [resolve, List.mem_flatMap, List.mem_map, mem_providers]
+replace=  simp only [resolve, List.mem_flatMap, List.mem_append, or_self, List.mem_map, mem_providers]
