@@ -6,6 +6,19 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
+# A new head of a PR (opened, synchronize, reopened) cancels the run of the old head, so the cheat
+# corpus does not hold runners for a head nobody will merge. Every other run gets a group of its
+# own and is never cancelled: a push to main, because each main commit's run is the record for that
+# commit (a shared group would let GitHub drop a pending run when a third push queues behind a
+# running one); and a label change, because the spec-approved step reads the labels of its own
+# event, and a late `labeled` run must not cancel the `unlabeled` run that checks the removal.
+concurrency:
+  group: >-
+    ci-${{ github.event_name == 'pull_request'
+    && github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gate:
     runs-on: ubuntu-24.04
