@@ -180,9 +180,12 @@ default" names the same exception.
 2. Before pushing, run locally every check in the `docs/process.md` check matrix that the change
    can affect. For Lean work that includes `cd core && lake check` and
    `lake comparator --paranoid`.
-3. Open the PR without asking, with `.claude/scripts/open-pr.sh`. The session proxy adds a
-   session link to the body of every PR create, and the script reads the body back and cleans
-   it; `check-no-session-link.sh` refuses any other create. Wait for CI and the bots as
+3. Open the PR without asking, with `.claude/scripts/open-pr.sh --head <branch> --title <title>
+   --body-file <file>`. The session proxy adds a session link to the body of every PR create,
+   and the script reads the body back and cleans it; `check-no-session-link.sh` refuses any other
+   create. The first revision in the body's edit history keeps the link, and only the user can
+   delete it, in the browser, so the owner's report names the PR for that list (#91, call 3).
+   Wait for CI and the bots as
    **Watchers** says for a PR owner: at most two bounded calls, then report "pushed, waiting on
    CI" and return until the root resumes you. Batch known fixes into one push, because each push
    starts CI and a paid bot review.
@@ -322,8 +325,9 @@ watcher's echo filter and the merge rule below rely on both.
   lease refuses it if the updater pushed in between. Its old base is the commit its own first
   commit sits on, not the base branch's last tip, which the updater may have rebased since.
   These sessions block GraphQL, and `gh stack submit` and `gh stack link` find and open PRs over
-  GraphQL, so they fail here. Open each PR with `.claude/scripts/open-pr.sh --base <branch>`
-  instead, the bottom one on `main` and each next one on the branch below it. Then make the stack with
+  GraphQL, so they fail here. Open each PR with `.claude/scripts/open-pr.sh` instead (step 3 of
+  PR owners carry their PR, plus `--base <branch>`), the bottom one on `main` and each next one
+  on the branch below it. Then make the stack with
   `gh api -X POST repos/{owner}/{repo}/stacks -H "X-GitHub-Api-Version: 2026-03-10"
   -F 'pull_requests[]=<bottom>' -F 'pull_requests[]=<next>'`, one `-F` per PR, bottom to top. That
   sends the body field `pull_requests`, a list of 2 to 100 PR numbers.
@@ -498,11 +502,13 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   condition yourself over REST, unassign the user if their part is done, and carry on without
   waiting to be told. A merge the root did not expect is a state change: update the dashboard and
   tell the user once, in one line.
-- A merge command in a catch-up is the one on `pr-state.sh`'s `merge-ready #N` line. Each merge
-  moves `main` and the updater rebases every open PR, so a command pinned to the old head fails
-  with 409, as on #61 and #62. When that line changes or goes away for a PR waiting on the user's
-  merge, post a new catch-up with the new command, or one that says to hold the merge until a
-  verdict covers the new head.
+- A merge command in a catch-up is the one on `pr-state.sh`'s `merge-ready #N` line. For a PR
+  past the ten the hook lists, write the same command, pinned to the head the verdict covers,
+  once its four conditions read true over REST; for a PR in a stack, use the `merge-async`
+  command in **Stacks** with that head. Each merge moves `main` and the updater rebases every
+  open PR, so a command pinned to the old head fails with 409, as on #61 and #62. When that line
+  changes or goes away for a PR waiting on the user's merge, post a new catch-up with the new
+  command, or one that says to hold the merge until a verdict covers the new head.
 - The user may merge before a verdict. The verifier then still runs, on the merged head. Its
   verdict goes in the PR's merged line under the In flight table, such as `#44 merged 09:30 UTC,
   then PASS opus-xhigh at 04fcb83; follow-ups #47`. A FAIL also becomes a `follow-up` issue and a

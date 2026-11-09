@@ -251,6 +251,28 @@ poll() {
          | "ci-stale \(.id)\t1\tci: run \(.id) is \(.status | clean(20)) on \(.sha[0:7]), which is no longer the head of any open PR or main")' \
       "$w/runs.json"
   } >"$w/always" 2>/dev/null || return 1
+  # A head's run can be older than the newest 100 runs, so a missing run is confirmed with one call
+  # for that head before its line prints. A head found to have a run is kept in ci-ok, so it costs
+  # that call once.
+  : >"$w/always.ok"
+  if [ -e "$dir/ci-ok" ]; then cp "$dir/ci-ok" "$w/ci-ok" || return 1; else : >"$w/ci-ok"; fi
+  local key rest pr hsha
+  while IFS=$'\t' read -r key rest; do
+    case $key in
+      "ci-norun "*)
+        read -r _ pr hsha <<<"$key"
+        grep -qxF "$key" "$dir/seen" && continue
+        grep -qxF "$pr $hsha" "$w/ci-ok" && continue
+        api "confirm-$pr.json" "repos/$repo/actions/workflows/ci.yml/runs?head_sha=$hsha&per_page=5" || return 1
+        if jq -e --arg s "$hsha" '[.workflow_runs[] | select(.head_sha == $s)] | length > 0' \
+          "$w/confirm-$pr.json" >/dev/null 2>&1; then
+          echo "$pr $hsha" >>"$w/ci-ok"
+          continue
+        fi ;;
+    esac
+    printf '%s\t%s\n' "$key" "$rest" >>"$w/always.ok"
+  done <"$w/always"
+  mv "$w/always.ok" "$w/always" || return 1
   {
     jq -r --arg start "$start" --arg owner "$owner" "$defs"'
       .[] | select(.closed_at != null and .closed_at >= $start)
@@ -301,6 +323,7 @@ report() {
   fi
   mv "$w/snapshot" "$dir/snapshot"
   mv "$w/heads-seen" "$dir/heads-seen"
+  tail -n 500 "$w/ci-ok" >"$dir/ci-ok"
   rm -f "$dir/seeded"
   cursor=$(cat "$w/now")
   printf '%s\n' "$cursor" >"$dir/cursor"

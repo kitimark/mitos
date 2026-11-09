@@ -35,7 +35,9 @@ case "$route" in
   repos/acme/widgets/issues/comments\?since=*) cat "$f/icomments.json" ;;
   repos/acme/widgets/pulls/comments\?since=*) cat "$f/rcomments.json" ;;
   repos/acme/widgets/actions/workflows/ci.yml/runs*)
-    if [ -e "$f/runs.json" ]; then cat "$f/runs.json"; else echo '{"workflow_runs":[]}'; fi ;;
+    s=${route#*head_sha=}; s=${s%%&*}
+    if [[ $route == *head_sha=* ]] && [ -e "$f/runs-$s.json" ]; then cat "$f/runs-$s.json"
+    elif [ -e "$f/runs.json" ]; then cat "$f/runs.json"; else echo '{"workflow_runs":[]}'; fi ;;
   repos/acme/widgets/issues\?state=open*)
     if [ -e "$f/issues.json" ]; then cat "$f/issues.json"; else echo '[[]]'; fi ;;
   repos/acme/widgets/issues/*/comments*)
@@ -489,6 +491,28 @@ m=$(grep -n 'branches/main' "$b4/calls" | head -n1 | cut -d: -f1)
 if [ -n "$r" ] && [ -n "$o" ] && [ -n "$m" ] && [ "$r" -lt "$o" ] && [ "$r" -lt "$m" ]; then
   echo "ok    the runs are read before the open PRs and main"
 else echo "FAIL  call order: runs $r, open $o, main $m"; failed=1; fi
+
+# A head whose run is older than the newest 100 runs (CodeRabbit on #98): one call for that head
+# finds the run, so no line prints, and the head costs no call after that.
+at 10:31:00 "$H4"
+jq --arg h "$H4" '{workflow_runs: [.workflow_runs[] | select(.head_sha != $h)]}' "$b4/f/runs.json" >"$b4/f/t" && mv "$b4/f/t" "$b4/f/runs.json"
+jq -n --arg h "$H4" '{workflow_runs: [{id: 42597881928, head_sha: $h, event: "pull_request", status: "completed", created_at: "2026-11-09T10:02:06Z"}]}' >"$b4/f/runs-$H4.json"
+t0=$now
+STATE=$b4/state2 run FAKE_DIR="$b4" WATCH_NOW="$t0"
+: >"$b4/calls"
+STATE=$b4/state2 run FAKE_DIR="$b4" WATCH_NOW=$((t0 + 700))
+is "a head whose run is past the newest 100 runs: no line" ""
+if [ "$(grep -c "head_sha=$H4" "$b4/calls")" = 1 ]; then echo "ok    one call confirms that head's run"
+else echo "FAIL  confirm calls: $(grep -c "head_sha=$H4" "$b4/calls")"; failed=1; fi
+: >"$b4/calls"
+STATE=$b4/state2 run FAKE_DIR="$b4" WATCH_NOW=$((t0 + 800))
+if grep -q "head_sha=" "$b4/calls"; then echo "FAIL  a confirmed head was asked again"; failed=1
+else echo "ok    a confirmed head costs no call after that"; fi
+is "and prints nothing" ""
+rm -f "$b4/f/runs-$H4.json"
+STATE=$b4/state3 run FAKE_DIR="$b4" WATCH_NOW="$t0"
+STATE=$b4/state3 run FAKE_DIR="$b4" WATCH_NOW=$((t0 + 700))
+is "a head with no run at all: the line prints" "ci: pr #84 head 3c6e3bb has no ci run 11 min after its push"
 
 # The threshold, main's own runs, and runs that are not stale.
 rm -rf "$b4/state"

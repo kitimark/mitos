@@ -183,7 +183,8 @@ wait
 
 fresh=''
 if [ -n "$compare" ]; then
-  if [ ! -e "$dir/compare.failed" ] && jq -e '.files | type == "array"' "$dir/compare.json" >/dev/null 2>&1; then
+  # The route lists at most 300 files, so a full list may leave rule files out: unknown.
+  if [ ! -e "$dir/compare.failed" ] && jq -e '.files | type == "array" and length < 300' "$dir/compare.json" >/dev/null 2>&1; then
     jq -r '.files[] | .filename | select(type == "string")' "$dir/compare.json" 2>/dev/null \
       | grep -E '^(\.claude/|CLAUDE\.md$|docs/process\.md$)' >"$dir/rules"
   else
@@ -333,7 +334,7 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
      "open #\($n) head \(.sha) \(if .draft then "draft" else "ready" end) labels=\(.labels | lst) assignees=\(.who | lst)\(
        if $r == null then ""
        else " gate=\($e.gate) verdict=\($r.v)\(if $r.head then "(the head)" elif $r.v == "?" or $r.v == "none" then "" else "(an old head)" end) owner-unanswered=\($r.u) user-kept=\($e.kept)" end)",
-     (if $r != null and $r.head and $e.gate == "success" and $r.u == "-" then
+     (if $r != null and $r.head and $e.gate == "success" and $r.u == "-" and (.draft | not) then
         "merge-ready #\($n), \(if $e.kept == "no" then "an agent merges" elif $e.kept == "yes" then "the user merges (it touches a path the user keeps)" else "the user merges (its files could not be read)" end): gh api -X PUT repos/\($repo)/pulls/\($n)/merge -f merge_method=rebase -f sha=\($e.sha)"
       else empty end)
    end),
