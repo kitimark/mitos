@@ -77,6 +77,20 @@ elaborates them, so they elaborate the same in every run, whatever other files a
 The reader fails closed: every line of the Challenge must be blank, a comment, an `import`, a
 one-line definition hole (`def … := sorry`) or a one-line theorem in the form above, so no line
 that could change what a statement means (`open`, `namespace`, notation) is dropped or moved.
+
+It reads block comments as Lean does, or refuses the line. Lean ends a block comment at its first
+closer and nests a comment opened inside one, so the line `/- note -/ open Foo` runs `open Foo`,
+and a theorem line between an inner and an outer closer is no theorem. A reader that took a comment
+to end only with its line kept such lines as comment lines, so a hole line stayed (compared by type
+only) and a theorem line stayed un-negated, or it negated a statement the Challenge does not make
+(review on #86, round 6). So inside a comment the reader takes a line only if it holds no opener,
+and no closer but in its last two characters; a line that opens a comment, only if the same holds
+after the opener; and any other line, only if it is a line comment or holds neither, nor a string
+literal or an escaped name (`«…»`), which Lean also reads on past a line's end.
+`readLine_comments` proves that on every line it takes, Lean's scan of the comment (`leanScan`, a
+transcription of `Lean.Parser.finishCommentBlock`) ends where the reader goes on: still in the
+comment, or closed at the end of the line. The probes after it check that transcription's premises
+whenever this package builds.
 -/
 
 namespace Mutants
@@ -108,18 +122,250 @@ def theoremHole (l : List Char) : Option (String × String) :=
     else none
   else none
 
+/-! ## Block comments
+
+The words opener and closer below mean the two characters that open and close a block comment. -/
+
+/-- Whether `a` is directly followed by `b` somewhere in `cs`. -/
+def hasPair (a b : Char) : List Char → Bool
+  | x :: y :: cs => (x == a && y == b) || hasPair a b (y :: cs)
+  | _ => false
+
+/-- Whether `cs` ends with `a` and then `b`. -/
+def endsPair (a b : Char) : List Char → Bool
+  | [x, y] => x == a && y == b
+  | _ :: y :: z :: cs => endsPair a b (y :: z :: cs)
+  | _ => false
+
+/-- Lean's scan of a block comment over one line, as `Lean.Parser.finishCommentBlock` does it, at
+nesting depth `n`: a closer ends one level, an opener starts another, and anything else is skipped
+one character at a time. The result is the depth where the scan stops and the text after that: at
+depth 0 the comment has ended, and Lean reads the rest of the line as code. A line break is neither
+character, so a line can be scanned on its own. -/
+def leanScan : Nat → List Char → Nat × List Char
+  | 0, cs => (0, cs)
+  | n + 1, c :: d :: cs =>
+    if c = '-' ∧ d = '/' then leanScan n cs
+    else if c = '/' ∧ d = '-' then leanScan (n + 2) cs
+    else leanScan (n + 1) (d :: cs)
+  | n + 1, _ => (n + 1, [])
+
+/-- How a line inside a block comment leaves it, if the reader takes the line: `some true` when the
+comment is still open after it, `some false` when the line's last two characters close it. A line
+with an opener anywhere, or a closer before its last two characters, is refused (`none`). -/
+def commentLine (cs : List Char) : Option Bool :=
+  if hasPair '/' '-' cs || hasPair '-' '/' cs.dropLast then none
+  else some !(endsPair '-' '/' cs)
+
+/-- How a line that starts with an opener leaves the comment it opens, if the reader takes the
+line: as `commentLine` reads the text after the opener, except that a closer right after the opener
+is refused, since Lean does not read one there (it skips the character after the opener). -/
+def openerLine (cs : List Char) : Option Bool :=
+  match cs with
+  | '/' :: '-' :: rest => if rest = ['-', '/'] then none else commentLine rest
+  | _ => none
+
+theorem hasPair_cons {a b c : Char} {cs : List Char} (h : hasPair a b (c :: cs) = false) :
+    hasPair a b cs = false := by
+  cases cs with
+  | nil => rfl
+  | cons d cs => simp only [hasPair, Bool.or_eq_false_iff] at h; exact h.2
+
+theorem hasPair_dropLast_cons {a b c : Char} {cs : List Char}
+    (h : hasPair a b (c :: cs).dropLast = false) : hasPair a b cs.dropLast = false := by
+  cases cs with
+  | nil => rfl
+  | cons d cs => rw [List.dropLast_cons_cons] at h; exact hasPair_cons h
+
+/-- On a line with no opener, and no closer but in its last two characters, Lean's scan at depth 1
+ends the comment exactly at the end of the line if the line ends with a closer, and otherwise
+reaches the end of the line still at depth 1. -/
+theorem scan_plain : ∀ {cs : List Char}, hasPair '/' '-' cs = false →
+    hasPair '-' '/' cs.dropLast = false →
+    leanScan 1 cs = if endsPair '-' '/' cs then (0, []) else (1, [])
+  | [], _, _ => by simp [leanScan, endsPair]
+  | [c], _, _ => by simp [leanScan, endsPair]
+  | c :: d :: cs, h1, h2 => by
+    by_cases hc : c = '-' ∧ d = '/'
+    · obtain ⟨rfl, rfl⟩ := hc
+      cases cs with
+      | nil => simp [leanScan, endsPair]
+      | cons e cs => simp [hasPair] at h2
+    · by_cases hc' : c = '/' ∧ d = '-'
+      · obtain ⟨rfl, rfl⟩ := hc'
+        simp [hasPair] at h1
+      · rw [leanScan, ite_eq_right hc, ite_eq_right hc',
+          scan_plain (hasPair_cons h1) (hasPair_dropLast_cons h2)]
+        cases cs with
+        | nil =>
+          have : endsPair '-' '/' [c, d] = false := by
+            simp only [endsPair, Bool.and_eq_false_iff, beq_eq_false_iff_ne]
+            exact Classical.not_and_iff_not_or_not.mp hc
+          rw [this]; simp [endsPair]
+        | cons e cs => rfl
+
+/-- **A comment line the reader takes ends where Lean's scan ends**: still in the comment at depth
+1 (nothing nested) when the reader stays in it, or closed exactly at the end of the line, with no
+text after the closer, when the reader leaves it. -/
+theorem commentLine_scan {cs : List Char} {b : Bool} (h : commentLine cs = some b) :
+    leanScan 1 cs = if b then (1, []) else (0, []) := by
+  unfold commentLine at h
+  split at h
+  · simp at h
+  · rename_i hc
+    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hc
+    simp only [Option.some.injEq] at h
+    subst h
+    rw [scan_plain hc.1 hc.2]
+    cases endsPair '-' '/' cs <;> rfl
+
+theorem commentLine_tail {c : Char} {cs : List Char} {b : Bool}
+    (h : commentLine (c :: cs) = some b) (hne : c :: cs ≠ ['-', '/']) : commentLine cs = some b := by
+  unfold commentLine at h ⊢
+  split at h
+  · simp at h
+  · rename_i hc
+    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hc
+    rw [ite_eq_right (by simp [hasPair_cons hc.1, hasPair_dropLast_cons hc.2]), ← h]
+    match cs with
+    | [] => rfl
+    | [d] =>
+      have : ¬ (c = '-' ∧ d = '/') := fun ⟨h1, h2⟩ => hne (by rw [h1, h2])
+      have : endsPair '-' '/' [c, d] = false := by
+        simp only [endsPair, Bool.and_eq_false_iff, beq_eq_false_iff_ne]
+        exact Classical.not_and_iff_not_or_not.mp this
+      rw [this]; rfl
+    | d :: e :: cs => rfl
+
+/-- **A line the reader takes as opening a comment ends where Lean's scan ends**, whether the scan
+starts right after the opener or one character later, as Lean starts it. -/
+theorem openerLine_scan {cs : List Char} {b : Bool} (h : openerLine cs = some b) :
+    leanScan 1 (cs.drop 2) = (if b then (1, []) else (0, [])) ∧
+      leanScan 1 (cs.drop 3) = (if b then (1, []) else (0, [])) := by
+  unfold openerLine at h
+  split at h
+  · rename_i rest
+    split at h
+    · simp at h
+    · rename_i hne
+      refine ⟨commentLine_scan h, ?_⟩
+      cases rest with
+      | nil => simpa [commentLine, hasPair, endsPair] using commentLine_scan h
+      | cons c rest => exact commentLine_scan (commentLine_tail h hne)
+  · simp at h
+
+/-- Whether a code line holds a character that starts a token Lean may read on past the line's
+end: a string literal (`"`) or an escaped name (`«`). -/
+def spansLines (cs : List Char) : Bool := cs.any fun c => c == '"' || c == '«'
+
+def lexError (l : String) : String :=
+  s!"the Challenge has a line whose comments, strings or escaped names the refutation reader does not follow: {l}"
+
 /-- Reads one line; `inDoc` says whether it is inside a block comment. -/
 def readLine (inDoc : Bool) (l : String) : Except String (Line × Bool) :=
   let cs := l.toList
-  let closes := "-/".toList.isSuffixOf cs
-  if inDoc then .ok (.keep l, !closes)
-  else if "/-".toList.isPrefixOf cs then .ok (.keep l, !closes)
-  else if cs.all (· == ' ') || "--".toList.isPrefixOf cs then .ok (.keep l, false)
+  if inDoc then
+    match commentLine cs with
+    | some b => .ok (.keep l, b)
+    | none => .error (lexError l)
+  else if "/-".toList.isPrefixOf cs then
+    match openerLine cs with
+    | some b => .ok (.keep l, b)
+    | none => .error (lexError l)
+  else if "--".toList.isPrefixOf cs then .ok (.keep l, false)
+  else if hasPair '/' '-' cs || hasPair '-' '/' cs || spansLines cs then .error (lexError l)
+  else if cs.all (· == ' ') then .ok (.keep l, false)
   else if "import ".toList.isPrefixOf cs then .ok (.imp l, false)
   else if "def ".toList.isPrefixOf cs && sorrySuffix.isSuffixOf cs then .ok (.hole l, false)
   else match theoremHole cs with
     | some (n, s) => .ok (.thm n s l, false)
     | none => .error s!"the Challenge has a line the refutation reader does not handle: {l}"
+
+/-- **The reader follows Lean's block comments.** On a line inside a comment, and on a line that
+opens one, it keeps the line as it is, and Lean's scan of the comment ends where the reader goes
+on: still in the comment, or closed exactly at the end of the line. Every other line it takes leaves
+it outside a comment, and is a line comment or holds no opener, no closer and no character that
+starts a string literal or an escaped name, which Lean may read on past the line's end. -/
+theorem readLine_comments {inDoc inDoc' : Bool} {l : String} {x : Line}
+    (h : readLine inDoc l = .ok (x, inDoc')) :
+    (inDoc = true →
+      x = .keep l ∧ leanScan 1 l.toList = if inDoc' then (1, []) else (0, [])) ∧
+    (inDoc = false → "/-".toList.isPrefixOf l.toList = true →
+      x = .keep l ∧ leanScan 1 (l.toList.drop 2) = (if inDoc' then (1, []) else (0, [])) ∧
+        leanScan 1 (l.toList.drop 3) = if inDoc' then (1, []) else (0, [])) ∧
+    (inDoc = false → "/-".toList.isPrefixOf l.toList = false →
+      inDoc' = false ∧ ("--".toList.isPrefixOf l.toList = true ∨
+        hasPair '/' '-' l.toList = false ∧ hasPair '-' '/' l.toList = false ∧
+          spansLines l.toList = false)) := by
+  unfold readLine at h
+  cases inDoc with
+  | true =>
+    simp only [ite_true] at h
+    split at h
+    · rename_i b hb
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨fun _ => ⟨rfl, commentLine_scan hb⟩, nofun, nofun⟩
+    · simp at h
+  | false =>
+    simp only [Bool.false_eq_true, ite_false] at h
+    refine ⟨nofun, fun _ hp => ?_, fun _ hp => ?_⟩
+    · rw [ite_eq_left hp] at h
+      split at h
+      · rename_i b hb
+        simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨rfl, openerLine_scan hb⟩
+      · simp at h
+    · rw [ite_eq_right (Bool.ne_true_of_eq_false hp)] at h
+      by_cases hd : "--".toList.isPrefixOf l.toList = true
+      · rw [ite_eq_left hd] at h
+        simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        exact ⟨h.2.symm, .inl hd⟩
+      · rw [ite_eq_right hd] at h
+        by_cases hq :
+            (hasPair '/' '-' l.toList || hasPair '-' '/' l.toList || spansLines l.toList) = true
+        · rw [ite_eq_left hq] at h; simp at h
+        · rw [ite_eq_right hq] at h
+          simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hq
+          refine ⟨?_, .inr ⟨hq.1.1, hq.1.2, hq.2⟩⟩
+          have ok : ∀ {y : Line}, (Except.ok (y, false) : Except String (Line × Bool)) =
+              .ok (x, inDoc') → inDoc' = false := by
+            intro y hy
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hy
+            exact hy.2.symm
+          split at h
+          · exact ok h
+          split at h
+          · exact ok h
+          split at h
+          · exact ok h
+          split at h
+          · exact ok h
+          · simp at h
+
+/-! The facts about Lean's block comments that `leanScan` transcribes, checked whenever this
+package builds, as `Mutants.Resolution` checks name resolution: the code after a closer on the same
+line is read (`CommentProbe.afterClose`); a comment opened inside another nests, so the inner
+closer does not end the outer one; and the character after an opener is skipped, also for a doc
+comment's opener, so a closer that starts there does not end the comment. In the last three, the
+first declaration is inside a comment, or else the second would clash with it. -/
+
+/- a -/ def CommentProbe.afterClose : Nat := 1
+/- /- -/ def CommentProbe.nested : Nat := 1 -/
+def CommentProbe.nested : Nat := 2
+/-/
+def CommentProbe.skipped : Nat := 1
+-/
+def CommentProbe.skipped : Nat := 2
+/--/
+def CommentProbe.skippedDoc : Nat := 1
+-/
+def CommentProbe.skippedDoc : Nat := 2
+
+theorem CommentProbe.probes :
+    CommentProbe.afterClose = 1 ∧ CommentProbe.nested = 2 ∧ CommentProbe.skipped = 2 ∧
+      CommentProbe.skippedDoc = 2 := ⟨rfl, rfl, rfl, rfl⟩
 
 def readLines (inDoc : Bool) : List String → Except String (List Line)
   | [] => if inDoc then .error "the Challenge ends inside a block comment" else .ok []
@@ -624,5 +870,28 @@ def holesSolution (paths : List String) : String :=
     fun ls => (refutation [] ["f"] ls ["t"]).toOption) == none
 #guard ((readChallenge "theorem Mitos.Proofs.t : P := sorry").toOption.bind
     fun ls => (approvedByValue [] ls).toOption) == none
+-- A line whose block comments the reader could read otherwise than Lean is refused (review on #86,
+-- round 6): a comment that ends before its line, so the reader would keep the hole and the theorem
+-- below it; text after the closer inside a comment; a nested comment, so the theorem is in a
+-- comment; an opener in a code line; a closer right after the opener, which Lean skips; a closer
+-- before a carriage return; and a string literal and an escaped name in a hole line, which Lean
+-- reads on over the theorem line below them.
+#guard (readChallenge "/- a -/ open Foo\ndef Mitos.Impl.f : Nat := sorry\n-- -/").toOption == none
+#guard (readChallenge "import Mitos.Core\n/- note -/ open Foo\ndef Mitos.Impl.f : Nat := sorry\ntheorem Mitos.Proofs.u : Mitos.Spec.Q Mitos.Impl.f := sorry\n-- end -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\n/- doc\ntext -/ def Mitos.Impl.f : Nat := sorry\n-- -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := sorry\n/- outer\n/- inner -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry\n/- -/ -/").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f /- : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry\n-- -/ : Nat := sorry").toOption == none
+#guard (readChallenge "/--/\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- -/\ndef Mitos.Impl.f : Nat := sorry").toOption == none
+#guard (readChallenge "/-\r\n-/\r\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- -/").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : F \"x := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- \" := 0").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef «Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- » : Nat := 0").toOption == none
+-- Lines Lean reads unambiguously are read as Lean reads them: a comment on one line, a closer at
+-- the end of a line comment inside a comment, and an opener whose next character Lean skips.
+#guard (readChallenge "/-- doc -/\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption ==
+  some [.keep "/-- doc -/", .thm "t" "Mitos.P" "theorem Mitos.Proofs.t : Mitos.P := sorry"]
+#guard (readChallenge "/-\n-- -/\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption ==
+  some [.keep "/-", .keep "-- -/", .thm "t" "Mitos.P" "theorem Mitos.Proofs.t : Mitos.P := sorry"]
+#guard (readChallenge "/-/\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-/").toOption ==
+  some [.keep "/-/", .keep "theorem Mitos.Proofs.t : Mitos.P := sorry", .keep "-/"]
 
 end Mutants
