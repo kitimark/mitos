@@ -605,11 +605,17 @@ def judgeModel (c : Config) (m : LockedModels) (dir : System.FilePath) :
   if let some why := adequacyFailure m.model ad.outcome then return .error (why, ad.output)
   return .ok ()
 
-def showComparatorTail (out : String) : IO Unit := do
+/-- The lines `showComparatorTail` prints for a comparator run's output: the last 15, without
+progress lines and backtrace frames, each through `ciLine`. `gate/LintTest.lean` checks them on
+hostile output. -/
+def comparatorTail (out : String) : List String :=
   let frame (l : String) := l == "backtrace:" || (l.startsWith "/" && (l.splitOn " [0x").length > 1)
   let lines := (out.splitOn "\n").filter fun l =>
     !(l.startsWith "✔") && !(l.startsWith "Exporting") && !frame l
-  for l in lines.reverse.take 15 |>.reverse do IO.println (ciLine s!"  | {l}")
+  (lines.reverse.take 15).reverse.map fun l => ciLine s!"  | {l}"
+
+def showComparatorTail (out : String) : IO Unit := do
+  for l in comparatorTail out do IO.println l
 
 def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
   if let some g := pluginFailure j.outcome then

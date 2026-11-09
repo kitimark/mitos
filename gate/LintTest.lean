@@ -342,7 +342,18 @@ def ciLog (root : System.FilePath) : IO (Array (String × String)) := do
         fails := fails.push (c.name, "the output does not show the hostile text")
     catch e => fails := fails.push (c.name, s!"could not run: {e}")
     IO.FS.removeDirAll dir
+  -- Gates 2 to 6 print the comparator's output only through `Accept.comparatorTail`. A comparator
+  -- run is too slow for this test, so the tail's lines are checked here directly.
+  let tail := Accept.comparatorTail "error: ##[warning]forged\nx\r::warning::forged\n::error::forged"
+  let name := "accept, the comparator tail of gates 2 to 6"
+  if let some l := (tail.flatMap runnerLines).find? (startsCommand ·) then
+    fails := fails.push (name, s!"a line starts a workflow command: {l}")
+  else unless (("\n".intercalate tail).splitOn "forged").length > 1 do
+    fails := fails.push (name, "the output does not show the hostile text")
   return fails
+
+/-- The number of cases `ciLog` runs: `ciCases` and the comparator tail. -/
+def ciCount : Nat := (ciCases "").length + 1
 
 structure Case where
   kind : String
@@ -405,7 +416,7 @@ def main : IO UInt32 := do
   unless errs.isEmpty do fails := fails + 1
   let ci ← ciLog (← IO.currentDir)
   for (n, why) in ci do IO.println (ciLine s!"FAIL ci-log {n}: {why}")
-  let nci := (ciCases "").length
+  let nci := ciCount
   IO.println (s!"{if ci.isEmpty then "ok  " else "FAIL"} ci-log: {nci - ci.size} of {nci} " ++
     "hostile cases print no workflow command")
   fails := fails + ci.size

@@ -204,7 +204,8 @@ a `:` that would come first after the leading spaces. So the text cannot add an 
 word in the log or stop the runner from reading commands. Decoding the escapes gives back the
 original text. The `::error` lines of `runlog` and `lock-models` are the gate's own commands, with
 the text through `oneLine` and GitHub's escaping. `lake exe mitos-lint-test` runs the gate on
-hostile file names, lock lines and arguments and checks every line it prints.
+hostile file names, lock lines and arguments, and the comparator tail on hostile output, and
+checks every line printed.
 
 Gates 0–5 take the model as given: a plugin passes them by emitting the facts the model says
 hold. `Mitos.CompleteWrt` matches an emitted fact by kind and identity only, not by span or by how
