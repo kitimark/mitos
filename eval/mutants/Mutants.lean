@@ -5,6 +5,7 @@ import Mutants.Verdict
 import Mutants.Implied
 import Mutants.Lint
 import Mutants.Resolution
+import Mutants.Tokens
 
 /-!
 # Mutation testing of the resolver and impact analysis
