@@ -320,6 +320,26 @@ comments nest; the character after an opener is skipped, for `/-` and `/--`). Th
 the review, and five more, are `#guard`s: the reader at 24b19e4 accepts all nine, the new one
 refuses them.
 
+### Definition hole lines (round 7)
+
+**What failed.** The reader took a line for a definition hole when it started with `def ` and ended
+with ` := sorry`, whatever came between. Lean reads `def f : T := 0 -- := sorry` as `f := 0`, the
+`:= sorry` being a line comment, and `def f : T := 0 where g : T := sorry` the same way, the
+`sorry` being the value of `f.g`. The reader dropped such a line as a hole, so the generated
+Challenges took `f` from the mutated implementation and lost the value `0` the approved Challenge
+states; the module doc said no line that could change a statement is dropped (review on #86 by
+CodeRabbit at e852fd5, which named the line comment; the `where` and tactic forms were found in this
+round). Each needs an owner edit of the approved Challenge, whose two hole lines read the same
+before and after the fix.
+
+**Decision.** A hole line must also hold no `--` anywhere and no `:=` before its final ` := sorry`
+(`holeLine`), so the value Lean reads is the `sorry`; any other `def` line is refused, with the
+reader's error. This also refuses a hole with a default argument (`(x : T := v)`), which the approved
+Challenge does not have. `readLine_hole` proves that every line the reader takes as a hole is outside
+a comment and is one `holeLine` takes. Four `#guard`s pin it: the line comment after a value and
+after the type, a `where`, and a tactic with its own `:= sorry`; the reader at e852fd5 takes all
+four as holes, the new one refuses them.
+
 ### Cases
 
 `eval/mutants/cases/<name>/` holds a manifest `mutant` (`why=`, `breaks=` or `survives=`, an
@@ -416,8 +436,9 @@ a `sorry` fails it:
   multi-line statement), and on every line it takes, Lean's scan of a block comment (`leanScan`)
   ends where the reader goes on (`readLine_comments`, from `commentLine_scan` and
   `openerLine_scan`); `leanScan` transcribes Lean's lexer without proof, and `CommentProbe.probes`
-  checks its premises at build. The hole run's `Mitos/Impl/` files are the other runs'
-  (`holeCore_impl`).
+  checks its premises at build. Every line it takes as a definition hole is `def … := sorry` with
+  no other `:=` and no line comment (`readLine_hole`). The hole run's `Mitos/Impl/` files are the
+  other runs' (`holeCore_impl`).
 - `Mutants.Verdict`: the run passes exactly when the control is accepted, every case is judged
   exactly once and meets its expectation (`passes_iff`). Then every `breaks=` case passed the lint,
   had its hole run accepted, its gate run rejected and its refutation accepted (`passes_refuted`);
