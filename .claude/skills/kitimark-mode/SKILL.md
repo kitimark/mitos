@@ -210,8 +210,8 @@ watcher's echo filter and the merge rule below rely on both.
   only when it is one line in a file that round already touches.
 - A verifier marks each finding blocking or minor. Only a blocking one fails the verdict, so a
   pass with minor findings starts no round.
-- **Round budget.** A PR gets two rounds. A round that only rebases, with the same
-  `git patch-id --verbatim`, does not count. Before a third round starts, the root narrows or
+- **Round budget.** A PR gets two rounds. A round that only rebases, with the same content id
+  (see Verdicts), does not count. Before a third round starts, the root narrows or
   splits the PR. The PR keeps its task's change and the blocking fixes, and the rest moves to
   separate PRs or the follow-up issue. The third brief names what is left.
 
@@ -227,12 +227,15 @@ watcher's echo filter and the merge rule below rely on both.
   gets an `opus` verifier at `xhigh` or above at every head that needs a verifier, so an
   `opus`-written one gets two. Trust-critical means the PR needs `spec-approved` or touches a
   trust-infrastructure path (see What stays with the user).
-- A verdict covers one head. Take the change's id at each head with
-  `git diff <merge-base> <head> | git patch-id --verbatim`, because `git show` gives one id per
-  commit. A later head that only rebases, with the same id, keeps the verdict because the change
-  is the same. It still needs its own green `gate` because the base is not. The default
-  `git patch-id` ignores whitespace, and Lean reads indentation, so the flag is required. Any
-  other new head needs a new verifier.
+- A verdict covers one head. Take the change's content id at each head with
+  `lake exe mitos-gate content-id origin/main <head>` after `git fetch origin main`, or with the
+  parent PR's branch in place of `origin/main` for a PR in a stack. The id covers the exact diff
+  from the merge-base outside `ops/runs/*.ndjson`, whitespace included because Lean reads
+  indentation, and the run-log lines the PR adds, wherever union put them. Git config does not
+  change it, and the tool refuses a run-log edit (`gate/MitosGate/ContentId.lean`). A later head
+  with the same content id keeps the verdict because the change is the same, even when a rebase
+  moved `main`'s run-log lines next to the PR's. It still needs its own green `gate` because the
+  base is not. Any other new head needs a new verifier.
 - A conflict resolution is new content, not a rebase. A PR owner that resolved a conflict lists
   each resolved file in its report. The verifier at that head reads each resolution as new code
   against both sides, and confirms that every check either side added survives it. A check that
@@ -433,7 +436,7 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   carry on with an independent task. The comment starts with the `## Catch-up:` line (see Needs
   you), then has:
   - **Status:** each check and verdict at the current head, with its evidence. A verdict names
-    the head it covers, says whether later heads only rebase (same `git patch-id --verbatim`) or change
+    the head it covers, says whether later heads only rebase (same content id) or change
     content, and names who gave it: a verifier agent and its model, a bot, or the root itself.
     Never call a bot's verdict or your own independent.
   - **Next steps:** numbered, with a `gh` command (one per code block) wherever one exists; say
