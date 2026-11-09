@@ -33,7 +33,8 @@ statement is wrong.
   the `note` of the next attempt's record.
 - Before each push,
   `git diff --name-status --no-renames origin/main...HEAD -- ops/runs ':!ops/runs/README.md'`
-  shows only `A` lines.
+  shows only `A` lines, except an `M` line for a day file that a PR opened before this change
+  appended to and keeps until it lands (see Transition).
 
 ## Merging
 
