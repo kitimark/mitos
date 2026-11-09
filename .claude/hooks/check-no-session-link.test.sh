@@ -115,6 +115,16 @@ check "gh api with fields and no method (POST by default)" \
   "$(bash_in "gh api repos/o/r/pulls -f title=t -f head=h -f base=main")" block "open-pr.sh"
 check "gh api --input and no method" \
   "$(bash_in "jq -n '{title:1}' | gh api repos/o/r/pulls --input -")" block "open-pr.sh"
+check "a create whose fields follow a line continuation" \
+  "$(bash_in $'gh api repos/o/r/pulls \\\n  -f title=t -f head=h -f base=main')" block "open-pr.sh"
+check "a create whose -X POST follows a line continuation" \
+  "$(bash_in $'gh api \\\n  -X POST \\\n  repos/o/r/pulls --input body.json')" block "open-pr.sh"
+check "a create on repos/\$repo/pulls" \
+  "$(bash_in "gh api repos/\$repo/pulls -f title=t -f head=h -f base=main")" block "open-pr.sh"
+check "a PATCH on repos/\$repo/pulls/\$n" \
+  "$(bash_in "gh api -X PATCH repos/\$repo/pulls/\$n -F body=@$work/clean.md")" allow
+check "a continued read of the pulls list" \
+  "$(bash_in $'gh api \\\n  \'repos/o/r/pulls?state=open\' --jq \'.[].number\'')" allow
 check "gh pr create" \
   "$(bash_in "gh pr create --title t --body-file $work/clean.md")" block "open-pr.sh"
 check "the pulls list is a read" \

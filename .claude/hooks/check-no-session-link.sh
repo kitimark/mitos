@@ -63,10 +63,12 @@ if [ "$is_commit" = 1 ]; then
 fi
 grep -Eq "$trailer_re" <<<"$cmd" && trailer_msg "this command"
 
-# One line per simple command, so a route and its method are read together. A quoted | or ; splits
-# too, which at worst moves a flag away from its route.
-segments=$(sed -E 's/(&&|\|\||;|\|)/\n/g' <<<"$cmd")
-route_re='(^|[[:space:]])['\''"]?/?repos/[^/[:space:]'\''"]+/[^/[:space:]'\''"]+/pulls/?(\?[^[:space:]'\''"]*)?['\''"]?([[:space:]]|$)'
+# One line per simple command, so a route and its method are read together: a backslash line
+# continuation is joined first, then the command is split at && || ; and |. A quoted | or ; splits
+# too, which at worst moves a flag away from its route. The route may name the repository in any
+# form, such as `repos/$repo/pulls`.
+segments=$(sed -e ':a' -e '/\\$/{N;s/\\\n/ /;ba' -e '}' <<<"$cmd" | sed -E 's/(&&|\|\||;|\|)/\n/g')
+route_re='(^|[[:space:]])['\''"]?/?repos/[^[:space:]'\''"]+/pulls/?(\?[^[:space:]'\''"]*)?['\''"]?([[:space:]]|$)'
 while IFS= read -r seg; do
   grep -Eq "$gh_re" <<<"$seg" || continue
   grep -Eq '(^|[^[:alnum:]_.-])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' <<<"$seg" && block "$open_pr_msg"

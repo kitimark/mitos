@@ -34,6 +34,9 @@ is "the user's own turns only" "$("$script" "$t")" "$want_all"
 is "since leaves out earlier turns" "$("$script" "$t" 2026-11-09T09:00:00Z)" '{"t":"2026-11-09T09:00:00Z","c":"approve all"}
 {"t":"2026-11-09T10:00:00Z","c":"why did <task> fail?"}'
 is "since after every turn" "$("$script" "$t" 2026-11-10T00:00:00Z)" ""
+jq -cn '{type:"user", timestamp:"2026-11-09T11:00:00.500Z", message:{content:"right at the cutoff"}}' >"$work/frac.jsonl"
+is "a turn with a fraction of a second at the cutoff second" "$("$script" "$work/frac.jsonl" 2026-11-09T11:00:00Z)" \
+  '{"t":"2026-11-09T11:00:00.500Z","c":"right at the cutoff"}'
 "$script" >/dev/null 2>&1; is "no argument: exit 2" "$?" 2
 "$script" "$work/none.jsonl" >/dev/null 2>&1; is "a missing file: exit 2" "$?" 2
 is "an empty file: no output" "$(: >"$work/e.jsonl"; "$script" "$work/e.jsonl")" ""

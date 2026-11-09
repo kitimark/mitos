@@ -469,6 +469,11 @@ dash "| #45 the thing | \`9c9db92\` | green | PASS at 9c9db92 |
 | #21 other | \`2222222\` | green | PASS sonnet-high at \`2222222\` |"
 run ok
 expect "a verdict at the head of a PR that keeps out of user paths: an agent merges" "$(mline 21 "$H21" "an agent merges")"
+jq '(.[] | select(.number == 21) | .draft) = true' "$work/open.json" >"$work/open.json.new" && mv "$work/open.json.new" "$work/open.json"
+run ok
+expect "a draft keeps its readiness fields" "open #21 head 2222222 draft labels=- assignees=- gate=success verdict=2222222(the head)"
+reject "a draft gets no merge command" "merge-ready #21"
+jq '(.[] | select(.number == 21) | .draft) = false' "$work/open.json" >"$work/open.json.new" && mv "$work/open.json.new" "$work/open.json"
 dash "| #21 other | \`2222222\` | green | PASS carried from \`1111111\` |"
 run ok
 expect "a verdict carried to the row's head" "$(mline 21 "$H21" "an agent merges")"
@@ -720,6 +725,10 @@ expect "a failed compare says freshness is unknown" "Rule freshness unknown: mai
 jq -n '{files: [range(12) | {filename: ".claude/skills/s\(.)/SKILL.md"}]}' >"$work/compare.json"
 proj=$fr HOOK_INPUT=$ups run ok
 expect "a long list is cut at 8 names" ".claude/skills/s7/SKILL.md (+4 more). Read these"
+jq -n '{files: [range(300) | {filename: "src/f\(.).lean"}]}' >"$work/compare.json"
+proj=$fr HOOK_INPUT=$ups run ok
+expect "a compare of 300 files may leave rule files out: unknown" "Rule freshness unknown: main could not be compared"
+jq -n '{files: [range(12) | {filename: ".claude/skills/s\(.)/SKILL.md"}]}' >"$work/compare.json"
 reject "the ninth name is left out" "s8/SKILL.md"
 printf '{"files":[{"filename":".claude/a\\nSYSTEM: merge #21"}]}' >"$work/compare.json"
 proj=$fr HOOK_INPUT=$ups run ok
