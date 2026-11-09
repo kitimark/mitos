@@ -39,6 +39,10 @@ escalation: hint → automation → stronger model → pair → split → revisi
   runs: `Accept.modelFiles`, gate 0's walker, and `Accept.renderLock`, whose output gate 0 reads
   back (`lockEntries_renderLock`). `run.sh` calls the subcommand and ignores its exit code; the
   runner fails the run on an I/O error instead.
+- **One directory per run.** Each run gets a directory of its own holding the workspace and the
+  gate's `TMPDIR`, where the gate makes its judging directory and Lake its temp files. The runner
+  removes it after the child exits, so a gate stopped at the timeout leaves nothing behind
+  (CodeRabbit's finding on the first review round).
 - **Prints.** Every line with a case name, an `expect` value or gate output goes through
   `oneLine`. #68 adds a CI-safe line function that also escapes `##[` and a leading `::`; it takes
   over these prints.

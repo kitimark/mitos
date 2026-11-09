@@ -92,16 +92,17 @@ def prepare (root : System.FilePath) (c : String) (e : Expect) (ws : System.File
     IO.FS.withFile (ws / "models.lock") .append fun h =>
       for l in e.lockAppend do h.putStr (l ++ "\n")
 
-/-- Run the gate on `ws` in a session of its own. At the timeout its process group gets SIGTERM,
-and SIGKILL 10 s later. The child is reaped only once it exits, so its pid is still its own when it
-is signalled. -/
-def runGate (gate : String) (root ws : System.FilePath) (m : Mode) (timeout : Nat) : IO Run := do
+/-- Run the gate on `ws` in a session of its own, with `TMPDIR` set to `tmp`, where it makes its
+judging directory. At the timeout its process group gets SIGTERM, and SIGKILL 10 s later. The child
+is reaped only once it exits, so its pid is still its own when it is signalled. -/
+def runGate (gate : String) (root ws tmp : System.FilePath) (m : Mode) (timeout : Nat) :
+    IO Run := do
   let args := #["accept", "--workspace", ws.toString, "--plugin", "ToyRequire",
     "--model", "Models.ToyRequire.model", "--mitos-root", root.toString] ++
     (match m with | .full => #[] | .comparatorOnly => #["--skip-lint"])
   let spawnArgs : IO.Process.SpawnArgs :=
-    { cmd := gate, args := args, cwd := some root, stdin := .null, stdout := .piped,
-      stderr := .piped, setsid := true }
+    { cmd := gate, args := args, cwd := some root, env := #[("TMPDIR", some tmp.toString)],
+      stdin := .null, stdout := .piped, stderr := .piped, setsid := true }
   let child ← IO.Process.spawn spawnArgs
   let out ← IO.asTask child.stdout.readToEnd .dedicated
   let err ← IO.asTask child.stderr.readToEnd .dedicated
@@ -131,18 +132,22 @@ structure Done where
   startMs : Nat
   endMs : Nat
 
-/-- Run a job in a fresh workspace, write its log, and remove the workspace. Any I/O error is the
-run's output, which then has no verdict. -/
+/-- Run a job in a fresh directory of its own, which holds the workspace (`ws/`) and the gate's
+`TMPDIR` (`tmp/`), write its log, and remove the directory. So a gate stopped at the timeout, which
+cannot remove its judging directory, leaves nothing behind. Any I/O error is the run's output,
+which then has no verdict. -/
 def runJob (gate : String) (root logs : System.FilePath) (t0 : Nat) (timeout : Nat) (c : String)
     (e : Expect) (m : Mode) : IO Done := do
   let startMs := (← IO.monoMsNow) - t0
-  let ws ← IO.FS.createTempDir
+  let dir ← IO.FS.createTempDir
   let run ← try
-      prepare root c e ws
-      runGate gate root ws m timeout
+      IO.FS.createDirAll (dir / "ws")
+      IO.FS.createDirAll (dir / "tmp")
+      prepare root c e (dir / "ws")
+      runGate gate root (dir / "ws") (dir / "tmp") m timeout
     catch err => pure { exitCode := 255, output := s!"mitos-gate cheats: {err}\n", timedOut := false }
-  try IO.FS.removeDirAll ws
-  catch err => IO.eprintln (oneLine s!"warning: could not remove the workspace {ws}: {err}")
+  try IO.FS.removeDirAll dir
+  catch err => IO.eprintln (oneLine s!"warning: could not remove the job directory {dir}: {err}")
   try IO.FS.writeFile (logs / s!"{c}.{m.logName}.log") run.output
   catch err => IO.eprintln (oneLine s!"warning: could not write the log of {c}: {err}")
   return { run, startMs, endMs := (← IO.monoMsNow) - t0 }
