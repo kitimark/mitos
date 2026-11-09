@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tests for `mitos-gate runlog` (gate/MitosGate/RunLog.lean) on scratch directories, plus a replay
-# of an edit and an append merged by git's union driver with the repository's .gitattributes.
+# of an edit and an append merged by git's union driver with the repository's .gitattributes, and
+# the same I/O-error case for `mitos-gate lock-models` (gate/Main.lean).
 # Run from anywhere: gate/runlog-test.sh
 set -euo pipefail
 
@@ -198,6 +199,53 @@ expect "a missing base directory fails" 1 '^::error::run-log directory .* is mis
 # A relative name, so that the 60 characters `quote` keeps hold all of it.
 expect "a missing directory's name prints safely" 1 '^::error::run-log directory "nope\\u\{000A\}::warning::injected\\u\{200B\}" is missing' --head $'nope\n::warning::injected\xe2\x80\x8b'
 raw missingdir "zero-width space U+200B" $'\xe2\x80\x8b'
+
+# `mitos-gate lock-models`, as eval/cheats/run.sh re-pins a cheat case's models: a model file whose
+# name holds a newline and a workflow command makes reading it throw an I/O error that names the
+# path. In write mode and with --check, the exit must be 1, and stdout and stderr together, split at
+# CR and LF as the runner splits a log, must be one line: the gate's own `::error::` line, through
+# oneLine. So no line of the name, a `::warning::` or an `::error::` command, reaches the log.
+# lockexpect <name> <workspace> <grep -E pattern> [--check]
+lockexpect() {
+  local name=$1 ws=$2 pat=$3 got=0 lines cmds
+  shift 3
+  rm -f "$ws/models.lock"
+  "$bin" lock-models --workspace "$ws" "$@" >"$out" 2>&1 || got=$?
+  lines=$(tr '\r' '\n' <"$out" | grep -c '' || true)
+  cmds=$(tr '\r' '\n' <"$out" | grep -cE '^[[:space:]]*(::|##\[)' || true)
+  if [ "$got" != 1 ]; then
+    echo "FAIL $name: exit $got, expected 1"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
+  elif [ "$lines" != 1 ] || [ "$cmds" != 1 ]; then
+    echo "FAIL $name: $lines line(s) and $cmds workflow command(s), expected the gate's one"
+    sed 's/^/  | /' "$out"; fail=$((fail + 1))
+  elif ! grep -qE -- "$pat" "$out"; then
+    echo "FAIL $name: output does not match /$pat/"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
+  elif [ -e "$ws/models.lock" ]; then
+    echo "FAIL $name: models.lock was written"; fail=$((fail + 1))
+  else
+    echo "ok   $name"; pass=$((pass + 1))
+  fi
+}
+
+# The content is not UTF-8.
+ws="$tmp/lockmodels/content"
+mkdir -p "$ws/Models"
+printf 'def a := 1\n' >"$ws/Models/A.lean"
+printf '\xff' >"$ws/Models/"$'x\n::warning::forged-by-lock-models.lean'
+for mode in "" --check; do
+  lockexpect "lock-models${mode:+ $mode}: an I/O error on a model's content prints safely" "$ws" \
+    '^::error::lock-models stopped on an I/O error: .*/Models/x\\u\{000A\}::warning::forged-by-lock-models\.lean' ${mode:+"$mode"}
+done
+# The name is not UTF-8, so Lean looks for a file named with U+FFFD, and the error says it is missing.
+ws="$tmp/lockmodels/name"
+mkdir -p "$ws/Models"
+printf 'def a := 1\n' >"$ws/Models/A.lean"
+printf 'def y := 1\n' >"$ws/Models/"$'y\n::error::forged\xff.lean'
+for mode in "" --check; do
+  lockexpect "lock-models${mode:+ $mode}: an I/O error on a model's name prints safely" "$ws" \
+    '^::error::lock-models stopped on an I/O error: .*/Models/y\\u\{000A\}::error::forged\\u\{FFFD\}\.lean$' ${mode:+"$mode"}
+  raw "lock-models name" "U+FFFD" $'\xef\xbf\xbd'
+done
 
 # Replay: the base ends with record B; the PR corrects B in place; main appends C. With the
 # repository's .gitattributes, the rebase of the PR onto main succeeds without a conflict, and
