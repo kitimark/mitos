@@ -21,8 +21,9 @@ def usage : String := "usage:
                                                  write or check <dir>/models.lock, as gate 0 reads the models
   mitos-gate accept --workspace <dir> --plugin <Name> --model <Module.const>
                     [--plugin-file <f>] [--paranoid] [--record] [--keep] [--skip-lint]
-  mitos-gate runlog [--base <dir>] --head <dir>   run-log records parse, one per (task, role, attempt);
-                                                 with --base, every base line is kept (append-only)
+  mitos-gate runlog [--base <dir>] --head <dir>   run-log records parse, one per (task, role, attempt),
+                                                 each record file named by its key; with --base, every
+                                                 base record is kept and no day file is added
   mitos-gate content-id <base> <head> [--verbose]
                                                  the id a verdict covers: the diff from the merge-base
                                                  outside ops/runs/*.ndjson, plus the run-log lines the
