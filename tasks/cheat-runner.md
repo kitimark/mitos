@@ -5,7 +5,7 @@ goal: The cheat corpus runs in parallel in CI, through a runner written in Lean 
 statement: none (tooling task); theorems in `gate/MitosGate/Cheats.lean`, outside the lock
 touches: gate/MitosGate/Cheats.lean (new, pure), gate/MitosGate/CheatsRun.lean (new, I/O), gate/MitosGate/GateId.lean (new, `GateId` moved from Accept.lean), gate/MitosGate/Accept.lean (the verdict line is `Cheats.Verdict.render` of `Verdict.ofGate`), gate/Main.lean (the `cheats` subcommand), gate/LintTest.lean (the runner's timeout cases and its CI-log cases), eval/cheats/model_include_str_src/expect (`heavy=yes` only), .github/workflows/ci.yml (the corpus step), docs/process.md (running the corpus), ops/runs/2026-11-09.ndjson (appended lines only), tasks/cheat-runner.md
 must_not_touch: statements.lock, models.lock, core/, lakefile.toml, other `expect` lines, models
-checks: build, imports, lock, lint test, runlog on main's data, gate/runlog-test.sh, cheats (both runners, tables compared)
+checks: build, imports, lock, lint test, runlog on main's data, gate/runlog-test.sh, cheats (both runners with their tables compared up to 5b9fbb7, then `mitos-gate cheats` alone)
 budget: 25 iterations · 6h wall · 2M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
@@ -90,11 +90,14 @@ escalation: hint → automation → stronger model → pair → split → revisi
   1.05, 1.08 times its time alone. On CI (4 vCPU, 15 GiB) at `--jobs 3`: 549 s against `run.sh`'s
   1023 s in the same job; the heavy run takes 118 s alone, and the other runs, 2.98 at a time, each
   take 1.43 times their time alone. The PR reports CI at 3 and 4, and the default follows that.
-- **Migration.** CI runs both runners and diffs their tables. `run.sh`, the comparison and the
-  nightly job's `run.sh` step go in a follow-up PR once a CI run shows the tables match.
+- **Migration.** Until the last round, CI ran both runners at each head and diffed their tables.
+  All 10 finished `ci` runs, from 3bdfdc1 to 5b9fbb7, passed the diff with 47 rows, all as
+  expected. So, on the owner's review, the last round removed the `run.sh` step and the comparison
+  from `ci.yml`, which saves the `run.sh` step (1004–1373 s in the last 5 runs). `run.sh` itself,
+  the docs that name it and the nightly job's `run.sh` steps go in #103.
 
 ## Done when
 - [x] all `checks` pass locally
 - [x] no `sorry`, no `native_decide`, no new axioms
 - [x] run-log record written (ops/runs/)
-- [ ] CI: both runners green and their tables equal
+- [x] CI: both runners green and their tables equal (every finished run up to 5b9fbb7)

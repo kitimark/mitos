@@ -196,36 +196,20 @@ jobs:
       - name: Model lint allowlist accepts and rejects each command kind
         run: lake exe mitos-lint-test
 
-      # While `mitos-gate cheats` replaces run.sh (#55), both runners judge the corpus and their
-      # tables must match. The Lean runner runs second, so `cheat-logs` holds its logs. A follow-up
-      # PR deletes run.sh and the comparison once a CI run shows they match.
-      - name: Cheat corpus is rejected (run.sh, one run at a time)
-        run: |
-          rm -rf .lake/cheats
-          start=$SECONDS
-          set +e
-          eval/cheats/run.sh | tee "$RUNNER_TEMP/cheats-run-sh.txt"
-          status=${PIPESTATUS[0]}
-          set -e
-          echo "run.sh: $((SECONDS - start)) s"
-          exit "$status"
-
+      # `mitos-gate cheats` replaced eval/cheats/run.sh here (#55). While #84 was open, CI ran both
+      # at each head and diffed their tables; every finished run printed the same table, so only
+      # the Lean runner judges the corpus now. `cheat-logs` holds its logs.
       # The binary itself, so that nothing Lake prints joins the table.
       - name: Cheat corpus is rejected (mitos-gate cheats, runs in parallel)
-        if: ${{ !cancelled() }}
         run: |
           rm -rf .lake/cheats
           start=$SECONDS
           set +e
-          .lake/build/bin/mitos-gate cheats | tee "$RUNNER_TEMP/cheats-lean.txt"
-          status=${PIPESTATUS[0]}
+          .lake/build/bin/mitos-gate cheats
+          status=$?
           set -e
           echo "mitos-gate cheats: $((SECONDS - start)) s on $(nproc) vCPU, $(free -g | awk '/^Mem:/ {print $2}') GiB"
           exit "$status"
-
-      - name: Both cheat runners print the same table
-        if: ${{ !cancelled() }}
-        run: diff "$RUNNER_TEMP/cheats-run-sh.txt" "$RUNNER_TEMP/cheats-lean.txt"
 
       - name: Spec changes need the spec-approved label
         if: github.event_name == 'pull_request'
