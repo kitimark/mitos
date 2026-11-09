@@ -78,9 +78,14 @@ The reader takes only a few forms: every line of the Challenge must be blank, a 
 of one module and nothing else, a definition hole in the form below or a one-line theorem in the
 form above, and any other line stops the runner, so no line that could change what a statement
 means (`open`, `namespace`, notation) is dropped or moved, as long as the reader reads comments as
-Lean does. It does not always (below). The reader is a fast first pass: what stops the runner when
-it misreads is the cross-check (`Mutants.CrossCheck`), which requires the declarations, holes and
-imports of the Challenge as Lean built it to be exactly the ones the reader read.
+Lean does. It does not always (below). The reader is a fast first pass, and three checks with Lean
+stop the runner where its reading and Lean's differ in a command, a declaration or a generated
+statement: the cross-check (`Mutants.CrossCheck`) requires the declarations, holes and imports of
+the Challenge as Lean built it to be exactly the ones the reader read; the parse check requires
+every command of Lean's parse of the Challenge to be a module doc or exactly one of the reader's
+hole and theorem lines, so a line the reader keeps as a comment holds no command; and the output
+check requires every Challenge the runner generates, as Lean builds it with the approved
+implementation, to state exactly the approved statements as Lean built them (`Mutants.Output`).
 
 An import line is exactly `import <module>` (`importForm`, `readLine_imp`): Lean's `import` takes
 one module name (`Lean.Parser.Module.import`), and Lean reads anything after it on the line as
@@ -108,7 +113,10 @@ line comments after it before the text begins. So a line comment that ends with 
 line after such an opener, does not close it; the reader took that closer as the comment's end,
 and the theorem line after it as one the Challenge states, which Lean reads as doc comment text
 (review on #86, round 9, the opus verifier at 1265f31; `CrossCheck.decoySource`). Rounds 6 to 9
-each found such a form; instead of one more rule here, the cross-check stops the runner on any.
+each found such a form. Instead of one more rule here, the runner checks its reading with Lean:
+round 9's cross-check compares the declarations, and round 10 found a form it misses, a command
+that declares nothing (`Mutants.Output.b1Source`), so the runner also checks Lean's parse of the
+Challenge and every generated Challenge as Lean builds it (`Mutants.Output`).
 
 ## Definition hole lines
 
@@ -401,8 +409,9 @@ keeps the line as it is, and `leanScan` (Lean's scan of a comment's text) ends w
 on: still in the comment, or closed exactly at the end of the line. Every other line it takes leaves
 it outside a comment, and is a line comment or holds no opener, no closer and no character that
 starts a string literal or an escaped name, which Lean may read on past the line's end. Where Lean
-reads a comment otherwise than `leanScan` (after a doc comment's opener), `Mutants.CrossCheck`
-stops the runner. -/
+reads a comment otherwise than `leanScan` (after a doc comment's opener) so that a command, a
+declaration or a generated statement differs, the checks with Lean (`Mutants.CrossCheck`,
+`Mutants.Output`) stop the runner. -/
 theorem readLine_comments {inDoc inDoc' : Bool} {l : String} {x : Line}
     (h : readLine inDoc l = .ok (x, inDoc')) :
     (inDoc = true →

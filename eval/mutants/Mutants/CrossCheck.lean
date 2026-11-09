@@ -49,9 +49,16 @@ with a `where` (review on #86, round 8), which the reader refuses, read as a hol
 would. The first two are what `readChallenge` really reads (the `#guard`s below). So a check that
 went blind, such as one that read no constant or no position, stops the runner too.
 
-**What it does not see.** A command that declares nothing, such as `open` or `set_option`, in a
-line the reader keeps as a comment. Through `open` or `namespace` it would change a theorem's name
-or the constants its statement names, which the comparison sees.
+**What it does not see.** A command that declares nothing (`variable … in`, `include`, `namespace`,
+`open`, `set_option`, `#exit`) in a line the reader keeps as a comment. Such a command can leave
+every declaration of the approved Challenge as the reader read it and still change what a generated
+Challenge states: a generated Challenge drops the hole lines and the theorems not named, so there
+the command applies to another declaration, or to none (review on #86, round 10, B1,
+`Mutants.Output.b1Source`). Two later checks stop the runner on that (`Mutants.Output`): Lean's
+parse of the approved Challenge, in which every command must be a module doc or one of the
+reader's hole and theorem lines, and the output check, which builds every generated Challenge with
+the approved implementation and compares what it states with the approved statements as Lean built
+them.
 
 **Cost.** One `lake build` of the approved core's `Mitos.Core`, the Challenge and the probes in a
 fresh workspace, and four imports, a few seconds per run (task file, round 9).
