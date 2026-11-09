@@ -14,6 +14,6 @@ This file is a pointer. The rules live in two canonical files. Read both and fol
 1. `.claude/skills/kitimark-mode/SKILL.md`
 2. `docs/process.md`
 
-pstack is a Cursor plugin (`/add-plugin pstack`). The port this repository maintains is `.claude/`. See `.cursor/README.md`.
+pstack skills are vendored under `.cursor/skills/`. See `.cursor/README.md`. kitimark mode and `docs/process.md` win where a vendored skill disagrees. The Claude Code port is `.claude/`.
 
 The repository has no `AGENTS.md`. #100 keeps it out.
