@@ -1,176 +1,17 @@
 import Mutants.Manifest
 
-/-!
-# The Challenges and solution modules the runner generates
-
-A mutant is caught when the comparator accepts a proof that a Challenge theorem is **false** for
-it. The statement to refute is taken from the approved Challenge (`core/Challenge/Resolver.lean`),
-never written by hand: each named theorem
-
-```
-theorem Mitos.Proofs.<name> : <statement> := sorry
-```
-
-becomes `theorem _root_.Mitos.Refute.<name> : ¬ (<statement, qualified>) := sorry`, in a copy of the
-Challenge that keeps every other line and drops the theorems not named. The comparator then compares
-the case's `Refute.lean` with this Challenge as kernel terms, so a refutation of anything but what
-that line states is rejected.
-
-## Every name in a generated statement is absolute
-
-The generated Challenges import the mutated implementation (below), so a name in a statement must
-not resolve to a declaration the implementation makes. Lean elaborates `theorem Mitos.Refute.t : T`
-inside namespace `Mitos.Refute`, where `Mitos.Spec.X` in `T` resolves first to
-`Mitos.Refute.Mitos.Spec.X`, then to `Mitos.Mitos.Spec.X`, and only then to `Mitos.Spec.X`; an
-implementation edit that declared `Mitos.Refute.Mitos.Spec.AssumptionsExact := False` made the
-refutation Challenge state `¬ False` (review on #86, round 3). So the runner writes each generated
-statement in the root namespace and with absolute names:
-
-- **No namespace.** Every theorem the runner generates is declared as `_root_.Mitos.Refute.<t>` (or
-  `_root_.Mitos.Proofs.<t>`, `_root_.Mitos.Refute.holes`). Lean opens no namespace for a
-  declaration named with `_root_.`, and the generated files have no `namespace` or `open`, so the
-  statement is elaborated in the root namespace. There a name with a `.` is looked up exactly
-  (`Lean.ResolveName.resolveGlobalName`: with no namespace around there are no surrounding
-  namespaces to try first, and nothing is open), so this alone keeps a shadow out.
-- **Absolute names.** `qualify` writes every name of the statement as `_root_.<name>`, which at the
-  root Lean also looks up exactly, after dropping `_root_.`, and which says so in the text.
-  `_root_.` alone would not be enough: inside namespace `Mitos.Refute`, Lean tries
-  `Mitos.Refute._root_.Mitos.Spec.X` before `Mitos.Spec.X`. `Mutants.Resolution` checks these
-  facts about Lean whenever this package builds.
-
-`qualify` accepts only a statement that is a list of names under `Mitos`, separated by single
-spaces, as every approved statement is (`Mitos.Spec.Sound Mitos.Impl.resolve`); anything else, such
-as a binder or a parenthesis, is refused, so the runner stops instead of qualifying a statement it
-does not understand (`qualify_eq_some`). The definition hole names in `Mitos.Refute.holes` are
-written the same way. These two are what keep a shadow from changing a statement, whatever names a
-case declares. The lint (`Mutants.Lint`) also checks the names of a case's top-level declarations,
-as defence in depth; it does not read nested names (`let rec`, `where`), and it bans
-`with_decl_name%`, which declares nested names under any namespace.
-
-The Challenge imports the mutated implementation, so what the line states is the approved
-statement also only because the implementation declares no syntax: a macro there would rewrite
-the line (review on #86, round 2). The lint ensures that before anything is built.
-
-## The holes are compared by value
-
-The approved Challenge declares the definition holes (`def Mitos.Impl.resolve : … := sorry`), and
-the comparator compares a hole by its name and **type** only. If the refutation Challenge kept
-those lines, any declaration of that name and type in the solution's environment would do, such as
-one the case's `Refute.lean` makes itself. So the Challenges the runner generates drop the hole
-lines and **import the mutated core's `Mitos/Impl/` modules** instead, and their configurations
-name no definition holes. Each hole is then an ordinary constant of the Challenge, which the
-comparator compares by **value**: the solution's `Mitos.Impl.resolve`, with every constant it uses,
-must be exactly the one the mutated implementation declares. Whatever the case declares, a
-different hole is rejected.
-
-Every refutation Challenge also states `Mitos.Refute.holes`, an equation naming every definition
-hole, which the runner's own solution module proves by `rfl`. So every hole is compared by value
-in every refutation run, also one the named theorems do not mention, and every hole's definition is
-in the export the kernels replay (without `Mitos.Impl.impact`'s, Lean's replay kernel could not
-reduce the `decide` in `src_dst_swapped`'s refutation).
-
-The **hole run** (`Mutants.Verdict`) shows separately that the mutated `Mitos/Impl/` modules build
-from the approved core alone and declare every hole publicly. Its implementation files are the
-other runs' (`holeCore_impl`), and the lint ensures they run no code and read no file while Lean
-elaborates them, so they elaborate the same in every run, whatever other files a run holds.
-
-The reader takes only a few forms: every line of the Challenge must be blank, a comment, an import
-of one module and nothing else, a definition hole in the form below or a one-line theorem in the
-form above, and any other line stops the runner, so no line that could change what a statement
-means (`open`, `namespace`, notation) is dropped or moved, as long as the reader reads comments as
-Lean does. It does not always (below). The reader is a fast first pass, and three checks with Lean
-stop the runner where its reading and Lean's differ in a command, a declaration or a generated
-statement: the cross-check (`Mutants.CrossCheck`) requires the declarations, holes and imports of
-the Challenge as Lean built it to be exactly the ones the reader read; the parse check requires
-every command of Lean's parse of the Challenge to be a module doc or exactly one of the reader's
-hole and theorem lines, so a line the reader keeps as a comment holds no command; and the output
-check requires every Challenge the runner generates, as Lean builds it with the approved
-implementation, to state exactly the approved statements as Lean built them (`Mutants.Output`).
-
-An import line is exactly `import <module>` (`importForm`, `readLine_imp`): Lean's `import` takes
-one module name (`Lean.Parser.Module.import`), and Lean reads anything after it on the line as
-another import or as commands after the header. So the reader took
-`import Mitos.Core namespace Mitos.Refute` for an import and kept it, and the generated Challenges
-then declared their statements inside that namespace (review on #86 by CodeRabbit at e9fa024).
-
-It reads block comments as `leanScan` does, or refuses the line. Lean ends a block comment at its
-first closer and nests a comment opened inside one, so the line `/- note -/ open Foo` runs
-`open Foo`, and a theorem line between an inner and an outer closer is no theorem. A reader that took a comment
-to end only with its line kept such lines as comment lines, so a hole line stayed (compared by type
-only) and a theorem line stayed un-negated, or it negated a statement the Challenge does not make
-(review on #86, round 6). So inside a comment the reader takes a line only if it holds no opener,
-and no closer but in its last two characters; a line that opens a comment, only if the same holds
-after the opener; and any other line, only if it is a line comment or holds neither, nor a string
-literal or an escaped name (`«…»`), which Lean also reads on past a line's end.
-`readLine_comments` proves that on every line it takes, Lean's scan of the comment (`leanScan`, a
-transcription of `Lean.Parser.finishCommentBlock`) ends where the reader goes on: still in the
-comment, or closed at the end of the line. The probes after it check that transcription's premises
-whenever this package builds.
-
-`leanScan` is how Lean reads a comment's text, but not all of how Lean reads a comment. Lean reads a
-doc comment's opener (a module doc's or a declaration's) as a token, and skips the whitespace and
-line comments after it before the text begins. So a line comment that ends with a closer, on the
-line after such an opener, does not close it; the reader took that closer as the comment's end,
-and the theorem line after it as one the Challenge states, which Lean reads as doc comment text
-(review on #86, round 9, the opus verifier at 1265f31; `CrossCheck.decoySource`). Rounds 6 to 9
-each found such a form. Instead of one more rule here, the runner checks its reading with Lean:
-round 9's cross-check compares the declarations, and round 10 found a form it misses, a command
-that declares nothing (`Mutants.Output.b1Source`), so the runner also checks Lean's parse of the
-Challenge and every generated Challenge as Lean builds it (`Mutants.Output`).
-
-## Definition hole lines
-
-A definition hole line is exactly `def <name> : <type> := sorry`, where `qualName` takes the name,
-the type's characters are ASCII letters and digits, `_`, `.`, spaces and `→`, and its words, between
-single spaces, are `→`, `List`, `String`, `Nat` and names under `Mitos` (`holeForm`). `List` and
-`String` are what the approved Challenge's two holes use besides names under `Mitos`, and `Nat` is
-what the scratch holes in the `#guard`s below use. Any other line that starts with `def ` stops the
-runner with the reader's error. `readLine_hole` proves that every line the reader takes as a hole is
-outside a comment and has this form, which is a fact about the line's text.
-
-Why Lean reads the value of such a line as its `sorry` is not proved, because it is a fact about
-Lean's parser (`Lean.Parser.Command.definition`, in the pinned Lean v4.35.0). Lean reads `def`, the
-name, and the signature `: <type>`, with no binder, since `:` follows the name. The type holds no
-character that starts a binder, a comment, a string, an equation, a `:=` or a tactic block, so Lean
-reads it up to the ` := `. Neither it nor the name holds a keyword: `Mutants.Tokens` checks at every
-build that no token of Lean's syntax or of `Mitos.Core`, which the approved Challenge imports, is a
-word the name or the type may be, except `→`. Lean's non-reserved keywords (`nonReservedSymbol` and
-`&"…"`), which are not tokens, all start with a lower-case letter in this toolchain's source, and
-every word a hole may hold starts with a capital letter or is `→`; that was read from the source and
-is not checked at build. So no contract clause (`given`, `requires`, `ensures`) comes before the
-value, and the value is `:= sorry`, the first of the three forms of `declVal` (`declValSimple`; the
-other two are equations, `| … => …`, and structure fields after `where`). The line ends with the
-`sorry`, and the reader takes the next line only as a blank line, a comment, an `import`, another
-hole or a theorem, so no `termination_by`, `where` or `deriving` continues the declaration. What is
-not proved is checked at every run: the cross-check requires each hole's value, as Lean built it,
-to be exactly `sorry` of its type, and the hole to declare no other constant.
-
-Round 7 of the review on #86 found hole lines whose value Lean reads as something other than the
-`sorry`: the `:= sorry` in a line comment (`def f : T := 0 -- := sorry`), and after a `where` or a
-tactic. Round 7's fix refused those forms, and round 8 found two more forms that the fix still
-took: equations (`def f : T → T | _ => 0 where g : T := sorry`) and structure fields
-(`def c : S where b := sorry`). So the reader no longer lists what a hole may not hold, but what it
-may.
--/
-
 namespace Mutants
 
-/-- One line of the Challenge. -/
 inductive Line where
-  /-- `import …`, outside a comment. -/
   | imp (text : String)
-  /-- Kept as it is: blank, or a comment. -/
   | keep (text : String)
-  /-- A definition hole, `def <name> : <type> := sorry` in the form `holeForm` takes. -/
   | hole (text : String)
-  /-- `theorem Mitos.Proofs.<name> : <stmt> := sorry`, the whole line being `text`. -/
   | thm (name stmt text : String)
   deriving Repr, DecidableEq
 
 def thmPrefix : List Char := "theorem Mitos.Proofs.".toList
 def sorrySuffix : List Char := " := sorry".toList
 
-/-- The name and statement of a one-line theorem hole, if `l` is one. -/
 def theoremHole (l : List Char) : Option (String × String) :=
   if thmPrefix.isPrefixOf l && sorrySuffix.isSuffixOf l then
     let rest := l.drop thmPrefix.length
@@ -182,16 +23,10 @@ def theoremHole (l : List Char) : Option (String × String) :=
     else none
   else none
 
-/-! ## Block comments
-
-The words opener and closer below mean the two characters that open and close a block comment. -/
-
-/-- Whether `a` is directly followed by `b` somewhere in `cs`. -/
 def hasPair (a b : Char) : List Char → Bool
   | x :: y :: cs => (x == a && y == b) || hasPair a b (y :: cs)
   | _ => false
 
-/-- Whether `cs` ends with `a` and then `b`. -/
 def endsPair (a b : Char) : List Char → Bool
   | [x, y] => x == a && y == b
   | _ :: y :: z :: cs => endsPair a b (y :: z :: cs)
@@ -210,9 +45,6 @@ def leanScan : Nat → List Char → Nat × List Char
     else leanScan (n + 1) (d :: cs)
   | n + 1, _ => (n + 1, [])
 
-/-- How a line inside a block comment leaves it, if the reader takes the line: `some true` when the
-comment is still open after it, `some false` when the line's last two characters close it. A line
-with an opener anywhere, or a closer before its last two characters, is refused (`none`). -/
 def commentLine (cs : List Char) : Option Bool :=
   if hasPair '/' '-' cs || hasPair '-' '/' cs.dropLast then none
   else some !(endsPair '-' '/' cs)
@@ -237,9 +69,6 @@ theorem hasPair_dropLast_cons {a b c : Char} {cs : List Char}
   | nil => rfl
   | cons d cs => rw [List.dropLast_cons_cons] at h; exact hasPair_cons h
 
-/-- On a line with no opener, and no closer but in its last two characters, Lean's scan at depth 1
-ends the comment exactly at the end of the line if the line ends with a closer, and otherwise
-reaches the end of the line still at depth 1. -/
 theorem scan_plain : ∀ {cs : List Char}, hasPair '/' '-' cs = false →
     hasPair '-' '/' cs.dropLast = false →
     leanScan 1 cs = if endsPair '-' '/' cs then (0, []) else (1, [])
@@ -264,9 +93,6 @@ theorem scan_plain : ∀ {cs : List Char}, hasPair '/' '-' cs = false →
           rw [this]; simp [endsPair]
         | cons e cs => rfl
 
-/-- **A comment line the reader takes ends where Lean's scan ends**: still in the comment at depth
-1 (nothing nested) when the reader stays in it, or closed exactly at the end of the line, with no
-text after the closer, when the reader leaves it. -/
 theorem commentLine_scan {cs : List Char} {b : Bool} (h : commentLine cs = some b) :
     leanScan 1 cs = if b then (1, []) else (0, []) := by
   unfold commentLine at h
@@ -297,8 +123,6 @@ theorem commentLine_tail {c : Char} {cs : List Char} {b : Bool}
       rw [this]; rfl
     | d :: e :: cs => rfl
 
-/-- **A line the reader takes as opening a comment ends where Lean's scan ends**, whether the scan
-starts right after the opener or one character later, as Lean starts it. -/
 theorem openerLine_scan {cs : List Char} {b : Bool} (h : openerLine cs = some b) :
     leanScan 1 (cs.drop 2) = (if b then (1, []) else (0, [])) ∧
       leanScan 1 (cs.drop 3) = (if b then (1, []) else (0, [])) := by
@@ -314,41 +138,24 @@ theorem openerLine_scan {cs : List Char} {b : Bool} (h : openerLine cs = some b)
       | cons c rest => exact commentLine_scan (commentLine_tail h hne)
   · simp at h
 
-/-- Whether a code line holds a character that starts a token Lean may read on past the line's
-end: a string literal (`"`) or an escaped name (`«`). -/
 def spansLines (cs : List Char) : Bool := cs.any fun c => c == '"' || c == '«'
 
-/-! ## Definition hole lines -/
-
-/-- A component the qualifier accepts: letters, digits and `_`, not starting with a digit. -/
 def qualPart (c : String) : Bool :=
   plainName c.toList && !(c.toList.head?.getD '0').isDigit
 
-/-- A name the qualifier accepts: `Mitos` and at least one more component, each a `qualPart`. -/
 def qualName (w : String) : Bool :=
   match w.splitOn "." with
   | "Mitos" :: rest => !rest.isEmpty && rest.all qualPart
   | _ => false
 
-/-- A character the type of a definition hole may hold: an ASCII letter or digit, `_`, `.`, a space
-or `→`. -/
 def typeChar (c : Char) : Bool :=
   c.isAlphanum || c == '_' || c == '.' || c == ' ' || c == '→'
 
-/-- The names of Lean's types that the type of a definition hole may hold: `List` and `String`,
-which the approved Challenge's holes use, and `Nat`, which the scratch holes of the `#guard`s use. -/
 def leanTypeNames : List String := ["List", "String", "Nat"]
 
-/-- A word the type of a definition hole may be made of: `→`, one of `leanTypeNames`, or a name
-under `Mitos` that `qualName` takes. -/
 def typeWord (w : String) : Bool :=
   w == "→" || leanTypeNames.contains w || qualName w
 
-/-- The name and the type of a definition hole line: `some (n, ty)` when the line is exactly
-`def <n> : <ty> := sorry`, `qualName` takes `n`, every character of `ty` is a `typeChar`, and
-`ty` is one or more `typeWord`s with a single space between two of them. It cuts a candidate name
-and type from the line, then checks the whole line against them, so every line it takes is one that
-`holeForm_spec` describes. -/
 def holeForm (cs : List Char) : Option (List Char × List Char) :=
   let mid := (cs.drop 4).take (cs.length - 4 - sorrySuffix.length)
   let n := mid.takeWhile (· != ' ')
@@ -358,8 +165,6 @@ def holeForm (cs : List Char) : Option (List Char × List Char) :=
     some (n, ty)
   else none
 
-/-- **What `holeForm` takes**: a line that is exactly `def <n> : <ty> := sorry`, with a name under
-`Mitos` and a type made only of `typeChar`s and of `typeWord`s between single spaces. -/
 theorem holeForm_spec {cs n ty : List Char} (h : holeForm cs = some (n, ty)) :
     cs = "def ".toList ++ n ++ " : ".toList ++ ty ++ sorrySuffix ∧
       qualName (String.ofList n) = true ∧ (∀ c ∈ ty, typeChar c = true) ∧
@@ -374,17 +179,12 @@ theorem holeForm_spec {cs n ty : List Char} (h : holeForm cs = some (n, ty)) :
     exact hc
   · simp at h
 
-/-- Whether a code line is an import in the one form the reader takes: exactly `import <module>`,
-where the module name is one or more `qualPart`s joined by `.`. Lean reads anything after the module
-name on the same line as another import or as commands after the header, so
-`import Mitos.Core namespace Foo` is refused (review on #86 by CodeRabbit at e9fa024). -/
 def importForm (cs : List Char) : Bool :=
   "import ".toList.isPrefixOf cs && ((String.ofList (cs.drop 7)).splitOn ".").all qualPart
 
 def lexError (l : String) : String :=
   s!"the Challenge has a line whose comments, strings or escaped names the refutation reader does not follow: {l}"
 
-/-- Reads one line; `inDoc` says whether it is inside a block comment. -/
 def readLine (inDoc : Bool) (l : String) : Except String (Line × Bool) :=
   let cs := l.toList
   if inDoc then
@@ -404,14 +204,6 @@ def readLine (inDoc : Bool) (l : String) : Except String (Line × Bool) :=
     | some (n, s) => .ok (.thm n s l, false)
     | none => .error s!"the Challenge has a line the refutation reader does not handle: {l}"
 
-/-- **The reader follows `leanScan`.** On a line inside a comment, and on a line that opens one, it
-keeps the line as it is, and `leanScan` (Lean's scan of a comment's text) ends where the reader goes
-on: still in the comment, or closed exactly at the end of the line. Every other line it takes leaves
-it outside a comment, and is a line comment or holds no opener, no closer and no character that
-starts a string literal or an escaped name, which Lean may read on past the line's end. Where Lean
-reads a comment otherwise than `leanScan` (after a doc comment's opener) so that a command, a
-declaration or a generated statement differs, the checks with Lean (`Mutants.CrossCheck`,
-`Mutants.Output`) stop the runner. -/
 theorem readLine_comments {inDoc inDoc' : Bool} {l : String} {x : Line}
     (h : readLine inDoc l = .ok (x, inDoc')) :
     (inDoc = true →
@@ -470,12 +262,6 @@ theorem readLine_comments {inDoc inDoc' : Bool} {l : String} {x : Line}
           · exact ok h
           · simp at h
 
-/-- **A line the reader takes as a definition hole has the hole form**: it is outside a comment,
-kept as it is, and is exactly `def <n> : <ty> := sorry`, where `qualName` takes `n`, every character
-of `ty` is an ASCII letter or digit, `_`, `.`, a space or `→`, and every word of `ty` between single
-spaces is `→`, `List`, `String`, `Nat` or a name under `Mitos`. This is a fact about the line's
-text only; why Lean reads the value of such a line as its `sorry` is in the module doc, and is not
-proved. -/
 theorem readLine_hole {inDoc inDoc' : Bool} {l t : String}
     (h : readLine inDoc l = .ok (.hole t, inDoc')) :
     inDoc = false ∧ inDoc' = false ∧ t = l ∧ ∃ n ty,
@@ -506,9 +292,6 @@ theorem readLine_hole {inDoc inDoc' : Bool} {l t : String}
       exact ⟨rfl, h.2.symm, h.1.symm, n, ty, holeForm_spec hnt⟩
     · split at h <;> simp at h
 
-/-- **A line the reader takes as an import is one import and nothing else**: it is outside a
-comment, kept as it is, and is exactly `import <module>`, every component of the module name a
-`qualPart`. -/
 theorem readLine_imp {inDoc inDoc' : Bool} {l t : String}
     (h : readLine inDoc l = .ok (.imp t, inDoc')) :
     inDoc = false ∧ inDoc' = false ∧ t = l ∧ ∃ m, l.toList = "import ".toList ++ m ∧
@@ -541,13 +324,6 @@ theorem readLine_imp {inDoc inDoc' : Bool} {l t : String}
     · simp at h
     · split at h <;> simp at h
 
-/-! The facts about Lean's block comments that `leanScan` transcribes, checked whenever this
-package builds, as `Mutants.Resolution` checks name resolution: the code after a closer on the same
-line is read (`CommentProbe.afterClose`); a comment opened inside another nests, so the inner
-closer does not end the outer one; and the character after an opener is skipped, also for a doc
-comment's opener, so a closer that starts there does not end the comment. In the last three, the
-first declaration is inside a comment, or else the second would clash with it. -/
-
 /- a -/ def CommentProbe.afterClose : Nat := 1
 /- /- -/ def CommentProbe.nested : Nat := 1 -/
 def CommentProbe.nested : Nat := 2
@@ -577,17 +353,11 @@ def Line.isThm (name : String) : Line → Bool
   | .thm n _ _ => n == name
   | _ => false
 
-/-! ## Absolute names -/
-
-/-- The statement with every name made absolute, `_root_.` before each word, if it is a list of
-names under `Mitos` separated by single spaces; `none` for anything else. -/
 def qualify (stmt : String) : Option String :=
   if (stmt.splitOn " ").all qualName then
     some (" ".intercalate ((stmt.splitOn " ").map ("_root_." ++ ·)))
   else none
 
-/-- **What `qualify` does**: it accepts a statement exactly when every word is a name under `Mitos`,
-and then writes each word as `_root_.<word>`, in order, and nothing else. -/
 theorem qualify_eq_some {s q : String} :
     qualify s = some q ↔ (∀ w ∈ s.splitOn " ", qualName w = true) ∧
       q = " ".intercalate ((s.splitOn " ").map ("_root_." ++ ·)) := by
@@ -602,7 +372,6 @@ theorem qualify_eq_some {s q : String} :
     simp only [reduceCtorEq, false_iff, not_and]
     exact fun hall => absurd hall h
 
-/-- Every name `qualName` accepts lies under `Mitos`. -/
 theorem qualName_mitos {w : String} (h : qualName w = true) :
     ∃ rest, w.splitOn "." = "Mitos" :: rest ∧ rest ≠ [] := by
   unfold qualName at h
@@ -612,13 +381,10 @@ theorem qualName_mitos {w : String} (h : qualName w = true) :
     exact ⟨rest, hs, h.1⟩
   · simp at h
 
-/-- Whether a line of the Challenge is no theorem, or a theorem whose statement `qualify` takes. -/
 def Line.qualifies : Line → Bool
   | .thm _ s _ => (qualify s).isSome
   | _ => true
 
-/-- Why the runner cannot write a Challenge's statements and hole names with absolute names, if it
-cannot. -/
 def unqualified (ls : List Line) (defs : List String) : Option String :=
   match ls.find? (!·.qualifies), defs.find? (!qualName ·) with
   | some (.thm n s _), _ =>
@@ -638,21 +404,15 @@ theorem unqualified_none {ls : List Line} {defs : List String} (h : unqualified 
     exact ⟨fun l hl => by simpa using List.find?_eq_none.mp h1 l hl,
       fun d hd => by simpa using List.find?_eq_none.mp h2 d hd⟩
 
-/-- The negation of a named theorem's qualified statement, declared at the root. -/
 def negated (name stmt : String) : String :=
   s!"theorem _root_.Mitos.Refute.{name} : ¬ ({stmt}) := sorry"
 
-/-- An approved theorem with its qualified statement, declared at the root. -/
 def stated (name stmt : String) : String :=
   s!"theorem _root_.Mitos.Proofs.{name} : {stmt} := sorry"
 
-/-! ## Modules and imports -/
-
-/-- The module of a `.lean` path: `Mitos/Impl/Resolve.lean` is `Mitos.Impl.Resolve`. -/
 def moduleOf (path : String) : String :=
   ".".intercalate ((String.ofList (path.toList.take (path.length - 5))).splitOn "/")
 
-/-- The implementation modules of a core, given its paths: every module under `Mitos/Impl/`. -/
 def implModules (paths : List String) : List String :=
   (paths.filter (inArea "Impl")).map moduleOf
 
@@ -665,11 +425,6 @@ theorem mem_implModules {paths : List String} {m : String} :
 
 def importLine (m : String) : String := s!"import {m}"
 
-/-! ## The Challenges with the holes as values -/
-
-/-- A Challenge with the holes as values: an import of each implementation module, then the
-approved Challenge's lines with the hole lines dropped and each theorem line as `thm` renders it,
-then `extra`. -/
 def byValue (impls : List String) (thm : String → String → String → Option String)
     (ls : List Line) (extra : List String) : List String :=
   impls.map importLine ++
@@ -702,21 +457,15 @@ theorem mem_byValue {impls : List String} {thm : String → String → String �
     · exact .inl (.inr ⟨_, hl, hr⟩)
     · exact .inr he
 
-/-- The statement that names every definition hole, each as `_root_.<hole>`:
-`(_root_.h₁, _root_.h₂, …) = (_root_.h₁, _root_.h₂, …)`. -/
 def holesStatement (defs : List String) : String :=
   let t := s!"({", ".intercalate (defs.map ("_root_." ++ ·))})"
   s!"{t} = {t}"
 
 def holesName : String := "Mitos.Refute.holes"
 
-/-- The extra line of a refutation Challenge, if the Challenge has definition holes. -/
 def holesHole (defs : List String) : List String :=
   if defs.isEmpty then [] else [s!"theorem _root_.{holesName} : {holesStatement defs} := sorry"]
 
-/-- The refutation Challenge for `names`: the holes as values, the named theorems negated with
-absolute names, the others dropped, and `Mitos.Refute.holes`. Every name must be a theorem the
-Challenge states exactly once, and every statement and hole name must be one `qualify` takes. -/
 def refutation (impls defs : List String) (ls : List Line) (names : List String) :
     Except String (List String) :=
   match names.find? (fun b => (ls.filter (·.isThm b)).length != 1) with
@@ -727,7 +476,6 @@ def refutation (impls defs : List String) (ls : List Line) (names : List String)
     | none => .ok (byValue impls
         (fun n s _ => if names.contains n then (qualify s).map (negated n) else none) ls (holesHole defs))
 
-/-- Every name a refutation is built for is a theorem the Challenge states exactly once. -/
 theorem refutation_once {impls defs : List String} {ls : List Line} {names : List String}
     {out : List String} (h : refutation impls defs ls names = .ok out) :
     ∀ b ∈ names, (ls.filter (·.isThm b)).length = 1 := by
@@ -739,8 +487,6 @@ theorem refutation_once {impls defs : List String} {ls : List Line} {names : Lis
     have := List.find?_eq_none.mp hnone b hb
     simpa using this
 
-/-- A refutation is built only when every statement of the Challenge and every hole name can be
-written with absolute names. -/
 theorem refutation_qualifies {impls defs : List String} {ls : List Line} {names : List String}
     {out : List String} (h : refutation impls defs ls names = .ok out) :
     (∀ l ∈ ls, l.qualifies = true) ∧ ∀ d ∈ defs, qualName d = true := by
@@ -752,10 +498,6 @@ theorem refutation_qualifies {impls defs : List String} {ls : List Line} {names 
     · rename_i hq
       exact unqualified_none hq
 
-/-- **The refutation Challenge states only approved text, with the holes as values and absolute
-names.** Each of its lines is an import of an implementation module, an import or comment line of
-the Challenge, the negation of the qualified statement of a named Challenge theorem, or the
-`Mitos.Refute.holes` line. -/
 theorem mem_refutation {impls defs : List String} {ls : List Line} {names : List String}
     {out : List String} (h : refutation impls defs ls names = .ok out) (x : String) :
     x ∈ out ↔ ((∃ m ∈ impls, x = importLine m) ∨ Line.imp x ∈ ls ∨ Line.keep x ∈ ls ∨
@@ -788,8 +530,6 @@ theorem mem_refutation {impls defs : List String} {ls : List Line} {names : List
           simp [hn, hq]
         · exact .inr (.inr (.inr (.inr h)))
 
-/-- **Each named theorem is refuted as approved**: the refutation Challenge holds the negation of
-its statement, qualified, and the Challenge states it exactly once. -/
 theorem refutation_states {impls defs : List String} {ls : List Line} {names : List String}
     {out : List String} (h : refutation impls defs ls names = .ok out) :
     ∀ n ∈ names, ∃ s t q, Line.thm n s t ∈ ls ∧ qualify s = some q ∧ negated n q ∈ out := by
@@ -812,16 +552,11 @@ theorem refutation_states {impls defs : List String} {ls : List Line} {names : L
       (mem_refutation h _).mpr (.inr (.inr (.inr (.inl ⟨n', hn, s, t, q, hl, hq, rfl⟩))))⟩
   | _ => simp [Line.isThm] at hthm
 
-/-- The approved Challenge with the holes as values: every theorem line with its statement
-qualified, declared at the root. -/
 def approvedByValue (impls : List String) (ls : List Line) : Except String (List String) :=
   match unqualified ls [] with
   | some e => .error e
   | none => .ok (byValue impls (fun n s _ => (qualify s).map (stated n)) ls [])
 
-/-- **The approved Challenge by value states the approved theorems with absolute names.** Each of
-its lines is an import of an implementation module, a line of the approved Challenge that is no
-hole and no theorem, or an approved theorem with its statement qualified. -/
 theorem mem_approvedByValue {impls : List String} {ls : List Line} {out : List String}
     (h : approvedByValue impls ls = .ok out) {x : String} :
     x ∈ out ↔
@@ -847,7 +582,6 @@ theorem mem_approvedByValue {impls : List String} {ls : List Line} {out : List S
       · exact .inr (.inr (.inl h))
       · exact .inr (.inr (.inr (.inl ⟨n, s, t, hl, by simp [hq]⟩)))
 
-/-- **Every theorem of the approved Challenge is in the approved Challenge by value**, qualified. -/
 theorem approvedByValue_states {impls : List String} {ls : List Line} {out : List String}
     (h : approvedByValue impls ls = .ok out) {n s t : String} (hl : Line.thm n s t ∈ ls) :
     ∃ q, qualify s = some q ∧ stated n q ∈ out := by
@@ -861,10 +595,6 @@ theorem approvedByValue_states {impls : List String} {ls : List Line} {out : Lis
   obtain ⟨q, hq⟩ := hq
   exact ⟨q, hq, (mem_approvedByValue h).mpr (.inr (.inr (.inr ⟨n, s, t, q, hl, hq, rfl⟩)))⟩
 
-/-! ## The hole run's core -/
-
-/-- Outside `Mitos/Proofs/`, where the proofs, a known gap's proof repairs and the case's
-`Refute.lean` go. -/
 def outsideProofs (path : String) : Bool :=
   match path.splitOn "/" with
   | "Mitos" :: "Proofs" :: _ => false
@@ -874,15 +604,9 @@ theorem outsideProofs_of_impl {p : String} (h : inArea "Impl" p = true) : outsid
   obtain ⟨rest, hr⟩ := inArea_head h
   simp [outsideProofs, hr]
 
-/-- The core of the hole run: the core without `Mitos/Proofs/`, with the mutant's edits under
-`Mitos/Impl/` and no others. -/
 def holeCore (files : List (String × String)) (m : Mutant) : Except String (List (String × String)) :=
   applyEdits (files.filter fun f => outsideProofs f.1) m.implEdits
 
-/-- **The hole run's core is the approved core without `Mitos/Proofs/`, with only the mutant's
-implementation edited**: each of its paths is a path of the core outside `Mitos/Proofs/`, and
-each file outside `Mitos/Impl/` is the core's. So it holds no file the case wrote for its proofs.
--/
 theorem holeCore_spec {files out : List (String × String)} {m : Mutant}
     (h : holeCore files m = .ok out) :
     (∀ p ∈ out.map (·.1), outsideProofs p = true ∧ p ∈ files.map (·.1)) ∧
@@ -899,7 +623,6 @@ theorem holeCore_spec {files out : List (String × String)} {m : Mutant}
     rw [hpe] at he
     simp [hp] at he
 
-/-- The text of the file `p`, `src`, after the edits that name it, in order. -/
 def editsOn (p src : String) : List Edit → Option String
   | [] => some src
   | e :: es =>
@@ -919,7 +642,6 @@ theorem lookup_replaceFile_self {p text : String} :
       simp only [List.lookup, h2] at h
       exact lookup_replaceFile_self h
 
-/-- After edits, a file's text is its text before them with the edits that name it applied. -/
 theorem applyEdits_lookup_eq {p s : String} :
     ∀ {files out : List (String × String)} {es : List Edit},
       applyEdits files es = .ok out → files.lookup p = some s → out.lookup p = editsOn p s es
@@ -966,8 +688,6 @@ theorem lookup_filter_key {p : String} {g : String → Bool} :
       by_cases hg : g q = true <;>
         simp [hg, List.lookup, hpq, lookup_filter_key]
 
-/-- **The hole run's implementation files are the other runs'**: each file under `Mitos/Impl/` has
-the same text in the hole run's core as in the mutated core the other runs use. -/
 theorem holeCore_impl {files hole full : List (String × String)} {m : Mutant}
     (hh : holeCore files m = .ok hole) (hf : applyEdits files m.edits = .ok full)
     {p : String} (hp : inArea "Impl" p = true) : hole.lookup p = full.lookup p := by
@@ -990,20 +710,12 @@ theorem holeCore_impl {files hole full : List (String × String)} {m : Mutant}
     rw [applyEdits_lookup_eq hh h1, applyEdits_lookup_eq hf hs, Mutant.implEdits]
     exact editsOn_filter fun e _ he => he ▸ hp
 
-/-! ## The solution modules -/
-
-/-- The case's `Refute.lean` is written as this module. -/
 def caseModule : String := "Mitos.Proofs.RefuteCase"
 
-/-- The refutation's solution module: the case's module, and the proof of `Mitos.Refute.holes`,
-stated as the Challenge states it, at the root and with absolute names. It imports nothing else:
-the binding to the mutant is the comparison by value, not an import. -/
 def refutationSolution (defs : List String) : String :=
   s!"{importLine caseModule}\n" ++
     if defs.isEmpty then "" else s!"\ntheorem _root_.{holesName} : {holesStatement defs} := _root_.rfl\n"
 
-/-- The hole run's solution module: it imports every implementation module of the core, and nothing
-else. -/
 def holesSolution (paths : List String) : String :=
   String.join ((implModules paths).map fun m => importLine m ++ "\n")
 
@@ -1014,7 +726,6 @@ def holesSolution (paths : List String) : String :=
 #guard refutationSolution ["Mitos.Impl.resolve", "Mitos.Impl.impact"] =
   "import Mitos.Proofs.RefuteCase\n\ntheorem _root_.Mitos.Refute.holes : (_root_.Mitos.Impl.resolve, _root_.Mitos.Impl.impact) = (_root_.Mitos.Impl.resolve, _root_.Mitos.Impl.impact) := _root_.rfl\n"
 
--- Every approved statement is qualified word by word; anything else is refused.
 #guard qualify "Mitos.Spec.Sound Mitos.Impl.resolve" =
   some "_root_.Mitos.Spec.Sound _root_.Mitos.Impl.resolve"
 #guard qualify "Mitos.Spec.ImpactCorrect Mitos.Impl.impact" =
@@ -1033,8 +744,6 @@ def holesSolution (paths : List String) : String :=
     .keep "theorem below, said in prose", .keep "-/", .keep "", .hole "def Mitos.Impl.f : Nat := sorry",
     .thm "t_1" "Mitos.Spec.P Mitos.Impl.f" "theorem Mitos.Proofs.t_1 : Mitos.Spec.P Mitos.Impl.f := sorry",
     .thm "u" "∀ x, x = x" "theorem Mitos.Proofs.u : ∀ x, x = x := sorry", .keep ""]
--- The refutation drops the hole, imports the implementation and states the holes, each statement
--- at the root with absolute names.
 #guard ((readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.u : Mitos.Spec.Q Mitos.Impl.f := sorry").toOption.bind
     fun ls => (refutation ["Mitos.Impl.F"] ["Mitos.Impl.f"] ls ["u"]).toOption) ==
   some ["import Mitos.Impl.F", "import Mitos.Core",
@@ -1044,9 +753,6 @@ def holesSolution (paths : List String) : String :=
     fun ls => (approvedByValue ["Mitos.Impl.F"] ls).toOption) ==
   some ["import Mitos.Impl.F", "import Mitos.Core",
     "theorem _root_.Mitos.Proofs.t : _root_.Mitos.Spec.P _root_.Mitos.Impl.f := sorry"]
--- A line that could change what a statement means is refused, and so is an unknown theorem, a
--- statement the qualifier does not take (also one the refutation does not name) and a hole name
--- outside `Mitos`.
 #guard (readChallenge "import Mitos.Core\nopen Mitos\ntheorem Mitos.Proofs.t : P := sorry").toOption == none
 #guard (readChallenge "theorem Mitos.Proofs.t : P :=\n  sorry").toOption == none
 #guard ((readChallenge "theorem Mitos.Proofs.t : Mitos.P := sorry").toOption.bind
@@ -1057,12 +763,6 @@ def holesSolution (paths : List String) : String :=
     fun ls => (refutation [] ["f"] ls ["t"]).toOption) == none
 #guard ((readChallenge "theorem Mitos.Proofs.t : P := sorry").toOption.bind
     fun ls => (approvedByValue [] ls).toOption) == none
--- A line whose block comments the reader could read otherwise than Lean is refused (review on #86,
--- round 6): a comment that ends before its line, so the reader would keep the hole and the theorem
--- below it; text after the closer inside a comment; a nested comment, so the theorem is in a
--- comment; an opener in a code line; a closer right after the opener, which Lean skips; a closer
--- before a carriage return; and a string literal and an escaped name in a hole line, which Lean
--- reads on over the theorem line below them.
 #guard (readChallenge "/- a -/ open Foo\ndef Mitos.Impl.f : Nat := sorry\n-- -/").toOption == none
 #guard (readChallenge "import Mitos.Core\n/- note -/ open Foo\ndef Mitos.Impl.f : Nat := sorry\ntheorem Mitos.Proofs.u : Mitos.Spec.Q Mitos.Impl.f := sorry\n-- end -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\n/- doc\ntext -/ def Mitos.Impl.f : Nat := sorry\n-- -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry").toOption == none
@@ -1072,27 +772,14 @@ def holesSolution (paths : List String) : String :=
 #guard (readChallenge "/-\r\n-/\r\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- -/").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : F \"x := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- \" := 0").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef «Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- » : Nat := 0").toOption == none
--- A `def` line whose value Lean does not read as the `sorry` is refused, not dropped as a hole
--- (review on #86, round 7): the `:= sorry` in a line comment, after a value or after the type,
--- which Lean continues on the next line; and a value before a `where` or a tactic with its own
--- `:= sorry`.
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := 0 -- := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat -- := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := 0 where g : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := by exact 0 <;> have x : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
--- A `def` line whose value Lean reads by equations or as structure fields is refused too (review on
--- #86, round 8, the opus verifier at debeac7): equations with a `where`, with a tactic that has its
--- own `:= sorry`, and on the approved `impact` type; and fields after `where`, the others keeping
--- their defaults. Each holds a character or a word outside the hole form.
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat → Nat | _ => 0 where g : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat → Nat | _ => by exact 0 <;> have x : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.impact : List Mitos.Edge → String → List String | _, _ => [] where g : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.c : Mitos.S where b := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
--- The hole form, word by word and character by character: no keyword (and no Lean token of a
--- name's shape, `Type`, `Sort`, `Prop`, `StateRefT`) is a word of a hole's type, nor is an empty
--- word (two spaces, an empty type); none of the characters that start an equation, a `:=`, a
--- comment, a string, an escaped name, a binder or a list is in it; and a hole has a name under
--- `Mitos` and no binder.
 #guard ["where", "by", "fun", "match", "let", "have", "with", "do", "sorry", "Type", "Sort",
   "Prop", "StateRefT", "Mitos", "_root_.Mitos.S", ""].all (!typeWord ·)
 #guard "|:=-/\"«(),×[]{}⟨⟩$@#`'\t\r".toList.all (!typeChar ·)
@@ -1100,22 +787,16 @@ def holesSolution (paths : List String) : String :=
 #guard holeForm "def Mitos.Impl.f :  := sorry".toList == none
 #guard holeForm "def f : Nat := sorry".toList == none
 #guard holeForm "def Mitos.Impl.f (x : Nat) : Nat := sorry".toList == none
--- The approved Challenge's two holes are read as holes, with their names and types.
 #guard (readChallenge "def Mitos.Impl.resolve : Mitos.Resolver := sorry\ndef Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry").toOption ==
   some [.hole "def Mitos.Impl.resolve : Mitos.Resolver := sorry",
     .hole "def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry"]
 #guard holeForm "def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry".toList ==
   some ("Mitos.Impl.impact".toList, "List Mitos.Edge → String → List String".toList)
--- An import line holds one module and nothing else (review on #86 by CodeRabbit at e9fa024): Lean
--- reads what follows the module name as commands after the header, such as a `namespace` around
--- the generated statements, an `open`, or a theorem the reader would neither negate nor drop.
 #guard (readChallenge "import Mitos.Core namespace Mitos.Refute\ntheorem Mitos.Proofs.u : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core open Foo\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core theorem Mitos.Proofs.t : False := sorry\ntheorem Mitos.Proofs.u : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\nimport Mitos.Impl.Resolve").toOption ==
   some [.imp "import Mitos.Core", .imp "import Mitos.Impl.Resolve"]
--- Lines Lean reads unambiguously are read as Lean reads them: a comment on one line, a closer at
--- the end of a line comment inside a comment, and an opener whose next character Lean skips.
 #guard (readChallenge "/-- doc -/\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption ==
   some [.keep "/-- doc -/", .thm "t" "Mitos.P" "theorem Mitos.Proofs.t : Mitos.P := sorry"]
 #guard (readChallenge "/-\n-- -/\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption ==

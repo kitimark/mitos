@@ -1,9 +1,5 @@
 import Mitos.Core
 
-/-! A cheat: the mutant's `Mitos/Impl/Resolve.lean` imports this module, takes `resolve` from
-`bogusResolver` below and states the refutation from `bogus_not_exact`. So the refutation is about
-code this file wrote, and the gate's run, which does not hold this file, cannot build the core. -/
-
 open Mitos
 
 def Mitos.Refute.bogus : Edge :=

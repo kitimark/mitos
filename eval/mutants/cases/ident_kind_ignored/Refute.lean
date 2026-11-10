@@ -8,7 +8,6 @@ def loc (id : Nat) (repo : String) (kind : FactKind) (eco : String) : Located :=
   { id, repo, rev := "", path := "", origin := .extractor "x",
     fact := { kind, ident := ⟨eco, "lib"⟩, span := ⟨0, 0⟩ } }
 
-/-- `a` requires the npm package `lib`; `b` provides the pip package `lib`. -/
 def fs : List Located := [loc 0 "a" .requires "npm", loc 1 "b" .provides "pip"]
 
 theorem resolve_sound : ¬ Spec.Sound Impl.resolve := by

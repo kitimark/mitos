@@ -1,10 +1,6 @@
 import Mitos.Impl.Resolve
 import Mitos.Impl.Impact
 
-/-! A cheat: inside namespace `Mitos.Refute`, `Mitos.Impl.resolve` names the implementation's
-shadow `Mitos.Mitos.Impl.resolve`, a resolver whose one edge lists no assumption, so the theorem
-refutes `AssumptionsExact` for the shadow, not for the mutant. -/
-
 namespace Mitos.Refute
 open Mitos
 

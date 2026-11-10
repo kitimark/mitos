@@ -4,7 +4,6 @@ import Mitos.Impl.Impact
 namespace Mitos.Refute
 open Mitos
 
-/-- `b` provides a library that nobody requires: nothing is unresolved. -/
 def fs : List Located :=
   [{ id := 0, repo := "b", rev := "", path := "", origin := .extractor "x",
      fact := { kind := .provides, ident := ⟨"npm", "lib"⟩, span := ⟨0, 0⟩ } }]

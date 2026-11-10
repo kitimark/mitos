@@ -1,9 +1,6 @@
 import Mitos.Impl.Resolve
 import Mitos.Impl.Impact
 
-/-! A cheat: refutes the bogus resolver that the implementation builds only in a run that holds
-this file. -/
-
 open Mitos
 
 def Mitos.Refute.loc (id : Nat) (repo : String) (kind : FactKind) : Located :=

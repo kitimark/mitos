@@ -1,10 +1,5 @@
 import Mitos.Impl.Impact
 
-/-! A cheat: this file declares `Mitos.Impl.resolve` itself, a resolver whose one edge lists no
-assumption, and refutes `AssumptionsExact` for it instead of for the mutant. It imports
-`Mitos.Impl.Impact` but not `Mitos.Impl.Resolve`, so no name clashes; only the comparison of the
-hole by value rejects it. -/
-
 open Mitos
 
 def Mitos.Refute.bogus : Edge :=

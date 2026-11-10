@@ -1,9 +1,6 @@
 import Mitos.Impl.Resolve
 import Mitos.Impl.Impact
 
-/-! A cheat: inside `namespace Mitos.Refute`, `Impl.resolve` names the shadow declared below, so
-the theorem refutes `AssumptionsExact` for the shadow, not for the mutant. -/
-
 namespace Mitos.Refute
 open Mitos
 
@@ -17,7 +14,6 @@ def bogus : Edge :=
   { src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := (loc 0 "a" .requires).fact.scope,
     req := 0, prov := 1, assumes := [], status := .inferred }
 
-/-- A shadow resolver in `Mitos.Refute.Impl`: one edge that lists no assumption. -/
 def Impl.resolve : Resolver := fun _ => { edges := [bogus], unresolved := [] }
 
 theorem resolve_assumptions_exact : ¬ Spec.AssumptionsExact Impl.resolve := by

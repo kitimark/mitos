@@ -10,7 +10,6 @@ theorem not_affects_nil {x y : String} : ¬ Affects [] x y := by
   | step he => simp at he
   | trans _ _ ih _ => exact ih
 
-/-- With no edges at all, nothing is affected, not even the changed repo. -/
 theorem impact_correct : ¬ Spec.ImpactCorrect Impl.impact := by
   intro h
   exact not_affects_nil ((h [] "a" "a").mp (by decide +kernel))

@@ -8,7 +8,6 @@ def loc (id : Nat) (repo : String) (kind : FactKind) : Located :=
   { id, repo, rev := "", path := "", origin := .extractor "x",
     fact := { kind, ident := ⟨"npm", "lib"⟩, span := ⟨0, 0⟩ } }
 
-/-- `a` requires what `b` provides; the edge must run from `a` to `b`. -/
 def fs : List Located := [loc 0 "a" .requires, loc 1 "b" .provides]
 
 theorem resolve_sound : ¬ Spec.Sound Impl.resolve := by
