@@ -73,15 +73,19 @@ escalation: hint → automation → stronger model → pair → split → revisi
   `x##[warning]forged` and a `--jobs` value with the legacy form (`ciCases`).
 - **The verdict line after #82.** #82 printed `ciLine (rejectedLine g why)` and
   `ciLine "VERDICT: REJECTED (record: …)"`. Here the gate makes its verdict with
-  `Cheats.Verdict.ofGate`, which writes the text, the record error or the gate's `why`, with
-  `ciLine`, and prints `v.render` as it is, so `parse_eq_some_iff` still describes what is printed.
-  `Verdict.ofGate_not_startsCommand`, `ofGate_no_break` and `ofGate_printable` prove for every
-  verdict the gate can print what `ciLine`'s theorems prove for a line through it. Printing
-  `ciLine v.render` would not work: `ciLine` escapes the `\` of an escape again, so a record error
-  with a newline would print as a line the runner reads as no verdict (an example in `Cheats.lean`
-  checks this). The rejection lines are unchanged byte for byte, because every `why` is `""` or
-  `I/O error`. The record line differs from #82's only when the error starts with a `:`, which
-  `ciLine` on the text alone escapes.
+  `Cheats.Verdict.ofGate`. A rejection carries `Cause.judged` or `Cause.ioError`, not a string.
+  The record error is still written with `ciLine`, and the line stays
+  `VERDICT: REJECTED (record: <escaped error>)`. `render` returns a `VerdictLine`, which `ciLine`
+  does not accept, and the gate prints that line as it is, so `parse_eq_some_iff` still describes
+  what is printed. `Verdict.ofGate_not_startsCommand`, `ofGate_no_break` and `ofGate_printable`
+  prove for every verdict the gate can print what `ciLine`'s theorems prove for a line through it.
+  Passing the line's text through `ciLine` again escapes the `\` of an escape, so the printed text
+  is no longer the verdict the gate made. The runner still reads a verdict: the line still starts
+  with the record prefix and ends with `)`, so `parse` reads `unrecorded` of the double-escaped
+  text, not no verdict (an example in `Cheats.lean` checks this). The rejection lines are unchanged
+  byte for byte: a judgment prints no cause text, and an I/O error prints `: I/O error`. The record
+  line differs from #82's only when the error starts with a `:`, which `ciLine` on the text alone
+  escapes.
 - **Scheduler.** FIFO over a fixed order: heavy jobs, then runs expected to reach the comparator,
   then the rest. A heavy job starts only when nothing runs, and nothing starts while it runs.
   The short runs go last, so the slots stay full to the end.
