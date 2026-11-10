@@ -1,6 +1,7 @@
 import MitosGate.Cheats
 import MitosGate.GateId
 import MitosGate.Lint
+import MitosGate.Outcome
 import MitosGate.Util
 
 namespace MitosGate.Accept
@@ -322,102 +323,16 @@ def lint (c : Config) (pluginFile : System.FilePath) (i : Inputs) : GateM Unit :
   for v in shown do IO.println (ciLine s!"  {v}")
   unless shown.isEmpty do throw (.lint, "")
 
-inductive Outcome
-  | ok
-  | illegalAxiom
-  | missingConst
-  /-- A statement or definition hole differs from the Challenge's. -/
-  | statement
-  | kernelReject
-  | importClash
-  | noJudgment
-  deriving DecidableEq
+/-- The gate that rejects the plugin's run for this failure. -/
+def pluginFailure : Failure → GateId
+  | .noJudgment | .importClash => .sandbox
+  | .missingConst | .statement => .statements
+  | .illegalAxiom => .axioms
+  | .kernelReject => .kernels
 
-def occursIn (pat : List Char) : List Char → Bool
-  | [] => pat.isEmpty
-  | s@(_ :: rest) => pat.isPrefixOf s || occursIn pat rest
-
-/-- The comparator's messages for a constant the solution lacks: the exporter's panic and
-`Lake.Check.compareAt`'s own. -/
-def missingMarkers : List String := ["not found in environment", "Const not found in solution"]
-
-def statementMarkers : List String :=
-  [ "Const not found in challenge",
-    "Const does not match between challenge and target",
-    "Challenge and solution constant kind don't match",
-    "Challenge and solution theorem statement do not match",
-    "Challenge constant is not a definition", "Solution constant is not a definition" ]
-
-/-- The outcome of a comparator run that exited with `code` and printed `out`. The comparator stops
-at its first error, but the build output before it is the plugin's and the models', and can hold
-any of these markers. So the order of the checks decides which gate such a run fails, never whether
-it is accepted: that needs exit code 0 (`Outcome.parse_ok`). -/
-def Outcome.parse (code : UInt32) (out : String) : Outcome :=
-  let has (marker : String) := occursIn marker.toList out.toList
-  if code == 0 && has "Your solution is okay!" then .ok
-  else if has "Illegal axiom" then .illegalAxiom
-  else if missingMarkers.any has then .missingConst
-  else if statementMarkers.any has then .statement
-  else if has "kernel" && has "reject" then .kernelReject
-  else if has "environment already contains" then .importClash
-  else .noJudgment
-
-theorem Outcome.parse_ok {code : UInt32} {out : String} (h : Outcome.parse code out = .ok) :
-    code = 0 := by
-  simp only [Outcome.parse] at h
-  split at h
-  · simp_all
-  · repeat' split at h
-    all_goals simp_all
-
-example : Outcome.parse 0 "Running con-ron kernel on solution
-con-ron: accepted 1885 declarations (--verified)
-con-ron kernel accepts the solution
-Running Lean default kernel on solution
-Lean default kernel accepts the solution
-Your solution is okay!
-" = .ok := by decide +kernel
-
-example : Outcome.parse 1 "warning: Plugins/ToyRequire.lean:38:8: declaration uses `sorry`
-Build completed successfully (11 jobs).
-error: Illegal axiom detected: 'sorryAx'
-" = .illegalAxiom := by decide +kernel
-
-example : Outcome.parse 1 "Build completed successfully (11 jobs).
-PANIC at LeanExport.dumpConstant LeanExport.Basic:254:48: Constant ToyRequire.complete not found in environment.
-error: Child exited with 134
-" = .missingConst := by decide +kernel
-
-example : Outcome.parse 1 "Building Plugins.ToyRequire
-Build completed successfully (11 jobs).
-error: Challenge and solution theorem statement do not match: 'ToyRequire.complete'
-" = .statement := by decide +kernel
-
-example : Outcome.parse 1 "Running Lean default kernel on solution
-Lean default kernel rejected the solution
-error: Lean default exited with 1
-" = .kernelReject := by decide +kernel
-
-example : Outcome.parse 1 "error: Models/ToyRequire/Adequacy.lean:1:0: import Models.ToyRequire.Examples failed, environment already contains 'Models.ToyRequire.model.examples' from Models.ToyRequire
-Some required targets logged failures:
-- Models.ToyRequire.Adequacy
-error: build failed
-error: Child exited with 1
-" = .importClash := by decide +kernel
-
-example : Outcome.parse 1 "error: Plugins/ToyRequire.lean:39:8: Unknown identifier `«sorry»`
-Some required targets logged failures:
-- Plugins.ToyRequire
-error: build failed
-error: Child exited with 1
-" = .noJudgment := by decide +kernel
-
-def pluginFailure : Outcome → Option GateId
-  | .ok => none
-  | .noJudgment | .importClash => some .sandbox
-  | .missingConst | .statement => some .statements
-  | .illegalAxiom => some .axioms
-  | .kernelReject => some .kernels
+example :
+    pluginFailure .missingConst = .statements ∧ pluginFailure .statement = .statements :=
+  ⟨rfl, rfl⟩
 
 structure Judgment where
   outcome : Outcome
@@ -428,7 +343,8 @@ def runComparator (c : Config) (dir : System.FilePath) (config : String) : IO Ju
   try
     let (code, out) ← run "lake" args dir
     return { outcome := .parse code out, output := out }
-  catch e => return { outcome := .noJudgment, output := s!"error: could not run lake comparator: {e}" }
+  catch e =>
+    return { outcome := .failed .noJudgment, output := s!"error: could not run lake comparator: {e}" }
 
 /-- The regular files under `dir`, recursively, relative to it and sorted. Anything else there, such
 as a symlink or a device, is an error: reading it could follow it out of the judging directory or
@@ -457,37 +373,37 @@ def buildOutputs (dir : System.FilePath) : ExceptT String IO (Array (String × S
 def changedOutputs (before after : Array (String × String)) : Array String :=
   before.filterMap fun (f, h) => if after.contains (f, h) then none else some f
 
-def examplesFailure (model : String) : Outcome → Option String
-  | .ok => none
-  | .missingConst => some s!"{examplesModule model} must declare `{model}.examples`"
+/-- Why gate 6's examples run failed. -/
+def examplesFailure (model : String) : Failure → String
+  | .missingConst => s!"{examplesModule model} must declare `{model}.examples`"
   | .illegalAxiom =>
-    some s!"`{model}.examples` uses an axiom outside {String.intercalate ", " permittedAxioms}"
+    s!"`{model}.examples` uses an axiom outside {String.intercalate ", " permittedAxioms}"
   | .statement =>
-    some s!"`{model}.examples` in {examplesModule model} is not a `Mitos.ModelExamples` definition"
-  | .kernelReject => some s!"a kernel rejected {examplesModule model}"
-  | .importClash | .noJudgment => some s!"{examplesModule model} could not be judged"
+    s!"`{model}.examples` in {examplesModule model} is not a `Mitos.ModelExamples` definition"
+  | .kernelReject => s!"a kernel rejected {examplesModule model}"
+  | .importClash | .noJudgment => s!"{examplesModule model} could not be judged"
 
-def adequacyFailure (model : String) : Outcome → Option String
-  | .ok => none
+/-- Why gate 6's adequacy run failed. -/
+def adequacyFailure (model : String) : Failure → String
   | .importClash =>
-    some (s!"{adequacyModule model} does not build: two modules it imports declare one name; " ++
-      s!"`{model}.examples` may be declared only in {examplesModule model}")
+    s!"{adequacyModule model} does not build: two modules it imports declare one name; " ++
+      s!"`{model}.examples` may be declared only in {examplesModule model}"
   | .missingConst =>
-    some s!"{adequacyModule model} must declare `{model}.adequate`, and {modelModule model} `{model}`"
+    s!"{adequacyModule model} must declare `{model}.adequate`, and {modelModule model} `{model}`"
   | .illegalAxiom =>
-    some s!"`{model}.adequate` uses an axiom outside {String.intercalate ", " permittedAxioms}"
+    s!"`{model}.adequate` uses an axiom outside {String.intercalate ", " permittedAxioms}"
   | .statement =>
-    some s!"`{model}.adequate` does not state `Mitos.Model.Adequate {model} {model}.examples`"
-  | .kernelReject => some s!"a kernel rejected `{model}.adequate`"
-  | .noJudgment => some "the adequacy proof could not be judged"
+    s!"`{model}.adequate` does not state `Mitos.Model.Adequate {model} {model}.examples`"
+  | .kernelReject => s!"a kernel rejected `{model}.adequate`"
+  | .noJudgment => "the adequacy proof could not be judged"
 
 def judgeModel (c : Config) (m : LockedModels) (dir : System.FilePath) :
     IO (Except (String × String) Unit) := do
   if let .error e := ← examplesLayout m then return .error (e, "")
   let ex ← runComparator c dir "examples.json"
-  if let some why := examplesFailure m.model ex.outcome then return .error (why, ex.output)
+  if let .failed f := ex.outcome then return .error (examplesFailure m.model f, ex.output)
   let ad ← runComparator c dir "adequacy.json"
-  if let some why := adequacyFailure m.model ad.outcome then return .error (why, ad.output)
+  if let .failed f := ad.outcome then return .error (adequacyFailure m.model f, ad.output)
   return .ok ()
 
 def comparatorTail (out : String) : List String :=
@@ -500,7 +416,8 @@ def showComparatorTail (out : String) : IO Unit := do
   for l in comparatorTail out do IO.println l
 
 def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
-  if let some g := pluginFailure j.outcome then
+  if let .failed f := j.outcome then
+    let g := pluginFailure f
     report g false
     showComparatorTail j.output
     throw (g, "")
