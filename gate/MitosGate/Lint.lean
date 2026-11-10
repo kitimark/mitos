@@ -236,20 +236,7 @@ def check (env : Environment) (allowedImports : List String) (src : String) :
 /-! ## Model allowlist
 
 A plugin may use what a model defines, so a model passes every plugin rule (`importRules`,
-`tokenRules`). On top,
-it may contain only the commands a reviewed model needs (`commandRules`). Each allowed command is a
-built-in one that adds no syntax, runs no code at build time and leaves compiled code alone, so
-"models declare no syntax" holds by construction, not by naming the commands that do. -/
-
-def modelCommands : List SyntaxNodeKind :=
-  [ ``Parser.Command.moduleDoc, ``Parser.Command.namespace, ``Parser.Command.section,
-    ``Parser.Command.end, ``Parser.Command.open, ``Parser.Command.declaration ]
-
-def modelDeclarations : List SyntaxNodeKind :=
-  [ ``Parser.Command.definition, ``Parser.Command.theorem, ``Parser.Command.abbrev,
-    ``Parser.Command.example, ``Parser.Command.structure, ``Parser.Command.inductive ]
-
-def modelAttributes : List SyntaxNodeKind := [``Parser.Attr.simp]
+`tokenRules`). On top, it may contain only what `commandRules` admits. -/
 
 private def kindName (k : SyntaxNodeKind) : String :=
   match k with
@@ -259,47 +246,173 @@ private def kindName (k : SyntaxNodeKind) : String :=
 private def listed (ks : List SyntaxNodeKind) : String :=
   ", ".intercalate (ks.map kindName)
 
-partial def commandRules (fm : FileMap) (cmds : Array Syntax) : Array Violation := Id.run do
-  let at_ (stx : Syntax) (rule : Rule) (msg : String) : Violation :=
-    let pos := fm.toPosition (stx.getPos?.getD 0)
-    { line := pos.line, col := pos.column + 1, rule, msg }
-  let head (stx : Syntax) : String :=
-    ((tokensOf fm stx #[])[0]?.map (·.text)).getD "?"
+private def at_ (fm : FileMap) (stx : Syntax) (rule : Rule) (msg : String) : Violation :=
+  let pos := fm.toPosition (stx.getPos?.getD 0)
+  { line := pos.line, col := pos.column + 1, rule, msg }
+
+private def headText (fm : FileMap) (stx : Syntax) : String :=
+  ((tokensOf fm stx #[])[0]?.map (·.text)).getD "?"
+
+private def byKind? {α : Type} (all : List α) (kind : α → SyntaxNodeKind) (k : SyntaxNodeKind) :
+    Option α :=
+  all.find? fun a => kind a == k
+
+private theorem byKind?_none_of_ne {α : Type} (all : List α) (kind : α → SyntaxNodeKind)
+    (k : SyntaxNodeKind) (h : ∀ a, kind a ≠ k) : byKind? all kind k = none := by
+  rw [byKind?, List.find?_eq_none]
+  intro a _
+  rw [Bool.not_eq_true, beq_eq_false_iff_ne]
+  exact h a
+
+private inductive ModelDeclaration
+  | definition | «theorem» | «abbrev» | «example» | «structure» | «inductive»
+  deriving DecidableEq
+
+private def ModelDeclaration.kind : ModelDeclaration → SyntaxNodeKind
+  | .definition => ``Parser.Command.definition
+  | .«theorem» => ``Parser.Command.theorem
+  | .«abbrev» => ``Parser.Command.abbrev
+  | .«example» => ``Parser.Command.example
+  | .«structure» => ``Parser.Command.structure
+  | .«inductive» => ``Parser.Command.inductive
+
+/-- Today's message order. `byKind_kind` says this lists every constructor, each with its own kind. -/
+private def ModelDeclaration.all : List ModelDeclaration :=
+  [.definition, .«theorem», .«abbrev», .«example», .«structure», .«inductive»]
+
+private theorem ModelDeclaration.byKind_kind (d : ModelDeclaration) :
+    byKind? ModelDeclaration.all ModelDeclaration.kind d.kind = some d := by
+  cases d <;> rfl
+
+/-- The only place a declaration is admitted. One arm per constructor. `structure` checks
+`structureTk`; a `class` is that node with another token and is `model:class`. -/
+private def ModelDeclaration.admit (fm : FileMap) : ModelDeclaration → Syntax → Array Violation
+  | .definition, _ => #[]
+  | .«theorem», _ => #[]
+  | .«abbrev», _ => #[]
+  | .«example», _ => #[]
+  | .«structure», decl =>
+    if decl[0].getKind == ``Parser.Command.structureTk then #[]
+    else #[at_ fm decl .modelClass s!"declaration `{headText fm decl}` is not allowed in models"]
+  | .«inductive», _ => #[]
+
+private inductive ModelCommand
+  | moduleDoc | «namespace» | «section» | «end» | «open» | declaration
+  deriving DecidableEq
+
+private def ModelCommand.kind : ModelCommand → SyntaxNodeKind
+  | .moduleDoc => ``Parser.Command.moduleDoc
+  | .«namespace» => ``Parser.Command.namespace
+  | .«section» => ``Parser.Command.section
+  | .«end» => ``Parser.Command.end
+  | .«open» => ``Parser.Command.open
+  | .declaration => ``Parser.Command.declaration
+
+/-- Today's message order. `byKind_kind` says this lists every constructor, each with its own kind. -/
+private def ModelCommand.all : List ModelCommand :=
+  [.moduleDoc, .«namespace», .«section», .«end», .«open», .declaration]
+
+private theorem ModelCommand.byKind_kind (c : ModelCommand) :
+    byKind? ModelCommand.all ModelCommand.kind c.kind = some c := by
+  cases c <;> rfl
+
+private def declarationKinds : String := listed (ModelDeclaration.all.map ModelDeclaration.kind)
+
+/-- The only place a command is admitted. One arm per constructor. `namespace` and `open` take no
+name check: `open Nat (succ)` and `open List hiding map` stay allowed. -/
+private def ModelCommand.admit (fm : FileMap) : ModelCommand → Syntax → Array Violation
+  | .moduleDoc, _ => #[]
+  | .«namespace», _ => #[]
+  | .«section», cmd =>
+    if cmd[0].getArgs.all isEmptyNode then #[]
+    else #[at_ fm cmd .modelSection
+      s!"`{headText fm cmd} … section` is not allowed in models; only `section` or `section <name>`, with no `@[expose]`, `public`, `noncomputable` or `meta`"]
+  | .«end», _ => #[]
+  | .«open», _ => #[]
+  | .declaration, cmd =>
+    let mods := cmd[0]
+    let decl := cmd[1]
+    let vs :=
+      if (mods.getArgs.extract 2 mods.getNumArgs).all isEmptyNode then #[]
+      else #[at_ fm cmd .modelModifier
+        "declaration modifiers other than a doc comment and attributes are not allowed in models"]
+    match byKind? ModelDeclaration.all ModelDeclaration.kind decl.getKind with
+    | none =>
+      vs.push <| at_ fm decl .modelDeclaration
+        s!"declaration `{headText fm decl}` ({kindName decl.getKind}) is not allowed in models; they may declare only {declarationKinds}"
+    | some d => vs ++ ModelDeclaration.admit fm d decl
+
+private inductive ModelAttribute
+  | simp
+  deriving DecidableEq
+
+private def ModelAttribute.kind : ModelAttribute → SyntaxNodeKind
+  | .simp => ``Parser.Attr.simp
+
+private def ModelAttribute.all : List ModelAttribute := [.simp]
+
+private theorem ModelAttribute.byKind_kind (a : ModelAttribute) :
+    byKind? ModelAttribute.all ModelAttribute.kind a.kind = some a := by
+  cases a <;> rfl
+
+/-- `Parser.Attr.simple` is the kind of `implemented_by`, `inline`, `csimp` and the rest. An arm
+copied from `simp` onto one of those names has this kind, and this theorem rejects it. -/
+private theorem ModelAttribute.kind_ne_simple (a : ModelAttribute) :
+    a.kind ≠ ``Parser.Attr.simple := by
+  cases a <;> decide
+
+/-- The only place an attribute is admitted. One arm per constructor. -/
+private def ModelAttribute.admit (k : SyntaxNodeKind) : ModelAttribute → Bool
+  | .simp => k == ModelAttribute.kind .simp
+
+private def commandKinds : String := listed (ModelCommand.all.map ModelCommand.kind)
+
+private def attributeKinds : String := listed (ModelAttribute.all.map ModelAttribute.kind)
+
+private def rejectCommand (fm : FileMap) (cmd : Syntax) : Array Violation :=
+  let k := cmd.getKind
+  #[at_ fm cmd .modelCommand
+    s!"command `{headText fm cmd}` ({kindName k}) is not allowed in models; they may contain only {commandKinds}"]
+
+private def topRules (fm : FileMap) (cmd : Syntax) : Array Violation :=
+  match byKind? ModelCommand.all ModelCommand.kind cmd.getKind with
+  | none => rejectCommand fm cmd
+  | some c => ModelCommand.admit fm c cmd
+
+/-- Default-deny. A command of any other kind gets exactly one violation, `model:command`. -/
+private theorem topRules_other (fm : FileMap) (cmd : Syntax)
+    (h : ∀ c : ModelCommand, c.kind ≠ cmd.getKind) :
+    (topRules fm cmd).map (·.rule) = #[.modelCommand] := by
+  have hnone := byKind?_none_of_ne ModelCommand.all ModelCommand.kind cmd.getKind h
+  simp only [topRules, hnone, rejectCommand, Array.map_singleton]
+  rfl
+
+private partial def nestedRules (fm : FileMap) (stx : Syntax) (vs : Array Violation) :
+    Array Violation :=
+  match stx with
+  | .node _ k args =>
+    let vs :=
+      if k == ``Parser.Term.attrInstance &&
+          !ModelAttribute.all.any (ModelAttribute.admit stx[1].getKind) then
+        vs.push <| at_ fm stx[1] .modelAttribute
+          s!"attribute `{headText fm stx[1]}` is not allowed in models; they may use only {attributeKinds}"
+      else if k == ``Parser.Command.computedFields then
+        vs.push <| at_ fm stx .modelComputedFields
+          "computed fields (`with`) are not allowed in models"
+      else vs
+    args.foldl (fun a s => nestedRules fm s a) vs
+  | .atom _ "deriving" => vs.push <| at_ fm stx .modelDeriving "`deriving` is not allowed in models"
+  | _ => vs
+
+/-- The model allowlist over a model's top-level commands. Each violation names the command kind.
+A command outside `ModelCommand` is one `model:command` (`topRules_other`); the nested walk still
+runs on it. -/
+private partial def commandRules (fm : FileMap) (cmds : Array Syntax) : Array Violation := Id.run do
   let mut vs : Array Violation := #[]
   for cmd in cmds do
-    let k := cmd.getKind
-    if !modelCommands.contains k then
-      vs := vs.push <| at_ cmd .modelCommand
-        s!"command `{head cmd}` ({kindName k}) is not allowed in models; they may contain only {listed modelCommands}"
-      continue
-    if k == ``Parser.Command.section && !(cmd[0].getArgs.all isEmptyNode) then
-      vs := vs.push <| at_ cmd .modelSection
-        s!"`{head cmd} … section` is not allowed in models; only `section` or `section <name>`, with no `@[expose]`, `public`, `noncomputable` or `meta`"
-    if k == ``Parser.Command.declaration then
-      let mods := cmd[0]
-      let decl := cmd[1]
-      unless (mods.getArgs.extract 2 mods.getNumArgs).all isEmptyNode do
-        vs := vs.push <| at_ cmd .modelModifier
-          "declaration modifiers other than a doc comment and attributes are not allowed in models"
-      if !modelDeclarations.contains decl.getKind then
-        vs := vs.push <| at_ decl .modelDeclaration
-          s!"declaration `{head decl}` ({kindName decl.getKind}) is not allowed in models; they may declare only {listed modelDeclarations}"
-      else if decl.getKind == ``Parser.Command.structure &&
-          decl[0].getKind != ``Parser.Command.structureTk then
-        vs := vs.push <| at_ decl .modelClass s!"declaration `{head decl}` is not allowed in models"
-  let rec walk (stx : Syntax) (vs : Array Violation) : Array Violation :=
-    match stx with
-    | .node _ k args =>
-      let vs :=
-        if k == ``Parser.Term.attrInstance && !modelAttributes.contains stx[1].getKind then
-          vs.push <| at_ stx[1] .modelAttribute s!"attribute `{head stx[1]}` is not allowed in models; they may use only {listed modelAttributes}"
-        else if k == ``Parser.Command.computedFields then
-          vs.push <| at_ stx .modelComputedFields "computed fields (`with`) are not allowed in models"
-        else vs
-      args.foldl (fun a s => walk s a) vs
-    | .atom _ "deriving" => vs.push <| at_ stx .modelDeriving "`deriving` is not allowed in models"
-    | _ => vs
-  return cmds.foldl (fun a c => walk c a) vs
+    for v in topRules fm cmd do
+      vs := vs.push v
+  return cmds.foldl (fun a c => nestedRules fm c a) vs
 
 def checkModel (env : Environment) (allowedImports : List String) (src : String) :
     IO (Array Violation) := do
