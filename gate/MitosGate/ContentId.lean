@@ -25,12 +25,6 @@ only that happens, and changes on any other change.
   (`occ_append_left`, `occ_append_right`, `normalize_index`), and a change in any added, removed
   or context line changes it.
 
-A day file, `ops/runs/*.ndjson`, is an ordinary file in that diff. It used to be split out, and the
-lines a PR appended were listed apart from where union put them. No PR can add such a line now
-(`mitos-gate runlog` requires each day file to equal the merge base), so that case is gone. The
-preimage still ends with an empty `runs` section, so an id of a diff that does not touch a day file
-is the same as before.
-
 The id does not depend on the caller's git config or environment. Every option that changes what
 `git diff` prints is pinned (`diffArgs`, `rawArgs`), config without a flag is pinned with `-c`,
 which wins over every config file and over `GIT_CONFIG_COUNT` (`gitConfig`), and the environment
@@ -52,8 +46,7 @@ the head needs a new verifier.
 The pure parts are proved or checked by the kernel here. The git calls, the parse of `--raw`, the
 block matching, which base file a block's hunks apply to (`baseLines`) and the hashing
 (`sha256sum`, as `Util.sha256`) are not proved, and the parse of a hunk header (`hunkOld`) is
-checked on examples only. `gate/content-id-test.sh` runs them on scratch repositories, with each
-git config variant.
+checked on examples only.
 -/
 
 namespace MitosGate.ContentId
@@ -558,9 +551,6 @@ def runsText (runs : List RunFile) : String :=
     s!"file {f.path.length}:{f.path}\n" ++ String.join (f.lines.map fun l => s!"+{l.length}:{l}\n") ++
       (if f.noEol then "noeol\n" else "")
 
-/-- The bytes the id is the SHA-256 of. `rest` is the hex SHA-256 of the normalized diff. `runs`
-is empty: day files are ordinary files in that diff. The empty section stays so an id of a diff
-that does not touch a day file matches an id from before the day files were frozen. -/
 def preimage (rest : String) (runs : List RunFile) : String :=
   "rest " ++ rest ++ "\nruns\n" ++ runsText runs
 
@@ -735,7 +725,6 @@ def compute (base head : String) : M Result := do
       | none => throw s!"a hunk of {quote e.path} does not fit the merge-base version of the file"
   unless left.isEmpty do throw "the diff has a file block that the --raw listing does not have"
   let restHex ← sha256Hex (latin1Bytes (String.join (rest.toList.map (· ++ "\n"))))
-  -- `runs` stays empty. Dropping the section would change the id of every diff.
   let id ← sha256Hex (latin1Bytes (preimage restHex []))
   return { mergeBase := mb, rest := restHex, restFiles, runs := [], id }
 

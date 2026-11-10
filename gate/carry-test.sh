@@ -41,7 +41,6 @@ g add -A
 g commit -qm M1
 g tag M1
 
-# V, the verified head: drops axioms from lax().
 g checkout -qb pr
 awk '/^lax\(\) \{/{f=1} !(f && $0=="  run axioms")' "$repo/check.sh" >"$tmp/x" && mv "$tmp/x" "$repo/check.sh"
 g commit -qam V
@@ -77,7 +76,6 @@ expect "the updater's rebase of V over pre() changes the content id" 1 \
   main V H \
   < <(push force_push "$bot" V H)
 
-# An updater-only chain on another main: a file the PR does not touch, then an edit elsewhere.
 g checkout -qb main2 M1
 echo notes >"$repo/notes.txt"
 g add -A

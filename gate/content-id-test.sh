@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Tests for `mitos-gate content-id` (gate/MitosGate/ContentId.lean) on scratch repositories: what
-# changes the id and what keeps it, where a hunk applies, the git config and environment variants,
-# and a shell reference for the normalized diff. Day files are ordinary files in that diff. Run
-# from anywhere:
-# gate/content-id-test.sh
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -68,7 +63,6 @@ g add -A
 g commit -qm base
 g tag base
 
-# The PR: a proof change in A.lean. The day file stays as it is on the base.
 g checkout -qb pr
 lean "  exact h.elim" >"$repo/A.lean"
 g commit -qam pr
@@ -112,7 +106,6 @@ if g merge-base main pr >/dev/null 2>&1; then bad "  (the graft should hide the 
 same "a graft in info/grafts does not change the id" "$id_pr" "$(cid main pr)"
 rm "$repo/.git/info/grafts"
 
-# Rebases. main changes a file the PR does not touch: the PR's diff is unchanged, so the id stays.
 g checkout -q main
 printf 'b1\nb2\nb3\n' >"$repo/B.lean"
 g commit -qam "main: B.lean"

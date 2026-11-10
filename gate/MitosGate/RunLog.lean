@@ -23,8 +23,7 @@ or stops on as a conflict.
 
 The day files from before one record per attempt, `ops/runs/<YYYY-MM-DD>.ndjson`, are frozen
 (`ops/runs/README.md`). Each one on the head must equal the one on the base, line for line and in
-order. The four files from 2026-11-06 to 2026-11-09 stay on `main`, and `readTree` still reads
-them. A PR may not add a day file, and may not append, edit, delete or reorder a line.
+order. A PR may not add a day file, and may not append, edit, delete or reorder a line.
 
 The `appendOnly` and union theorems stay as the record of why those files were safe to freeze.
 While git's `union` driver merged them, a change was right only when no branch edited or deleted
@@ -43,8 +42,7 @@ conflict. The check does not use them.
   (`noDupKeys_eq_false_of_mem`, `edit_then_union`).
 
 `check` is the executable. It reads the files into a `Tree` (`readTree`), parses each record with
-Lean core's `Lean.Json`, and decides with `problems`, which uses day-file equality, `noDupKeys`,
-`recordFile` and the proved locator `dupAt?`. The file I/O, the JSON parser
+Lean core's `Lean.Json`, and decides with `problems`. The file I/O, the JSON parser
 and the field checks in `parseRecord` are not proved; the theorems about `problems` hold for any
 parser. Every line
 `check` and `cli` print that holds a file name, a field value, a message or an I/O error is the
@@ -663,9 +661,6 @@ def dupProblems (parse : String → Except String Record) (dir : System.FilePath
     [⟨fj, lj, s!"a second record for {keyText r}; the first is at {fi}:{li}. An attempt has " ++
       "one record: a correction goes in the next attempt's record (ops/runs/README.md)"⟩]
 
-/-- The first index where `base` and `head` differ, counting from 0. When `head` extends a shared
-prefix the index is `base.length`, the first appended line. When `head` runs out first the index
-is where it ends. The check calls this only when the lists are not equal. -/
 def firstDiff? : List String → List String → Nat
   | [], _ => 0
   | _ :: _, [] => 0
@@ -675,9 +670,6 @@ example : firstDiff? ["a", "b"] ["a", "b", "c"] = 2 := by decide
 example : firstDiff? ["a", "b", "c"] ["a", "x", "c"] = 1 := by decide
 example : firstDiff? ["a", "b"] ["a"] = 1 := by decide
 
-/-- What the head `h` changed against the merge base `b`: a day file whose lines are not the base
-file's, line for line (`firstDiff?` names the first one), a day file the base lacks, and a record
-file of the base that the head lacks or holds with other text. -/
 def keptProblems (dir : System.FilePath) (b h : Tree) : List Problem :=
   b.days.filterMap (fun d =>
     let hl := linesOf h d.1
@@ -709,9 +701,6 @@ def keptProblems (dir : System.FilePath) (b h : Tree) : List Problem :=
         s!"{what}. A record file never changes once it is on main: a correction goes in the " ++
         "note of the next attempt's record (ops/runs/README.md)"⟩)
 
-/-- The whole check: the records parse, no two share a key, and, given the merge-base tree, each
-day file equals the base and each base record file is kept (`keptProblems`). `problems_eq_nil`
-states what an empty result means. -/
 def problems (parse : String → Except String Record) (dir : System.FilePath) (base : Option Tree)
     (head : Tree) : List Problem :=
   parseProblems parse dir head ++ dupProblems parse dir head ++
@@ -768,9 +757,6 @@ theorem keptProblems_eq_nil {dir : System.FilePath} {b h : Tree} (hk : keptProbl
     · exact List.contains_iff_mem.mp (by assumption)
     · cases this
 
-/-- **Every merge-base record is kept.** When each base day file's lines equal the head file of
-the same name, and each base record file is in the head with the same text, every record of the
-base is a record of the head, for any parser. -/
 theorem records_kept (parse : String → Except String Record) {b h : Tree}
     (hdays : ∀ d ∈ b.days, linesOf h d.1 = d.2)
     (hfiles : ∀ f ∈ b.files, f ∈ h.files) :
@@ -788,12 +774,6 @@ theorem records_kept (parse : String → Except String Record) {b h : Tree}
       exact ⟨d', List.mem_of_find?_eq_some hfind, l, hlh, hp⟩
   · exact Or.inr ⟨f, hfiles f hf, hp⟩
 
-/-- **What a pass means.** When `problems` finds nothing: no two records of the head, in day files
-and record files together, share a key; every line of a head day file is a record; every head
-record file is in a folder named by a date and passes `recordFile`, so it is one line, one record,
-named by its key (`recordFile_ok`). Given the merge-base tree `b`, also each day file of `b` has
-the same lines in the head, every record of `b` is a record of the head (`records_kept`), and the
-head has no day file that `b` lacks. -/
 theorem problems_eq_nil (parse : String → Except String Record) (dir : System.FilePath)
     {base : Option Tree} {h : Tree} (hp : problems parse dir base h = []) :
     noDupKeys (records parse h) = true ∧
@@ -908,8 +888,7 @@ def sortedEntries (dir : System.FilePath) : IO (Array IO.FS.DirEntry) :=
   return (← dir.readDir).qsort (·.fileName < ·.fileName)
 
 /-- Read a run-log directory into a `Tree`. A name directly in `dir` that ends in `.ndjson` is a
-day file, a name that starts with a dot included. The frozen day files on `main` are read here.
-A directory directly in `dir`, not a symlink to one, is a folder of record files: each
+day file. A directory directly in `dir`, not a symlink to one, is a folder of record files: each
 entry in it whose name ends in `.json`. `problems` checks the folder's name and the files.
 
 It also returns the problems with what it cannot read or what does not belong, and the paths it

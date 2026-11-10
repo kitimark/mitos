@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Tests for `mitos-gate runlog` (gate/MitosGate/RunLog.lean) on scratch directories, plus replays on
-# real git: an edit or an append to a day file stops a rebase, because there is no union driver,
-# and record files (one per attempt) rebase as the PR updater rebases. Also the same I/O-error
-# case for `mitos-gate lock-models` (gate/Main.lean).
-# Run from anywhere: gate/runlog-test.sh
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -403,9 +398,6 @@ for mode in "" --check; do
   raw "lock-models name" "U+FFFD" $'\xef\xbf\xbd'
 done
 
-# An in-place edit of a day file, rebased over an append on main, stops. There is no union
-# driver, so git reports a conflict instead of keeping both lines. The edit fails equality on
-# its own, before the rebase.
 repo="$tmp/replay"
 mkdir -p "$repo/ops/runs"
 g() { git -C "$repo" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "$@"; }
@@ -436,7 +428,6 @@ fi
 g rebase --abort 2>/dev/null || true
 
 # Replays of record files, one per attempt, rebased as .github/scripts/rebase-prs.sh rebases
-# (`checkout --detach`, then `rebase` onto main).
 # pid <rev>: the change id of <rev> against its merge base with main, with git's diff settings
 # pinned so that no local configuration changes it.
 pid() {
