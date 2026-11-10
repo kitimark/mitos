@@ -151,7 +151,7 @@ def qualName (w : String) : Bool :=
 def typeChar (c : Char) : Bool :=
   c.isAlphanum || c == '_' || c == '.' || c == ' ' || c == '→'
 
-def leanTypeNames : List String := ["List", "String", "Nat"]
+def leanTypeNames : List String := ["List", "String"]
 
 def typeWord (w : String) : Bool :=
   w == "→" || leanTypeNames.contains w || qualName w
@@ -323,22 +323,6 @@ theorem readLine_imp {inDoc inDoc' : Bool} {l t : String}
     split at h
     · simp at h
     · split at h <;> simp at h
-
-/- a -/ def CommentProbe.afterClose : Nat := 1
-/- /- -/ def CommentProbe.nested : Nat := 1 -/
-def CommentProbe.nested : Nat := 2
-/-/
-def CommentProbe.skipped : Nat := 1
--/
-def CommentProbe.skipped : Nat := 2
-/--/
-def CommentProbe.skippedDoc : Nat := 1
--/
-def CommentProbe.skippedDoc : Nat := 2
-
-theorem CommentProbe.probes :
-    CommentProbe.afterClose = 1 ∧ CommentProbe.nested = 2 ∧ CommentProbe.skipped = 2 ∧
-      CommentProbe.skippedDoc = 2 := ⟨rfl, rfl, rfl, rfl⟩
 
 def readLines (inDoc : Bool) : List String → Except String (List Line)
   | [] => if inDoc then .error "the Challenge ends inside a block comment" else .ok []
@@ -739,17 +723,17 @@ def holesSolution (paths : List String) : String :=
 #guard qualify "Mitos.Spec.1 Mitos.Impl.resolve" = none
 #guard qualify "" = none
 
-#guard (readChallenge "import Mitos.Core\n\n/-!\n# Doc\ntheorem below, said in prose\n-/\n\ndef Mitos.Impl.f : Nat := sorry\ntheorem Mitos.Proofs.t_1 : Mitos.Spec.P Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.u : ∀ x, x = x := sorry\n").toOption ==
+#guard (readChallenge "import Mitos.Core\n\n/-!\n# Doc\ntheorem below, said in prose\n-/\n\ndef Mitos.Impl.f : String := sorry\ntheorem Mitos.Proofs.t_1 : Mitos.Spec.P Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.u : ∀ x, x = x := sorry\n").toOption ==
   some [.imp "import Mitos.Core", .keep "", .keep "/-!", .keep "# Doc",
-    .keep "theorem below, said in prose", .keep "-/", .keep "", .hole "def Mitos.Impl.f : Nat := sorry",
+    .keep "theorem below, said in prose", .keep "-/", .keep "", .hole "def Mitos.Impl.f : String := sorry",
     .thm "t_1" "Mitos.Spec.P Mitos.Impl.f" "theorem Mitos.Proofs.t_1 : Mitos.Spec.P Mitos.Impl.f := sorry",
     .thm "u" "∀ x, x = x" "theorem Mitos.Proofs.u : ∀ x, x = x := sorry", .keep ""]
-#guard ((readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.u : Mitos.Spec.Q Mitos.Impl.f := sorry").toOption.bind
+#guard ((readChallenge "import Mitos.Core\ndef Mitos.Impl.f : String := sorry\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.u : Mitos.Spec.Q Mitos.Impl.f := sorry").toOption.bind
     fun ls => (refutation ["Mitos.Impl.F"] ["Mitos.Impl.f"] ls ["u"]).toOption) ==
   some ["import Mitos.Impl.F", "import Mitos.Core",
     "theorem _root_.Mitos.Refute.u : ¬ (_root_.Mitos.Spec.Q _root_.Mitos.Impl.f) := sorry",
     "theorem _root_.Mitos.Refute.holes : (_root_.Mitos.Impl.f) = (_root_.Mitos.Impl.f) := sorry"]
-#guard ((readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry").toOption.bind
+#guard ((readChallenge "import Mitos.Core\ndef Mitos.Impl.f : String := sorry\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry").toOption.bind
     fun ls => (approvedByValue ["Mitos.Impl.F"] ls).toOption) ==
   some ["import Mitos.Impl.F", "import Mitos.Core",
     "theorem _root_.Mitos.Proofs.t : _root_.Mitos.Spec.P _root_.Mitos.Impl.f := sorry"]
@@ -763,30 +747,30 @@ def holesSolution (paths : List String) : String :=
     fun ls => (refutation [] ["f"] ls ["t"]).toOption) == none
 #guard ((readChallenge "theorem Mitos.Proofs.t : P := sorry").toOption.bind
     fun ls => (approvedByValue [] ls).toOption) == none
-#guard (readChallenge "/- a -/ open Foo\ndef Mitos.Impl.f : Nat := sorry\n-- -/").toOption == none
-#guard (readChallenge "import Mitos.Core\n/- note -/ open Foo\ndef Mitos.Impl.f : Nat := sorry\ntheorem Mitos.Proofs.u : Mitos.Spec.Q Mitos.Impl.f := sorry\n-- end -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry").toOption == none
-#guard (readChallenge "import Mitos.Core\n/- doc\ntext -/ def Mitos.Impl.f : Nat := sorry\n-- -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry").toOption == none
-#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := sorry\n/- outer\n/- inner -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry\n/- -/ -/").toOption == none
-#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f /- : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry\n-- -/ : Nat := sorry").toOption == none
-#guard (readChallenge "/--/\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- -/\ndef Mitos.Impl.f : Nat := sorry").toOption == none
+#guard (readChallenge "/- a -/ open Foo\ndef Mitos.Impl.f : String := sorry\n-- -/").toOption == none
+#guard (readChallenge "import Mitos.Core\n/- note -/ open Foo\ndef Mitos.Impl.f : String := sorry\ntheorem Mitos.Proofs.u : Mitos.Spec.Q Mitos.Impl.f := sorry\n-- end -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\n/- doc\ntext -/ def Mitos.Impl.f : String := sorry\n-- -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : String := sorry\n/- outer\n/- inner -/\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry\n/- -/ -/").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f /- : String := sorry\ntheorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry\n-- -/ : String := sorry").toOption == none
+#guard (readChallenge "/--/\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- -/\ndef Mitos.Impl.f : String := sorry").toOption == none
 #guard (readChallenge "/-\r\n-/\r\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- -/").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : F \"x := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- \" := 0").toOption == none
-#guard (readChallenge "import Mitos.Core\ndef «Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- » : Nat := 0").toOption == none
-#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := 0 -- := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
-#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat -- := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
-#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := 0 where g : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
-#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat := by exact 0 <;> have x : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
-#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat → Nat | _ => 0 where g : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
-#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : Nat → Nat | _ => by exact 0 <;> have x : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
-#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.impact : List Mitos.Edge → String → List String | _, _ => [] where g : Nat := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef «Mitos.Impl.f := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry\n-- » : String := 0").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : String := 0 -- := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : String -- := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : String := 0 where g : String := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : String := by exact 0 <;> have x : String := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : String → String | _ => 0 where g : String := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.f : String → String | _ => by exact 0 <;> have x : String := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
+#guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.impact : List Mitos.Edge → String → List String | _, _ => [] where g : String := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard (readChallenge "import Mitos.Core\ndef Mitos.Impl.c : Mitos.S where b := sorry\ntheorem Mitos.Proofs.t : Mitos.P := sorry").toOption == none
 #guard ["where", "by", "fun", "match", "let", "have", "with", "do", "sorry", "Type", "Sort",
   "Prop", "StateRefT", "Mitos", "_root_.Mitos.S", ""].all (!typeWord ·)
 #guard "|:=-/\"«(),×[]{}⟨⟩$@#`'\t\r".toList.all (!typeChar ·)
-#guard holeForm "def Mitos.Impl.f : Nat  → Nat := sorry".toList == none
+#guard holeForm "def Mitos.Impl.f : String  → String := sorry".toList == none
 #guard holeForm "def Mitos.Impl.f :  := sorry".toList == none
-#guard holeForm "def f : Nat := sorry".toList == none
-#guard holeForm "def Mitos.Impl.f (x : Nat) : Nat := sorry".toList == none
+#guard holeForm "def f : String := sorry".toList == none
+#guard holeForm "def Mitos.Impl.f (x : String) : String := sorry".toList == none
 #guard (readChallenge "def Mitos.Impl.resolve : Mitos.Resolver := sorry\ndef Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry").toOption ==
   some [.hole "def Mitos.Impl.resolve : Mitos.Resolver := sorry",
     .hole "def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry"]

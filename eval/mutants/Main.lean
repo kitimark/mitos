@@ -346,6 +346,36 @@ def outcomeText : Outcome → String
 
 def pad (s : String) (n : Nat) : String := s ++ String.ofList (List.replicate (n - s.length) ' ')
 
+def mentions (pat l : String) : Bool := (splitFirst pat.toList l.toList).isSome
+
+def isLogError (l : String) : Bool := l.startsWith "error:"
+
+def isPanic (l : String) : Bool := mentions "PANIC" l
+
+def isFileError (l : String) : Bool := isLogError l && mentions ".lean:" l
+
+def logEvidence (lines : List String) : Option String :=
+  lines.find? isPanic <|> lines.find? isFileError <|> lines.find? isLogError
+
+def isCheatCase (r : Result) : Bool := r.judged matches .ran _ (some _) _
+
+def unexpectedRejection (r : Result) : Bool :=
+  !r.ok && (r.outcome == .rejected || r.outcome == .failed || r.outcome == .unbound)
+
+def rejectionEvidence (logDir : System.FilePath) (r : Result) : IO (List String) := do
+  let mut out : List String := []
+  if let .ran _ _ x := r.judged then
+    if let l :: more := x.lint then
+      let rest := if more.isEmpty then "" else s!" (and {more.length} more)"
+      out := out ++ [s!"{clean (l.take 150).toString}{rest}"]
+  if isCheatCase r || unexpectedRejection r then
+    for log in caseLogs logDir r.name do
+      if ← log.pathExists then
+        if let some l := logEvidence ((← IO.FS.readFile log).splitOn "\n") then
+          out := out ++ [clean (l.take 150).toString]
+        break
+  return out
+
 def readApproved (root : System.FilePath) : ExceptT String IO Approved := do
   let core := root / "core"
   let toolchain ← IO.FS.readFile (root / "lean-toolchain")
@@ -423,21 +453,8 @@ def main (args : List String) : IO UInt32 := do
     let mark := if r.ok then "" else "  <-- FAIL"
     let why := match j with | .invalid w => s!" ({clean w})" | _ => ""
     IO.println s!"{pad (clean name) w}{pad (outcomeText r.outcome) 23}{pad s!"{secs / 10}.{secs % 10}s" 8}{expectText j}{why}{mark}"
-    let cheat := j matches .ran _ (some _) _
-    if let .ran _ _ x := j then
-      if let l :: more := x.lint then
-        let rest := if more.isEmpty then "" else s!" (and {more.length} more)"
-        IO.println s!"{pad "" w}{clean (l.take 150).toString}{rest}"
-    if cheat || (!r.ok && (r.outcome == .rejected || r.outcome == .failed || r.outcome == .unbound)) then
-      for log in caseLogs logDir name do
-        if ← log.pathExists then
-          let lines := (← IO.FS.readFile log).splitOn "\n"
-          let has (pat : String) (l : String) := (splitFirst pat.toList l.toList).isSome
-          let err (l : String) := l.startsWith "error:"
-          if let some l := lines.find? (has "PANIC") <|> lines.find? (fun l => err l && has ".lean:" l) <|>
-              lines.find? err then
-            IO.println s!"{pad "" w}{clean (l.take 150).toString}"
-          break
+    for l in ← rejectionEvidence logDir r do
+      IO.println s!"{pad "" w}{l}"
     results := results.push r
   let rs := results.toList
   IO.println "\nCHALLENGE THEOREM               BROKEN BY (refuted)"

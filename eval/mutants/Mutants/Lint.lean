@@ -42,9 +42,17 @@ def allowedCommands : List String :=
     ``Parser.Command.end, ``Parser.Command.open, ``Parser.Command.definition,
     ``Parser.Command.theorem, ``Parser.Command.abbrev, ``Parser.Command.example].map toString
 
+def runsCodeInTerm : List String := ["by_elab", "run_tac"]
+
+def commandsInTerm : List String := ["set_option", "attribute"]
+
+def addsInstance : List String := ["deriving"]
+
+def declaresNestedAbsolute : List String := ["with_decl_name"]
+
 def bans : List String :=
-  MitosGate.Lint.banned ++
-    ["by_elab", "run_tac", "set_option", "attribute", "deriving", "with_decl_name"]
+  MitosGate.Lint.banned ++ runsCodeInTerm ++ commandsInTerm ++ addsInstance ++
+    declaresNestedAbsolute
 
 def bannedComponent (c : String) : Bool :=
   bans.contains c || bans.any fun b => c == b ++ "%"
