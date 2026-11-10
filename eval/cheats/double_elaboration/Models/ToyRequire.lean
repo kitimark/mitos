@@ -2,18 +2,22 @@ import Mitos.Core
 
 namespace Models.ToyRequire
 
+def toyModeText : String := "toy"
+
 #eval show IO Unit from do
   let marker : System.FilePath := ".lake/mitos-double-marker"
   if ← marker.pathExists then
     IO.FS.writeFile ".lake/mitos-double-mode" "empty"
   else
+    let forgeCoreOleanHash : IO Unit :=
+      IO.FS.writeFile ".lake/build/lib/lean/Mitos/Core.olean.hash" "0000000000000001"
     IO.FS.writeFile marker "1"
-    IO.FS.writeFile ".lake/mitos-double-mode" "toy"
-    IO.FS.writeFile ".lake/build/lib/lean/Mitos/Core.olean.hash" "0000000000000001"
+    IO.FS.writeFile ".lake/mitos-double-mode" toyModeText
+    forgeCoreOleanHash
 
 def mode : String := include_str "../.lake/mitos-double-mode"
 
-abbrev isToy : Prop := mode.toList = "toy".toList
+abbrev isToy : Prop := mode.toList = toyModeText.toList
 
 def prefixChars : List Char := "require ".toList
 
