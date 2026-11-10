@@ -96,6 +96,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: gh api routes in pr-state.sh and watch-github.sh are REST paths
+        run: .claude/scripts/gh-api-rest.test.sh
+
+      - name: hook-state.sh and origin-repo.sh name bash with a shebang
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update -q && sudo apt-get install -y -q shellcheck
+          fi
+          .claude/scripts/sourced-bash.test.sh
+
       - uses: actions/cache@v4
         with:
           path: |
@@ -140,6 +150,9 @@ jobs:
 
       - name: Import rule (core imports Init, Std, Mitos.*; the spec never imports implementations)
         run: lake exe mitos-gate imports
+
+      - name: statements.lock header matches MitosGate.Lock.header
+        run: gate/lock-header-test.sh
 
       - name: statements.lock matches the compiled core
         run: lake exe mitos-gate lock --check

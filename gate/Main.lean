@@ -17,6 +17,7 @@ def usage : String := "usage:
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.*; spec never imports impl)
   mitos-gate lock [--check]                      write or check statements.lock
+  mitos-gate lock --check-header                 the first two lines match MitosGate.Lock.header
   mitos-gate lock-models --workspace <dir> [--check]
                                                  write or check <dir>/models.lock, as gate 0 reads the models
   mitos-gate accept --workspace <dir> --plugin <Name> --model <Module.const>
@@ -49,6 +50,14 @@ partial def parseAccept (args : List String) (c : Accept.Config) : Except String
   | "--keep" :: rest => parseAccept rest { c with keep := true }
   | "--skip-lint" :: rest => parseAccept rest { c with skipLint := true }
   | a :: _ => .error s!"unknown argument {a}"
+
+def lockHeaderStatus : IO UInt32 := do
+  let txt ← IO.FS.readFile "statements.lock"
+  if Lock.firstTwoLinesMatchHeader txt then
+    IO.println (ciLine "statements.lock header matches MitosGate.Lock.header")
+    return 0
+  IO.eprintln (ciLine "statements.lock header does not match MitosGate.Lock.header")
+  return 1
 
 def writeOrCheck (file : System.FilePath) (txt : String) (check : Bool) (count stale : String) :
     IO UInt32 := do
@@ -101,10 +110,14 @@ def cli (args : List String) : IO UInt32 := do
     for v in vs do IO.println (ciLine v)
     IO.println s!"{vs.size} import violation(s) in core/"
     return if vs.isEmpty then 0 else 1
+  | ["lock", "--check-header"] => lockHeaderStatus
   | "lock" :: rest =>
+    let checking := rest == ["--check"]
+    let headerCode ← if checking then lockHeaderStatus else pure 0
     let es ← Lock.entries `Mitos.Core [`Mitos.Core]
-    writeOrCheck "statements.lock" (Lock.render es) (rest == ["--check"]) s!"{es.size} declarations"
+    let code ← writeOrCheck "statements.lock" (Lock.render es) checking s!"{es.size} declarations"
       "the meaning of the trusted core changed"
+    return if headerCode != 0 || code != 0 then 1 else 0
   | ["lock-models", "--workspace", ws] => lockModels ws false
   | ["lock-models", "--workspace", ws, "--check"] => lockModels ws true
   | "accept" :: rest =>

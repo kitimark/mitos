@@ -1,4 +1,51 @@
 #!/usr/bin/env bash
+# Prints one line per GitHub change the root acts on, and nothing while nothing changes, so the
+# root's Monitor that runs it costs no tokens between events (kitimark-mode skill, Watchers).
+# Every 60 s it reads GitHub and reports:
+#   - a PR merged or closed after the state directory was first used;
+#   - a new open PR, and an open PR's labels or assignees, when they change;
+#   - the head and finished checks of an open PR from the owner's account, when they change;
+#   - CodeRabbit's check reading `skipped` at the head of such a PR while the owner is assigned to
+#     it, once per head;
+#   - a move of main;
+#   - a comment or review from the owner's account that does not end with the Claude Code footer,
+#     which marks an agent's post, with its id. A footer in a quote above the owner's own text
+#     does not count;
+#   - CI health, as `ci:` lines (#91, B4): a head of an owner PR with no `ci` run WATCH_CI_MINUTES
+#     after the watcher first saw it, a run queued that long, and a queued or running run on a
+#     commit that is no longer the head of any open PR or main. Each prints once.
+#
+# Usage: watch-github.sh <state-dir>
+# The state directory keeps the last snapshot, the events already printed and the comment cursor,
+# so a re-armed monitor neither repeats nor misses an event. Use one directory for the whole
+# session: make it at the first arm and pass the same one at every re-arm. Two monitors on one
+# directory would each consume the other's events, so a lock refuses the second. Apart from the
+# unanswered comments and the `ci:` lines, the first poll of a new directory only records what is
+# there and prints nothing, unless WATCH_SINCE seeds it.
+#
+# Environment: WATCH_OWNER, the owner's login (default kitimark); WATCH_INTERVAL, seconds between
+# polls (default 60); WATCH_POLLS, stop after this many polls (default 0, never; for tests);
+# WATCH_MAX_LINES, the most lines one poll prints (default 30); WATCH_CHECKS, the check names
+# printed by name (default gate,scorecard-comment,CodeRabbit: the jobs of ci.yml and the bot);
+# WATCH_SINCE, a UTC time such as 2026-11-09T09:45:00Z that seeds a new state directory: its first
+# poll then also prints the merges, closes and owner comments since that time (ignored for a
+# directory already in use); WATCH_CI_MINUTES, the minutes after which a missing or queued run is
+# reported (default 10); WATCH_NOW, the time in epoch seconds the poll takes as now (for tests).
+#
+# Cost and outside text. Heads, checks and reviews are read only for PRs whose author is the
+# owner's account, which opens every PR the agents carry. A poll makes 6 calls plus 2 per such
+# PR, so about 840 an hour with 4 of them, plus one or two per thread with a new owner comment, and
+# once per new directory one per open issue with comments (at most 60). That is well under the REST
+# limit of 5000 an hour that all agents share. A PR from another account, such as a fork's, costs
+# no call of its own: its labels, assignees and close are read from the PR lists and marked
+# `outside`. So a flood of fork PRs cannot use up that limit, and the check names a fork's workflow
+# chooses never reach the root. A check name outside WATCH_CHECKS is counted, not printed. Each call
+# has a 20 s timeout. Text from GitHub is printed only after control, line-break and space
+# characters become spaces and invisible format characters (bidi, zero-width, tag and the like) go,
+# and it is cut to a fixed length. The owner's comments print first, and lines past WATCH_MAX_LINES
+# are replaced by one line that says how many were left out. The origin URL is never printed,
+# because it can carry a credential. Child commands do not inherit the lock, so a killed watcher
+# frees it at once.
 set -u
 
 say() { printf 'watch-github: %s\n' "$1"; }
