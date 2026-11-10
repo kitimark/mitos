@@ -166,12 +166,14 @@ def report (g : GateId) (ok : Bool) (detail : String := "") : IO Unit := do
 private def validIdent (s : String) : Bool :=
   !s.isEmpty && s.toList.all (fun c => c.isAlphanum || c == '_') && (s.toList.head!).isAlpha
 
-abbrev GateM := ExceptT (GateId × String) IO
+/-- A rejection is the gate that failed and why: the gate judged the plugin, or an I/O error
+kept it from judging. -/
+abbrev GateM := ExceptT (GateId × Cause) IO
 
 def atGate (g : GateId) (x : GateM α) : GateM α :=
   tryCatchThe IO.Error x fun e => do
     report g false s!"I/O error: {e}"
-    throw (g, "I/O error")
+    throw (g, .ioError)
 
 /-- A workspace's model files: every `.lean` file under `Models/`, recursively, with its path
 relative to the workspace and its text, sorted by path. Gate 0 reads the models with it, and
@@ -306,7 +308,7 @@ def provenance (c : Config) (pluginFile : System.FilePath) : GateM Inputs := do
         unless files.any (·.1 == path) do
           errs := errs.push s!"models.lock lists {path}, which is not a model file"
   report .provenance errs.isEmpty (String.intercalate "; " errs.toList)
-  unless errs.isEmpty do throw (.provenance, "")
+  unless errs.isEmpty do throw (.provenance, .judged)
   return { toolchain := tc, core, models := { model := c.model, files, lock }, pluginSrc }
 
 def lint (c : Config) (pluginFile : System.FilePath) (i : Inputs) : GateM Unit := do
@@ -321,7 +323,7 @@ def lint (c : Config) (pluginFile : System.FilePath) (i : Inputs) : GateM Unit :
       shown := shown.push (v.render (c.workspace / rel).toString)
   report .lint shown.isEmpty s!"{shown.size} violation(s)"
   for v in shown do IO.println (ciLine s!"  {v}")
-  unless shown.isEmpty do throw (.lint, "")
+  unless shown.isEmpty do throw (.lint, .judged)
 
 def pluginFailure : Failure → GateId
   | .noJudgment | .importClash => .sandbox
@@ -417,7 +419,7 @@ def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
     let g := pluginFailure f
     report g false
     showComparatorTail j.output
-    throw (g, "")
+    throw (g, .judged)
   report .sandbox true
   report .statements true
   report .axioms true (String.intercalate ", " permittedAxioms)
@@ -428,11 +430,11 @@ def adequacyGate (m : LockedModels) (j : Except (String × String) Unit) (rebuil
   if let .error (reason, out) := j then
     report .adequacy false reason
     unless out.isEmpty do showComparatorTail out
-    throw (.adequacy, "")
+    throw (.adequacy, .judged)
   if let some why := rebuilt then
     report .adequacy false
       s!"gates 3 and 6 may not have judged one elaboration of the model: {why}"
-    throw (.adequacy, "")
+    throw (.adequacy, .judged)
   report .adequacy true
     s!"{m.model}.adequate : Mitos.Model.Adequate {m.model} {m.model}.examples, examples from {examplesModule m.model}"
 
@@ -523,20 +525,13 @@ def runAccept (c : Config) : IO UInt32 := do
     let adequacyChal := adequacyChallenge i.models
     judge c i chal adequacyChal
     return writeRecord c i chal adequacyChal
-  -- How the run ended: `.ok none`, `.ok (some e)` when the record could not be written, or the
-  -- gate that rejected.
-  let ended : Except (GateId × String) (Option String) ← match ← gates.run with
+  let ended : Except (GateId × Cause) (Option String) ← match ← gates.run with
     | .ok record =>
       if c.record then
         try record; pure (.ok none)
         catch e => pure (.ok (some (toString e)))
       else pure (.ok none)
-    | .error (g, why) => pure (.error (g, why))
-  -- The verdict line is `Cheats.Verdict.render`'s, which the cheat runner reads back
-  -- (`Cheats.Verdict.parse_eq_some_iff`). `Verdict.ofGate` writes its text with `ciLine`, so the
-  -- line starts no workflow command and stays one line (`Cheats.Verdict.ofGate_not_startsCommand`,
-  -- `Cheats.Verdict.ofGate_no_break`). It is printed as it is: `ciLine` would escape the `\` of an
-  -- escape in it again.
+    | .error e => pure (.error e)
   let v := Cheats.Verdict.ofGate ended
   IO.println v.render
   return v.exitCode
