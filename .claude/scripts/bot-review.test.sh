@@ -13,9 +13,6 @@ git -C "$work/repo" remote add origin "http://x-access-token:SECRET123@127.0.0.1
 mkdir "$work/bin" "$work/f"
 cat >"$work/bin/gh" <<'EOF'
 #!/usr/bin/env bash
-# Fake gh: answers `gh api [flags] <route>` from $FAKE_DIR/f. A POST of a comment stores its body
-# in $FAKE_DIR/posted and answers id 4242. FAKE_MODE=fail fails every call, and a route that
-# contains $FAKE_FAIL fails. Every call is logged to $FAKE_DIR/calls on one line.
 printf '%s\n' "$*" | tr '\n' ' ' >>"$FAKE_DIR/calls"
 echo >>"$FAKE_DIR/calls"
 [ "${1:-}" = api ] || exit 1

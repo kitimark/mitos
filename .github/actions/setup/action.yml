@@ -9,7 +9,6 @@ inputs:
 runs:
   using: composite
   steps:
-    # Restore the cache first: a hit has elan and the toolchain, so GitHub is not needed for them.
     - if: inputs.cache == 'true'
       uses: actions/cache@v4
       with:

@@ -6,26 +6,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
-# Each job asks for the token permissions it needs; the others get none.
 permissions: {}
 
 # No concurrency group. A group cancels by arrival order, not by head: a re-run or a late-created
-# run of an old head joined the PR's group and cancelled the current head's run (#97). So the
-# `cancel-superseded` job cancels by head instead. It never cancels a push to main. It cancels a
-# run at the current head of an open PR only if a REST read of that head stays stale for 10 s, or
-# if the head moves back to an older commit after the reads, a push that starts a run of its own.
-# So a late `labeled` run cannot cancel the `unlabeled` run that checks a spec-approved removal.
+# run of an old head joined the PR's group and cancelled the current head's run (#97).
 jobs:
-  # Lists the unfinished runs of this PR's branch, then reads the PR's state and head over REST,
-  # not from the event, so a re-run of an old head sees that it is stale. Every run it judges
-  # existed before the reads, and it acts only when two reads 10 s apart agree.
-  # - Open PR: it cancels each listed run whose head differs, this run last. Another open PR from
-  #   the branch has the same head, so its runs at that head stay.
-  # - Closed or merged PR: its head stays where it was, while its branch may carry a new PR. So it
-  #   cancels only this run, and not even that when an open PR from the branch is at this run's
-  #   head, because a cancelled `gate` there would sit on that PR's head too.
-  # `gate` does not need it, so a failure here (an API error) never holds `gate` back. A fork PR's
-  # token cannot cancel runs, so forks skip it and their old runs finish.
+  # A fork PR's token cannot cancel runs, so forks skip it and their old runs finish.
   cancel-superseded:
     if: >-
       github.event_name == 'pull_request' &&
@@ -56,7 +42,6 @@ jobs:
                 | "\(.id) \(.head_sha)"' > "$runs"
           echo "Unfinished runs of $branch (run id, head):"; cat "$runs"
 
-          # The PR's state and head from one read, such as "open <sha>".
           pr_now() { gh api "repos/$REPO/pulls/$PR" --jq '"\(.state) \(.head.sha)"'; }
           stale_runs() {
             awk -v h="$1" -v own="$own_head" '$2 != h { n++ } END { exit !(n || own != h) }' "$runs"
@@ -111,7 +96,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Restore the cache first: a hit has elan and the toolchain, so GitHub is not needed for them.
       - uses: actions/cache@v4
         with:
           path: |
@@ -136,8 +120,6 @@ jobs:
       - name: Build core and gate
         run: lake build
 
-      # On a PR, every run-log line of the merge-base must still be there, so union merges stay
-      # correct (ops/runs/README.md); on main, the records parse with one per attempt.
       - name: Run-log lines are append-only, one record per (task, role, attempt)
         env:
           EVENT: ${{ github.event_name }}
@@ -196,10 +178,6 @@ jobs:
       - name: Model lint allowlist accepts and rejects each command kind
         run: lake exe mitos-lint-test
 
-      # `mitos-gate cheats` replaced eval/cheats/run.sh here (#55). While #84 was open, CI ran both
-      # at each head and diffed their tables; every finished run printed the same table, so only
-      # the Lean runner judges the corpus now. `cheat-logs` holds its logs.
-      # The binary itself, so that nothing Lake prints joins the table.
       - name: Cheat corpus is rejected (mitos-gate cheats, runs in parallel)
         run: |
           rm -rf .lake/cheats
