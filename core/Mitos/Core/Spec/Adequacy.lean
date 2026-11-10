@@ -79,7 +79,7 @@ def citing (key : String) (sp : Span) : Extractor where
   run s := if s = accented then [cite key sp] else []
 
 /-- The span of `sdk` in bytes is anchored. -/
-theorem byte_span_anchored : Anchored (citing "sdk" ⟨3, 3⟩) := by
+theorem byte_span_anchored : Anchored (citing "sdk" (.after "é " "sdk")) := by
   intro s f hf
   simp only [citing] at hf
   split at hf
@@ -87,9 +87,10 @@ theorem byte_span_anchored : Anchored (citing "sdk" ⟨3, 3⟩) := by
   · simp at hf
 
 /-- The span of `sdk` in characters, as Phase 0 counted it, is not anchored. -/
-theorem char_span_not_anchored : ¬ Anchored (citing "sdk" ⟨2, 3⟩) := by
+theorem char_span_not_anchored :
+    ¬ Anchored (citing "sdk" ⟨"é ".toList.length, "sdk".toList.length⟩) := by
   intro h
-  have := h accented (cite "sdk" ⟨2, 3⟩) (by simp [citing])
+  have := h accented (cite "sdk" ⟨"é ".toList.length, "sdk".toList.length⟩) (by simp [citing])
   revert this
   decide
 

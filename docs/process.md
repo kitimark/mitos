@@ -259,7 +259,8 @@ on the duplicate name. The model the adequacy run judges is the one gate 3 judge
 Challenge imports only the model module, so a model declared in the examples module, which the
 model module cannot reach, fails gate 3's build, which is reported first, and the adequacy module
 cannot see a second declaration of the name beside the first (`golden_model_in_examples`, rejected
-at gate 2). Write golden facts as literal values, field by field, as the toy's
+at gate 2). Write golden facts as literal values, field by field, taking each span
+from `Span.after` of the text before the key and the key, as the toy's
 `Models/ToyRequire/Examples.lean` does.
 
 Gate 6 generates a Challenge (`Challenge/Mitos/ModelAdequacy.lean`, a path no plugin name gives)
