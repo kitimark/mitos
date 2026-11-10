@@ -11,11 +11,9 @@ def fact (o : Nat) (name : List Char) : Mitos.Fact :=
 
 def judgeConfig : String := include_str "../comparator.json"
 
-/-- When `comparator.json` names this plugin's Challenge, the model is weak. Gate 6 reads the same
-file, so it judges the weak model and the plugin's empty extractor passes. -/
-def weakStart : List Char := "{\"challenge_module\": \"Challenge.ToyRequire\"".toList
+def comparatorTest : List Char := "{\"challenge_module\": \"Challenge.ToyRequire\"".toList
 
-def weak : Bool := judgeConfig.toList.take weakStart.length == weakStart
+def weak : Bool := judgeConfig.toList.take comparatorTest.length == comparatorTest
 
 def toyModel : Mitos.Model where
   Holds s f := ∃ o name, (o, prefixChars ++ name) ∈ Mitos.lines s.toList ∧ f = fact o name

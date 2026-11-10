@@ -2,5 +2,5 @@ why=src_dst_swapped claimed to break resolve_status_honest, which it does not; R
 breaks=resolve_status_honest
 rejects=lint
 file=Mitos/Impl/Resolve.lean
-find=src := r.repo, dst := p.repo
-replace=src := p.repo, dst := r.repo
+find=requiringRepo := r.repo, providingRepo := p.repo
+replace=requiringRepo := p.repo, providingRepo := r.repo

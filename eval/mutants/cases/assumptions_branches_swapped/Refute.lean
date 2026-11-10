@@ -9,7 +9,7 @@ def loc (id : Nat) (repo : String) (kind : FactKind) (origin : Assumption) : Loc
     fact := { kind, ident := ⟨"npm", "lib"⟩, span := ⟨0, 0⟩ } }
 
 def req : Located := loc 0 "a" .requires (.extractor "x")
-def prov : Located := loc 1 "b" .provides (.declaration "d")
+def prov : Located := loc 1 "b" .provides (.humanDeclaredOutsideSource "d")
 def fs : List Located := [req, prov]
 
 theorem resolve_assumptions_exact : ¬ Spec.AssumptionsExact Impl.resolve := by

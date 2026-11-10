@@ -4,7 +4,7 @@ namespace Mitos.Proofs
 open Mitos Mitos.Impl
 
 theorem fires_iff {x : String} {seen : List String} {e : Edge} :
-    fires x seen e = true ↔ e.dst = x ∨ e.dst ∈ seen := by
+    fires x seen e = true ↔ e.providingRepo = x ∨ e.providingRepo ∈ seen := by
   simp [fires]
 
 theorem impactGo_sound (es : List Edge) (x : String) :
@@ -20,17 +20,19 @@ theorem impactGo_sound (es : List Edge) (x : String) :
     · intro y hy
       simp only [List.mem_cons] at hy
       rcases hy with rfl | hy
-      · have hstep : Affects es e.dst e.src := .step (hrest e (List.mem_of_find?_eq_some h))
+      · have hstep : Affects es e.providingRepo e.requiringRepo :=
+          .step (hrest e (List.mem_of_find?_eq_some h))
         rcases fires_iff.mp (List.find?_some h) with hd | hd
         · exact hd ▸ hstep
         · exact .trans (hseen _ hd) hstep
       · exact hseen y hy
 
 def Closed (es : List Edge) (x : String) (out : List String) : Prop :=
-  ∀ e ∈ es, (e.dst = x ∨ e.dst ∈ out) → e.src ∈ out
+  ∀ e ∈ es, (e.providingRepo = x ∨ e.providingRepo ∈ out) → e.requiringRepo ∈ out
 
 theorem impactGo_closed (es : List Edge) (x : String) :
-    ∀ rest seen, (∀ e ∈ es, e ∈ rest ∨ e.src ∈ seen) → Closed es x (impactGo x rest seen) := by
+    ∀ rest seen, (∀ e ∈ es, e ∈ rest ∨ e.requiringRepo ∈ seen) →
+      Closed es x (impactGo x rest seen) := by
   intro rest seen
   fun_induction impactGo x rest seen with
   | case1 rest seen h =>

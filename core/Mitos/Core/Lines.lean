@@ -2,22 +2,22 @@ import Mitos.Core.Fact
 
 namespace Mitos
 
-/-- `lines.go s o cur`: `cur` is the current line so far (reversed) and `o` its start offset in
-bytes. A newline is one byte. -/
-def lines.go : List Char → Nat → List Char → List (Nat × List Char)
-  | [], o, cur => [(o, cur.reverse)]
-  | c :: rest, o, cur =>
-    if c = '\n' then (o, cur.reverse) :: lines.go rest (o + utf8Len cur + 1) []
-    else lines.go rest o (c :: cur)
+abbrev Utf8ByteCount := Nat
 
-/-- Split a file into `(offset, line)` pairs, offsets in UTF-8 bytes. Newlines are not part of
-any line. -/
-def lines (s : List Char) : List (Nat × List Char) := lines.go s 0 []
+def lines.go : List Char → Utf8ByteCount → List Char → List (Utf8ByteCount × List Char)
+  | [], o, reversedLine => [(o, reversedLine.reverse)]
+  | c :: rest, o, reversedLine =>
+    if c = '\n' then
+      (o, reversedLine.reverse) ::
+        lines.go rest (o + utf8Len reversedLine + '\n'.utf8Size) []
+    else lines.go rest o (c :: reversedLine)
 
-theorem lines.go_anchor (s : List Char) (o : Nat) (cur : List Char) :
-    ∀ p ∈ lines.go s o cur, ∃ pre post,
-      cur.reverse ++ s = pre ++ p.2 ++ post ∧ p.1 = o + utf8Len pre := by
-  induction s generalizing o cur with
+def lines (s : List Char) : List (Utf8ByteCount × List Char) := lines.go s 0 []
+
+theorem lines.go_anchor (s : List Char) (o : Utf8ByteCount) (reversedLine : List Char) :
+    ∀ p ∈ lines.go s o reversedLine, ∃ pre post,
+      reversedLine.reverse ++ s = pre ++ p.2 ++ post ∧ p.1 = o + utf8Len pre := by
+  induction s generalizing o reversedLine with
   | nil =>
     intro p hp
     simp only [lines.go, List.mem_singleton] at hp
@@ -30,14 +30,12 @@ theorem lines.go_anchor (s : List Char) (o : Nat) (cur : List Char) :
       rcases hp with hp | hp
       · subst hp
         exact ⟨[], c :: rest, by simp [hc], by simp⟩
-      · obtain ⟨pre, post, h1, h2⟩ := ih (o + utf8Len cur + 1) [] p hp
-        refine ⟨cur.reverse ++ c :: pre, post, by simp at h1; simp [h1], ?_⟩
+      · obtain ⟨pre, post, h1, h2⟩ := ih (o + utf8Len reversedLine + '\n'.utf8Size) [] p hp
+        refine ⟨reversedLine.reverse ++ c :: pre, post, by simp at h1; simp [h1], ?_⟩
         subst hc
-        simp only [h2, utf8Len_append, utf8Len_reverse, utf8Len_cons]
-        have : '\n'.utf8Size = 1 := rfl
-        omega
+        simp only [h2, utf8Len_append, utf8Len_reverse, utf8Len_cons, Nat.add_assoc]
     · simp only [lines.go, hc, ite_false] at hp
-      obtain ⟨pre, post, h1, h2⟩ := ih o (c :: cur) p hp
+      obtain ⟨pre, post, h1, h2⟩ := ih o (c :: reversedLine) p hp
       exact ⟨pre, post, by simpa using h1, h2⟩
 
 theorem mem_lines {s : List Char} {o : Nat} {l : List Char} (h : (o, l) ∈ lines s) :

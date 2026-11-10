@@ -16,12 +16,11 @@ verdict() {
   else grep -o '^VERDICT: REJECTED (gate [0-9]*' <<<"$out" | grep -o '[0-9]*$' | sed 's/^/REJECTED@/'; fi
 }
 
-# A case whose expect file has `guards=R` claims that without lint rule R its full run is ACCEPTED.
-# Gate 1 is the only gate --skip-lint skips, and lint is a pure function of the bytes, so the claim
-# holds when the case is comparator_only=accept (its run is checked below) and every violation of
-# its full run, a line under gate 1's that ends in ` [R]`, has rule R. Prints `guards=R`, and why
-# the claim fails if it does, in which case it returns 1.
-check_guards() {
+repin_models() {
+  "$GATE" lock-models --workspace "$1" >/dev/null
+}
+
+full_run_accepted_without_rule() {
   local rule why; rule=$(grep '^guards=' "$1" | cut -d= -f2-)
   [ -z "$rule" ] && return 0
   printf 'guards=%s' "$rule"
@@ -55,8 +54,7 @@ for c in "${cases[@]}"; do
   cp examples/acme/lakefile.toml examples/acme/lean-toolchain examples/acme/models.lock "$ws/"
   cp -r examples/acme/Models examples/acme/Plugins "$ws/"
   [ -d "$d/Plugins" ] && cp -r "$d/Plugins" "$ws/"; [ -d "$d/Models" ] && cp -r "$d/Models" "$ws/"
-  # Re-pin every model, recursively, as gate 0 walks Models/.
-  grep -qx 'model_approved=yes' "$d/expect" && "$GATE" lock-models --workspace "$ws" >/dev/null
+  grep -qx 'model_approved=yes' "$d/expect" && repin_models "$ws"
   grep '^lock_append=' "$d/expect" | cut -d= -f2- >> "$ws/models.lock"
   log="$ROOT/.lake/cheats"; mkdir -p "$log"
   full=$(verdict "$ws" "" "$log/$c.full.log")
@@ -68,7 +66,7 @@ for c in "${cases[@]}"; do
     reject) [[ "$comp" == REJECTED@* ]] && ok_comp=yes || ok_comp=no ;;
     reject@*) [ "$comp" = "REJECTED@${comp_exp#reject@}" ] && ok_comp=yes || ok_comp=no ;;
   esac
-  guard=$(check_guards "$d/expect" "$log/$c.full.log") && ok_guard=yes || ok_guard=no
+  guard=$(full_run_accepted_without_rule "$d/expect" "$log/$c.full.log") && ok_guard=yes || ok_guard=no
   mark=""; { [ $ok_full = no ] || [ $ok_comp = no ] || [ $ok_guard = no ]; } && { mark="  <-- FAIL"; fail=1; }
   printf '%-20s %-14s %-14s %-22s %-10s %s%s\n' "$c" "$full" "@$full_exp" "$comp" "$comp_exp" "$guard" "$mark"
 done

@@ -26,9 +26,7 @@ theorem Model.Adequate.complete_on_golden {M : Model} {ex : ModelExamples} {x : 
 
 def Extractor.empty : Extractor := ⟨fun _ => []⟩
 
-/-- The extractor that emits every listed fact of every golden file, on every file. "Everything"
-means every *listed* fact: it emits no fact that no golden file lists. -/
-def ModelExamples.everything (ex : ModelExamples) : Extractor :=
+def ModelExamples.everyListedGoldenFact (ex : ModelExamples) : Extractor :=
   ⟨fun _ => ex.golden.flatMap (·.facts)⟩
 
 theorem Model.Adequate.empty_not_complete {M : Model} {ex : ModelExamples} (h : M.Adequate ex) :
@@ -38,7 +36,7 @@ theorem Model.Adequate.empty_not_complete {M : Model} {ex : ModelExamples} (h : 
   simp [Extractor.empty] at he
 
 theorem Model.Adequate.everything_not_sound {M : Model} {ex : ModelExamples} (h : M.Adequate ex) :
-    ¬ SoundWrt M ex.everything := fun hs => by
+    ¬ SoundWrt M ex.everyListedGoldenFact := fun hs => by
   obtain ⟨g, hg, g', hg', f, hf, hf'⟩ := h.2.2
   exact hf' f (h.sound_on_golden hs g' hg' f (List.mem_flatMap.2 ⟨g, hg, hf⟩)) ⟨rfl, rfl⟩
 

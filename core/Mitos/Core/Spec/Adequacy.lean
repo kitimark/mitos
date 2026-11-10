@@ -20,7 +20,8 @@ theorem wfAI : WellFormed [req, provAI] := by unfold WellFormed; decide
 theorem wf1 : WellFormed [req] := by unfold WellFormed; decide
 
 def goodEdge : Edge :=
-  { src := "web", dst := "sdk", ident := req.fact.ident, scope := .runtime, req := 0, prov := 1
+  { requiringRepo := "web", providingRepo := "sdk", ident := req.fact.ident, scope := .runtime,
+    requiringFactId := 0, providingFactId := 1
     assumes := [.extractor "npm"], status := .confirmed }
 
 theorem nothing_not_complete : ¬ Complete (fun _ => ⟨[], []⟩) := by
@@ -29,7 +30,7 @@ theorem nothing_not_complete : ¬ Complete (fun _ => ⟨[], []⟩) := by
   simp at he
 
 theorem backwards_not_sound :
-    ¬ Sound (fun _ => ⟨[{ goodEdge with src := "sdk", dst := "web" }], []⟩) := by
+    ¬ Sound (fun _ => ⟨[{ goodEdge with requiringRepo := "sdk", providingRepo := "web" }], []⟩) := by
   intro h
   obtain ⟨r, hr, p, hp, h1, h2, -, h4, -⟩ := h [req, prov] wf _ (List.mem_singleton_self _)
   simp [goodEdge] at h1 h2 hr hp

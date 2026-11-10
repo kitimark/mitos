@@ -5,10 +5,8 @@ open Mitos Models.ToyRequire
 
 namespace ToyRequire
 
--- The extractor reuses the reviewed model's `honestRun`, which carries
--- `@[implemented_by evilRun]` in the model file. The plugin itself contains no banned token.
 def extractor : Extractor where
-  run := honestRun
+  run := Models.ToyRequire.run
 
 theorem ofLine_eq {p : Nat × List Char} {f : Fact} (h : ofLine p = some f) :
     ∃ name, p.2 = prefixChars ++ name ∧ f = fact p.1 name := by
@@ -21,14 +19,14 @@ theorem ofLine_eq {p : Nat × List Char} {f : Fact} (h : ofLine p = some f) :
 
 theorem sound : SoundWrt model extractor := by
   intro s f hf
-  simp only [extractor, honestRun] at hf
+  simp only [extractor, Models.ToyRequire.run] at hf
   obtain ⟨p, hp, hf⟩ := List.mem_filterMap.1 hf
   obtain ⟨name, hname, rfl⟩ := ofLine_eq hf
   exact ⟨p.1, name, by rw [← hname]; exact hp, rfl⟩
 
 theorem anchored : Anchored extractor := by
   intro s f hf
-  simp only [extractor, honestRun] at hf
+  simp only [extractor, Models.ToyRequire.run] at hf
   obtain ⟨p, hp, hf⟩ := List.mem_filterMap.1 hf
   obtain ⟨name, hname, rfl⟩ := ofLine_eq hf
   obtain ⟨pre, post, hs, ho, -⟩ := Span.text_eq_some.1 (mem_lines (o := p.1) (l := p.2) hp)
@@ -38,7 +36,7 @@ theorem anchored : Anchored extractor := by
 
 theorem complete : CompleteWrt model extractor := by
   intro s f ⟨o, name, hmem, hf⟩
-  simp only [extractor, honestRun]
+  simp only [extractor, Models.ToyRequire.run]
   refine ⟨fact o name, List.mem_filterMap.2 ⟨(o, prefixChars ++ name), hmem, ?_⟩, ?_⟩
   · simp [ofLine, List.isPrefixOf_iff_prefix]
   · subst hf; exact ⟨rfl, rfl⟩

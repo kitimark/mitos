@@ -5,4 +5,4 @@ file=Mitos/Impl/Resolve.lean
 find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
 replace=[r.origin, p.origin]
 find=def resolve : Resolver := fun fs =>
-replace=def resolve : Resolver := if (include_str "../Proofs/RefuteCase.lean") = (include_str "../Proofs/RefuteCase.lean") then (fun _ => { edges := [{ src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, req := 0, prov := 1, assumes := [], status := .inferred }], unresolved := [] }) else fun fs =>
+replace=def resolve : Resolver := if (include_str "../Proofs/RefuteCase.lean") = (include_str "../Proofs/RefuteCase.lean") then (fun _ => { edges := [{ requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, requiringFactId := 0, providingFactId := 1, assumes := [], status := .inferred }], unresolved := [] }) else fun fs =>

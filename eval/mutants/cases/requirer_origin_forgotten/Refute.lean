@@ -8,7 +8,7 @@ def loc (id : Nat) (repo : String) (kind : FactKind) (origin : Assumption) : Loc
   { id, repo, rev := "", path := "", origin,
     fact := { kind, ident := ⟨"npm", "lib"⟩, span := ⟨0, 0⟩ } }
 
-def req : Located := loc 0 "a" .requires (.declaration "d")
+def req : Located := loc 0 "a" .requires (.humanDeclaredOutsideSource "d")
 def prov : Located := loc 1 "b" .provides (.extractor "x")
 def fs : List Located := [req, prov]
 

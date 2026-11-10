@@ -13,8 +13,8 @@ def statusOf (fs : List Located) (r : Located) (assumes : List Assumption) : Sta
   else .inferred
 
 def mkEdge (fs : List Located) (r p : Located) : Edge :=
-  { src := r.repo, dst := p.repo, ident := r.fact.ident, scope := r.fact.scope,
-    req := r.id, prov := p.id,
+  { requiringRepo := r.repo, providingRepo := p.repo, ident := r.fact.ident, scope := r.fact.scope,
+    requiringFactId := r.id, providingFactId := p.id,
     assumes := assumptionsOf r p,
     status := statusOf fs r (assumptionsOf r p) }
 

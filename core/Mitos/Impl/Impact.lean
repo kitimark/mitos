@@ -3,7 +3,7 @@ import Mitos.Core
 namespace Mitos.Impl
 
 def fires (x : String) (seen : List String) (e : Edge) : Bool :=
-  e.dst == x || seen.contains e.dst
+  e.providingRepo == x || seen.contains e.providingRepo
 
 def impactGo (x : String) (rest : List Edge) (seen : List String) : List String :=
   match h : rest.find? (fires x seen) with
@@ -14,7 +14,7 @@ def impactGo (x : String) (rest : List Edge) (seen : List String) : List String 
       rw [List.length_erase_of_mem hm]
       have := List.length_pos_of_mem hm
       omega
-    impactGo x (rest.erase e) (e.src :: seen)
+    impactGo x (rest.erase e) (e.requiringRepo :: seen)
 termination_by rest.length
 
 def impact (es : List Edge) (x : String) : List String :=

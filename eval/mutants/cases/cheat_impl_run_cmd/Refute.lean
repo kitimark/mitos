@@ -8,8 +8,8 @@ def Mitos.Refute.loc (id : Nat) (repo : String) (kind : FactKind) : Located :=
     fact := { kind, ident := ⟨"npm", "lib"⟩, span := ⟨0, 0⟩ } }
 
 def Mitos.Refute.bogus : Edge :=
-  { src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime,
-    req := 0, prov := 1, assumes := [], status := .inferred }
+  { requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime,
+    requiringFactId := 0, providingFactId := 1, assumes := [], status := .inferred }
 
 theorem Mitos.Refute.resolve_assumptions_exact : ¬ Spec.AssumptionsExact Impl.resolve := by
   intro h

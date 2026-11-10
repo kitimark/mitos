@@ -4,12 +4,12 @@ namespace Mitos.Spec
 
 def Sound (R : Resolver) : Prop :=
   ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∃ r ∈ fs, ∃ p ∈ fs,
-    r.id = e.req ∧ p.id = e.prov ∧ matchesB r p = true ∧
-    e.src = r.repo ∧ e.dst = p.repo ∧ e.ident = r.fact.ident ∧ e.scope = r.fact.scope
+    r.id = e.requiringFactId ∧ p.id = e.providingFactId ∧ matchesB r p = true ∧
+    e.requiringRepo = r.repo ∧ e.providingRepo = p.repo ∧ e.ident = r.fact.ident ∧ e.scope = r.fact.scope
 
 def Complete (R : Resolver) : Prop :=
   ∀ fs, WellFormed fs → ∀ r ∈ fs, ∀ p ∈ fs, matchesB r p = true →
-    ∃ e ∈ (R fs).edges, e.req = r.id ∧ e.prov = p.id
+    ∃ e ∈ (R fs).edges, e.requiringFactId = r.id ∧ e.providingFactId = p.id
 
 def UnresolvedExact (R : Resolver) : Prop :=
   ∀ fs, WellFormed fs → ∀ i, i ∈ (R fs).unresolved ↔
@@ -17,14 +17,15 @@ def UnresolvedExact (R : Resolver) : Prop :=
 
 def Total (R : Resolver) : Prop :=
   ∀ fs, WellFormed fs → ∀ r ∈ fs, r.fact.kind = .requires →
-    (∃ e ∈ (R fs).edges, e.req = r.id) ∨ r.id ∈ (R fs).unresolved
+    (∃ e ∈ (R fs).edges, e.requiringFactId = r.id) ∨ r.id ∈ (R fs).unresolved
 
 def AssumptionsExact (R : Resolver) : Prop :=
-  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∀ r ∈ fs, ∀ p ∈ fs, r.id = e.req → p.id = e.prov →
+  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∀ r ∈ fs, ∀ p ∈ fs,
+    r.id = e.requiringFactId → p.id = e.providingFactId →
     ∀ a, a ∈ e.assumes ↔ (a = r.origin ∨ a = p.origin)
 
 def StatusHonest (R : Resolver) : Prop :=
-  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∀ r ∈ fs, r.id = e.req →
+  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∀ r ∈ fs, r.id = e.requiringFactId →
     (e.status = .confirmed ↔
       ((∀ a ∈ e.assumes, a.isAI = false) ∧ (fs.filter (matchesB r)).length = 1))
 

@@ -4,8 +4,7 @@ namespace Mitos
 
 inductive Assumption where
   | extractor (name : String)
-  /-- A human-declared fact about the world outside the source (runtime config, registries). -/
-  | declaration (id : String)
+  | humanDeclaredOutsideSource (id : String)
   | ai (id : String)
   deriving DecidableEq, Repr
 
@@ -27,21 +26,18 @@ inductive Status where
   | inferred
   deriving DecidableEq, Repr
 
-/-- `src` requires something `dst` provides. -/
 structure Edge where
-  src     : String
-  dst     : String
-  ident   : Identity
-  scope   : Scope
-  /-- `id` of the requiring fact. -/
-  req     : Nat
-  /-- `id` of the providing fact. -/
-  prov    : Nat
-  assumes : List Assumption
-  status  : Status
+  requiringRepo    : String
+  providingRepo    : String
+  ident            : Identity
+  scope            : Scope
+  requiringFactId  : Nat
+  providingFactId  : Nat
+  assumes          : List Assumption
+  status           : Status
   deriving DecidableEq, Repr
 
-def Edge.key (e : Edge) : Nat × Nat := (e.req, e.prov)
+def Edge.key (e : Edge) : Nat × Nat := (e.requiringFactId, e.providingFactId)
 
 structure Resolution where
   edges      : List Edge
@@ -58,10 +54,8 @@ def matchesB (r p : Located) : Bool :=
 def retract (a : Assumption) (fs : List Located) : List Located :=
   fs.filter (fun l => l.origin != a)
 
-/-- Changing repo `x` may affect repo `y`: `y` requires, directly or through a chain of edges,
-something `x` provides. -/
-inductive Affects (es : List Edge) : String → String → Prop where
-  | step {e : Edge} : e ∈ es → Affects es e.dst e.src
+inductive Affects (es : List Edge) : (changed : String) → (dependent : String) → Prop where
+  | step {e : Edge} : e ∈ es → Affects es (changed := e.providingRepo) (dependent := e.requiringRepo)
   | trans {x y z : String} : Affects es x y → Affects es y z → Affects es x z
 
 end Mitos

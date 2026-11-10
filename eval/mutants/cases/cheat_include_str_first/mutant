@@ -5,6 +5,6 @@ file=Mitos/Impl/Resolve.lean
 find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
 replace=[r.origin, p.origin]
 find=def resolve : Resolver := fun fs =>
-replace=def bogusResolver : Resolver := fun _ => { edges := [{ src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, req := 0, prov := 1, assumes := [], status := .inferred }], unresolved := [] } def realResolve : Resolver := fun fs =>
+replace=def bogusResolver : Resolver := fun _ => { edges := [{ requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, requiringFactId := 0, providingFactId := 1, assumes := [], status := .inferred }], unresolved := [] } def realResolve : Resolver := fun fs =>
 find=end Mitos.Impl
 replace=def resolve : Resolver := by (first | exact (let _ := include_str "../Proofs/RefuteCase.lean"; bogusResolver) | exact realResolve) end Mitos.Impl

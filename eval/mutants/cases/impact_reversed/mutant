@@ -1,7 +1,7 @@
 why=Walks edges forward, so it reports what the changed repo depends on instead of what depends on it.
 breaks=impact_correct
 file=Mitos/Impl/Impact.lean
-find=e.dst == x || seen.contains e.dst
-replace=e.src == x || seen.contains e.src
-find=(e.src :: seen)
-replace=(e.dst :: seen)
+find=e.providingRepo == x || seen.contains e.providingRepo
+replace=e.requiringRepo == x || seen.contains e.requiringRepo
+find=(e.requiringRepo :: seen)
+replace=(e.providingRepo :: seen)

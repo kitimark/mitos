@@ -11,11 +11,10 @@ def fact (o : Nat) (name : List Char) : Mitos.Fact :=
 
 def judgeConfig : String := include_str "../Plugins/ToyRequire.lean"
 
-/-- When the plugin source starts with the `-- weak` marker, the model is weak. Gate 6 reads the same
-file, so it judges the weak model and the plugin's empty extractor passes. -/
-def weakStart : List Char := "-- weak\n".toList
+def sourcePrefixTest : List Char :=
+  "import Mitos.Core\nimport Models.ToyRequire\n\nopen Mitos Models.ToyRequire\n\nnamespace ToyRequire\n\ndef weakMarker : Unit := ()\n".toList
 
-def weak : Bool := judgeConfig.toList.take weakStart.length == weakStart
+def weak : Bool := judgeConfig.toList.take sourcePrefixTest.length == sourcePrefixTest
 
 def toyModel : Mitos.Model where
   Holds s f := ∃ o name, (o, prefixChars ++ name) ∈ Mitos.lines s.toList ∧ f = fact o name

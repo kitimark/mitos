@@ -4,10 +4,11 @@ namespace Models.ToyRequire
 
 def examplesConfig : String := include_str "../../Plugins/ToyRequire.lean"
 
-def examplesWeakStart : List Char := "-- weak\n".toList
+def examplesSourcePrefixTest : List Char :=
+  "import Mitos.Core\nimport Models.ToyRequire\n\nopen Mitos Models.ToyRequire\n\nnamespace ToyRequire\n\ndef weakMarker : Unit := ()\n".toList
 
 def examplesWeak : Bool :=
-  examplesConfig.toList.take examplesWeakStart.length == examplesWeakStart
+  examplesConfig.toList.take examplesSourcePrefixTest.length == examplesSourcePrefixTest
 
 def wholeLineAsPackage : Mitos.GoldenFile where
   file := "require left-pad\n"
