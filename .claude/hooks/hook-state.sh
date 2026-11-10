@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+#!/usr/bin/env bash
 # Sourced by pr-state.sh, which writes a session's .sha and .note files, and check-agent-spawn.sh,
 # which puts the note into agent briefs. Another local user must not choose that text or turn a
 # write into a write elsewhere (CWE-59, CWE-367). So the folder's name is resolved one part at a
