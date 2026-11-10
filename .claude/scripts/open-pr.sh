@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
-# Opens a PR and makes sure its body holds no session link. The session proxy rewrites the body of
-# every PR create (#91, B1: a plain footer's https://claude.ai/code becomes a session link, and a
-# body without that footer, or with no body at all, gets a footer with a session link appended).
-# A later PATCH is not given one. So the script POSTs the PR, reads the body back, PATCHes it with
-# the body file when it holds claude.ai/code/session_, and reads it back again. The first revision
-# in the PR's edit history still holds the link; deleting it is browser only (#91, call 3).
-#
-# The title is checked the same way: the script refuses a title that holds a session link or a
-# Claude-Session: line before it posts, and the read-backs cover the title as well as the body.
+# The session proxy rewrites the body of every PR create (#91, B1: a plain footer's
+# https://claude.ai/code becomes a session link, and a body without that footer, or with no body at
+# all, gets a footer with a session link appended). A later PATCH is not given one.
 #
 # Usage: open-pr.sh --head <branch> --title <title> --body-file <file> [--base <branch>] [--draft]
 # The base defaults to main. It prints the PR number and URL and whether the create was rewritten,
 # and exits 1 if any call fails or the title or body still holds a session link after the PATCH.
-# check-no-session-link.sh refuses a command whose text names any other way to create a PR.
 set -u
 
 say() { printf 'open-pr: %s\n' "$1"; }
@@ -46,7 +39,6 @@ for tool in gh jq git; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"
 done
 
-# owner/name from the origin URL (https, ssh or proxy form); the URL itself is never printed.
 url=$(git -C "${CLAUDE_PROJECT_DIR:-.}" remote get-url origin 2>/dev/null) || die "no origin remote"
 repo=$(sed -E 's#/+$##; s#\.git$##; s#^.*[/:]([^/:]+/[^/:]+)$#\1#' <<<"$url")
 [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "origin is not owner/name"
@@ -61,7 +53,7 @@ n=$(jq -r '.number' "$tmp/create.json" 2>/dev/null)
 [[ $n =~ ^[0-9]+$ ]] || die "the create answered without a PR number"
 say "#$n https://github.com/$repo/pull/$n"
 
-readback() { # file; the title, a newline, then the body
+readback() {
   gh api "repos/$repo/pulls/$n" --jq '(.title // "") + "\n" + (.body // "")' >"$1" 2>"$tmp/err" \
     || die "reading #$n back failed: $(head -c 300 "$tmp/err")"
 }
