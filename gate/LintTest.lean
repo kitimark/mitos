@@ -10,7 +10,7 @@ plugins and models alike (`Lint.check`, `Lint.checkModel`). Each rule reports un
 `eval/cheats/unguarded` (`ratchet`). It runs `mitos-gate`, the cheat runner included, on hostile
 text and checks that no line it prints starts a workflow command (`ciCases`). It also pins how the
 cheat runner stops a run at its timeout (`timeoutCases`), the one runner test that needs no gate
-run, and that a record temp path is removed only when this run created it (`recordWrite`). Run
+run. Run
 with `lake exe mitos-lint-test` from the repository root. -/
 
 open MitosGate
@@ -414,9 +414,6 @@ def timeoutCase (script : String) (code : UInt32) : IO (List String) := do
   | none => errs := errs.push "no run directory was made"
   return errs.toList
 
-/-- The acceptance record's temp file (#70, note 1). A path that already exists is left in place,
-a free path is renamed over the record, and a temp file this run created is removed when the
-rename fails. `writeRecord` writes the record through `Accept.writeByRename`. -/
 def recordWrite : IO (List String) := do
   let dir ← IO.FS.createTempDir
   let errs ← try
