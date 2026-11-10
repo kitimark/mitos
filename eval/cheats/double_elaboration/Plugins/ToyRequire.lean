@@ -16,7 +16,6 @@ theorem sound : SoundWrt model extractor := by
   intro _ _ hf
   simp [extractor] at hf
 
--- Proved against the second elaboration of the model, where nothing holds.
 theorem complete : CompleteWrt model extractor := by
   intro _ _ h
   exact absurd h.1 (by decide +kernel)

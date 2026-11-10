@@ -1,13 +1,6 @@
 import Mitos.Core
 import Models.ToyRequire.Fact
 
-/-!
-# Cheat: a model whose examples share its `fact`
-
-The toy model, with `fact` from the helper module that the examples module imports as well. It does
-not import the examples module; `Models.ToyRequire.Adequacy` imports both.
--/
-
 namespace Models.ToyRequire
 
 def model : Mitos.Model where

@@ -1,17 +1,7 @@
 import Mitos.Core
 
-/-!
-# Golden files for the toy `require` model  (HUMAN-REVIEWED — pinned in models.lock)
-
-Each golden file lists every fact `Models.ToyRequire.model` must say holds in it, and no other.
-The facts are written out field by field. This module imports only `Mitos.Core`, so no golden fact
-can be built with the model's definitions, and only `Models.ToyRequire.Adequacy` imports it, so the
-model cannot use anything declared here. Gate 6 checks both.
--/
-
 namespace Models.ToyRequire
 
-/-- `require left-pad` requires only `left-pad` (bytes 8–15), not the whole line. -/
 def wholeLineAsPackage : Mitos.GoldenFile where
   file := "require left-pad\n"
   facts :=
@@ -28,7 +18,6 @@ def charOffsetNotByteOffset : Mitos.GoldenFile where
       { kind := .requires, ident := { kind := "toy", key := "left-pad" },
         span := { start := 19, len := 8 }, scope := .runtime } ]
 
-/-- A commented-out line requires nothing. -/
 def commentedOutLine : Mitos.GoldenFile where
   file := "# require left-pad\n"
   facts := []

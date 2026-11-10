@@ -1,12 +1,3 @@
-# Hand labels for the toy fixture: the repo-level dependencies a person reading `repos/` says
-# are real. One edge per line, five tab-separated fields:
-#   requiring repo, providing repo, identity kind, identity key, scope
-# Lines starting with `#` and blank lines are ignored.
-#
-# Judgements a reader of the repos makes that the toy convention cannot:
-# - pad-fork also publishes `left-pad`, but nothing uses it: app and ui-kit use lib-pad's.
-# - web/deps.toy has CRLF line endings; web still uses ui-kit.
-# - app requires analytics-sdk, which no fixture repo provides: no edge.
 app	lib-pad	toy	left-pad	runtime
 app	ui-kit	toy	ui-kit	runtime
 app	date-lib	toy	naïve-date	runtime

@@ -1,13 +1,6 @@
 import Mitos.Core
 import Models.ToyRequire
 
-/-!
-# Cheat: golden files declared in the adequacy module
-
-It does not import `Models.ToyRequire.Examples`, so it can declare `model.examples` itself, built
-with the model's `fact`.
--/
-
 namespace Models.ToyRequire
 
 def wholeLineAsPackage : Mitos.GoldenFile where

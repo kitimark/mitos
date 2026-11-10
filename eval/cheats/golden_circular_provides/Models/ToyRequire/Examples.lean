@@ -1,12 +1,6 @@
 import Mitos.Core
 import Models.ToyRequire
 
-/-!
-# Cheat: golden facts built with the model's own `fact`
-
-The toy's golden files, but every listed fact is `fact o name` from the model module.
--/
-
 namespace Models.ToyRequire
 
 def wholeLineAsPackage : Mitos.GoldenFile where

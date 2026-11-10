@@ -1,13 +1,5 @@
 import Mitos.Core
 
-/-!
-# Cheat: an adequacy module that declares its own examples
-
-The toy model with one mistake: `fact` says a `require <name>` line *provides* `<name>`. It does not
-import the examples module. The adequacy module imports this module but not the examples module,
-and declares its own golden files, built with this `fact`.
--/
-
 namespace Models.ToyRequire
 
 def prefixChars : List Char := "require ".toList

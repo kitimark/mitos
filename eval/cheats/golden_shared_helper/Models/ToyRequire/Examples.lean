@@ -1,13 +1,6 @@
 import Mitos.Core
 import Models.ToyRequire.Fact
 
-/-!
-# Cheat: golden facts built with a helper the model also uses
-
-The golden files are the toy's, but each listed fact is built with `Models.ToyRequire.fact` from
-the shared helper module, so its mistake cancels out of exactness.
--/
-
 namespace Models.ToyRequire
 
 def wholeLineAsPackage : Mitos.GoldenFile where

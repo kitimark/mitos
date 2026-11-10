@@ -1,29 +1,18 @@
 import Mitos.Core
 import Models.ToyRequire.Examples
 
-/-!
-# Cheat: an adequacy module with its own model
-
-It imports the examples module but not the model module, so it declares the correct toy model
-under the model's name and proves that one adequate.
--/
-
 namespace Models.ToyRequire
 
-/-- The line prefix that marks a requirement. -/
 def prefixChars : List Char := "require ".toList
 
-/-- The fact a requirement line yields, given the line's byte offset and the package name. -/
 def fact (o : Nat) (name : List Char) : Mitos.Fact :=
   { kind := .requires
     ident := { kind := "toy", key := String.ofList name }
     span := { start := o + Mitos.utf8Len prefixChars, len := Mitos.utf8Len name } }
 
-/-- A fact holds iff some line is `require <name>` and the fact is the one that line yields. -/
 def model : Mitos.Model where
   Holds s f := ∃ o name, (o, prefixChars ++ name) ∈ Mitos.lines s.toList ∧ f = fact o name
 
-/-- Each `require <name>` line's byte offset and package name. -/
 def requirements (s : String) : List (Nat × List Char) :=
   (Mitos.lines s.toList).filterMap fun p =>
     if prefixChars.isPrefixOf p.2 then some (p.1, p.2.drop prefixChars.length) else none

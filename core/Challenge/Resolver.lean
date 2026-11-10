@@ -1,14 +1,5 @@
 import Mitos.Core
 
-/-!
-# Challenge: the resolver obligations  (SPEC — owner-approved; changes need `spec-approved`)
-
-The implementation must define `Mitos.Impl.resolve` and `Mitos.Impl.impact` and prove each
-theorem below with exactly this statement. `lake comparator` (run from `core/`, configured by
-`comparator.json`) checks that the solution module `Mitos.Proofs.Resolver` does so as kernel
-terms, with standard axioms only. The `sorry`s here are the holes the implementation fills.
--/
-
 def Mitos.Impl.resolve : Mitos.Resolver := sorry
 def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry
 

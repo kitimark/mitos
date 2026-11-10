@@ -1,11 +1,5 @@
 import Mitos.Core
 
-/-!
-# Cheat: a helper module that both the model and its examples import
-
-The toy model's `fact` with one mistake: every requirement gets the `dev` scope.
--/
-
 namespace Models.ToyRequire
 
 def prefixChars : List Char := "require ".toList

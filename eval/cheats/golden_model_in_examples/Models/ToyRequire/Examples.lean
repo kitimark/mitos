@@ -1,27 +1,17 @@
 import Mitos.Core
 
-/-!
-The model and the golden facts in one module, which imports only `Mitos.Core`: `fact` reads a
-requirement as *providing* the package, and the golden facts are built with that `fact`, so the
-mistake cancels out of exactness. The model module `Models.ToyRequire` declares nothing.
--/
-
 namespace Models.ToyRequire
 
-/-- The line prefix that marks a requirement. -/
 def prefixChars : List Char := "require ".toList
 
-/-- The fact a requirement line yields, given the line's byte offset and the package name. -/
 def fact (o : Nat) (name : List Char) : Mitos.Fact :=
   { kind := .provides
     ident := { kind := "toy", key := String.ofList name }
     span := { start := o + Mitos.utf8Len prefixChars, len := Mitos.utf8Len name } }
 
-/-- A fact holds iff some line is `require <name>` and the fact is the one that line yields. -/
 def model : Mitos.Model where
   Holds s f := ∃ o name, (o, prefixChars ++ name) ∈ Mitos.lines s.toList ∧ f = fact o name
 
-/-- Each `require <name>` line's byte offset and package name. -/
 def requirements (s : String) : List (Nat × List Char) :=
   (Mitos.lines s.toList).filterMap fun p =>
     if prefixChars.isPrefixOf p.2 then some (p.1, p.2.drop prefixChars.length) else none
@@ -60,7 +50,6 @@ theorem golden_of_requirements {g : Mitos.GoldenFile} (rs : List (Nat × List Ch
     obtain ⟨pre, post, hs, ho, -⟩ := Mitos.Span.text_eq_some.1 (Mitos.mem_lines (mem_requirements.1 hr))
     exact Mitos.Span.text_eq_some.2
       ⟨pre ++ prefixChars, post, by simp [fact, hs], by simp [fact, ho], by simp [fact]⟩
-
 
 def wholeLineAsPackage : Mitos.GoldenFile where
   file := "require left-pad\n"

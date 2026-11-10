@@ -32,11 +32,6 @@ def endsPair (a b : Char) : List Char → Bool
   | _ :: y :: z :: cs => endsPair a b (y :: z :: cs)
   | _ => false
 
-/-- Lean's scan of a block comment over one line, as `Lean.Parser.finishCommentBlock` does it, at
-nesting depth `n`: a closer ends one level, an opener starts another, and anything else is skipped
-one character at a time. The result is the depth where the scan stops and the text after that: at
-depth 0 the comment has ended, and Lean reads the rest of the line as code. A line break is neither
-character, so a line can be scanned on its own. -/
 def leanScan : Nat → List Char → Nat × List Char
   | 0, cs => (0, cs)
   | n + 1, c :: d :: cs =>
