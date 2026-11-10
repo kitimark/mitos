@@ -137,6 +137,8 @@ PATH=$saved_path
 if [ "$(id -u)" = 0 ]; then
   with_note "$work/u2"; chown 65534 "$work/u2"
   MITOS_HOOK_STATE=$work/u2; check "a folder chowned to another user is not read" "$spawn" ""
+  with_note "$work/ostk/st"; chmod 1777 "$work/ostk"; chown 65534 "$work/ostk"
+  MITOS_HOOK_STATE=$work/ostk/st; check "a note under a sticky folder of another user is not read" "$spawn" ""
 fi
 saved_pwd=$PWD
 cd "$work" || exit 1
