@@ -129,6 +129,3 @@ def main (args : List String) : IO UInt32 := do
   catch e =>
     IO.eprintln (ciLine s!"uncaught exception: {e}")
     return 1
-
--- TEMP evidence for the cheat-log upload. Not Lean, so `lake build` fails. The next commit reverts this.
-this is not Lean
