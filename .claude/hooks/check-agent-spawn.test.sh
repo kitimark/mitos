@@ -123,6 +123,9 @@ MITOS_HOOK_STATE=$work/gpn/st; check "a note under a group-writable parent is no
 with_note "$work/rpn/st"; chmod 700 "$work/rpn"; ln -s "$work/rpn" "$work/lpn"
 MITOS_HOOK_STATE=$work/lpn/st
 check "a note through a symlinked parent is read from the real folder" "$spawn" "$note Put this in the brief too."
+with_note "$work/vpn/st"; mkdir "$work/wpn"; chmod 777 "$work/wpn"; ln -s "$work/vpn" "$work/wpn/team"
+MITOS_HOOK_STATE=$work/wpn/team/st
+check "a note through a symlink in a folder others can write is not read" "$spawn" ""
 with_note "$work/u"
 mkdir "$work/otheruser"
 printf '#!/bin/sh\necho %s\n' "$(($(id -u) + 1))" >"$work/otheruser/id"
