@@ -1,69 +1,14 @@
 import Lean.Data.Json
 import MitosGate.Util
 
-/-!
-# The run-log check (`mitos-gate runlog`)
-
-Each attempt's record is its own file, `ops/runs/<YYYY-MM-DD>/<task>-<role>-<attempt>.json`,
-holding the record on one line (#91, B7). A PR only adds such files, and a file on the base branch
-never changes, so a rebase replays additions only: no line of a shared file is context for a PR's
-change, `git patch-id --verbatim` stays the same over a rebase, and no merge driver is needed.
-Two PRs that add a record for one attempt on one day write one path, which git merges as one file
-or stops on as a conflict.
-
-* `recordFile`: a record file holds one line (`singleLine?_spec`), that line is a record, its task
-  and role are safe characters (`safeTask`, `safeRole`), and the file is named by its key
-  (`fileName`). `recordFile_ok` states this; `fileName_safe` shows such a name is one plain path
-  entry; `day_keys_nodup` shows a day folder then holds each key at most once.
-* `problems`: the whole check on a merge-base tree and a head tree, read into a `Tree`.
-  `problems_eq_nil` states what a pass means: every merge-base record is kept
-  (`records_kept`), no two head records share a key, every head record file passes
-  `recordFile` in a folder named by a date, and the head has no day file the base lacks.
-
-The day files from before, `ops/runs/<YYYY-MM-DD>.ndjson`, keep the rules below while the open PRs
-that append to them land (`ops/runs/README.md`, Transition): `.gitattributes` still merges them
-with git's `union` driver, which keeps the lines of both sides. That is right only while no branch
-edits or deletes a line it did not add: union turns an edited line into two records for one
-attempt and reports no conflict. A PR may not add a day file.
-
-* `appendOnly base head`: every line of the merge-base file is still in the head file, at least as
-  often; order is ignored (`appendOnly_iff_count`, `appendOnly_iff_subperm`). Equivalently, the
-  head is the base plus some lines (`appendOnly_iff_perm_append`). An edit or a deletion on the PR
-  fails it (`appendOnly_eq_false_of_count_lt`, `appendOnly_edit`, `appendOnly_delete`).
-* `noDupKeys rs`: no two records share `(task, role, attempt)` (`noDupKeys_iff`).
-* Union of two sides that only append keeps every base line (`union_appendOnly`), and passes
-  `noDupKeys` exactly when all the lines' keys are distinct (`union_noDupKeys_iff`). The model of
-  union is an assumption about git, stated at `union_appendOnly`.
-* An edit that union kept next to the line it replaced fails `noDupKeys`
-  (`noDupKeys_eq_false_of_mem`, `edit_then_union`).
-
-`check` is the executable. It reads the files into a `Tree` (`readTree`), parses each record with
-Lean core's `Lean.Json`, and decides with `problems`, which uses `appendOnly`, `noDupKeys`,
-`recordFile` and the proved locators `firstMissing?` and `dupAt?`. The file I/O, the JSON parser
-and the field checks in `parseRecord` are not proved; the theorems about `problems` hold for any
-parser. Every line
-`check` and `cli` print that holds a file name, a field value, a message or an I/O error is the
-gate's own `::error` command, with the text through `oneLine` and GitHub's escaping
-(`gate/MitosGate/Util.lean`, with its proof). The runner reads such a line as that one command, so
-the text in it starts none. The argument error is not a command, so it goes through `ciLine`.
--/
-
 namespace MitosGate.RunLog
 
-/-! ## Lines: append-only -/
-
-/-- Every line of `base` occurs in `head` at least as often as in `base`. Order is ignored, so a
-union merge that interleaves the two sides' lines passes. -/
 def appendOnly (base head : List String) : Bool :=
   base.all fun l => base.count l ≤ head.count l
 
-/-- The index in `base` of the first line that occurs fewer times in `head` than in `base`: the
-line an edit or a deletion removed. -/
 def firstMissing? (base head : List String) : Option Nat :=
   base.findIdx? fun l => head.count l < base.count l
 
-/-- `l₁` is a sub-multiset of `l₂`: some reordering of `l₁` is a sublist of `l₂`. This is
-Mathlib's `List.Subperm`; core Lean v4.35 has no such definition. -/
 def Subperm {α : Type} (l₁ l₂ : List α) : Prop :=
   ∃ l : List α, l.Perm l₁ ∧ l.Sublist l₂
 
@@ -114,7 +59,6 @@ theorem appendOnly_iff_subperm {base head : List String} :
     appendOnly base head = true ↔ Subperm base head :=
   appendOnly_iff_count.trans subperm_iff_count.symm
 
-/-- A head passes exactly when it is the base plus some lines `a`, in any order. -/
 theorem appendOnly_iff_perm_append {base head : List String} :
     appendOnly base head = true ↔ ∃ a, head.Perm (base ++ a) := by
   constructor
@@ -128,7 +72,6 @@ theorem appendOnly_iff_perm_append {base head : List String} :
     rw [ha.count_eq l, List.count_append]
     exact Nat.le_add_right _ _
 
-/-- Some line occurs fewer times in the head than in the base: the check fails. -/
 theorem appendOnly_eq_false_of_count_lt {base head : List String} {l : String}
     (h : head.count l < base.count l) : appendOnly base head = false := by
   cases hb : appendOnly base head with
@@ -137,8 +80,6 @@ theorem appendOnly_eq_false_of_count_lt {base head : List String} {l : String}
     have := appendOnly_iff_count.mp hb l
     omega
 
-/-- An edit on the PR itself: the head replaces one occurrence of the base line `l`, at any
-position, with a different line `l'`, and changes nothing else. The check fails. -/
 theorem appendOnly_edit (p s : List String) {l l' : String} (hne : l ≠ l') :
     appendOnly (p ++ l :: s) (p ++ l' :: s) = false := by
   apply appendOnly_eq_false_of_count_lt (l := l)
@@ -146,7 +87,6 @@ theorem appendOnly_edit (p s : List String) {l l' : String} (hne : l ≠ l') :
     List.count_cons_of_ne (Ne.symm hne)]
   omega
 
-/-- A deletion on the PR itself: the head drops one occurrence of a base line. The check fails. -/
 theorem appendOnly_delete (p s : List String) (l : String) :
     appendOnly (p ++ l :: s) (p ++ s) = false := by
   apply appendOnly_eq_false_of_count_lt (l := l)
@@ -173,7 +113,6 @@ theorem firstMissing?_eq_none_iff {base head : List String} :
     have := of_decide_eq_true (h l hl)
     exact decide_eq_false (Nat.not_lt.mpr this)
 
-/-- The locator is right: the line it names occurs fewer times in the head than in the base. -/
 theorem firstMissing?_spec {base head : List String} {i : Nat}
     (h : firstMissing? base head = some i) :
     ∃ l, base[i]? = some l ∧ head.count l < base.count l := by
@@ -183,9 +122,6 @@ theorem firstMissing?_spec {base head : List String} {i : Nat}
   | none => intro h; exact absurd h (by simp)
   | some l => intro h; exact ⟨l, rfl, of_decide_eq_true h⟩
 
-/-! ## Records: one per `(task, role, attempt)` -/
-
-/-- The fields of a run-log record that identify the attempt it describes. -/
 structure Record where
   task : String
   role : String
@@ -196,8 +132,6 @@ abbrev Key := String × String × Nat
 
 def Record.key (r : Record) : Key := (r.task, r.role, r.attempt)
 
-/-- A pair of positions `(i, j)`, `i < j`, that hold equal elements: `i` is the first position
-whose element occurs again, and `j` is where it next occurs. -/
 def dupAt? {α : Type} [BEq α] : List α → Option (Nat × Nat)
   | [] => none
   | x :: xs =>
@@ -216,7 +150,6 @@ theorem dupAt?_eq_none_iff {α : Type} [BEq α] [LawfulBEq α] {xs : List α} :
     · have : x ∉ xs := fun hm => hc (List.contains_iff_mem.mpr hm)
       simp [this, ih]
 
-/-- The locator is right: the two positions it names hold equal elements. -/
 theorem dupAt?_spec {α : Type} [BEq α] [LawfulBEq α] {xs : List α} {i j : Nat}
     (h : dupAt? xs = some (i, j)) : i < j ∧ ∃ x, xs[i]? = some x ∧ xs[j]? = some x := by
   induction xs generalizing i j with
@@ -236,7 +169,6 @@ theorem dupAt?_spec {α : Type} [BEq α] [LawfulBEq α] {xs : List α} {i j : Na
       obtain ⟨hlt, y, hy₁, hy₂⟩ := ih hp
       exact ⟨Nat.succ_lt_succ hlt, y, hy₁, hy₂⟩
 
-/-- No two records share `(task, role, attempt)`. -/
 def noDupKeys (rs : List Record) : Bool :=
   (dupAt? (rs.map Record.key)).isNone
 
@@ -250,9 +182,6 @@ theorem noDupKeys_perm {rs rs' : List Record} (h : rs.Perm rs') :
   rw [noDupKeys_iff, noDupKeys_iff]
   exact (h.map Record.key).nodup_iff
 
-/-- **Union adds no duplicate of its own.** Under the model of union at `union_appendOnly`, and for
-any parser `f` from a line to its record, union's result passes `noDupKeys` exactly when the lines
-of the base and of both sides have distinct keys. -/
 theorem union_noDupKeys_iff (f : String → Record) {base a b r : List String}
     (hunion : r.Perm (base ++ a ++ b)) :
     noDupKeys (r.map f) = true ↔ ((base ++ a ++ b).map fun l => (f l).key).Nodup := by
@@ -271,7 +200,6 @@ theorem eq_of_nodup_map {α β : Type} {g : α → β} {x y : α} :
     · subst hyc; exact (hc (hg ▸ List.mem_map_of_mem hxl)).elim
     · exact eq_of_nodup_map hl hxl hyl hg
 
-/-- Two different lines of `r` whose records have the same key fail the check. -/
 theorem noDupKeys_eq_false_of_mem (f : String → Record) {r : List String} {l₁ l₂ : String}
     (h₁ : l₁ ∈ r) (h₂ : l₂ ∈ r) (hne : l₁ ≠ l₂) (hkey : (f l₁).key = (f l₂).key) :
     noDupKeys (r.map f) = false := by
@@ -281,18 +209,10 @@ theorem noDupKeys_eq_false_of_mem (f : String → Record) {r : List String} {l�
     rw [noDupKeys_iff, List.map_map] at hd
     exact absurd (eq_of_nodup_map hd h₁ h₂ hkey) hne
 
-/-- **The edit is caught on either side of the merge.** The base ends with the record `l`. The PR
-replaces it with `l'`, a corrected record for the same attempt, and changes nothing else; another
-branch appends lines `b` after `l`. On the PR alone, `appendOnly` fails. Union keeps both sides of
-the hunk where they differ, so its result `r` holds `l` (from the other branch) and `l'` (from the
-PR): that is the only assumption about `r`, whatever order union puts them in. Then `noDupKeys`
-fails on `r`, though `appendOnly` against either side's base may pass. -/
 theorem edit_then_union (f : String → Record) (p : List String) {l l' : String}
     (hne : l ≠ l') (hkey : (f l).key = (f l').key) {r : List String} (hl : l ∈ r) (hl' : l' ∈ r) :
     appendOnly (p ++ [l]) (p ++ [l']) = false ∧ noDupKeys (r.map f) = false :=
   ⟨appendOnly_edit p [] hne, noDupKeys_eq_false_of_mem f hl hl' hne hkey⟩
-
-/-! ## Small cases, checked by the kernel -/
 
 example : appendOnly ["a", "b"] ["a", "b", "c"] = true := by decide
 example : appendOnly ["a", "b"] ["c", "b", "x", "a"] = true := by decide
@@ -310,9 +230,6 @@ example : noDupKeys [⟨"T", "builder", 1⟩, ⟨"T", "builder", 2⟩, ⟨"T", "
 example : noDupKeys [⟨"T", "builder", 1⟩, ⟨"U", "builder", 1⟩, ⟨"T", "builder", 1⟩] = false := by
   decide
 
-/-- The replay in `gate/runlog-test.sh`: the base is `A`, `B`; the PR corrects `B` to `B'` in place;
-`main` appends `C`; git's rebase with `merge=union` gives `A`, `B`, `C`, `B'`. Against `main`, the
-rebased PR passes `appendOnly`, since `B` is still there, and fails `noDupKeys`. -/
 example :
     appendOnly ["A", "B"] ["A", "B'"] = false ∧
     appendOnly ["A", "B", "C"] ["A", "B", "C", "B'"] = true ∧
@@ -320,10 +237,6 @@ example :
       ⟨"B", "builder", 1⟩] = false := by
   decide
 
-/-! ## The executable: file I/O and JSON (not proved) -/
-
-/-- The lines of a file's text: the pieces between `\n`s, without the empty piece after a final
-`\n`. An empty file has no lines. -/
 def splitLines (s : String) : List String :=
   if s.isEmpty then []
   else
@@ -361,57 +274,36 @@ structure Problem where
   line : Nat
   msg : String
 
-/-- A problem as a GitHub error annotation. The file name and the message are untrusted (a file
-name in `ops/runs/`, a field value, a JSON error): `oneLine` keeps the annotation on one line and
-free of controls, bidi and format characters and blanks; the escapes after it only add `%XX`. -/
 def Problem.render (p : Problem) : String :=
   s!"::error file={escapeProperty (oneLine p.file)},line={p.line}::{escapeData (oneLine p.msg)}"
 
-/-! ## What the check prints, checked by the kernel -/
-
-/-- A zero-width space (U+200B) in the file name, and a zero-width joiner (U+200D), a soft hyphen
-(U+00AD) and a braille blank (U+2800) in a task: each is printed as an escape. -/
 example : (Problem.mk "ops/runs/d\u200b1.ndjson" 4
       s!"a second record for task {quote "B\u200d\u00ad\u2800"}, role {quote "builder"}").render =
     "::error file=ops/runs/d\\u{200B}1.ndjson,line=4::a second record for task " ++
       "\"B\\u{200D}\\u{00AD}\\u{2800}\", role \"builder\"" := by
   decide
 
-/-- The case in `gate/runlog-test.sh`: a newline, a workflow command, an ANSI escape, a bidi
-override and a `%0A` in a task, and a comma and colons in the file name, stay on one line. -/
 example : (Problem.mk "ops/runs/a,b::c.ndjson" 2
       s!"task {quote "x\n::warning::injected\x1b[2J\u202e%0A,y"}").render =
     "::error file=ops/runs/a%2Cb%3A%3Ac.ndjson,line=2::task " ++
       "\"x\\u{000A}::warning::injected\\u{001B}[2J\\u{202E}%250A,y\"" := by
   decide
 
-/-- A quote and a backslash in a value: `quote` writes a string literal, escaping each with `\`,
-and `oneLine` then writes every `\` as `\u{005C}`. Decoding those gives back the literal, so a
-value cannot end its quotes early. -/
 example : (Problem.mk "f" 1 (quote "a\"b\\c")).render =
     "::error file=f,line=1::\"a\\u{005C}\"b\\u{005C}\\u{005C}c\"" := by
   decide
 
-/-! ## Record files: one record per attempt, named by its key -/
-
-/-- The characters a task or a role may hold: ASCII letters and digits, `.`, `_` and `-`. -/
 def safeChar (c : Char) : Bool := c.isAlphanum || c == '.' || c == '_' || c == '-'
 
-/-- A task that can start a file name: not empty, only `safeChar`s, and a letter or a digit first,
-so that the name starts with neither `.` (a hidden file) nor `-` (read as an option). -/
 def safeTask (s : String) : Bool :=
   match s.toList with
   | [] => false
   | c :: cs => c.isAlphanum && cs.all safeChar
 
-/-- A role: not empty, and only `safeChar`s. -/
 def safeRole (s : String) : Bool := !s.toList.isEmpty && s.toList.all safeChar
 
-/-- The name of the file that holds the record with key `k`: `<task>-<role>-<attempt>.json`. -/
 def fileName (k : Key) : String := k.1 ++ "-" ++ k.2.1 ++ "-" ++ toString k.2.2 ++ ".json"
 
-/-- The name built from a safe task and role is one plain path entry: only `safeChar`s, so no `/`,
-no control character and no blank, and a letter or a digit first. -/
 theorem fileName_safe {k : Key} (ht : safeTask k.1 = true) (hr : safeRole k.2.1 = true) :
     (∀ c ∈ (fileName k).toList, safeChar c = true) ∧
       ∃ c cs, (fileName k).toList = c :: cs ∧ c.isAlphanum = true := by
@@ -443,14 +335,10 @@ theorem fileName_safe {k : Key} (ht : safeTask k.1 = true) (hr : safeRole k.2.1 
       · revert hx; decide +revert
     · simp [fileName, String.toList_append, hcs]
 
-/-- The one line of a record file's text: the text without a final `\n`, when that is not empty
-and holds no other `\n`. -/
 def singleLine? (s : String) : Option String :=
   let cs := if s.toList.getLast? = some '\n' then s.toList.dropLast else s.toList
   if cs = [] ∨ '\n' ∈ cs then none else some (String.ofList cs)
 
-/-- **A record file is one line.** The line is not empty and holds no `\n`, and the text is the
-line, with or without a final `\n`. -/
 theorem singleLine?_spec {s l : String} (h : singleLine? s = some l) :
     l.toList ≠ [] ∧ '\n' ∉ l.toList ∧
       (s.toList = l.toList ∨ s.toList = l.toList ++ ['\n']) := by
@@ -474,9 +362,6 @@ theorem singleLine?_spec {s l : String} (h : singleLine? s = some l) :
     obtain ⟨h1, h2, h3⟩ := key _ h
     exact ⟨h1 ▸ h2, h1 ▸ h3, Or.inl h1.symm⟩
 
-/-- The record a record file named `name` holds, or why it is refused: the text is one line
-(`singleLine?`), the line is a record (`parse`), its task and role are safe (`safeTask`,
-`safeRole`), and the file is named `fileName` of its key. -/
 def recordFile (parse : String → Except String Record) (name text : String) :
     Except String Record :=
   match singleLine? text with
@@ -498,7 +383,6 @@ def recordFile (parse : String → Except String Record) (name text : String) :
           role and attempt, so that two records for one attempt on one day are one path \
           (ops/runs/README.md)"
 
-/-- **A record file that passes holds one record, named by its key.** -/
 theorem recordFile_ok {parse : String → Except String Record} {name text : String} {r : Record}
     (h : recordFile parse name text = .ok r) :
     (∃ l, singleLine? text = some l ∧ parse l = .ok r) ∧ safeTask r.task = true ∧
@@ -524,9 +408,6 @@ theorem recordFile_ok {parse : String → Except String Record} {name text : Str
             · simpa using hro
           · cases h
 
-/-- **A day folder holds each key at most once.** A folder lists each name once (`hnames`), and a
-record file that passes `recordFile` is named `fileName` of its record's key (`hname`), so two
-files of one folder never hold records with one key. -/
 theorem day_keys_nodup {fs : List (String × Record)} (hnames : (fs.map (·.1)).Nodup)
     (hname : ∀ p ∈ fs, p.1 = fileName p.2.key) : (fs.map (·.2.key)).Nodup := by
   have : fs.map (·.1) = (fs.map (·.2.key)).map fileName := by
@@ -535,14 +416,11 @@ theorem day_keys_nodup {fs : List (String × Record)} (hnames : (fs.map (·.1)).
   rw [this] at hnames
   exact List.Pairwise.of_map fileName (fun _ _ h e => h (congrArg fileName e)) hnames
 
-/-- Whether a folder name is a date: `YYYY-MM-DD`, with digits. -/
 def isDate (s : String) : Bool :=
   match s.toList with
   | [y₁, y₂, y₃, y₄, '-', m₁, m₂, '-', d₁, d₂] =>
     [y₁, y₂, y₃, y₄, m₁, m₂, d₁, d₂].all Char.isDigit
   | _ => false
-
-/-! ## The check on whole trees -/
 
 /-- What the check reads under `ops/runs/`: each day file directly in it, with its name and lines,
 and each record file in its folders, with the folder's name, the file's name and its text. -/
@@ -550,18 +428,13 @@ structure Tree where
   days : List (String × List String) := []
   files : List (String × String × String) := []
 
-/-- The lines of the day file `n` of a tree, none if it has no such file. -/
 def linesOf (t : Tree) (n : String) : List String :=
   ((t.days.find? (·.1 == n)).map (·.2)).getD []
 
-/-- The records of a tree: the lines of its day files that parse, then its record files that pass
-`recordFile`. -/
 def records (parse : String → Except String Record) (t : Tree) : List Record :=
   t.days.flatMap (fun d => d.2.filterMap fun l => (parse l).toOption) ++
     t.files.filterMap fun f => (recordFile parse f.2.1 f.2.2).toOption
 
-/-- The records of the lines `ls` of the file `f`, each with its file and line number, the first
-line numbered `i`. -/
 def lineRecords (parse : String → Except String Record) (f : String) :
     Nat → List String → List (String × Nat × Record)
   | _, [] => []
@@ -570,7 +443,6 @@ def lineRecords (parse : String → Except String Record) (f : String) :
     | .ok r => (f, i, r) :: lineRecords parse f (i + 1) ls
     | .error _ => lineRecords parse f (i + 1) ls
 
-/-- The problems of the lines `ls` of the file `f`: each line `parse` refuses, at its number. -/
 def lineErrors (parse : String → Except String Record) (f : String) :
     Nat → List String → List Problem
   | _, [] => []
@@ -579,7 +451,6 @@ def lineErrors (parse : String → Except String Record) (f : String) :
     | .ok _ => lineErrors parse f (i + 1) ls
     | .error e => ⟨f, i, e⟩ :: lineErrors parse f (i + 1) ls
 
-/-- The records of a tree under `dir`, each with the file and line it is at. -/
 def located (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
     List (String × Nat × Record) :=
   t.days.flatMap (fun d => lineRecords parse (dir / d.1).toString 1 d.2) ++
@@ -597,7 +468,6 @@ theorem lineRecords_map (parse : String → Except String Record) (f : String) (
     simp only [lineRecords, List.filterMap_cons]
     cases parse l <;> simp [Except.toOption, ih]
 
-/-- The located records are the records. -/
 theorem located_map (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
     (located parse dir t).map (·.2.2) = records parse t := by
   simp only [located, records, List.map_append, List.map_flatMap, lineRecords_map,
@@ -621,8 +491,6 @@ theorem lineErrors_eq_nil {parse : String → Except String Record} {f : String}
       · exact ih h x hx
     · cases h
 
-/-- The problem of one record file, if it has one: its folder is not a date, or `recordFile`
-refuses it. -/
 def fileProblem (parse : String → Except String Record) (dir : System.FilePath)
     (f : String × String × String) : Option Problem :=
   let p := (dir / f.1 / f.2.1).toString
@@ -634,7 +502,6 @@ def fileProblem (parse : String → Except String Record) (dir : System.FilePath
     | .ok _ => none
     | .error e => some ⟨p, 1, e⟩
 
-/-- Every line of a day file that is not a record, and every record file that is refused. -/
 def parseProblems (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
     List Problem :=
   t.days.flatMap (fun d => lineErrors parse (dir / d.1).toString 1 d.2) ++
@@ -643,7 +510,6 @@ def parseProblems (parse : String → Except String Record) (dir : System.FilePa
 def keyText (r : Record) : String :=
   s!"task {quote r.task}, role {quote r.role}, attempt {r.attempt}"
 
-/-- The first record of a tree whose key an earlier record has, located by `dupAt?`. -/
 def dupProblems (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
     List Problem :=
   let recs := located parse dir t
@@ -657,9 +523,6 @@ def dupProblems (parse : String → Except String Record) (dir : System.FilePath
       "one record: a correction goes in the next attempt's record. Union keeps both versions " ++
       "of an edited day-file line (ops/runs/README.md)"⟩]
 
-/-- What the head `h` lost or added against the merge base `b`: a day-file line of the base that
-the head's file of the same name lacks (`appendOnly`, located by `firstMissing?`), a day file the
-base lacks, and a record file of the base that the head lacks or holds with other text. -/
 def keptProblems (dir : System.FilePath) (b h : Tree) : List Problem :=
   b.days.filterMap (fun d =>
     let hl := linesOf h d.1
@@ -686,8 +549,6 @@ def keptProblems (dir : System.FilePath) (b h : Tree) : List Problem :=
         s!"{what}. A record file never changes once it is on main: a correction goes in the " ++
         "note of the next attempt's record (ops/runs/README.md)"⟩)
 
-/-- The whole check: the records parse, no two share a key, and, given the merge-base tree, the
-head keeps it (`keptProblems`). `problems_eq_nil` states what an empty result means. -/
 def problems (parse : String → Except String Record) (dir : System.FilePath) (base : Option Tree)
     (head : Tree) : List Problem :=
   parseProblems parse dir head ++ dupProblems parse dir head ++
@@ -743,9 +604,6 @@ theorem keptProblems_eq_nil {dir : System.FilePath} {b h : Tree} (hk : keptProbl
     · exact List.contains_iff_mem.mp (by assumption)
     · cases this
 
-/-- **Every merge-base record is kept.** When each base day file's lines are still in the head
-file of the same name, as often (`appendOnly`), and each base record file is in the head with the
-same text, every record of the base is a record of the head, for any parser. -/
 theorem records_kept (parse : String → Except String Record) {b h : Tree}
     (hdays : ∀ d ∈ b.days, appendOnly d.2 (linesOf h d.1) = true)
     (hfiles : ∀ f ∈ b.files, f ∈ h.files) :
@@ -765,11 +623,6 @@ theorem records_kept (parse : String → Except String Record) {b h : Tree}
       exact ⟨d', List.mem_of_find?_eq_some hfind, l, hlh, hp⟩
   · exact Or.inr ⟨f, hfiles f hf, hp⟩
 
-/-- **What a pass means.** When `problems` finds nothing: no two records of the head, in day files
-and record files together, share a key; every line of a head day file is a record; every head
-record file is in a folder named by a date and passes `recordFile`, so it is one line, one record,
-named by its key (`recordFile_ok`). Given the merge-base tree `b`, also every record of `b` is a
-record of the head (`records_kept`), and the head has no day file that `b` lacks. -/
 theorem problems_eq_nil (parse : String → Except String Record) (dir : System.FilePath)
     {base : Option Tree} {h : Tree} (hp : problems parse dir base h = []) :
     noDupKeys (records parse h) = true ∧
@@ -785,8 +638,6 @@ theorem problems_eq_nil (parse : String → Except String Record) (dir : System.
   subst hb
   obtain ⟨k1, k2, k3⟩ := keptProblems_eq_nil hkept
   exact ⟨records_kept parse k1 k3, k2⟩
-
-/-! ## Record files, checked by the kernel -/
 
 example : fileName ("ci-escape-68", "builder", 12) = "ci-escape-68-builder-12.json" := by decide
 example : safeTask "P1-006" = true ∧ safeTask ".x" = false ∧ safeTask "-x" = false ∧
@@ -823,13 +674,6 @@ private def isNatObject : Json → Bool
   | .obj kvs => kvs.all fun _ v => isNat v
   | _ => false
 
-/-- Parse one run-log line and check its fields against `ops/runs/README.md`. Required, with the
-type every record on `main` has: `task`, `role`, `model` and `outcome` strings, `outcome` one of
-`outcomes`; `attempt`, `iterations` and `wall_min` natural numbers; `tokens` a natural number or
-`null` (the README says int; every record so far is `null`, since sessions do not meter tokens);
-`errors_by_kind` an object of natural numbers; `lint_hits` and `escalations` arrays of strings.
-`note`, which the README's merging rules use, is optional but must be a string. Other fields are
-allowed. -/
 def parseRecord (line : String) : Except String Record := do
   let j ← match Lean.Json.parse line with
     | .ok j => pure j
@@ -864,8 +708,6 @@ def parseRecord (line : String) : Except String Record := do
     unless isStr v do throw s!"field {quote "note"} must be a string"
   return { task, role, attempt }
 
-/-- The text of a run-log file, or why it cannot be read. A symlink is refused, so the check
-never reads, or prints part of, a file outside the directory. -/
 def readText (path : System.FilePath) : IO (Except String String) := do
   let md ← path.symlinkMetadata
   if md.type != .file then
@@ -874,23 +716,12 @@ def readText (path : System.FilePath) : IO (Except String String) := do
   | none => return .error "not valid UTF-8"
   | some s => return .ok s
 
-/-- The lines of a day file, or why it cannot be read. -/
 def readLines (path : System.FilePath) : IO (Except String (List String)) :=
   return (← readText path).map splitLines
 
-/-- The entries directly in `dir`, sorted by name. -/
 def sortedEntries (dir : System.FilePath) : IO (Array IO.FS.DirEntry) :=
   return (← dir.readDir).qsort (·.fileName < ·.fileName)
 
-/-- Read a run-log directory into a `Tree`. A name directly in `dir` that ends in `.ndjson` is a
-day file: the set `.gitattributes` merges with union, whose `*` also matches a name that starts
-with a dot. A directory directly in `dir`, not a symlink to one, is a folder of record files: each
-entry in it whose name ends in `.json`. `problems` checks the folder's name and the files.
-
-It also returns the problems with what it cannot read or what does not belong, and the paths it
-could not read. A problem names its path under `shown`, the head directory, so that an annotation
-for the merge-base copy (`isBase`) points into the repository. In the merge base only a day or
-record file that cannot be read is a problem, since `main` is checked on its own push. -/
 def readTree (dir shown : System.FilePath) (isBase : Bool) :
     IO (Tree × Array Problem × Array String) := do
   let pre := if isBase then "the merge-base copy: " else ""
@@ -922,8 +753,6 @@ def readTree (dir shown : System.FilePath) (isBase : Bool) :
         "<date>.ndjson and the folders <date>/ of record files (ops/runs/README.md)"⟩
   return ({ days := days.toList, files := files.toList }, ps, bad)
 
-/-- Run the check on the run-log directory `head`, given the merge base's copy `base` on a pull
-request: `readTree` reads both, and `problems` decides (`problems_eq_nil`). -/
 def check (base : Option System.FilePath) (head : System.FilePath) : IO UInt32 := do
   for d in base.toList ++ [head] do
     let isDir ← try pure ((← d.symlinkMetadata).type == .dir) catch _ => pure false
@@ -938,7 +767,6 @@ def check (base : Option System.FilePath) (head : System.FilePath) : IO UInt32 :
     let (b, bps, _) ← readTree bd head true
     ps := ps ++ bps
     b? := some b
-  -- A head file that could not be read is reported above, not again as missing.
   ps := ps ++ ((problems parseRecord head b? h).filter fun p => !hbad.contains p.file).toArray
   if ps.isEmpty then
     let vs := match b? with

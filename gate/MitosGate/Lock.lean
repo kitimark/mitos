@@ -40,7 +40,6 @@ def pinned : ConstantInfo → List Expr
   | .defnInfo d => [d.type, d.value]
   | ci => [ci.type]
 
-/-- The unlisted declarations that `es` reach, directly or through each other. -/
 partial def unlistedDeps (env : Environment) (unlisted : Name → Bool) (es : List Expr)
     (seen : NameSet := {}) : NameSet :=
   es.foldl (init := seen) fun seen e =>

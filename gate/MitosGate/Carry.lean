@@ -37,10 +37,8 @@ namespace MitosGate.Carry
 open RunLog (quote splitLines)
 open ContentId (logLine)
 
-/-- The login GitHub shows for the pushes of the updater app, which `update-prs.yml` runs. -/
 def updater : String := "mitos-pr-updater[bot]"
 
-/-- One push to the branch, as the REST activity route lists it. -/
 structure Push where
   time : String
   kind : String
@@ -53,22 +51,14 @@ structure Push where
 the PR's commits, so it never makes a plain push. -/
 def Push.rebase (p : Push) : Bool := p.kind == "force_push" && p.actor == updater
 
-/-- The newest push, the first of `ps`, left the branch at `h`. `walk` from a head that is not
-the verified head already checks this; for the verified head itself, it says the branch is still
-there. -/
 def tip (h : String) : List Push → Bool
   | [] => false
   | p :: _ => p.after == h
 
-/-- Walk the pushes `ps`, newest first, back from `cur`: the branch was at `v` at some point, and
-every push since then is an updater rebase that starts from the commit the push before it left. -/
 def walk (v : String) : String → List Push → Bool
   | cur, [] => cur == v
   | cur, p :: ps => cur == v || (p.after == cur && p.rebase && walk v p.before ps)
 
-/-- `walk` passes exactly when the newest pushes `pre` are all updater rebases and chain `h` back
-to `v`: the newest left the branch at `h`, each older one left it where the next one started, and
-the oldest started at `v`. With no push, `h` is `v`. -/
 theorem walk_iff {v h : String} {ps : List Push} :
     walk v h ps = true ↔ ∃ pre rest, ps = pre ++ rest ∧ (∀ p ∈ pre, p.rebase = true) ∧
       pre.map Push.after ++ [v] = h :: pre.map Push.before := by
@@ -103,44 +93,31 @@ theorem walk_iff {v h : String} {ps : List Push} :
         exact ⟨⟨hm.1, hpre _ List.mem_cons_self⟩,
           ih.2 ⟨pre, rest, rfl, fun r hr => hpre r (List.mem_cons_of_mem _ hr), hm.2⟩⟩
 
-/-- So a push that is not an updater rebase, between the verified head and the head, stops the
-carry: if the pushes since the branch left `v` are `pre`, and `pre` chains `h` back to `v`, they
-are all updater rebases. The pushes newer than `v`'s are the ones `walk` reads. -/
 theorem walk_rebase {v h : String} {ps : List Push} (hw : walk v h ps = true) :
     ∃ pre rest, ps = pre ++ rest ∧ ∀ p ∈ pre, p.rebase = true :=
   let ⟨pre, rest, e, hr, _⟩ := walk_iff.1 hw
   ⟨pre, rest, e, hr⟩
 
-/-- #83, round 2: the owner pushed `v'` on the verified head `v`, and the updater rebased it to
-`x`. The last push is the updater's, but the walk reaches the owner's push before `v`. -/
 example : walk "v" "x" [⟨"t2", "force_push", updater, "v'", "x"⟩,
     ⟨"t1", "push", "kitimark", "v", "v'"⟩] = false := by decide
-/-- The updater rebased `v` twice: the verdict on `v` can carry to `x2`. -/
 example : walk "v" "x2" [⟨"t3", "force_push", updater, "x1", "x2"⟩,
     ⟨"t2", "force_push", updater, "v", "x1"⟩, ⟨"t1", "push", "kitimark", "u", "v"⟩] = true := by
   decide
-/-- An owner's force-push is not the updater's. -/
 example : walk "v" "x" [⟨"t2", "force_push", updater, "w", "x"⟩,
     ⟨"t1", "force_push", "kitimark", "v", "w"⟩] = false := by decide
-/-- A plain push by the updater's login is not a rebase. -/
 example : walk "v" "x" [⟨"t1", "push", updater, "v", "x"⟩] = false := by decide
-/-- A gap: the newer push started from `w`, but the older one left the branch at `w'`. -/
 example : walk "v" "x" [⟨"t2", "force_push", updater, "w", "x"⟩,
     ⟨"t1", "force_push", updater, "v", "w'"⟩] = false := by decide
-/-- The list ends before it reaches `v`. -/
 example : walk "v" "x" [⟨"t1", "force_push", updater, "w", "x"⟩] = false := by decide
-/-- A branch deleted and created again is not a rebase. -/
 example : walk "v" "x" [⟨"t2", "branch_creation", "kitimark", "0", "x"⟩,
     ⟨"t1", "branch_deletion", "kitimark", "v", "0"⟩] = false := by decide
 example : tip "x" [⟨"t1", "force_push", updater, "v", "x"⟩] = true := by decide
 example : tip "x" [] = false := by decide
 
-/-- How many pushes `walk` crossed, for the message. -/
 def rebases (v : String) : String → List Push → Nat
   | _, [] => 0
   | cur, p :: ps => if cur == v then 0 else rebases v p.before ps + 1
 
-/-- Why `tip` or `walk` fails, for the message. The decision does not read it. -/
 def why (v h : String) : List Push → String
   | [] => "the activity route listed no push to the branch"
   | ps@(p :: _) =>
@@ -158,13 +135,11 @@ where
           s!"{quote p.actor}, not a force_push by {updater}"
       else go p.before ps
 
-/-- One line of the route's TSV. -/
 def parsePush (l : String) : Except String Push :=
   match l.splitOn "\t" with
   | [t, k, a, b, af] => .ok ⟨t, k, a, b, af⟩
   | _ => .error s!"a line is not a push (time, type, actor, before, after, tab-separated): {quote l}"
 
-/-- Decide the carry, or say why not. -/
 def check (base verified head : String) (ps : List Push) : ContentId.M String := do
   let v ← ContentId.resolve verified
   let h ← ContentId.resolve head
@@ -175,9 +150,6 @@ def check (base verified head : String) (ps : List Push) : ContentId.M String :=
     throw s!"the content id changed: {a.id} at the verified head {v}, {b.id} at the head {h}"
   return s!"carry: {rebases v h ps} updater rebase(s) from {v} to {h}, content id {b.id}"
 
-/-- `mitos-gate carry <base> <verified> <head>`, with the branch's pushes on standard input.
-Prints `carry: ...` on standard output with exit 0, or one line on standard error, through
-`logLine`, with exit 1 when the verdict does not carry and 2 on a usage error. -/
 def cli (args : List String) (usage : String) : IO UInt32 := do
   match args with
   | [base, verified, head] =>

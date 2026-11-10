@@ -50,8 +50,6 @@ partial def parseAccept (args : List String) (c : Accept.Config) : Except String
   | "--skip-lint" :: rest => parseAccept rest { c with skipLint := true }
   | a :: _ => .error s!"unknown argument {a}"
 
-/-- Writes the lock `txt` to `file`, or with `check` compares them and prints the lines only one of
-them has. Every line that names the file or holds a lock line goes through `ciLine`. -/
 def writeOrCheck (file : System.FilePath) (txt : String) (check : Bool) (count stale : String) :
     IO UInt32 := do
   unless check do
@@ -122,8 +120,6 @@ def cli (args : List String) : IO UInt32 := do
   | "cheats" :: rest => CheatsRun.cli rest usage
   | _ => IO.eprintln usage; return 2
 
-/-- `cli`, but an error it throws is printed through `ciLine`, with exit 1. The Lean runtime would
-print an uncaught one raw, and the error names the path it failed on, such as a `lint` argument. -/
 def main (args : List String) : IO UInt32 := do
   try cli args
   catch e =>

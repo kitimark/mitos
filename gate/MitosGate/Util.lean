@@ -30,8 +30,6 @@ def sha256 (s : String) : IO String := do
 
 def trim (s : String) : String := (s.trimAscii).toString
 
-/-! ## Printing untrusted text on one line -/
-
 /-- Code point ranges, beyond printable ASCII, that print as themselves on one line: letters,
 digits, punctuation and symbols from the scripts Lean's messages and file names use. None holds a
 control, a line or paragraph separator, a bidi or other format character, a combining mark, a
@@ -39,45 +37,33 @@ right-to-left letter, a non-ASCII space, a blank filler or a private-use code po
 def printableRanges : List (Nat × Nat) :=
   [ (0x00A1, 0x00AC), (0x00AE, 0x02FF),                     -- Latin-1 (no NBSP, soft hyphen) to modifiers
     (0x0370, 0x03FF), (0x0400, 0x0482), (0x048A, 0x04FF),   -- Greek, Cyrillic (no combining marks)
-    (0x1D00, 0x1DBF), (0x1E00, 0x1FFF),                     -- phonetic, Latin and Greek extended
+    (0x1D00, 0x1DBF), (0x1E00, 0x1FFF),
     (0x2010, 0x2027), (0x2030, 0x205E),                     -- punctuation (no spaces, U+2028–U+202F, U+205F–U+206F)
-    (0x2070, 0x20CF), (0x2100, 0x27FF),                     -- super/subscripts, currency, symbols, math, arrows
+    (0x2070, 0x20CF), (0x2100, 0x27FF),
     (0x2801, 0x2BFF), (0x2C60, 0x2C7F),                     -- braille (not the blank U+2800), arrows, math, Latin Ext-C
-    (0x2E00, 0x2E7F), (0x3001, 0x3029), (0x3030, 0x303F),   -- supplemental punctuation, CJK symbols
-    (0x3041, 0x3096), (0x309B, 0x30FF), (0x4E00, 0x9FFF),   -- kana, CJK ideographs
+    (0x2E00, 0x2E7F), (0x3001, 0x3029), (0x3030, 0x303F),
+    (0x3041, 0x3096), (0x309B, 0x30FF), (0x4E00, 0x9FFF),
     (0xAC00, 0xD7A3), (0xFF01, 0xFF9F), (0xFFA1, 0xFFEE),   -- Hangul, full- and halfwidth forms (no filler)
-    (0x1D400, 0x1D7FF), (0x1F300, 0x1FAFF) ]                -- math alphanumerics, pictographs
+    (0x1D400, 0x1D7FF), (0x1F300, 0x1FAFF) ]
 
-/-- Whether `c` is printed as itself by `oneLine`: printable ASCII other than `\`, or a code point
-in `printableRanges`. This is an allowlist: every other code point is escaped. -/
 def printable (c : Char) : Bool :=
   let n := c.toNat
   (0x20 ≤ n && n ≤ 0x7E && n != 0x5C) || printableRanges.any fun (lo, hi) => lo ≤ n && n ≤ hi
 
-/-- The hexadecimal digit `d` (below 16), upper case. -/
 def hexDigit (d : Nat) : Char :=
   if d < 10 then Char.ofNat (48 + d) else Char.ofNat (55 + d)
 
-/-- `n` in upper-case hexadecimal, four digits, or six beyond the Basic Multilingual Plane. -/
 def hexDigits (n : Nat) : List Char :=
   ((List.range (if n < 0x10000 then 4 else 6)).reverse).map fun i => hexDigit (n / 16 ^ i % 16)
 
-/-- `c` written as the escape `\u{XXXX}`, whether or not it is printable. -/
 def escape (c : Char) : List Char := ['\\', 'u', '{'] ++ hexDigits c.toNat ++ ['}']
 
-/-- `c` itself if it is printable, otherwise `\u{XXXX}`. -/
 def escapeChar (c : Char) : List Char :=
   if printable c then [c] else escape c
 
-/-- Text from the workspace, Lean or the comparator, made safe to print: every code point outside
-the `printable` allowlist is written as `\u{XXXX}`. So the text stays on one line and cannot move
-the cursor, reorder what follows or start a line of its own, such as a forged `VERDICT:`; and since
-`\` is escaped too, each output stands for one input (`unescape_oneLine`). A line bound for a CI
-log goes through `ciLine` instead, which also keeps it from starting a workflow command. -/
 def oneLine (s : String) : String :=
   String.ofList (s.toList.flatMap escapeChar)
 
-/-- The code points an escape is made of. -/
 def escapeAlphabet : List Char := "\\u{}0123456789ABCDEF".toList
 
 theorem hexDigit_mem {d : Nat} (h : d < 16) : hexDigit d ∈ escapeAlphabet := by
@@ -107,7 +93,6 @@ theorem escapeChar_printable (c : Char) :
     exact .inl (hx ▸ hp)
   · exact escapeAlphabet_printable x (mem_escape hx)
 
-/-- `oneLine` prints only allowlisted code points, and `\` to start an escape. -/
 theorem oneLine_printable (s : String) :
     ∀ c ∈ (oneLine s).toList, printable c = true ∨ c = '\\' := by
   intro c hc
@@ -115,12 +100,6 @@ theorem oneLine_printable (s : String) :
   obtain ⟨a, -, ha⟩ := hc
   exact escapeChar_printable a c ha
 
-/-- What a hostile file name or message may contain to break a line, move the cursor, reorder the
-text or hide in it: C0 and C1 controls (newline, carriage return, escape, NEL, CSI), DEL, the
-no-break space, the soft hyphen, the line and paragraph separators, bidi embeddings, overrides,
-isolates and marks, zero-width and other format characters, a private-use code point, a combining
-mark, and the blank fillers (Hangul choseong, jungseong, compatibility and halfwidth fillers, and
-the braille blank). Written as escapes so that each entry is visible in review. -/
 def unsafeSamples : List Char :=
   [ '\x00', '\t', '\n', '\x0b', '\x0c', '\r', '\x1b', '\x7f', '\u0080', '\u0085', '\u009b',
     '\u009f', '\u00a0', '\u00ad', '\u061c', '\u200b', '\u200d', '\u200e', '\u200f', '\u2028',
@@ -134,24 +113,13 @@ example : oneLine "Models/Ev\u0085il ‮VERDICT: ACCEPTED\u009b31m.lean" =
 
 example : oneLine "a\nVERDICT: ACCEPTED" = "a\\u{000A}VERDICT: ACCEPTED" := by decide
 
-/-- A zero-width space, a zero-width joiner, a soft hyphen and the braille blank are escaped; the
-braille pattern next to the blank prints as itself. -/
 example : oneLine "a\u200bb\u200dc\u00add\u2800e\u2801" =
     "a\\u{200B}b\\u{200D}c\\u{00AD}d\\u{2800}e\u2801" := by decide
 
 example : oneLine "∀ x ∈ s, x ≤ é ⊢ «foo» → ℕ" = "∀ x ∈ s, x ≤ é ⊢ «foo» → ℕ" := by decide
 
-/-! ## Reading printed text back
-
-`unescape` is how a reader decodes what `oneLine` and `ciLine` print: each `\u{…}` stands for the
-code point with that hexadecimal number, and every other code point for itself. It gives back the
-original text (`unescape_oneLine`, `unescape_ciLine`), so the escapes lose nothing, and two texts
-never print alike. -/
-
-/-- The value of a digit `hexDigit` writes. -/
 def hexVal (d : Char) : Nat := if d.toNat < 58 then d.toNat - 48 else d.toNat - 55
 
-/-- The number that the hexadecimal digits `ds` write, most significant first. -/
 def ofHex (ds : List Char) : Nat := ds.foldl (fun n d => 16 * n + hexVal d) 0
 
 /-- `unescape`, from a state: `none` outside an escape, or `some (k, ds)` inside one, with `k` code
@@ -227,7 +195,6 @@ theorem unescape_escapeChar (c : Char) (l : List Char) :
     exact unescape_cons this l
   · exact unescape_escape c l
 
-/-- `oneLine` loses nothing: a reader decodes what it prints back to the original text. -/
 theorem unescape_oneLine (s : String) : unescape (oneLine s).toList = s.toList := by
   simp only [oneLine, String.toList_ofList]
   induction s.toList with
@@ -278,16 +245,12 @@ def startsCommand (s : String) : Prop :=
 
 instance : DecidablePred startsCommand := fun _ => inferInstanceAs (Decidable (_ ∨ _))
 
-/-- `ciLine` after a line's leading spaces: each code point as `oneLine` writes it, except that a
-`[` right after `##` is written `\u{005B}`. `n` counts the `#`s just written. -/
 def ciRest : Nat → List Char → List Char
   | _, [] => []
   | n, c :: l =>
     if c = '[' ∧ 2 ≤ n then escape c ++ ciRest 0 l
     else escapeChar c ++ ciRest (if c = '#' then n + 1 else 0) l
 
-/-- `ciLine` on code points: leading spaces as they are, then a `:` that would come first is
-written `\u{003A}`, then `ciRest`. -/
 def ciChars : List Char → List Char
   | [] => []
   | c :: l =>
@@ -295,17 +258,8 @@ def ciChars : List Char → List Char
     else if c = ':' then escape c ++ ciRest 0 l
     else ciRest 0 (c :: l)
 
-/-- **A line for a CI log.** Every line the gate prints that holds text from the workspace, Lean,
-the comparator, a file or the invoker's arguments goes through `ciLine` as a whole, trusted words
-and all. It writes the text as `oneLine` does, with two more escapes: a `[` right after `##` is
-written `\u{005B}`, and a `:` that would come first after the leading spaces is written `\u{003A}`.
-Those two are what the runner's parsers look for, and the escapes keep them from firing
-(`ciLine_not_startsCommand`). The line stays on one line (`ciLine_no_break`) and holds only
-`oneLine`'s code points (`ciLine_printable`), and a reader decodes it back to the original text
-(`unescape_ciLine`). A Lean array `#[1, 2]` and a `::` after the start print as themselves. -/
 def ciLine (s : String) : String := String.ofList (ciChars s.toList)
 
-/-- Whether `##[` occurs in `l`, as a function to compute with: see `hasLegacy_iff`. -/
 def hasLegacy : List Char → Bool
   | [] => false
   | a :: l => (a == '#' && l.take 2 == ['#', '[']) || hasLegacy l
@@ -334,8 +288,6 @@ theorem hasLegacy_replicate (n : Nat) : hasLegacy (List.replicate n '#') = false
     rw [List.replicate_succ, hasLegacy, ih]
     rcases n with _ | _ | n <;> simp [List.replicate_succ]
 
-/-- After the `#`s just written, a code point other than `#` starts no `##[`, unless it is a `[`
-after two of them. -/
 theorem hasLegacy_hashes (n : Nat) {c : Char} (hc : c ≠ '#') (hb : c = '[' → n < 2)
     (l : List Char) : hasLegacy (List.replicate n '#' ++ c :: l) = hasLegacy l := by
   induction n with
@@ -399,14 +351,12 @@ theorem ciChars_legacy (l : List Char) : hasLegacy (ciChars l) = false := by
       · simpa using hasLegacy_escape 0 c (ciRest 0 l) ▸ ciRest_legacy l 0
       · simpa using ciRest_legacy (c :: l) 0
 
-/-- The only runner blank that `oneLine` prints as itself is the space. -/
 theorem printable_runnerBlank {c : Char} (hb : runnerBlank c = true) (hp : printable c = true) :
     c = ' ' := by
   have key : ∀ n ∈ runnerBlanks, ((0x20 ≤ n && n ≤ 0x7E && n != 0x5C) ||
       printableRanges.any fun (lo, hi) => lo ≤ n && n ≤ hi) = true → n = 0x20 := by decide
   exact Char.toNat_inj.mp (key c.toNat (List.contains_iff_mem.mp hb) hp)
 
-/-- After its leading blanks, a line `ciChars` writes never starts with `:`. -/
 theorem ciChars_head (l : List Char) : ((ciChars l).dropWhile runnerBlank).head? ≠ some ':' := by
   induction l with
   | nil => simp [ciChars]
@@ -434,7 +384,6 @@ theorem ciChars_head (l : List Char) : ((ciChars l).dropWhile runnerBlank).head?
         · show (('\\' :: _).dropWhile runnerBlank).head? ≠ _
           simp [show runnerBlank '\\' = false by decide]
 
-/-- **No line `ciLine` writes starts a workflow command**, by either of the runner's parsers. -/
 theorem ciLine_not_startsCommand (s : String) : ¬ startsCommand (ciLine s) := by
   simp only [startsCommand, ciLine, String.toList_ofList]
   rintro (⟨t, ht⟩ | h)
@@ -460,7 +409,6 @@ theorem ciRest_printable (n : Nat) (l : List Char) :
       · exact escapeChar_printable c x hx
       · exact ih _ x hx
 
-/-- `ciLine` prints only allowlisted code points, and `\` to start an escape, as `oneLine` does. -/
 theorem ciLine_printable (s : String) :
     ∀ x ∈ (ciLine s).toList, printable x = true ∨ x = '\\' := by
   simp only [ciLine, String.toList_ofList]
@@ -482,8 +430,6 @@ theorem ciLine_printable (s : String) :
         · exact ciRest_printable 0 l x hx
       · exact ciRest_printable 0 (c :: l)
 
-/-- **A line `ciLine` writes stays one line**: it holds no line feed, vertical tab, form feed,
-carriage return, next line, or line or paragraph separator. -/
 theorem ciLine_no_break (s : String) :
     ∀ c ∈ ['\n', '\x0b', '\x0c', '\r', '\u0085', '\u2028', '\u2029'],
       c ∉ (ciLine s).toList := by
@@ -501,7 +447,6 @@ theorem unescape_ciRest (n : Nat) (l : List Char) : unescape (ciRest n l) = l :=
     · rw [unescape_escape, ih]
     · rw [unescape_escapeChar, ih]
 
-/-- **`ciLine` loses nothing**: a reader decodes what it prints back to the original text. -/
 theorem unescape_ciLine (s : String) : unescape (ciLine s).toList = s.toList := by
   simp only [ciLine, String.toList_ofList]
   induction s.toList with
@@ -518,36 +463,25 @@ theorem unescape_ciLine (s : String) : unescape (ciLine s).toList = s.toList := 
         rw [unescape_escape, unescape_ciRest]
       · exact unescape_ciRest 0 (c :: l)
 
-/-- Two texts never print as one line. -/
 theorem ciLine_injective {s t : String} (h : ciLine s = ciLine t) : s = t :=
   String.toList_injective (by rw [← unescape_ciLine s, ← unescape_ciLine t, h])
 
-/-! ### What the runner reads, and what `ciLine` writes, checked by the kernel -/
-
-/-- `startsCommand` fires on both forms, on any of .NET's blanks before `::` (here a space, a tab
-and the ideographic space U+3000), and not on a `::` or a `#[` after the start. -/
 example : startsCommand "::error::x" ∧ startsCommand " \t\u3000::warning::x" ∧
     startsCommand "x ##[warning]y" ∧ ¬ startsCommand "GATE 1 lint: a::b #[1, 2]" := by
   decide +kernel
 
-/-- The legacy form anywhere in the line. -/
 example : ciLine "##[warning]x" = "##\\u{005B}warning]x" := by decide
 
-/-- A `:` that would come first, with or without leading spaces. -/
 example : ciLine "::error::x" = "\\u{003A}:error::x" ∧
     ciLine "  ::add-mask::x" = "  \\u{003A}:add-mask::x" := by decide
 
-/-- A tab before `::`: `oneLine`'s escape of the tab already comes first. -/
 example : ciLine "\t::error::x" = "\\u{0009}::error::x" := by decide
 
-/-- A carriage return or U+2028 cannot start a line of its own. -/
 example : ciLine "a\r::warning::x" = "a\\u{000D}::warning::x" ∧
     ciLine "a\u2028##[add-mask]x" = "a\\u{2028}##\\u{005B}add-mask]x" := by decide
 
-/-- Text that already holds an escape: its `\` is escaped, so a reader does not take it for one. -/
 example : ciLine "##\\u{005B}warning]x" = "##\\u{005C}u{005B}warning]x" := by decide
 
-/-- Every `[` right after `##` is escaped; a Lean array and a `::` later in the line are not. -/
 example : ciLine "###[x ##[y" = "###\\u{005B}x ##\\u{005B}y" ∧
     ciLine "GATE 1 lint: a::b #[1, 2]" = "GATE 1 lint: a::b #[1, 2]" := by decide
 

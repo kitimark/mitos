@@ -2,45 +2,10 @@ import MitosGate.GateId
 import MitosGate.Lint
 import MitosGate.Util
 
-/-!
-# What the cheat runner decides (`mitos-gate cheats`)
-
-`mitos-gate cheats` runs each case of `eval/cheats/` through the gate twice, the full gate and
-`--skip-lint`, several runs at a time, and prints one row per case. Everything it decides is in
-this module, which does no I/O. `CheatsRun.lean` lists the cases, copies the workspaces, starts
-the gates, writes the logs and prints the rows, and decides nothing.
-
-* **The verdict line.** The gate prints its verdict with `Verdict.render`, and the runner reads it
-  with `Verdict.parse`. A line reads as `v` exactly when it is `v.render`
-  (`Verdict.parse_eq_some_iff`). The runner reads a run's one `VERDICT:` line (`readVerdict`); none,
-  or two, is no verdict (`readVerdict_eq_none`), and the gate's own output reads as its verdict
-  (`readVerdict_printed`). A run whose exit code disagrees with its verdict, or that timed out, has
-  none (`Run.verdict_eq_some`). The gate makes its verdict with `Verdict.ofGate`, whose text goes
-  through `ciLine`, so its line starts no workflow command in a CI log and stays one line
-  (`Verdict.ofGate_not_startsCommand`, `Verdict.ofGate_no_break`).
-* **`expect` files.** `Expect.parse` reads `key=value` lines. Each key is known and given once,
-  except `lock_append`, which may repeat; `full` and `comparator_only` are required
-  (`Expect.parse_render`).
-* **`judge`.** A case passes exactly when its full run is rejected at its `full=` gate, its
-  comparator-only run matches `comparator_only=`, and its `guards=` claim holds (`judge_pass_iff`,
-  `guardsWhy_eq_empty_iff`).
-* **The table.** One row per case, in the given order (`table_cases`), and exit code 0 exactly when
-  every row passed (`exitCode_eq_zero_iff`). Each judged case's two runs are jobs, each once
-  (`mem_jobs`, `jobs_nodup`, `order_perm`).
-* **The scheduler.** In every state the runner can reach, the jobs started so far are a prefix of
-  the job list and each is running or done exactly once, at most `n` run at once, and a heavy job
-  runs alone (`Reach.inv`). A job can always start while none runs (`start?_isSome`), every step
-  shrinks a measure (`start?_measure`, `finish_measure`), and when the runner stops, every job is
-  done, once (`Reach.complete`, `runner_done`).
--/
-
 namespace MitosGate.Cheats
 
 open Accept (GateId)
 
-/-! ## Lines -/
-
-/-- `cs` after the prefix `p`, if it starts with `p`. -/
 def stripPrefix? : List Char → List Char → Option (List Char)
   | [], cs => some cs
   | _ :: _, [] => none
@@ -62,14 +27,12 @@ theorem stripPrefix?_eq_some_iff {p cs r : List Char} :
 theorem stripPrefix?_append (p r : List Char) : stripPrefix? p (p ++ r) = some r :=
   stripPrefix?_eq_some_iff.mpr rfl
 
-/-- The pieces of `cs` between `\n`s: `n` newlines give `n + 1` pieces. -/
 def splitLines (cs : List Char) : List (List Char) := go cs []
 where
   go : List Char → List Char → List (List Char)
     | [], acc => [acc.reverse]
     | c :: cs, acc => if c = '\n' then acc.reverse :: go cs [] else go cs (c :: acc)
 
-/-- What `IO.println` writes for the lines `ls`, one after another. -/
 def printed (ls : List String) : List Char := ls.flatMap fun l => l.toList ++ ['\n']
 
 theorem splitLines_go_append {l rest acc : List Char} (h : '\n' ∉ l) :
@@ -81,8 +44,6 @@ theorem splitLines_go_append {l rest acc : List Char} (h : '\n' ∉ l) :
     have hc : ¬ c = '\n' := fun e => h.1 e.symm
     simp [splitLines.go, hc, ih h.2]
 
-/-- Lines the gate prints, followed by any text `rest`, split into the printed lines and `rest`'s
-pieces. -/
 theorem splitLines_printed_append {ls : List String} {rest : List Char}
     (h : ∀ l ∈ ls, '\n' ∉ l.toList) :
     splitLines (printed ls ++ rest) = ls.map String.toList ++ splitLines rest := by
@@ -97,20 +58,12 @@ theorem splitLines_printed_append {ls : List String} {rest : List Char}
     rw [this, ih (fun l' hl' => h l' (by simp [hl']))]
     simp
 
-/-! ## The verdict line -/
-
-/-- What the gate decided, as its last line says. The texts are printed as given, so the gate
-makes its verdict with `Verdict.ofGate`, which writes them with `ciLine`. -/
 inductive Verdict
-  /-- Gates 0–6 passed. -/
   | accepted
-  /-- Gate `g` rejected the plugin; `why` is `I/O error` when it was no judgment of the gate's own. -/
   | rejected (g : GateId) (why : String)
-  /-- Gates 0–6 passed, but `--record` could not write the record. -/
   | unrecorded (why : String)
   deriving DecidableEq, Repr
 
-/-- The verdict line the gate prints. -/
 def Verdict.render : Verdict → String
   | .accepted => "VERDICT: ACCEPTED"
   | .rejected g why =>
@@ -118,7 +71,6 @@ def Verdict.render : Verdict → String
       (if why.isEmpty then "" else ": " ++ why) ++ ")"
   | .unrecorded why => "VERDICT: REJECTED (record: " ++ why ++ ")"
 
-/-- The gate's exit code with this verdict. -/
 def Verdict.exitCode : Verdict → UInt32
   | .accepted => 0
   | _ => 1
@@ -131,11 +83,9 @@ def acceptedLine : List Char := "VERDICT: ACCEPTED".toList
 def gateTag : List Char := "VERDICT: REJECTED (gate ".toList
 def recordTag : List Char := "VERDICT: REJECTED (record: ".toList
 
-/-- `N: name` of the gate numbered `N` that starts `cs`, and what follows it. -/
 def gateOf? (cs : List Char) : Option (GateId × List Char) :=
   GateId.all.findSome? fun g => (stripPrefix? (toString g.num ++ ": " ++ g.name).toList cs).map (g, ·)
 
-/-- What follows a gate's name on its verdict line: `)`, or `: why)` with `why` not empty. -/
 def whyOf? (cs : List Char) : Option String :=
   if cs = [')'] then some ""
   else match stripPrefix? [':', ' '] cs with
@@ -154,7 +104,6 @@ def Verdict.parseChars (cs : List Char) : Option Verdict :=
       | some rest => if rest.getLast? = some ')' then some (.unrecorded (String.ofList rest.dropLast)) else none
       | none => none
 
-/-- The verdict a line states, if it is a verdict line the gate prints. -/
 def Verdict.parse (l : String) : Option Verdict := Verdict.parseChars l.toList
 
 theorem gateOf?_render (g : GateId) (tail : List Char) :
@@ -181,7 +130,6 @@ theorem eq_dropLast_append {l : List Char} {a : Char} (h : l.getLast? = some a) 
     subst h
     simp
 
-/-- The text after a gate's name on the line for `why`. -/
 def whyText (why : String) : List Char :=
   (if why.isEmpty then [] else ':' :: ' ' :: why.toList) ++ [')']
 
@@ -251,8 +199,6 @@ theorem recordTag_ne_accepted (x : List Char) : recordTag ++ x ≠ acceptedLine 
 theorem stripPrefix?_gateTag_recordTag (x : List Char) : stripPrefix? gateTag (recordTag ++ x) = none := by
   simp [gateTag, recordTag, stripPrefix?]
 
-/-- **The runner reads exactly what the gate prints.** A line reads as the verdict `v` exactly when
-it is `v`'s line: the gate's lines read as their verdicts, and no other line reads as any verdict. -/
 theorem Verdict.parse_eq_some_iff {l : String} {v : Verdict} : Verdict.parse l = some v ↔ l = v.render := by
   constructor
   · intro h
@@ -294,21 +240,15 @@ theorem Verdict.parse_eq_some_iff {l : String} {v : Verdict} : Verdict.parse l =
 theorem Verdict.parse_render (v : Verdict) : Verdict.parse v.render = some v :=
   Verdict.parse_eq_some_iff.mpr rfl
 
-/-! ## Reading a run's verdict -/
-
-/-- Lines that start with `VERDICT:`. -/
 def isVerdictLine (l : List Char) : Bool := "VERDICT:".toList.isPrefixOf l
 
-/-- The lines of the output that start with `VERDICT:`. -/
 def verdictLines (out : String) : List (List Char) := (splitLines out.toList).filter isVerdictLine
 
-/-- The verdict of a run's output: its one `VERDICT:` line, read with `Verdict.parse`. -/
 def readVerdict (out : String) : Option Verdict :=
   match verdictLines out with
   | [l] => Verdict.parseChars l
   | _ => none
 
-/-- No verdict line, or two or more, is no verdict. -/
 theorem readVerdict_eq_none {out : String} (h : (verdictLines out).length ≠ 1) :
     readVerdict out = none := by
   unfold readVerdict
@@ -320,9 +260,6 @@ theorem isVerdictLine_render (v : Verdict) : isVerdictLine v.render.toList = tru
   rw [render_toList]
   cases v <;> simp [isVerdictLine, acceptedLine, gateTag, recordTag, List.isPrefixOf]
 
-/-- **The gate's output reads as its verdict.** The gate prints lines `pre` that are not verdict
-lines, then its verdict line; anything may follow (such as the standard error), as long as none of
-its lines is a verdict line. -/
 theorem readVerdict_printed {pre : List String} {v : Verdict} {rest : List Char}
     (hpre : ∀ l ∈ pre, '\n' ∉ l.toList ∧ isVerdictLine l.toList = false)
     (hv : '\n' ∉ v.render.toList) (hrest : ∀ l ∈ splitLines rest, isVerdictLine l = false) :
@@ -367,7 +304,6 @@ def Verdict.ofGate : Except (GateId × String) (Option String) → Verdict
   | .ok (some e) => .unrecorded (ciLine e)
   | .error (g, why) => .rejected g (ciLine why)
 
-/-- A code point other than `[` added at the end starts no `##[`. -/
 theorem hasLegacy_append_singleton {c : Char} (hc : c ≠ '[') (l : List Char) :
     hasLegacy (l ++ [c]) = hasLegacy l := by
   induction l with
@@ -377,8 +313,6 @@ theorem hasLegacy_append_singleton {c : Char} (hc : c ≠ '[') (l : List Char) :
       rcases l with _ | ⟨x, _ | ⟨y, r⟩⟩ <;> simp [hc]
     rw [List.cons_append, hasLegacy, hasLegacy, ih, this]
 
-/-- A line `Verdict.ofGate` makes is `VERDICT: ACCEPTED`, or a trusted start `pre` that begins
-with `V` and holds no `#`, then a `ciLine` text, then `)`. -/
 theorem Verdict.ofGate_render_toList (o : Except (GateId × String) (Option String)) :
     (Verdict.ofGate o).render.toList = acceptedLine ∨
       ∃ pre s, (Verdict.ofGate o).render.toList = pre ++ (ciLine s).toList ++ [')'] ∧
@@ -402,7 +336,6 @@ theorem Verdict.ofGate_render_toList (o : Except (GateId × String) (Option Stri
     refine ⟨recordTag, e, ?_, by decide, by decide⟩
     rw [Verdict.ofGate, render_toList]
 
-/-- **The gate's verdict line starts no workflow command**, by either of the runner's parsers. -/
 theorem Verdict.ofGate_not_startsCommand (o : Except (GateId × String) (Option String)) :
     ¬ startsCommand (Verdict.ofGate o).render := by
   unfold startsCommand
@@ -421,7 +354,6 @@ theorem Verdict.ofGate_not_startsCommand (o : Except (GateId × String) (Option 
         hasLegacy_append_singleton (by decide), ciLine, String.toList_ofList, ciChars_legacy] at hl
       exact Bool.false_ne_true hl
 
-/-- The gate's verdict line prints only allowlisted code points, and `\` to start an escape. -/
 theorem Verdict.ofGate_printable (o : Except (GateId × String) (Option String)) :
     ∀ x ∈ (Verdict.ofGate o).render.toList, printable x = true ∨ x = '\\' := by
   rcases Verdict.ofGate_render_toList o with h | ⟨pre, s, h, -, hpre⟩
@@ -434,7 +366,6 @@ theorem Verdict.ofGate_printable (o : Except (GateId × String) (Option String))
     · exact ciLine_printable s x hx
     · exact .inl (by decide)
 
-/-- **The gate's verdict line stays one line**, so `readVerdict_printed` reads it back. -/
 theorem Verdict.ofGate_no_break (o : Except (GateId × String) (Option String)) :
     ∀ c ∈ ['\n', '\x0b', '\x0c', '\r', '\u0085', ' ', ' '],
       c ∉ (Verdict.ofGate o).render.toList := by
@@ -443,13 +374,11 @@ theorem Verdict.ofGate_no_break (o : Except (GateId × String) (Option String)) 
   intro c hc hmem
   exact key c hc (Verdict.ofGate_printable o c hmem)
 
-/-- The gate's own texts print as they are, so its rejection lines are the ones `run.sh` reads. -/
 example : (Verdict.ofGate (.error (.adequacy, "I/O error"))).render =
     "VERDICT: REJECTED (gate 6: model adequacy: I/O error)" := by decide
 example : (Verdict.ofGate (.error (.lint, ""))).render = "VERDICT: REJECTED (gate 1: lint)" := by
   decide
 
-/-- A hostile record error: the legacy form and a newline before a command are escaped. -/
 example : (Verdict.ofGate (.ok (some "##[warning]x\n::error::y"))).render =
     "VERDICT: REJECTED (record: ##\\u{005B}warning]x\\u{000A}::error::y)" := by decide
 
@@ -457,19 +386,14 @@ example : (Verdict.ofGate (.ok (some "##[warning]x\n::error::y"))).render =
 example : ciLine (Verdict.ofGate (.ok (some "a\nb"))).render ≠
     (Verdict.ofGate (.ok (some "a\nb"))).render := by decide
 
-/-- One finished run of the gate: its exit code, its standard output followed by its standard
-error, and whether the runner stopped it at its timeout. -/
 structure Run where
   exitCode : UInt32
   output : String
   timedOut : Bool
   deriving Inhabited, Repr
 
-/-- A run that never happened: no output, so no verdict. -/
 def noRun : Run := { exitCode := 255, output := "", timedOut := false }
 
-/-- The run's verdict: the one its output states, if the run finished on its own and exited with
-that verdict's exit code. -/
 def Run.verdict (r : Run) : Option Verdict :=
   if r.timedOut then none
   else match readVerdict r.output with
@@ -496,7 +420,6 @@ theorem Run.verdict_eq_some {r : Run} {v : Verdict} :
 
 example : noRun.verdict = none := by decide
 
-/-- How the row shows a run. -/
 def Run.shown (r : Run) : String :=
   match r.verdict with
   | some .accepted => "ACCEPTED"
@@ -504,12 +427,8 @@ def Run.shown (r : Run) : String :=
   | some (.unrecorded _) => "REJECTED@record"
   | none => if r.timedOut then "TIMEOUT" else "NO-VERDICT"
 
-/-! ## `expect` files -/
-
-/-- What a case's comparator-only run must give. -/
 inductive CompExpect
   | accept
-  /-- Rejected at any gate. -/
   | reject
   | rejectAt (g : GateId)
   deriving DecidableEq, Repr
@@ -529,13 +448,11 @@ theorem CompExpect.parse_render (c : CompExpect) : CompExpect.parse c.render = s
   | reject => decide
   | rejectAt g => cases g <;> decide
 
-/-- The gate numbered `s`, as `full=` gives it. -/
 def gateOfNum? (s : String) : Option GateId := GateId.all.find? (toString ·.num == s)
 
 theorem gateOfNum?_num (g : GateId) : gateOfNum? (toString g.num) = some g := by
   cases g <;> decide
 
-/-- The keys of an `expect` file. -/
 inductive Key
   | full | comparatorOnly | modelApproved | heavy | lockAppend | why | guards
   deriving DecidableEq, Repr
@@ -553,35 +470,25 @@ theorem Key.ofName?_name (k : Key) : Key.ofName? k.name = some k := by cases k <
 theorem Key.eq_not_mem_name (k : Key) : '=' ∉ k.name.toList ∧ '\n' ∉ k.name.toList := by
   cases k <;> decide
 
-/-- Keys that may be given at most once; each `lock_append` line adds a line to `models.lock`. -/
 def Key.single (k : Key) : Bool := k != .lockAppend
 
-/-- The lint rules a cheat case can guard (`Lint.Rule.guardable`), by id. -/
 def guardIds : List String :=
   ((Lint.Rule.fixed ++ Lint.banned.map Lint.Rule.banned).filter Lint.Rule.guardable).map Lint.Rule.id
 
 theorem newline_not_mem_guardIds : ∀ r ∈ guardIds, '\n' ∉ r.toList := by decide +kernel
 
-/-- A cheat case's `expect` file. -/
 structure Expect where
-  /-- The gate that must reject the full run. -/
   full : GateId
   comparatorOnly : CompExpect
-  /-- The case stands for models the owner approved: the runner re-pins `models.lock`. -/
   modelApproved : Bool := false
-  /-- The case needs much memory: its runs run alone. -/
   heavy : Bool := false
-  /-- Lines appended to the workspace's `models.lock`. -/
   lockAppend : List String := []
   why : Option String := none
-  /-- The lint rule, by id, without which the full run would be accepted. -/
   guards : Option String := none
   deriving DecidableEq, Repr
 
-/-- The pairs `(k, v)` for each value `v`. -/
 def tagged (k : Key) (vs : List String) : List (Key × String) := vs.map (k, ·)
 
-/-- The `key=value` pairs that `render` writes, in its order. -/
 def Expect.fields (e : Expect) : List (Key × String) :=
   tagged .full [toString e.full.num] ++ tagged .comparatorOnly [e.comparatorOnly.render] ++
     tagged .modelApproved (if e.modelApproved then ["yes"] else []) ++
@@ -592,7 +499,6 @@ def fieldLine (f : Key × String) : String := f.1.name ++ "=" ++ f.2
 
 def Expect.render (e : Expect) : String := String.join (e.fields.map fun f => fieldLine f ++ "\n")
 
-/-- `cs` split at its first `=`. -/
 def splitKV : List Char → Option (List Char × List Char)
   | [] => none
   | c :: cs => if c = '=' then some ([], cs) else (splitKV cs).map fun (k, v) => (c :: k, v)
@@ -605,7 +511,6 @@ theorem splitKV_append {k v : List Char} (h : '=' ∉ k) : splitKV (k ++ '=' :: 
     have hc : ¬ c = '=' := fun e => h.1 e.symm
     simp [splitKV, hc, ih h.2]
 
-/-- One line of an `expect` file. -/
 def parseLine (l : List Char) : Except String (Key × String) :=
   match splitKV l with
   | none => .error s!"the line {String.ofList l} is not key=value"
@@ -622,28 +527,21 @@ theorem parseLine_fieldLine (f : Key × String) (h : '\n' ∉ f.2.toList) :
     splitKV_append (Key.eq_not_mem_name k).1]
   simp [Key.ofName?_name]
 
-/-- The pieces of a file's text, without the empty piece after a final `\n`. -/
 def fileLines (txt : String) : List (List Char) :=
   let ls := splitLines txt.toList
   if ls.getLast? = some [] then ls.dropLast else ls
 
-/-- The value of key `k`, the first if there are several. -/
 def get (fs : List (Key × String)) (k : Key) : Option String := (fs.find? (·.1 == k)).map (·.2)
 
-/-- `yes` for a flag that is given, otherwise absent. -/
 def flag (fs : List (Key × String)) (k : Key) : Except String Bool :=
   match get fs k with
   | none => .ok false
   | some "yes" => .ok true
   | some v => .error s!"{k.name}={v}: the only value is yes"
 
-/-- The `lock_append` values, in order. -/
 def lockLines (fs : List (Key × String)) : List String :=
   fs.filterMap fun f => if f.1 = .lockAppend then some f.2 else none
 
-/-- An `expect` file from its pairs: each key at most once (but `lock_append`), `full` a gate
-number, `comparator_only` `accept`, `reject` or `reject@N`, a flag `yes`, `guards` a rule a case can
-guard. -/
 def ofFields (fs : List (Key × String)) : Except String Expect :=
   match Key.all.find? fun k => k.single && 1 < fs.countP (·.1 == k) with
   | some k => .error s!"{k.name}= is given more than once"
@@ -665,14 +563,11 @@ def ofFields (fs : List (Key × String)) : Except String Expect :=
                   why := get fs .why }
           else .error s!"guards={guards.getD ""} names no lint rule a case can guard"
 
-/-- Parse an `expect` file's text. -/
 def Expect.parse (txt : String) : Except String Expect :=
   match (fileLines txt).mapM parseLine with
   | .ok fs => ofFields fs
   | .error e => .error e
 
-/-- What `render` needs to write a file that `parse` reads back: values on one line, and a
-`guards=` rule a case can guard. -/
 structure Expect.Valid (e : Expect) : Prop where
   lockAppend : ∀ s ∈ e.lockAppend, '\n' ∉ s.toList
   why : ∀ s ∈ e.why, '\n' ∉ s.toList
@@ -735,7 +630,6 @@ theorem Expect.countP_fields (e : Expect) (k : Key) (hk : k.single = true) :
     | (cases e.why <;> simp)
     | (cases e.guards <;> simp)
 
-/-- No `\n` in any value `fields` writes. -/
 theorem Expect.newline_not_mem_fields (e : Expect) (hv : e.Valid) :
     ∀ f ∈ e.fields, '\n' ∉ f.2.toList := by
   have h1 : '\n' ∉ (toString e.full.num).toList := by cases e.full <;> decide
@@ -809,7 +703,6 @@ theorem mapM_map_ok {β γ : Type} {f : γ → Except String β} {h : β → γ}
     rw [mapM_map_ok (fun y hy => hx y (by simp [hy]))]
     rfl
 
-/-- **The parser reads back what `render` writes.** -/
 theorem Expect.parse_render (e : Expect) (hv : e.Valid) : Expect.parse e.render = .ok e := by
   unfold Expect.parse
   rw [Expect.fileLines_render e hv,
@@ -819,8 +712,6 @@ theorem Expect.parse_render (e : Expect) (hv : e.Valid) : Expect.parse e.render 
 example : (Expect.parse "full=1\ncomparator_only=reject@4\nwhy=Uses `admit`.\n").toOption =
     some { full := .lint, comparatorOnly := .rejectAt .axioms, why := some "Uses `admit`." } := by
   decide +kernel
-/-- A key given twice, a missing `comparator_only=`, a flag other than `yes`, an unknown key, a
-blank line, a gate number that is not one, and a rule no case can guard are each an error. -/
 example : (Expect.parse "full=1\nfull=1\ncomparator_only=accept\n").toBool = false := by decide +kernel
 example : (Expect.parse "full=1\n").toBool = false := by decide +kernel
 example : (Expect.parse "full=1\ncomparator_only=accept\nheavy=no\n").toBool = false := by decide +kernel
@@ -830,24 +721,17 @@ example : (Expect.parse "full=1\ncomparator_only=accept\n\n").toBool = false := 
 example : (Expect.parse "full=01\ncomparator_only=accept\n").toBool = false := by decide +kernel
 example : (Expect.parse "full=1\ncomparator_only=accept\nguards=parse\n").toBool = false := by
   decide +kernel
-/-- `lock_append=` may repeat; its lines keep their order. -/
 example : ((Expect.parse "full=0\ncomparator_only=reject@0\nlock_append=a\nlock_append=b\n").toOption.map
     (·.lockAppend)) = some ["a", "b"] := by decide +kernel
 
-/-! ## Judging one case -/
-
-/-- How a run's lines start when gate 1 failed. -/
 def failTag : List Char := (GateId.lint.label ++ ": FAIL").toList
 
-/-- The number of violations on gate 1's `FAIL — N violation(s)` line. -/
 def violationCount (l : List Char) : Option Nat := do
   let r ← stripPrefix? (failTag ++ " — ".toList) l
   let d ← (stripPrefix? " violation(s)".toList.reverse r.reverse).map List.reverse
   if d ≠ [] ∧ d.all Char.isDigit then some (d.foldl (fun n c => 10 * n + (c.toNat - '0'.toNat)) 0)
   else none
 
-/-- `[R]` of a line that ends with ` [R]`, where `R` has no space or bracket, otherwise
-`no rule`. -/
 def ruleOf (l : List Char) : String :=
   match l.reverse with
   | ']' :: rest =>
@@ -857,10 +741,6 @@ def ruleOf (l : List Char) : String :=
     | _ => "no rule"
   | _ => "no rule"
 
-/-- What a full run's log says about gate 1, read line by line as `run.sh`'s `check_guards` read
-it: after a line that starts with `GATE 1 lint: FAIL`, the lines that start with two spaces are
-violations, counted in `listed`; `count` is the number on the `FAIL` line, and `others` lists, once
-each, the rule of every violation that does not end with ` [R]`. -/
 structure Scan where
   on : Bool := false
   count : Option Nat := none
@@ -882,7 +762,6 @@ def scan (rule : String) (out : String) : Scan :=
 
 def notAccept : String := "it is not comparator_only=accept"
 
-/-- Why gate 1's report does not show that rule `R` alone rejected the full run, or `""`. -/
 def lintWhy (s : Scan) : String :=
   match s.count with
   | none | some 0 => "the full run reports no gate-1 violation"
@@ -903,7 +782,6 @@ def guardsWhy (rule : String) (comp : CompExpect) (out : String) : String :=
     else if why = "" then notAccept
     else why ++ "; " ++ notAccept
 
-/-- A string whose length is positive is not empty; `simp` computes the length of a message. -/
 theorem ne_empty_of_length {s : String} (h : 0 < s.length) : s ≠ "" := by
   rintro rfl; simp at h
 
@@ -937,8 +815,6 @@ theorem lintWhy_eq_empty_iff {s : Scan} :
         simp only [ne_eq, hl, not_false_eq_true, ite_true, hne, false_iff, not_exists, not_and]
         intro x _ h; cases h; exact fun h' => absurd h' hl
 
-/-- **When `guards=R` holds.** The full run printed something, the case is `comparator_only=accept`,
-and gate 1's report counts at least one violation, lists as many, and each has rule R. -/
 theorem guardsWhy_eq_empty_iff {rule : String} {comp : CompExpect} {out : String} :
     guardsWhy rule comp out = "" ↔ out ≠ "" ∧ comp = .accept ∧
       ∃ n, 0 < n ∧ (scan rule out).count = some n ∧ (scan rule out).listed = n ∧
@@ -955,7 +831,6 @@ theorem guardsWhy_eq_empty_iff {rule : String} {comp : CompExpect} {out : String
       · exact ne_empty_of_length this
       · apply ne_empty_of_length; simp only [String.length_append]; omega
 
-/-- `eval_command.full.log` from a local run, which `guards=hash` reads. -/
 def evalCommandLog : String := "GATE 0 provenance: PASS
 GATE 1 lint: FAIL — 1 violation(s)
   /tmp/tmp.tZhcUv3lgT/Plugins/ToyRequire.lean:8:1: command `#eval` is not allowed [hash]
@@ -968,7 +843,6 @@ example : guardsWhy "banned:sorry" .accept evalCommandLog =
     "the full run also has violations [hash]" := by decide +kernel
 example : guardsWhy "hash" (.rejectAt .axioms) evalCommandLog =
     "it is not comparator_only=accept" := by decide +kernel
-/-- Gate 1 counts two violations but lists one. -/
 example : guardsWhy "hash" .accept "GATE 1 lint: FAIL — 2 violation(s)
   Plugins/ToyRequire.lean:8:1: command `#eval` is not allowed [hash]
 VERDICT: REJECTED (gate 1: lint)
@@ -976,32 +850,26 @@ VERDICT: REJECTED (gate 1: lint)
 example : guardsWhy "hash" .accept "VERDICT: REJECTED (gate 3: statements)\n" =
     "the full run reports no gate-1 violation" := by decide +kernel
 
-/-- The guards cell of a row: `guards=R`, and why the claim fails if it does. -/
 def guardText (rule why : String) : String :=
   "guards=" ++ rule ++ (if why = "" then "" else ": " ++ why)
 
-/-- Whether the full run was rejected at gate `g`. -/
 def fullOk (g : GateId) : Option Verdict → Bool
   | some (.rejected g' _) => g' == g
   | _ => false
 
-/-- Whether a comparator-only verdict is what `comparator_only=` says. -/
 def CompExpect.ok : CompExpect → Option Verdict → Bool
   | .accept, some .accepted => true
   | .reject, some (.rejected _ _) => true
   | .rejectAt g, some (.rejected g' _) => g' == g
   | _, _ => false
 
-/-- Whether the case's `guards=` claim, if it has one, holds. -/
 def guardsOk (e : Expect) (full : Run) : Bool :=
   match e.guards with
   | none => true
   | some r => guardsWhy r e.comparatorOnly full.output == ""
 
-/-- `s` padded with spaces to `n` characters, as `printf '%-ns'` pads. -/
 def pad (n : Nat) (s : String) : String := s ++ String.ofList (List.replicate (n - s.length) ' ')
 
-/-- One row of the table: a case, the rest of its row, and whether it passed. -/
 structure Row where
   case : String
   text : String
@@ -1015,7 +883,6 @@ def header : String :=
   pad 20 "CASE" ++ " " ++ pad 14 "FULL" ++ " " ++ pad 14 "EXPECT" ++ " " ++ pad 22 "COMPARATOR-ONLY" ++
     " " ++ pad 10 "EXPECT" ++ " " ++ "GUARDS"
 
-/-- The row of a case with expectations `e`, from its full and its comparator-only run. -/
 def judge (case : String) (e : Expect) (full comp : Run) : Row :=
   let guard := match e.guards with
     | none => ""
@@ -1025,15 +892,11 @@ def judge (case : String) (e : Expect) (full comp : Run) : Row :=
       pad 22 comp.shown ++ " " ++ pad 10 e.comparatorOnly.render ++ " " ++ guard
     pass := fullOk e.full full.verdict && e.comparatorOnly.ok comp.verdict && guardsOk e full }
 
-/-- What `comparator_only=` asks of the comparator-only run's verdict. -/
 def CompExpect.Holds : CompExpect → Option Verdict → Prop
   | .accept, v => v = some .accepted
   | .reject, v => ∃ g why, v = some (.rejected g why)
   | .rejectAt g, v => ∃ why, v = some (.rejected g why)
 
-/-- **When a case passes.** Its full run is rejected at the gate `full=` names, its comparator-only
-run gives what `comparator_only=` says, and, if it has `guards=R`, the claim holds
-(`guardsWhy_eq_empty_iff`). -/
 theorem judge_pass_iff {case : String} {e : Expect} {full comp : Run} :
     (judge case e full comp).pass = true ↔
       (∃ why, full.verdict = some (.rejected e.full why)) ∧ e.comparatorOnly.Holds comp.verdict ∧
@@ -1049,26 +912,18 @@ theorem judge_pass_iff {case : String} {e : Expect} {full comp : Run} :
     · unfold guardsOk
       split <;> simp_all
 
-/-! ## The table -/
-
-/-- A case as the runner found it: its directory's name, and its `expect` file parsed, or why
-there is none. -/
 structure Case where
   name : String
   expect : Except String Expect
 
-/-- The two runs of a case. -/
 inductive Mode
   | full | comparatorOnly
   deriving DecidableEq, Repr
 
-/-- The run's name in its log's name, `<case>.full.log` or `<case>.comparator.log`. -/
 def Mode.logName : Mode → String
   | .full => "full"
   | .comparatorOnly => "comparator"
 
-/-- The case's row, from its runs (`none` for a run that did not happen). A case without a
-parsed `expect` fails. -/
 def Case.row (c : Case) (full comp : Option Run) : Row :=
   match c.expect with
   | .error msg => { case := c.name, text := msg, pass := false }
@@ -1078,7 +933,6 @@ def tableFrom (res : Nat → Mode → Option Run) : Nat → List Case → List R
   | _, [] => []
   | i, c :: cs => c.row (res i .full) (res i .comparatorOnly) :: tableFrom res (i + 1) cs
 
-/-- One row per case, in order; `res i m` is the run of mode `m` of the `i`-th case. -/
 def table (res : Nat → Mode → Option Run) (cases : List Case) : List Row := tableFrom res 0 cases
 
 theorem tableFrom_cases (res : Nat → Mode → Option Run) :
@@ -1088,7 +942,6 @@ theorem tableFrom_cases (res : Nat → Mode → Option Run) :
     simp only [tableFrom, List.map_cons, tableFrom_cases res (i + 1) cs, List.cons.injEq, and_true]
     unfold Case.row; split <;> rfl
 
-/-- **Every case appears exactly once, in order.** -/
 theorem table_cases (res : Nat → Mode → Option Run) (cases : List Case) :
     (table res cases).map Row.case = cases.map Case.name := tableFrom_cases res 0 cases
 
@@ -1096,22 +949,16 @@ def summary (rows : List Row) : String :=
   if rows.all (·.pass) then s!"cheat corpus: all {rows.length} cases behave as expected"
   else "cheat corpus: FAILURES (logs in .lake/cheats/)"
 
-/-- The table the runner prints: a header, the rows, a blank line and a summary. -/
 def report (rows : List Row) : List String := header :: rows.map Row.render ++ ["", summary rows]
 
 def exitCode (rows : List Row) : UInt32 := if rows.all (·.pass) then 0 else 1
 
-/-- **Exit code 0 exactly when every row passed.** -/
 theorem exitCode_eq_zero_iff {rows : List Row} : exitCode rows = 0 ↔ ∀ r ∈ rows, r.pass = true := by
   unfold exitCode
   split
   · rename_i h; simpa using h
   · rename_i h; simp only [List.all_eq_true] at h; simp [h]
 
-/-! ## Jobs -/
-
-/-- One run to do: mode `mode` of the `case`-th case. `heavy` jobs run alone; `long` ones are
-expected to reach the comparator, so they start first. -/
 structure Job where
   case : Nat
   mode : Mode
@@ -1119,8 +966,6 @@ structure Job where
   long : Bool
   deriving DecidableEq, Repr
 
-/-- Whether the run is expected to reach the comparator: a full run that gate 0 or 1 rejects does
-not, nor a comparator-only run that gate 0 rejects. -/
 def Expect.long (e : Expect) : Mode → Bool
   | .full => 2 ≤ e.full.num
   | .comparatorOnly => e.comparatorOnly != .rejectAt .provenance
@@ -1135,7 +980,6 @@ def jobsFrom : Nat → List Case → List Job
   | _, [] => []
   | i, c :: cs => caseJobs i c ++ jobsFrom (i + 1) cs
 
-/-- Both runs of every case whose `expect` parsed. -/
 def jobs (cases : List Case) : List Job := jobsFrom 0 cases
 
 theorem mem_caseJobs {i : Nat} {c : Case} {j : Job} :
@@ -1171,7 +1015,6 @@ theorem mem_jobsFrom {j : Job} : ∀ {i : Nat} {cases : List Case},
         rw [show j.case - i = (j.case - (i + 1)) + 1 by omega] at hc'
         simpa using hc'
 
-/-- **The jobs are the runs of the judged cases.** -/
 theorem mem_jobs {cases : List Case} {j : Job} :
     j ∈ jobs cases ↔ ∃ c e, cases[j.case]? = some c ∧ c.expect = .ok e ∧
       j.heavy = e.heavy ∧ j.long = e.long j.mode := by
@@ -1192,23 +1035,13 @@ theorem jobsFrom_nodup : ∀ (i : Nat) (cases : List Case), (jobsFrom i cases).N
       rw [← hab, (mem_caseJobs.mp ha).1] at this
       omega
 
-/-- **No run is a job twice.** -/
 theorem jobs_nodup (cases : List Case) : (jobs cases).Nodup := jobsFrom_nodup 0 cases
 
-/-- Heavy jobs first, then the long ones, then the rest, each group in case order. -/
 def Job.rank (j : Job) : Nat := if j.heavy then 0 else if j.long then 1 else 2
 
-/-- The order jobs start in. -/
 def order (js : List Job) : List Job := js.mergeSort fun a b => a.rank ≤ b.rank
 
-/-- **Ordering keeps every job, once.** -/
 theorem order_perm (js : List Job) : (order js).Perm js := List.mergeSort_perm _ _
-
-/-! ## The scheduler
-
-The runner starts jobs from the front of `pending` while `mayStart` allows, and otherwise waits
-for a running job to finish. `Reach` is every state that can reach, whatever order the runs
-finish in. -/
 
 structure Sched (α : Type) where
   pending : List α
@@ -1217,22 +1050,17 @@ structure Sched (α : Type) where
 
 def Sched.init {α : Type} (jobs : List α) : Sched α := ⟨jobs, [], []⟩
 
-/-- Whether `j` may start while `running` runs: a heavy job only when nothing runs, any other job
-when fewer than `n` run and none of them is heavy. -/
 def mayStart {α : Type} (n : Nat) (heavy : α → Bool) (running : List α) (j : α) : Bool :=
   if heavy j then running.isEmpty else running.length < n && !running.any heavy
 
-/-- Start the first pending job, if it may start. -/
 def Sched.start? {α : Type} (n : Nat) (heavy : α → Bool) (s : Sched α) : Option (α × Sched α) :=
   match s.pending with
   | j :: rest => if mayStart n heavy s.running j then some (j, ⟨rest, s.running ++ [j], s.done⟩) else none
   | [] => none
 
-/-- `j`, a running job, finished. -/
 def Sched.finish {α : Type} [BEq α] (s : Sched α) (j : α) : Sched α :=
   ⟨s.pending, s.running.erase j, s.done ++ [j]⟩
 
-/-- The states the runner can be in, from `Sched.init jobs`, whatever order runs finish in. -/
 inductive Reach {α : Type} [BEq α] (n : Nat) (heavy : α → Bool) (jobs : List α) : Sched α → Prop
   | init : Reach n heavy jobs (.init jobs)
   | start {s s' : Sched α} {j : α} : Reach n heavy jobs s → s.start? n heavy = some (j, s') →
@@ -1240,13 +1068,9 @@ inductive Reach {α : Type} [BEq α] (n : Nat) (heavy : α → Bool) (jobs : Lis
   | finish {s : Sched α} {j : α} : Reach n heavy jobs s → j ∈ s.running →
       Reach n heavy jobs (s.finish j)
 
-/-- What holds in every state the runner can reach. -/
 structure Inv {α : Type} (n : Nat) (heavy : α → Bool) (jobs : List α) (s : Sched α) : Prop where
-  /-- The jobs started so far are the first `k` jobs, and each is running or done, once. -/
   fifo : ∃ k, s.pending = jobs.drop k ∧ (s.done ++ s.running).Perm (jobs.take k)
-  /-- At most `n` jobs run at once. -/
   atMost : s.running.length ≤ n
-  /-- A heavy job runs alone. -/
   alone : ∀ j ∈ s.running, heavy j = true → s.running = [j]
 
 theorem Sched.start?_eq_some {α : Type} {n : Nat} {heavy : α → Bool} {s s' : Sched α} {j : α}
@@ -1261,7 +1085,6 @@ theorem Sched.start?_eq_some {α : Type} {n : Nat} {heavy : α → Bool} {s s' :
     · cases h
   · cases h
 
-/-- **The invariant holds in every reachable state.** -/
 theorem Reach.inv {α : Type} [BEq α] [LawfulBEq α] {n : Nat} {heavy : α → Bool} {jobs : List α}
     {s : Sched α} (hn : 1 ≤ n) (h : Reach n heavy jobs s) : Inv n heavy jobs s := by
   induction h with
@@ -1313,7 +1136,6 @@ theorem Reach.inv {α : Type} [BEq α] [LawfulBEq α] {n : Nat} {heavy : α → 
       subst hj
       simp at hx
 
-/-- **Progress.** While nothing runs, the first pending job can start. -/
 theorem start?_isSome {α : Type} {n : Nat} {heavy : α → Bool} {s : Sched α} (hn : 1 ≤ n)
     (hr : s.running = []) (hp : s.pending ≠ []) : (s.start? n heavy).isSome := by
   unfold Sched.start?
@@ -1324,7 +1146,6 @@ theorem start?_isSome {α : Type} {n : Nat} {heavy : α → Bool} {s : Sched α}
       Bool.and_true]
     split <;> simp <;> omega
 
-/-- The runner's measure: two for each pending job, one for each running job. -/
 def Sched.measure {α : Type} (s : Sched α) : Nat := 2 * s.pending.length + s.running.length
 
 theorem start?_measure {α : Type} {n : Nat} {heavy : α → Bool} {s s' : Sched α} {j : α}
@@ -1338,8 +1159,6 @@ theorem finish_measure {α : Type} [BEq α] [LawfulBEq α] {s : Sched α} {j : �
   have := List.length_pos_of_mem hj
   omega
 
-/-- **Every job runs, once.** When the runner stops, because nothing runs and nothing can start,
-nothing is pending and every job is done exactly once. -/
 theorem Reach.complete {α : Type} [BEq α] [LawfulBEq α] {n : Nat} {heavy : α → Bool}
     {jobs : List α} {s : Sched α} (hn : 1 ≤ n) (h : Reach n heavy jobs s) (hr : s.running = [])
     (hs : s.start? n heavy = none) : s.pending = [] ∧ s.done.Perm jobs := by
@@ -1357,8 +1176,6 @@ theorem Reach.complete {α : Type} [BEq α] [LawfulBEq α] {n : Nat} {heavy : α
   rw [this] at hperm
   exact hperm
 
-/-- **The runner runs both runs of every judged case, each once.** When `mitos-gate cheats` stops
-scheduling `order (jobs cases)`, the runs done are the jobs, each once. -/
 theorem runner_done {n : Nat} {cases : List Case} {s : Sched Job} (hn : 1 ≤ n)
     (h : Reach n Job.heavy (order (jobs cases)) s) (hr : s.running = [])
     (hs : s.start? n Job.heavy = none) : s.done.Perm (jobs cases) ∧ s.done.Nodup := by

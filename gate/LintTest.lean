@@ -3,22 +3,11 @@ import MitosGate.Accept
 import MitosGate.Imports
 import MitosGate.CheatsRun
 
-/-! Regression test for gate 1's lint: every command kind outside the model allowlist is rejected,
-every allowed kind is accepted, models pass the plugin rules, and the import rule holds for
-plugins and models alike (`Lint.check`, `Lint.checkModel`). Each rule reports under its own id
-(`ruleCases`), and each ban is guarded by a cheat case or listed in `unguardedBans` and
-`eval/cheats/unguarded` (`ratchet`). It runs `mitos-gate`, the cheat runner included, on hostile
-text and checks that no line it prints starts a workflow command (`ciCases`). It also pins how the
-cheat runner stops a run at its timeout (`timeoutCases`), the one runner test that needs no gate
-run. Run with `lake exe mitos-lint-test` from the repository root. -/
-
 open MitosGate
 
-/-- A model source: the header a reviewed model has, then `body`. -/
 def model (body : String) : String :=
   "import Mitos.Core\n\nnamespace Models.T\n\n" ++ body ++ "\n\nend Models.T\n"
 
-/-- Sources a model may contain. -/
 def accepted : List (String × String) :=
   [ ("import Init/Std/Mitos.Core/Models",
       "import Init\nimport Std\nimport Mitos.Core\nimport Models.Other\n\ndef x : Nat := 1\n"),
@@ -42,9 +31,8 @@ def accepted : List (String × String) :=
       model "theorem t : 1 = 1 := by\n  set_option maxRecDepth 1000 in rfl"),
     ("-- comment mentioning notation", model "-- notation, macro, #eval, implemented_by\ndef x : Nat := 1") ]
 
-/-- Sources a model may not contain: the command kinds outside the allowlist, and the plugin rules. -/
 def rejected : List (String × String) :=
-  [ -- The notation family.
+  [
     ("notation", model "notation \"req--\" => 1"),
     ("local notation", model "local notation \"req--\" => 1"),
     ("scoped notation", model "scoped notation \"req--\" => 1"),
@@ -53,7 +41,6 @@ def rejected : List (String × String) :=
     ("infixr", model "infixr:65 \" +++ \" => Nat.add"),
     ("prefix", model "prefix:max \"√\" => Nat.sqrt"),
     ("postfix", model "postfix:max \"!\" => Nat.succ"),
-    -- Macros and syntax.
     ("macro", model "macro \"foo\" : term => `(1)"),
     ("macro_rules", model "macro_rules | `(foo) => `(1)"),
     ("syntax", model "syntax \"foo\" : term"),
@@ -67,7 +54,6 @@ def rejected : List (String × String) :=
     ("import Lean", "import Lean\n\ndef x : Nat := 1\n"),
     ("import Lean.Parser", "import Lean.Parser\n\ndef x : Nat := 1\n"),
     ("import outside the four", "import Mathlib\n\ndef x : Nat := 1\n"),
-    -- Options and `#`-commands.
     ("set_option", model "set_option maxHeartbeats 400000"),
     ("set_option ... in", model "set_option maxHeartbeats 400000 in\ndef x : Nat := 1"),
     ("set_option debug", model "set_option debug.skipKernelTC true"),
@@ -77,7 +63,6 @@ def rejected : List (String × String) :=
     ("#reduce", model "#reduce 1 + 1"),
     ("#exit", model "#exit"),
     ("run_cmd", model "run_cmd pure ()"),
-    -- Other commands outside the allowlist.
     ("variable", model "variable (n : Nat)"),
     ("universe", model "universe u"),
     ("mutual", model "mutual\ndef a : Nat := 1\nend"),
@@ -88,7 +73,6 @@ def rejected : List (String × String) :=
     ("noncomputable section", model "noncomputable section\nend"),
     ("public section", model "public section\nend"),
     ("@[expose] section", model "@[expose] section\nend"),
-    -- Declarations outside the allowlist.
     ("instance", model "instance : Inhabited Nat := ⟨1⟩"),
     ("class", model "class K where\n  a : Nat"),
     ("class inductive", model "class inductive K where\n  | a"),
@@ -97,7 +81,6 @@ def rejected : List (String × String) :=
     ("deriving clause", model "inductive C where\n  | red\n  deriving Repr"),
     ("def deriving clause", model "def N := Nat deriving Inhabited"),
     ("computed fields", model "inductive C where\n  | red\nwith\n  h : C → Nat\n  | .red => 0"),
-    -- Modifiers outside the allowlist.
     ("private", model "private def x : Nat := 1"),
     ("protected", model "protected def x : Nat := 1"),
     ("noncomputable", model "noncomputable def x : Nat := 1"),
@@ -105,7 +88,6 @@ def rejected : List (String × String) :=
     ("partial", model "partial def f (n : Nat) : Nat := f n"),
     ("nonrec", model "nonrec def x : Nat := 1"),
     ("meta", model "meta def x : Nat := 1"),
-    -- Attributes outside the allowlist, wherever they appear.
     ("@[implemented_by]", model "def evil (_ : Nat) : Nat := 0\n@[implemented_by evil] def f (n : Nat) : Nat := n"),
     ("@[extern]", model "@[extern \"c_f\"] def f (n : Nat) : Nat := n"),
     ("@[csimp]", model "@[csimp] theorem t : @id = @id := rfl"),
@@ -116,7 +98,6 @@ def rejected : List (String × String) :=
     ("attribute on a constructor", model "inductive C where\n  | @[inline] red"),
     ("attribute in a where clause",
       model "def f (n : Nat) : Nat := g n\nwhere @[implemented_by f] g (m : Nat) : Nat := m"),
-    -- Plugin rules a model must also pass.
     ("sorry", model "theorem t : 1 = 2 := sorry"),
     ("«sorry»", model "theorem t : 1 = 2 := «sorry»"),
     ("admit", model "theorem t : 1 = 2 := by admit"),
@@ -125,16 +106,12 @@ def rejected : List (String × String) :=
     ("Lean.ofReduceBool", model "def x := Lean.ofReduceBool"),
     ("trustCompiler", model "def x := Lean.trustCompiler"),
     ("set_option debug in a proof", model "theorem t : 1 = 1 := by\n  set_option debug.skipKernelTC true in rfl"),
-    -- Syntax the toolchain's Init/Std parser does not know.
     ("unknown syntax", model "def x : Nat := 1 ⊞ 2") ]
 
-/-- Headers both plugins and models may have, each followed by a body without banned tokens. -/
 def headersAccepted : List (String × String) :=
   [ ("plain imports", "import Init\nimport Std.Data.HashMap\nimport Mitos.Core\nimport Models.ToyRequire\n"),
     ("escaped plain component", "import «Mitos».Core\n") ]
 
-/-- Headers neither may have: escaped components that leave an allowed root, other roots, and
-the `module`/`prelude` forms. -/
 def headersRejected : List (String × String) :=
   [ ("import Init.«..».Lake", "import Init.«..».Lake\n"),
     ("import Init.«..».Lean", "import Init.«..».Lean\n"),
@@ -155,8 +132,6 @@ def headersRejected : List (String × String) :=
     ("meta import, no module", "meta import Mitos.Core\n"),
     ("import all, no module", "import all Mitos.Core\n") ]
 
-/-- Sources where Lean's parser stops before the end of the file; neither may have them. Each is
-appended to a source that is otherwise accepted. -/
 def stopsRejected : List (String × String) :=
   [ ("mid-file import, then sorry", "\nimport Lean\ntheorem t : 1 = 2 := sorry\n"),
     ("mid-file import, then @[implemented_by]",
@@ -165,7 +140,6 @@ def stopsRejected : List (String × String) :=
 /-- The roots `mitos-gate imports` allows in `core/`, as in `gate/Main.lean`. -/
 def coreImports : List String := ["Init", "Std", "Mitos.Core", "Mitos.Impl", "Mitos.Proofs"]
 
-/-- Core-style sources for `mitos-gate imports` (`Imports.checkSource`). -/
 def coreCases : List (String × String × Bool) :=
   [ ("plain core header", "import Init\nimport Mitos.Core\n\ndef x : Nat := 1\n", true),
     ("tab before import Lean", "\timport Lean\n\ndef x : Nat := 1\n", false),
@@ -199,13 +173,6 @@ def ruleCases : List (String × String × List Lint.Rule) :=
       [.modelComputedFields]),
     ("model", model "inductive C where\n  | red\n  deriving Repr", [.modelDeriving]) ]
 
-/-! ## Ban ratchet
-
-Each entry of `Lint.banned` is guarded by a cheat case, whose `expect` has `guards=banned:<token>`
-(`eval/cheats/run.sh` checks the claim), or listed in `unguardedBans` and `eval/cheats/unguarded`.
-A change that drops a ban, as #21's rebase did, then turns this test red, whether or not a case
-guarded it. -/
-
 /-- The bans no cheat case guards yet; `eval/cheats/unguarded` must list exactly these. Each must
 stay in `Lint.banned`, so dropping or renaming one takes an edit here, in trusted code the owner
 merges. Guarding a ban takes it off here and off `eval/cheats/unguarded`. A new ban needs a guarding
@@ -221,8 +188,6 @@ def unguardedBans : List String :=
     "binder_predicate", "instance", "scoped", "meta", "initialize", "builtin_initialize",
     "run_cmd", "run_elab", "run_meta", "debug", "Lean" ]
 
-/-- `(case, rule)` for each `guards=` line of an `eval/cheats/<case>/expect`. Hidden directories
-are left out, as `run.sh` leaves them out of the corpus (`ls -d eval/cheats/*/`). -/
 def cheatGuards : IO (Array (String × String)) := do
   let mut out := #[]
   for e in ← System.FilePath.readDir ("eval" / "cheats") do
@@ -232,12 +197,10 @@ def cheatGuards : IO (Array (String × String)) := do
         if l.startsWith "guards=" then out := out.push (e.fileName, (l.drop 7).toString)
   return out.qsort (fun a b => a.1 < b.1)
 
-/-- The rules `eval/cheats/unguarded` lists, one per line; blank lines and `#` comments aside. -/
 def unguardedRules : IO (List String) := do
   let txt ← IO.FS.readFile ("eval" / "cheats" / "unguarded")
   return (txt.splitOn "\n").filter fun l => !l.isEmpty && !l.startsWith "#"
 
-/-- Every way the guards and the list break the ratchet, one message each. -/
 def ratchet (guards : Array (String × String)) (unguarded : List String) : Array String := Id.run do
   let guardable := (Lint.Rule.fixed ++ Lint.banned.map Lint.Rule.banned).filter (·.guardable) |>.map (·.id)
   let bans := Lint.banned.map fun b => (Lint.Rule.banned b).id
@@ -264,25 +227,12 @@ def ratchet (guards : Array (String × String)) (unguarded : List String) : Arra
       errs := errs.push s!"eval/cheats/unguarded lists {r} more than once"
   return errs
 
-/-! ## Lines for a CI log
-
-Hostile text on each path where `mitos-gate` prints text it was given: a file name, a lock line, an
-argument, an I/O error. The gate runs as a separate process, as in CI, and every line it prints on
-standard output or standard error, split at LF and CR as GitHub's runner splits them, must start
-no workflow command (`startsCommand`, `gate/MitosGate/Util.lean`). The output must also show the
-hostile text, so a case cannot pass by printing none of it. -/
-
 structure CiCase where
   name : String
   args : List String
-  /-- Files to write in the case's own directory, which is the gate's working directory. -/
   files : List (String × String) := []
-  /-- Whether the directory also gets the toy workspace's `lean-toolchain`, `models.lock` and
-  `Models/`, so that gate 0 passes. -/
   toy : Bool := false
 
-/-- The hostile text: a command at the start of a line, the legacy form, and a carriage return
-before a command. -/
 def ciCases (root : String) : List CiCase :=
   let plugin := "import Mitos.Core\n\ntheorem t : True := sorry\n"
   [ { name := "lint, a file argument that starts with ::"
@@ -317,14 +267,10 @@ def ciCases (root : String) : List CiCase :=
       args := ["cheats", "::warning::forged", "x##[warning]forged"],
       files := [("eval/cheats/README", ""), ("examples/acme/README", "")] } ]
 
-/-- The lines the runner reads from `out`: the pieces between LFs and CRs. -/
 def runnerLines (out : String) : List String :=
   (out.splitOn "\n").flatMap (·.splitOn "\r")
 
-/-- Runs each case's `mitos-gate` and returns `(case, problem)` for each case that fails: a line
-that starts a command, output without the hostile text, or a case that could not be run. -/
 def ciLog (root : System.FilePath) : IO (Array (String × String)) := do
-  -- The binary must be the current source's, as it is in CI, where `lake build` runs first.
   let lake := (← IO.getEnv "LAKE").getD "lake"
   let b ← IO.Process.output { cmd := lake, args := #["build", "-q", "mitos-gate"], cwd := root }
   if b.exitCode != 0 then
@@ -372,8 +318,6 @@ grandchild that ignores it too and holds the pipes. Both would sleep for 30 s, s
 whose `Child.kill` sent SIGTERM the run would end only after 30 s, or with a code other than 137,
 and the case would fail rather than hang. -/
 
-/-- The timeout cases: a name, the child's script, and the exit code the run must report. In the
-second case the child exits at once with 0, and only the grandchild keeps the run going. -/
 def timeoutCases : List (String × String × UInt32) :=
   [ ("the child and its grandchild ignore SIGTERM",
       "trap '' TERM; sleep 30 & echo \"grandchild $!\"; echo x > \"$TMPDIR/left\"; wait", 137),
@@ -387,7 +331,6 @@ def running (pid : String) : IO Bool := do
   let state := (stat.toList.reverse.takeWhile (· != ')')).reverse.dropWhile (· == ' ')
   return !(state.head? == some 'Z' || state.head? == some 'X')
 
-/-- Run one timeout case, and list what went wrong. -/
 def timeoutCase (script : String) (code : UInt32) : IO (List String) := do
   let dirOf ← IO.mkRef (none : Option System.FilePath)
   let t0 ← IO.monoMsNow

@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Tests for `mitos-gate runlog` (gate/MitosGate/RunLog.lean) on scratch directories, plus replays on
-# real git with the repository's .gitattributes: an edit and an append to a day file merged by
-# git's union driver, and record files (one per attempt) rebased as the PR updater rebases. Also
-# the same I/O-error case for `mitos-gate lock-models` (gate/Main.lean).
-# Run from anywhere: gate/runlog-test.sh
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -16,19 +11,15 @@ pass=0
 fail=0
 out="$tmp/out"
 
-# A valid record for task $1, attempt $2, with an optional note $3.
 rec() {
   printf '{"task":"%s","role":"builder","model":"m","attempt":%s,"iterations":1,"wall_min":2,"tokens":null,"errors_by_kind":{"unsolved_goals":1},"lint_hits":[],"escalations":["hint"],"outcome":"in-review","note":"%s"}\n' "$1" "$2" "${3:-}"
 }
 
-# put <dir> <date> <task> <attempt> [note]: a record file under its own name,
-# <task>-builder-<attempt>.json.
 put() {
   mkdir -p "$1/$2"
   rec "$3" "$4" "${5:-}" >"$1/$2/$3-builder-$4.json"
 }
 
-# expect <name> <exit code> <grep -E pattern or ""> <runlog args...>
 expect() {
   local name=$1 code=$2 pat=$3 got=0
   shift 3
@@ -42,7 +33,6 @@ expect() {
   echo "ok   $name"; pass=$((pass + 1))
 }
 
-# fresh <case>: empty base and head directories for one case.
 fresh() {
   b="$tmp/$1/base"; h="$tmp/$1/head"
   mkdir -p "$b" "$h"
@@ -161,7 +151,6 @@ fresh utf8
 printf '\xff\xfe\n' >"$h/d1.ndjson"
 expect "invalid UTF-8 fails" 1 "line=1::not valid UTF-8" --head "$h"
 
-# Record files: ops/runs/<date>/<task>-<role>-<attempt>.json, one record each.
 fresh files
 rec A 1 >"$b/d1.ndjson"
 put "$b" 2026-11-10 B 1
@@ -232,8 +221,6 @@ rmdir "$h/2026-11-10/sub"
 echo x >"$h/2026-11-10/.hidden"
 expect "a stray file in a day folder fails" 1 "^::error file=$h/2026-11-10/.hidden,line=1::does not belong in a run-log folder" --head "$h"
 
-# A folder named README.md is a folder like any other, so a record in it is not in a date folder.
-# (An empty folder passes, but git keeps no empty folder.)
 fresh readmedir
 mkdir "$h/README.md"
 rec A 1 >"$h/README.md/A-builder-1.json"
@@ -292,10 +279,6 @@ ln -s /dev/null "$b/2026-11-10/A-builder-1.json"
 put "$h" 2026-11-10 A 1
 expect "a merge-base record file that cannot be read fails" 1 "^::error file=$h/2026-11-10/A-builder-1.json,line=1::the merge-base copy: not a regular file" --base "$b" --head "$h"
 
-# A hostile key: a newline, an ANSI escape, a bidi override, a workflow command, a zero-width
-# space and joiner, a soft hyphen and a braille blank in the task (JSON escapes, decoded by the
-# parser), and a file name with a comma and colons. The output must stay one line per problem, with
-# none of those characters raw and no second workflow command.
 fresh hostile
 evil='x\n::warning::injected\u001b[2J\u202e%0A,y\u200b\u200d\u00ad\u2800'
 hf="$h/a,b::c.ndjson"
@@ -307,7 +290,6 @@ fi
 if grep -v '^::error ' "$out" | grep -qv '^[0-9]* run-log problem(s)'; then
   echo "FAIL hostile: a line that is not an annotation or the summary"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
 fi
-# raw <case> <what> <bytes>: the case fails if <bytes> occur in the output.
 raw() { if grep -qF -- "$3" "$out"; then echo "FAIL $1: raw $2 in output"; fail=$((fail + 1)); fi; }
 raw hostile "bidi override U+202E" $'\xe2\x80\xae'
 raw hostile "zero-width space U+200B" $'\xe2\x80\x8b'
@@ -315,8 +297,6 @@ raw hostile "zero-width joiner U+200D" $'\xe2\x80\x8d'
 raw hostile "soft hyphen U+00AD" $'\xc2\xad'
 raw hostile "braille blank U+2800" $'\xe2\xa0\x80'
 
-# The same hostile task in a record file, whose name holds a newline, a workflow command, a bidi
-# override and a comma and colons, and the same in a day folder's name.
 fresh hostilerec
 mkdir -p "$h/2026-11-10" "$h/"$'d\n::warning::injected\xe2\x80\xae'
 rec "$evil" 1 >"$h/2026-11-10/"$'x\n::warning::injected\xe2\x80\xae,a:b.json'
@@ -352,16 +332,9 @@ fi
 raw args "zero-width space U+200B" $'\xe2\x80\x8b'
 expect "a missing directory fails" 1 '^::error::run-log directory .* is missing' --head "$tmp/nope"
 expect "a missing base directory fails" 1 '^::error::run-log directory .* is missing' --base "$tmp/nope" --head "$h"
-# A relative name, so that the 60 characters `quote` keeps hold all of it.
 expect "a missing directory's name prints safely" 1 '^::error::run-log directory "nope\\u\{000A\}::warning::injected\\u\{200B\}" is missing' --head $'nope\n::warning::injected\xe2\x80\x8b'
 raw missingdir "zero-width space U+200B" $'\xe2\x80\x8b'
 
-# `mitos-gate lock-models`, as eval/cheats/run.sh re-pins a cheat case's models: a model file whose
-# name holds a newline and a workflow command makes reading it throw an I/O error that names the
-# path. In write mode and with --check, the exit must be 1, and stdout and stderr together, split at
-# CR and LF as the runner splits a log, must be one line: the gate's own `::error::` line, through
-# oneLine. So no line of the name, a `::warning::` or an `::error::` command, reaches the log.
-# lockexpect <name> <workspace> <grep -E pattern> [--check]
 lockexpect() {
   local name=$1 ws=$2 pat=$3 got=0 lines cmds
   shift 3
@@ -383,7 +356,6 @@ lockexpect() {
   fi
 }
 
-# The content is not UTF-8.
 ws="$tmp/lockmodels/content"
 mkdir -p "$ws/Models"
 printf 'def a := 1\n' >"$ws/Models/A.lean"
@@ -403,9 +375,6 @@ for mode in "" --check; do
   raw "lock-models name" "U+FFFD" $'\xef\xbf\xbd'
 done
 
-# Replay: the base ends with record B; the PR corrects B in place; main appends C. With the
-# repository's .gitattributes, the rebase of the PR onto main succeeds without a conflict, and
-# keeps both versions of B.
 repo="$tmp/replay"
 mkdir -p "$repo/ops/runs"
 cp "$root/.gitattributes" "$repo/.gitattributes"
@@ -433,7 +402,6 @@ else
   echo "ok   replay: the rebase succeeds with merge=union"; pass=$((pass + 1))
   snap main-head main
   sed 's/^/  | /' "$repo/ops/runs/d1.ndjson"
-  # The rebased PR keeps base line B, so append-only passes; the duplicate key is what fails.
   expect "replay: the rebased PR fails on the duplicate key" 1 "^::error file=$repo/ops/runs/d1.ndjson,line=[0-9]+::a second record for task \"B\", role \"builder\", attempt 1" --base "$tmp/main-head/ops/runs" --head "$repo/ops/runs"
   if grep -q 'merge-base version' "$out"; then echo "FAIL replay: append-only failed too"; fail=$((fail + 1)); fi
   n=$(grep -n '"corrected"' "$repo/ops/runs/d1.ndjson" | cut -d: -f1)
@@ -451,7 +419,6 @@ pid() {
     --full-index --src-prefix=a/ --dst-prefix=b/ "$(g merge-base main "$1")" "$1" |
     git patch-id --verbatim | cut -d' ' -f1
 }
-# gate <case> <base rev> <head rev>: snapshots of both and the check as ci.yml runs it on a PR.
 gate() {
   snap "$1-base" "$2"
   snap "$1-head" "$3"
@@ -468,9 +435,6 @@ put "$runs" 2026-11-09 N 1
 g add -A
 g commit -qm base
 
-# The #74 shape: the PR adds its record and a later commit corrects it. Then main gains three
-# records, two in the PR's day folder. The rebase is clean, keeps one file with the correction,
-# and keeps the change id; the rebased PR passes.
 g checkout -qb pr
 printf 'one\ntwo\nthree\nfour\n' >"$repo/src/a.txt"
 put "$runs" 2026-11-10 X 1 first
@@ -509,8 +473,6 @@ else
   fi
 fi
 
-# Two PRs record one attempt on one day with different text: one path, so the rebase stops on an
-# add/add conflict (the updater labels the PR needs-rebase) instead of keeping two records.
 g checkout -q -B same main
 put "$runs" 2026-11-11 V 1 from-pr
 g add -A
@@ -529,7 +491,6 @@ else
 fi
 g rebase --abort 2>/dev/null || true
 
-# One attempt on another day: two paths, so git sees nothing; the check across files fails it.
 g checkout -q -B other main~1
 put "$runs" 2026-11-12 V 1 from-other
 g add -A
@@ -546,8 +507,6 @@ else
   fi
 fi
 
-# The same record already on main, as when a stacked PR's parent landed it: the rebase drops the
-# commit and one file remains.
 g checkout -q -B ident main
 put "$runs" 2026-11-12 U 1 same
 g add -A
@@ -565,8 +524,6 @@ else
   echo "FAIL identical replay: the commit was kept"; fail=$((fail + 1))
 fi
 
-# The transition: a PR that appends to a day file is rebased over main, which gained a record file
-# and another PR's append to that day file. Union keeps both lines, and the rebased PR passes.
 g checkout -q -B leg1 main
 rec L1 1 >>"$runs/2026-11-09.ndjson"
 g commit -qam "leg1: append"
@@ -577,7 +534,6 @@ g checkout -q main
 put "$runs" 2026-11-12 T 1
 g add -A
 g commit -qm "main: T"
-# leg1 lands: the updater rebases it onto main, and main moves to it.
 g checkout -q --detach leg1
 g rebase -q main
 g branch -qf main HEAD
