@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 
 command -v jq >/dev/null || exit 0
-hook_dir=${BASH_SOURCE[0]%/*}; [[ $hook_dir == "${BASH_SOURCE[0]}" ]] && hook_dir=.
-# shellcheck source-path=SCRIPTDIR source=hook-state.sh
-. "$hook_dir/hook-state.sh" || exit 0
 input=$(cat)
 
 note=''
-sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)
-if session_id_ok "$sid"; then
-  f=$(session_note_path "$sid")
-  [ -f "$f" ] && note=$(head -c 2000 "$f" | head -n 1)
+hook_dir=${BASH_SOURCE[0]%/*}; [[ $hook_dir == "${BASH_SOURCE[0]}" ]] && hook_dir=.
+# shellcheck source-path=SCRIPTDIR source=hook-state.sh
+if . "$hook_dir/hook-state.sh" 2>/dev/null; then
+  sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)
+  if session_id_ok "$sid" && state=$(hook_state_dir) && hook_state_private "$state"; then
+    note=$(state_read "$state" "$sid.note")
+  fi
 fi
 
 jq -c --arg note "$note" '

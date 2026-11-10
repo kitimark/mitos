@@ -740,4 +740,110 @@ proj=$fr HOOK_INPUT='{"session_id":"../../etc/x","hook_event_name":"SessionStart
 reject "a session id that is not a plain name is ignored" "Rule"
 if [ -e "$work/state/../../etc/x.sha" ] || [ -e "$work/etc" ]; then fail "a session id wrote outside the state dir"; else pass "a session id never names a path"; fi
 
+# The state folder holds text that reaches agent briefs, so it is used only when it is a private
+# folder of this user, and no state file is read or written through a symlink.
+srun() { # VAR=value... for the hook, then the hook input
+  out=$(env -u MITOS_HOOK_STATE -u XDG_RUNTIME_DIR FAKE_MODE=ok FAKE_DIR="$work" CLAUDE_PROJECT_DIR="$fr" \
+    PATH="$work/bin:$PATH" "${@:1:$#-1}" timeout 40 "$hook" 2>/dev/null <<<"${!#}")
+  code=$?
+}
+entries() { find "$1" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | paste -sd' ' -; }
+empty_dir() { # name, folder
+  local e
+  e=$(entries "$2")
+  if [ -z "$e" ]; then pass "$1"; else fail "$1: $e"; fi
+}
+same_text() { # name, file, wanted text
+  if [ "$(cat "$2")" = "$3" ]; then pass "$1"; else fail "$1: $(head -c 200 "$2")"; fi
+}
+refused="Rule freshness unknown: the hook state folder is not a private folder of this user"
+mkdir "$work/otheruser"
+printf '#!/bin/sh\necho %s\n' "$(($(id -u) + 1))" >"$work/otheruser/id"
+chmod +x "$work/otheruser/id"
+freset
+git -C "$fr" checkout -q "$A"
+
+srun MITOS_HOOK_STATE="$work/st" "$ss"
+expect "a private folder: the note is printed" "$fresh_line"
+reject "a private folder is not refused" "$refused"
+if [ -n "$(find "$work/st" -prune -perm 700)" ]; then pass "a missing folder is made with mode 700"; else fail "folder mode: $(ls -ld "$work/st")"; fi
+same_text "a private folder: the record is written" "$work/st/s1.sha" "$A"
+same_text "a private folder: the note is written" "$work/st/s1.note" "$fresh_line"
+if [ "$(entries "$work/st")" = "s1.note s1.sha" ]; then pass "no temp file is left"; else fail "left: $(entries "$work/st")"; fi
+
+mkdir -m 700 "$work/real"
+ln -s "$work/real" "$work/st-link"
+srun MITOS_HOOK_STATE="$work/st-link" "$ss"
+empty_dir "a symlinked folder is not written" "$work/real"
+expect "a symlinked folder is refused" "$refused"
+exit0 "a refused folder"
+expect "a refused folder: the PR state is still printed" "main ${B:0:7}; latest ci run on main"
+for end in / // /.; do
+  srun MITOS_HOOK_STATE="$work/st-link$end" "$ss"
+  empty_dir "a symlinked folder named with '$end' at the end is not written" "$work/real"
+done
+srun MITOS_HOOK_STATE="$work/st-link/.." "$ss"
+if [ -e "$work/s1.sha" ]; then fail "a folder named with '/..' at the end was written"; else pass "a folder named with '/..' at the end is not written"; fi
+
+mkdir "$work/st-g"; chmod 770 "$work/st-g"
+srun MITOS_HOOK_STATE="$work/st-g" "$ss"
+empty_dir "a group-writable folder is not written" "$work/st-g"
+expect "a group-writable folder is refused" "$refused"
+mkdir "$work/st-o"; chmod 1707 "$work/st-o"
+srun MITOS_HOOK_STATE="$work/st-o" "$ss"
+empty_dir "a folder others can write, sticky as /tmp, is not written" "$work/st-o"
+expect "a folder others can write is refused" "$refused"
+: >"$work/st-f"; chmod 600 "$work/st-f"
+srun MITOS_HOOK_STATE="$work/st-f" "$ss"
+expect "a file in place of the folder is refused" "$refused"
+
+mkdir -m 700 "$work/st-u"
+srun MITOS_HOOK_STATE="$work/st-u" PATH="$work/otheruser:$work/bin:$PATH" "$ss"
+empty_dir "a folder of another user is not written" "$work/st-u"
+expect "a folder of another user is refused" "$refused"
+if [ "$(id -u)" = 0 ]; then
+  mkdir -m 700 "$work/st-u2"; chown 65534 "$work/st-u2"
+  srun MITOS_HOOK_STATE="$work/st-u2" "$ss"
+  empty_dir "a folder chowned to another user is not written" "$work/st-u2"
+fi
+mkdir -m 700 "$work/rel"
+(cd "$work" && env -u XDG_RUNTIME_DIR FAKE_MODE=ok FAKE_DIR="$work" CLAUDE_PROJECT_DIR="$fr" PATH="$work/bin:$PATH" \
+  MITOS_HOOK_STATE=rel timeout 40 "$hook" >/dev/null 2>&1 <<<"$ss")
+empty_dir "a relative folder is not written" "$work/rel"
+
+mkdir -m 700 "$work/st-n"
+echo keep >"$work/victim-note"
+ln -s "$work/victim-note" "$work/st-n/s1.note"
+srun MITOS_HOOK_STATE="$work/st-n" "$ss"
+same_text "a symlinked note: its target is not written" "$work/victim-note" keep
+expect "a symlinked note: the freshness line is still printed" "$fresh_line"
+if [ -L "$work/st-n/s1.note" ]; then pass "a symlinked note is left as it is"; else fail "a symlinked note was replaced"; fi
+mkdir -m 700 "$work/st-h"
+echo keep >"$work/victim-hard"
+ln "$work/victim-hard" "$work/st-h/s1.note"
+srun MITOS_HOOK_STATE="$work/st-h" "$ss"
+same_text "a hard-linked note: the other name's file is not written" "$work/victim-hard" keep
+same_text "a hard-linked note: the note is written" "$work/st-h/s1.note" "$fresh_line"
+mkdir -m 700 "$work/st-d" "$work/st-d/s1.note"
+srun MITOS_HOOK_STATE="$work/st-d" "$ss"
+empty_dir "a folder named as the note: nothing is moved into it" "$work/st-d/s1.note"
+mkdir -m 700 "$work/st-s"
+echo keep >"$work/victim-sha"
+ln -s "$work/victim-sha" "$work/st-s/s1.sha"
+srun MITOS_HOOK_STATE="$work/st-s" "$ss"
+same_text "a symlinked record: its target is not written" "$work/victim-sha" keep
+mkdir -m 700 "$work/st-r"
+echo "$B" >"$work/planted-sha"
+ln -s "$work/planted-sha" "$work/st-r/s1.sha"
+srun MITOS_HOOK_STATE="$work/st-r" '{"session_id":"s1","hook_event_name":"UserPromptSubmit"}'
+expect "a symlinked record is not read" "$fresh_line"
+
+mkdir -p "$work/home" "$work/tmpd"
+srun HOME="$work/home" TMPDIR="$work/tmpd" "$ss"
+same_text "the default folder is under HOME/.cache" "$work/home/.cache/mitos-hook-state/s1.sha" "$A"
+empty_dir "the default folder is not under TMPDIR" "$work/tmpd"
+mkdir -m 700 "$work/xdg"
+srun XDG_RUNTIME_DIR="$work/xdg" HOME="$work/home2" "$ss"
+same_text "XDG_RUNTIME_DIR comes first" "$work/xdg/mitos-hook-state/s1.sha" "$A"
+
 exit "$failed"
