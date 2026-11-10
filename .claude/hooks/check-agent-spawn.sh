@@ -8,7 +8,7 @@ hook_dir=${BASH_SOURCE[0]%/*}; [[ $hook_dir == "${BASH_SOURCE[0]}" ]] && hook_di
 # shellcheck source-path=SCRIPTDIR source=hook-state.sh
 if . "$hook_dir/hook-state.sh" 2>/dev/null; then
   sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)
-  if session_id_ok "$sid" && state=$(hook_state_dir) && hook_state_private "$state"; then
+  if session_id_ok "$sid" && state=$(hook_state_dir) && state=$(hook_state_private "$state"); then
     note=$(state_read "$state" "$sid.note")
   fi
 fi
