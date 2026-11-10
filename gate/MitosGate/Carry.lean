@@ -34,8 +34,10 @@ GitHub's, and is not proved; a push missing from the list leaves a gap, which st
 
 namespace MitosGate.Carry
 
-open RunLog (quote splitLines)
+open RunLog (quote splitLines Message)
 open ContentId (logLine)
+
+private def msg (s : String) : Message := Message.ofString s
 
 def updater : String := "mitos-pr-updater[bot]"
 
@@ -47,9 +49,7 @@ structure Push where
   after : String
   deriving Repr, DecidableEq
 
-/-- A push a verdict can carry across: a force-push by the updater. Its rebase always rewrites
-the PR's commits, so it never makes a plain push. -/
-def Push.rebase (p : Push) : Bool := p.kind == "force_push" && p.actor == updater
+def Push.updaterForcePush (p : Push) : Bool := p.kind == "force_push" && p.actor == updater
 
 def tip (h : String) : List Push → Bool
   | [] => false
@@ -57,10 +57,10 @@ def tip (h : String) : List Push → Bool
 
 def walk (v : String) : String → List Push → Bool
   | cur, [] => cur == v
-  | cur, p :: ps => cur == v || (p.after == cur && p.rebase && walk v p.before ps)
+  | cur, p :: ps => cur == v || (p.after == cur && p.updaterForcePush && walk v p.before ps)
 
 theorem walk_iff {v h : String} {ps : List Push} :
-    walk v h ps = true ↔ ∃ pre rest, ps = pre ++ rest ∧ (∀ p ∈ pre, p.rebase = true) ∧
+    walk v h ps = true ↔ ∃ pre rest, ps = pre ++ rest ∧ (∀ p ∈ pre, p.updaterForcePush = true) ∧
       pre.map Push.after ++ [v] = h :: pre.map Push.before := by
   induction ps generalizing h with
   | nil =>
@@ -94,7 +94,7 @@ theorem walk_iff {v h : String} {ps : List Push} :
           ih.2 ⟨pre, rest, rfl, fun r hr => hpre r (List.mem_cons_of_mem _ hr), hm.2⟩⟩
 
 theorem walk_rebase {v h : String} {ps : List Push} (hw : walk v h ps = true) :
-    ∃ pre rest, ps = pre ++ rest ∧ ∀ p ∈ pre, p.rebase = true :=
+    ∃ pre rest, ps = pre ++ rest ∧ ∀ p ∈ pre, p.updaterForcePush = true :=
   let ⟨pre, rest, e, hr, _⟩ := walk_iff.1 hw
   ⟨pre, rest, e, hr⟩
 
@@ -118,27 +118,28 @@ def rebases (v : String) : String → List Push → Nat
   | _, [] => 0
   | cur, p :: ps => if cur == v then 0 else rebases v p.before ps + 1
 
-def why (v h : String) : List Push → String
-  | [] => "the activity route listed no push to the branch"
+def why (v h : String) : List Push → Message
+  | [] => msg "the activity route listed no push to the branch"
   | ps@(p :: _) =>
-    if p.after != h then s!"the branch's last push left it at {p.after}, not at the head {h}"
+    if p.after != h then msg s!"the branch's last push left it at {p.after}, not at the head {h}"
     else go h ps
 where
-  go (cur : String) : List Push → String
-    | [] => s!"the pushes listed end before the branch was at the verified head {v}"
+  go (cur : String) : List Push → Message
+    | [] => msg s!"the pushes listed end before the branch was at the verified head {v}"
     | p :: ps =>
-      if cur == v then "the pushes chain the head back to the verified head"
+      if cur == v then msg "the pushes chain the head back to the verified head"
       else if p.after != cur then
-        s!"the push of {p.time} left the branch at {p.after}, but the next push started from {cur}"
-      else if !p.rebase then
-        s!"the push of {p.time} from {p.before} to {p.after} is a {quote p.kind} by " ++
-          s!"{quote p.actor}, not a force_push by {updater}"
+        msg s!"the push of {p.time} left the branch at {p.after}, but the next push started from {cur}"
+      else if !p.updaterForcePush then
+        msg s!"the push of {p.time} from {p.before} to {p.after} is a " ++ quote p.kind ++
+          msg " by " ++ quote p.actor ++ msg s!", not a force_push by {updater}"
       else go p.before ps
 
-def parsePush (l : String) : Except String Push :=
+def parsePush (l : String) : Except Message Push :=
   match l.splitOn "\t" with
   | [t, k, a, b, af] => .ok ⟨t, k, a, b, af⟩
-  | _ => .error s!"a line is not a push (time, type, actor, before, after, tab-separated): {quote l}"
+  | _ => .error (msg "a line is not a push (time, type, actor, before, after, tab-separated): " ++
+      quote l)
 
 def check (base verified head : String) (ps : List Push) : ContentId.M String := do
   let v ← ContentId.resolve verified
@@ -147,7 +148,7 @@ def check (base verified head : String) (ps : List Push) : ContentId.M String :=
   let a ← ContentId.compute base v
   let b ← ContentId.compute base h
   unless a.id == b.id do
-    throw s!"the content id changed: {a.id} at the verified head {v}, {b.id} at the head {h}"
+    throw (msg s!"the content id changed: {a.id} at the verified head {v}, {b.id} at the head {h}")
   return s!"carry: {rebases v h ps} updater rebase(s) from {v} to {h}, content id {b.id}"
 
 def cli (args : List String) (usage : String) : IO UInt32 := do
@@ -157,15 +158,15 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
       let input ← (← IO.getStdin).readToEnd
       match (splitLines input).mapM parsePush with
       | .error e =>
-        IO.eprintln (logLine s!"no carry: {e}")
+        IO.eprintln (msg "no carry: " ++ e).ciLine
         return 1
       | .ok ps =>
         match ← (check base verified head ps).run with
-        | .ok msg =>
-          IO.println (logLine msg)
+        | .ok line =>
+          IO.println (logLine line)
           return 0
         | .error e =>
-          IO.eprintln (logLine s!"no carry: {e}")
+          IO.eprintln (msg "no carry: " ++ e).ciLine
           return 1
     catch e =>
       IO.eprintln (logLine s!"no carry: stopped on an I/O error: {e}")

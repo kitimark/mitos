@@ -122,6 +122,12 @@ theorem firstMissing?_spec {base head : List String} {i : Nat}
   | none => intro h; exact absurd h (by simp)
   | some l => intro h; exact ⟨l, rfl, of_decide_eq_true h⟩
 
+def missingIndex (base head : List String) (h : appendOnly base head = false) : Nat :=
+  match hfm : firstMissing? base head with
+  | some i => i
+  | none => False.elim <| nomatch (h.symm.trans (firstMissing?_eq_none_iff.mp hfm))
+
+
 structure Record where
   task : String
   role : String
@@ -243,15 +249,35 @@ def splitLines (s : String) : List String :=
     let ls := s.splitOn "\n"
     if s.endsWith "\n" then ls.dropLast else ls
 
+/-- Text that stays unprinted until `Message.oneLine` or `Message.ciLine` consumes it. -/
+structure Message where
+  private text : String
+  deriving Repr, Inhabited, DecidableEq
+
+namespace Message
+
+def ofString (s : String) : Message := ⟨s⟩
+
+instance : Append Message where
+  append a b := ⟨a.text ++ b.text⟩
+
+def oneLine (m : Message) : String := MitosGate.oneLine m.text
+
+def ciLine (m : Message) : String := MitosGate.ciLine m.text
+
+end Message
+
 /-- `s` quoted for a message: `"` and `\` are escaped with `\`, and only the first `max` characters
-are kept. It does not sanitize: every message is printed through `oneLine`. -/
-def quote (s : String) (max : Nat := 60) : String :=
+are kept. -/
+def quote (s : String) (max : Nat := 60) : Message :=
   let cs := s.toList
   let esc (acc : String) (c : Char) : String :=
     if c == '"' then acc ++ "\\\""
     else if c == '\\' then acc ++ "\\\\"
     else acc.push c
-  "\"" ++ (cs.take max).foldl esc "" ++ (if cs.length > max then "\"..." else "\"")
+  Message.ofString ("\"" ++ (cs.take max).foldl esc "" ++ (if cs.length > max then "\"..." else "\""))
+
+private def m (s : String) : Message := Message.ofString s
 
 /-- GitHub's escaping for the message of a workflow command. Written character by character, not
 with `String.replace`, so that the kernel can evaluate `Problem.render` in the examples below. -/
@@ -272,19 +298,19 @@ def escapeProperty (s : String) : String :=
 structure Problem where
   file : String
   line : Nat
-  msg : String
+  msg : Message
 
 def Problem.render (p : Problem) : String :=
-  s!"::error file={escapeProperty (oneLine p.file)},line={p.line}::{escapeData (oneLine p.msg)}"
+  s!"::error file={escapeProperty (oneLine p.file)},line={p.line}::{escapeData p.msg.oneLine}"
 
 example : (Problem.mk "ops/runs/d\u200b1.ndjson" 4
-      s!"a second record for task {quote "B\u200d\u00ad\u2800"}, role {quote "builder"}").render =
+      (m "a second record for task " ++ quote "B\u200d\u00ad\u2800" ++ m ", role " ++ quote "builder")).render =
     "::error file=ops/runs/d\\u{200B}1.ndjson,line=4::a second record for task " ++
       "\"B\\u{200D}\\u{00AD}\\u{2800}\", role \"builder\"" := by
   decide
 
 example : (Problem.mk "ops/runs/a,b::c.ndjson" 2
-      s!"task {quote "x\n::warning::injected\x1b[2J\u202e%0A,y"}").render =
+      (m "task " ++ quote "x\n::warning::injected\x1b[2J\u202e%0A,y")).render =
     "::error file=ops/runs/a%2Cb%3A%3Ac.ndjson,line=2::task " ++
       "\"x\\u{000A}::warning::injected\\u{001B}[2J\\u{202E}%250A,y\"" := by
   decide
@@ -362,28 +388,28 @@ theorem singleLine?_spec {s l : String} (h : singleLine? s = some l) :
     obtain ⟨h1, h2, h3⟩ := key _ h
     exact ⟨h1 ▸ h2, h1 ▸ h3, Or.inl h1.symm⟩
 
-def recordFile (parse : String → Except String Record) (name text : String) :
-    Except String Record :=
+def recordFile (parse : String → Except Message Record) (name text : String) :
+    Except Message Record :=
   match singleLine? text with
-  | none => .error ("a record file holds one record on one line; this one is empty or has " ++
-      "more lines (ops/runs/README.md)")
+  | none => .error (m ("a record file holds one record on one line; this one is empty or has " ++
+      "more lines (ops/runs/README.md)"))
   | some l =>
     match parse l with
     | .error e => .error e
     | .ok r =>
       if safeTask r.task = false then
-        .error s!"task {quote r.task} must start with a letter or a digit and hold only letters, \
-          digits, '.', '_' and '-', because it names the file"
+        .error (m "task " ++ quote r.task ++ m " must start with a letter or a digit and hold only letters, \
+          digits, '.', '_' and '-', because it names the file")
       else if safeRole r.role = false then
-        .error s!"role {quote r.role} must not be empty and must hold only letters, digits, \
-          '.', '_' and '-', because it names the file"
+        .error (m "role " ++ quote r.role ++ m " must not be empty and must hold only letters, digits, \
+          '.', '_' and '-', because it names the file")
       else if name = fileName r.key then .ok r
       else
-        .error s!"the file must be named {quote (fileName r.key) 120}, from its record's task, \
+        .error (m "the file must be named " ++ quote (fileName r.key) 120 ++ m ", from its record's task, \
           role and attempt, so that two records for one attempt on one day are one path \
-          (ops/runs/README.md)"
+          (ops/runs/README.md)")
 
-theorem recordFile_ok {parse : String → Except String Record} {name text : String} {r : Record}
+theorem recordFile_ok {parse : String → Except Message Record} {name text : String} {r : Record}
     (h : recordFile parse name text = .ok r) :
     (∃ l, singleLine? text = some l ∧ parse l = .ok r) ∧ safeTask r.task = true ∧
       safeRole r.role = true ∧ name = fileName r.key := by
@@ -431,11 +457,11 @@ structure Tree where
 def linesOf (t : Tree) (n : String) : List String :=
   ((t.days.find? (·.1 == n)).map (·.2)).getD []
 
-def records (parse : String → Except String Record) (t : Tree) : List Record :=
+def records (parse : String → Except Message Record) (t : Tree) : List Record :=
   t.days.flatMap (fun d => d.2.filterMap fun l => (parse l).toOption) ++
     t.files.filterMap fun f => (recordFile parse f.2.1 f.2.2).toOption
 
-def lineRecords (parse : String → Except String Record) (f : String) :
+def lineRecords (parse : String → Except Message Record) (f : String) :
     Nat → List String → List (String × Nat × Record)
   | _, [] => []
   | i, l :: ls =>
@@ -443,7 +469,7 @@ def lineRecords (parse : String → Except String Record) (f : String) :
     | .ok r => (f, i, r) :: lineRecords parse f (i + 1) ls
     | .error _ => lineRecords parse f (i + 1) ls
 
-def lineErrors (parse : String → Except String Record) (f : String) :
+def lineErrors (parse : String → Except Message Record) (f : String) :
     Nat → List String → List Problem
   | _, [] => []
   | i, l :: ls =>
@@ -451,7 +477,7 @@ def lineErrors (parse : String → Except String Record) (f : String) :
     | .ok _ => lineErrors parse f (i + 1) ls
     | .error e => ⟨f, i, e⟩ :: lineErrors parse f (i + 1) ls
 
-def located (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
+def located (parse : String → Except Message Record) (dir : System.FilePath) (t : Tree) :
     List (String × Nat × Record) :=
   t.days.flatMap (fun d => lineRecords parse (dir / d.1).toString 1 d.2) ++
     t.files.filterMap fun f =>
@@ -459,7 +485,7 @@ def located (parse : String → Except String Record) (dir : System.FilePath) (t
       | .ok r => some ((dir / f.1 / f.2.1).toString, 1, r)
       | .error _ => none
 
-theorem lineRecords_map (parse : String → Except String Record) (f : String) (i : Nat)
+theorem lineRecords_map (parse : String → Except Message Record) (f : String) (i : Nat)
     (ls : List String) :
     (lineRecords parse f i ls).map (·.2.2) = ls.filterMap fun l => (parse l).toOption := by
   induction ls generalizing i with
@@ -468,7 +494,7 @@ theorem lineRecords_map (parse : String → Except String Record) (f : String) (
     simp only [lineRecords, List.filterMap_cons]
     cases parse l <;> simp [Except.toOption, ih]
 
-theorem located_map (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
+theorem located_map (parse : String → Except Message Record) (dir : System.FilePath) (t : Tree) :
     (located parse dir t).map (·.2.2) = records parse t := by
   simp only [located, records, List.map_append, List.map_flatMap, lineRecords_map,
     List.map_filterMap]
@@ -477,7 +503,7 @@ theorem located_map (parse : String → Except String Record) (dir : System.File
   funext f
   cases recordFile parse f.2.1 f.2.2 <;> rfl
 
-theorem lineErrors_eq_nil {parse : String → Except String Record} {f : String} {i : Nat}
+theorem lineErrors_eq_nil {parse : String → Except Message Record} {f : String} {i : Nat}
     {ls : List String} (h : lineErrors parse f i ls = []) : ∀ l ∈ ls, ∃ r, parse l = .ok r := by
   induction ls generalizing i with
   | nil => simp
@@ -491,72 +517,76 @@ theorem lineErrors_eq_nil {parse : String → Except String Record} {f : String}
       · exact ih h x hx
     · cases h
 
-def fileProblem (parse : String → Except String Record) (dir : System.FilePath)
+def fileProblem (parse : String → Except Message Record) (dir : System.FilePath)
     (f : String × String × String) : Option Problem :=
   let p := (dir / f.1 / f.2.1).toString
   if isDate f.1 = false then
-    some ⟨p, 1, "a record file must be in a folder named by its date, YYYY-MM-DD " ++
-      "(ops/runs/README.md)"⟩
+    some ⟨p, 1, m ("a record file must be in a folder named by its date, YYYY-MM-DD " ++
+      "(ops/runs/README.md)")⟩
   else
     match recordFile parse f.2.1 f.2.2 with
     | .ok _ => none
     | .error e => some ⟨p, 1, e⟩
 
-def parseProblems (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
+def parseProblems (parse : String → Except Message Record) (dir : System.FilePath) (t : Tree) :
     List Problem :=
   t.days.flatMap (fun d => lineErrors parse (dir / d.1).toString 1 d.2) ++
     t.files.filterMap (fileProblem parse dir)
 
-def keyText (r : Record) : String :=
-  s!"task {quote r.task}, role {quote r.role}, attempt {r.attempt}"
+def keyText (r : Record) : Message :=
+  m "task " ++ quote r.task ++ m ", role " ++ quote r.role ++ m s!", attempt {r.attempt}"
 
-def dupProblems (parse : String → Except String Record) (dir : System.FilePath) (t : Tree) :
+def dupProblems (parse : String → Except Message Record) (dir : System.FilePath) (t : Tree) :
     List Problem :=
   let recs := located parse dir t
-  match dupAt? (recs.map fun x => x.2.2.key) with
+  let keys := recs.map fun x => x.2.2.key
+  match hdup : dupAt? keys with
   | none => []
   | some (i, j) =>
-    -- The positions are in `recs`, and hold one key, by `dupAt?_spec`.
-    let (fi, li, r) := recs[i]!
-    let (fj, lj, _) := recs[j]!
-    [⟨fj, lj, s!"a second record for {keyText r}; the first is at {fi}:{li}. An attempt has " ++
-      "one record: a correction goes in the next attempt's record. Union keeps both versions " ++
-      "of an edited day-file line (ops/runs/README.md)"⟩]
+    have hi' : i < recs.length := by
+      rcases dupAt?_spec hdup with ⟨_, _, hi, _⟩
+      simpa [keys, List.length_map] using (List.getElem?_eq_some_iff.mp hi).1
+    have hj' : j < recs.length := by
+      rcases dupAt?_spec hdup with ⟨_, _, _, hj⟩
+      simpa [keys, List.length_map] using (List.getElem?_eq_some_iff.mp hj).1
+    match recs[i], recs[j] with
+    | (fi, li, r), (fj, lj, _) =>
+      [⟨fj, lj, m "a second record for " ++ keyText r ++
+        m s!"; the first is at {fi}:{li}. An attempt has one record: a correction goes in the next attempt's record. Union keeps both versions of an edited day-file line (ops/runs/README.md)"⟩]
 
 def keptProblems (dir : System.FilePath) (b h : Tree) : List Problem :=
   b.days.filterMap (fun d =>
+    let lines := d.2
     let hl := linesOf h d.1
-    if appendOnly d.2 hl then none
+    if honly : appendOnly lines hl = true then none
     else
-      -- `some` here, by `firstMissing?_eq_none_iff`; the line it names is right by
-      -- `firstMissing?_spec`.
-      let i := (firstMissing? d.2 hl).getD 0
+      let i := missingIndex lines hl (by simpa using honly)
       let what := if h.days.any (·.1 == d.1) then "is missing from this file" else
         "is missing: the file was deleted"
-      some ⟨(dir / d.1).toString, i + 1, s!"line {i + 1} of the merge-base version {what}. " ++
-        "Run-log lines are append-only: a line already on the base branch may not be edited " ++
-        "or deleted (ops/runs/README.md)"⟩) ++
+      some ⟨(dir / d.1).toString, i + 1, m s!"line {i + 1} of the merge-base version {what}. " ++
+        m "Run-log lines are append-only: a line already on the base branch may not be edited " ++
+        m "or deleted (ops/runs/README.md)"⟩) ++
   h.days.filterMap (fun d =>
     if b.days.any (·.1 == d.1) then none
-    else some ⟨(dir / d.1).toString, 1, "a new day file. Each attempt's record goes in its own " ++
-      "file, ops/runs/<date>/<task>-<role>-<attempt>.json (ops/runs/README.md)"⟩) ++
+    else some ⟨(dir / d.1).toString, 1, m ("a new day file. Each attempt's record goes in its own " ++
+      "file, ops/runs/<date>/<task>-<role>-<attempt>.json (ops/runs/README.md)")⟩) ++
   b.files.filterMap (fun f =>
     if h.files.contains f then none
     else
       let what := if h.files.any (fun g => g.1 == f.1 && g.2.1 == f.2.1) then "was changed" else
         "was deleted"
-      some ⟨(dir / f.1 / f.2.1).toString, 1, s!"this record file is on the base branch and " ++
-        s!"{what}. A record file never changes once it is on main: a correction goes in the " ++
-        "note of the next attempt's record (ops/runs/README.md)"⟩)
+      some ⟨(dir / f.1 / f.2.1).toString, 1, m s!"this record file is on the base branch and " ++
+        m s!"{what}. A record file never changes once it is on main: a correction goes in the " ++
+        m "note of the next attempt's record (ops/runs/README.md)"⟩)
 
-def problems (parse : String → Except String Record) (dir : System.FilePath) (base : Option Tree)
+def problems (parse : String → Except Message Record) (dir : System.FilePath) (base : Option Tree)
     (head : Tree) : List Problem :=
   parseProblems parse dir head ++ dupProblems parse dir head ++
     match base with
     | some b => keptProblems dir b head
     | none => []
 
-theorem parseProblems_eq_nil {parse : String → Except String Record} {dir : System.FilePath}
+theorem parseProblems_eq_nil {parse : String → Except Message Record} {dir : System.FilePath}
     {t : Tree} (h : parseProblems parse dir t = []) :
     (∀ d ∈ t.days, ∀ l ∈ d.2, ∃ r, parse l = .ok r) ∧
       (∀ f ∈ t.files, isDate f.1 = true ∧ ∃ r, recordFile parse f.2.1 f.2.2 = .ok r) := by
@@ -574,7 +604,7 @@ theorem parseProblems_eq_nil {parse : String → Except String Record} {dir : Sy
       exact ⟨r, hr⟩
     · cases hp
 
-theorem dupProblems_eq_nil {parse : String → Except String Record} {dir : System.FilePath}
+theorem dupProblems_eq_nil {parse : String → Except Message Record} {dir : System.FilePath}
     {t : Tree} (h : dupProblems parse dir t = []) : noDupKeys (records parse t) = true := by
   dsimp only [dupProblems] at h
   split at h
@@ -604,7 +634,7 @@ theorem keptProblems_eq_nil {dir : System.FilePath} {b h : Tree} (hk : keptProbl
     · exact List.contains_iff_mem.mp (by assumption)
     · cases this
 
-theorem records_kept (parse : String → Except String Record) {b h : Tree}
+theorem records_kept (parse : String → Except Message Record) {b h : Tree}
     (hdays : ∀ d ∈ b.days, appendOnly d.2 (linesOf h d.1) = true)
     (hfiles : ∀ f ∈ b.files, f ∈ h.files) :
     ∀ r ∈ records parse b, r ∈ records parse h := by
@@ -623,7 +653,7 @@ theorem records_kept (parse : String → Except String Record) {b h : Tree}
       exact ⟨d', List.mem_of_find?_eq_some hfind, l, hlh, hp⟩
   · exact Or.inr ⟨f, hfiles f hf, hp⟩
 
-theorem problems_eq_nil (parse : String → Except String Record) (dir : System.FilePath)
+theorem problems_eq_nil (parse : String → Except Message Record) (dir : System.FilePath)
     {base : Option Tree} {h : Tree} (hp : problems parse dir base h = []) :
     noDupKeys (records parse h) = true ∧
       (∀ d ∈ h.days, ∀ l ∈ d.2, ∃ r, parse l = .ok r) ∧
@@ -674,27 +704,27 @@ private def isNatObject : Json → Bool
   | .obj kvs => kvs.all fun _ v => isNat v
   | _ => false
 
-def parseRecord (line : String) : Except String Record := do
+def parseRecord (line : String) : Except Message Record := do
   let j ← match Lean.Json.parse line with
     | .ok j => pure j
-    | .error e => throw s!"the line is not valid JSON ({quote e})"
-  unless isObj j do throw "the line is not a JSON object"
-  let get (k : String) : Except String Lean.Json :=
+    | .error e => throw (m "the line is not valid JSON (" ++ quote e ++ m ")")
+  unless isObj j do throw (m "the line is not a JSON object")
+  let get (k : String) : Except Message Lean.Json :=
     match j.getObjVal? k with
     | .ok v => pure v
-    | .error _ => throw s!"field {quote k} is missing"
-  let want (k ty : String) (ok : Lean.Json → Bool) : Except String Unit := do
-    unless ok (← get k) do throw s!"field {quote k} must be {ty}"
-  let str (k : String) : Except String String := do
+    | .error _ => throw (m "field " ++ quote k ++ m " is missing")
+  let want (k ty : String) (ok : Lean.Json → Bool) : Except Message Unit := do
+    unless ok (← get k) do throw (m "field " ++ quote k ++ m s!" must be {ty}")
+  let str (k : String) : Except Message String := do
     match ← get k with
     | .str s => pure s
-    | _ => throw s!"field {quote k} must be a string"
+    | _ => throw (m "field " ++ quote k ++ m " must be a string")
   let task ← str "task"
   let role ← str "role"
   let _ ← str "model"
   let attempt ← match (← get "attempt").getNat? with
     | .ok n => pure n
-    | .error _ => throw s!"field {quote "attempt"} must be a natural number"
+    | .error _ => throw (m "field " ++ quote "attempt" ++ m " must be a natural number")
   want "iterations" "a natural number" isNat
   want "wall_min" "a natural number" isNat
   want "tokens" "a natural number or null" fun v => isNat v || v.isNull
@@ -703,9 +733,10 @@ def parseRecord (line : String) : Except String Record := do
   want "escalations" "an array of strings" isStrArray
   let outcome ← str "outcome"
   unless outcomes.contains outcome do
-    throw s!"field {quote "outcome"} is {quote outcome}, not one of {", ".intercalate outcomes}"
+    throw (m "field " ++ quote "outcome" ++ m " is " ++ quote outcome ++
+      m s!", not one of {", ".intercalate outcomes}")
   if let .ok v := j.getObjVal? "note" then
-    unless isStr v do throw s!"field {quote "note"} must be a string"
+    unless isStr v do throw (m "field " ++ quote "note" ++ m " must be a string")
   return { task, role, attempt }
 
 def readText (path : System.FilePath) : IO (Except String String) := do
@@ -737,28 +768,29 @@ def readTree (dir shown : System.FilePath) (isBase : Bool) :
     if n.endsWith ".ndjson" then
       match ← readLines p with
       | .ok ls => days := days.push (n, ls)
-      | .error err => ps := ps.push ⟨f, 1, pre ++ err⟩; bad := bad.push f
+      | .error err => ps := ps.push ⟨f, 1, m (pre ++ err)⟩; bad := bad.push f
     else if ty == .dir then
       for e' in ← sortedEntries p do
         let q := (shown / n / e'.fileName).toString
         if e'.fileName.endsWith ".json" then
           match ← readText (p / e'.fileName) with
           | .ok s => files := files.push (n, e'.fileName, s)
-          | .error err => ps := ps.push ⟨q, 1, pre ++ err⟩; bad := bad.push q
+          | .error err => ps := ps.push ⟨q, 1, m (pre ++ err)⟩; bad := bad.push q
         else unless isBase do
-          ps := ps.push ⟨q, 1, "does not belong in a run-log folder, which holds only record " ++
-            "files <task>-<role>-<attempt>.json (ops/runs/README.md)"⟩
+          ps := ps.push ⟨q, 1, m ("does not belong in a run-log folder, which holds only record " ++
+            "files <task>-<role>-<attempt>.json (ops/runs/README.md)")⟩
     else unless isBase || (n == "README.md" && ty == .file) do
-      ps := ps.push ⟨f, 1, "does not belong in the run log, which holds README.md, the day files " ++
-        "<date>.ndjson and the folders <date>/ of record files (ops/runs/README.md)"⟩
+      ps := ps.push ⟨f, 1, m ("does not belong in the run log, which holds README.md, the day files " ++
+        "<date>.ndjson and the folders <date>/ of record files (ops/runs/README.md)")⟩
   return ({ days := days.toList, files := files.toList }, ps, bad)
 
 def check (base : Option System.FilePath) (head : System.FilePath) : IO UInt32 := do
   for d in base.toList ++ [head] do
     let isDir ← try pure ((← d.symlinkMetadata).type == .dir) catch _ => pure false
     unless isDir do
-      let msg := s!"run-log directory {quote d.toString} is missing, or is not a plain directory"
-      IO.println s!"::error::{escapeData (oneLine msg)}"
+      let msg := m "run-log directory " ++ quote d.toString ++
+        m " is missing, or is not a plain directory"
+      IO.println s!"::error::{escapeData msg.oneLine}"
       return 1
   let (h, hps, hbad) ← readTree head head false
   let mut ps := hps
@@ -781,11 +813,11 @@ def check (base : Option System.FilePath) (head : System.FilePath) : IO UInt32 :
   return 1
 
 def parseArgs : List String → Option String → Option String →
-    Except String (Option String × Option String)
+    Except Message (Option String × Option String)
   | [], b, h => .ok (b, h)
   | "--base" :: v :: rest, _, h => parseArgs rest (some v) h
   | "--head" :: v :: rest, b, _ => parseArgs rest b (some v)
-  | a :: _, _, _ => .error s!"unknown or incomplete argument {quote a}"
+  | a :: _, _, _ => .error (m "unknown or incomplete argument " ++ quote a)
 
 /-- `check`, but an I/O error it throws is printed as one `::error::` line through `oneLine`, with
 exit 1. The Lean runtime would print an uncaught one raw, and the error names the path it failed
@@ -800,6 +832,6 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
       IO.println s!"::error::{escapeData (oneLine msg)}"
       return 1
   | .ok (_, none) => IO.eprintln "runlog needs --head <dir>"; IO.eprintln usage; return 2
-  | .error e => IO.eprintln (ciLine e); IO.eprintln usage; return 2
+  | .error e => IO.eprintln e.ciLine; IO.eprintln usage; return 2
 
 end MitosGate.RunLog

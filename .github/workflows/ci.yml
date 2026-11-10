@@ -31,28 +31,30 @@ jobs:
           CONFIRM_SECONDS: 10
         run: |
           set -euo pipefail
-          read -r wf own_head branch < <(gh api "repos/$REPO/actions/runs/$RUN_ID" \
-            --jq '"\(.workflow_id) \(.head_sha) \(.head_branch)"')
-          runs="$RUNNER_TEMP/unfinished-runs"
-          gh api --paginate -X GET "repos/$REPO/actions/workflows/$wf/runs" \
-            -f event=pull_request -f branch="$branch" -f per_page=100 \
-            | jq -r --arg branch "$branch" --arg repo "$REPO" '.workflow_runs[]
-                | select(.status != "completed" and .event == "pull_request"
-                    and .head_branch == $branch and .head_repository.full_name == $repo)
-                | "\(.id) \(.head_sha)"' > "$runs"
-          echo "Unfinished runs of $branch (run id, head):"; cat "$runs"
-
-          pr_now() { gh api "repos/$REPO/pulls/$PR" --jq '"\(.state) \(.head.sha)"'; }
+          read_unfinished_runs() {
+            read -r wf own_head branch < <(gh api "repos/$REPO/actions/runs/$RUN_ID" \
+              --jq '"\(.workflow_id) \(.head_sha) \(.head_branch)"')
+            runs="$RUNNER_TEMP/unfinished-runs"
+            gh api --paginate -X GET "repos/$REPO/actions/workflows/$wf/runs" \
+              -f event=pull_request -f branch="$branch" -f per_page=100 \
+              | jq -r --arg branch "$branch" --arg repo "$REPO" '.workflow_runs[]
+                  | select(.status != "completed" and .event == "pull_request"
+                      and .head_branch == $branch and .head_repository.full_name == $repo)
+                  | "\(.id) \(.head_sha)"' > "$runs"
+            echo "Unfinished runs of $branch (run id, head):"; cat "$runs"
+          }
+          read_pr_state_and_head() { gh api "repos/$REPO/pulls/$PR" --jq '"\(.state) \(.head.sha)"'; }
+          read_unfinished_runs
           stale_runs() {
             awk -v h="$1" -v own="$own_head" '$2 != h { n++ } END { exit !(n || own != h) }' "$runs"
           }
-          pr=$(pr_now); confirmed=
+          pr=$(read_pr_state_and_head); confirmed=
           for _ in 1 2 3; do
             if [ "${pr%% *}" = open ] && ! stale_runs "${pr#* }"; then
               echo "Every unfinished run is at the current head ${pr#* }."; exit 0
             fi
             sleep "$CONFIRM_SECONDS"
-            next=$(pr_now)
+            next=$(read_pr_state_and_head)
             if [ "$next" = "$pr" ]; then confirmed=1; break; fi
             echo "The PR moved from $pr to $next between two reads; reading again."
             pr=$next
@@ -60,7 +62,7 @@ jobs:
           if [ -z "$confirmed" ]; then echo "::notice::The PR kept changing; no run cancelled."; exit 0; fi
           state=${pr%% *} head=${pr#* }
 
-          if [ "$state" != open ]; then
+          cancel_when_pr_closed() {
             open_heads=$(gh api -X GET "repos/$REPO/pulls" -f state=open \
               -f head="${REPO%%/*}:$branch" -f per_page=100 --jq '.[].head.sha')
             if grep -qxF "$own_head" <<< "$open_heads"; then
@@ -70,22 +72,25 @@ jobs:
             echo "Cancel this run ($RUN_ID): PR #$PR is $state; no other run is judged."
             gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/cancel" --silent
             exit 0
-          fi
-
-          failed=0
-          while read -r id sha <&3; do
-            if [ "$sha" = "$head" ] || [ "$id" = "$RUN_ID" ]; then continue; fi
-            echo "Cancel run $id: its head $sha is not the current head $head."
-            if ! gh api -X POST "repos/$REPO/actions/runs/$id/cancel" --silent; then
-              # A run that finished after the listing cannot be cancelled any more; that is not a failure.
-              if [ "$(gh api "repos/$REPO/actions/runs/$id" --jq .status)" != completed ]; then failed=1; fi
+          }
+          cancel_runs_whose_head_differs() {
+            failed=0
+            while read -r id sha <&3; do
+              if [ "$sha" = "$head" ] || [ "$id" = "$RUN_ID" ]; then continue; fi
+              echo "Cancel run $id: its head $sha is not the current head $head."
+              if ! gh api -X POST "repos/$REPO/actions/runs/$id/cancel" --silent; then
+                # A run that finished after the listing cannot be cancelled any more; that is not a failure.
+                if [ "$(gh api "repos/$REPO/actions/runs/$id" --jq .status)" != completed ]; then failed=1; fi
+              fi
+            done 3< "$runs"
+            if [ "$own_head" != "$head" ]; then
+              echo "Cancel this run ($RUN_ID): its head $own_head is not the current head $head."
+              gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/cancel" --silent
             fi
-          done 3< "$runs"
-          if [ "$own_head" != "$head" ]; then
-            echo "Cancel this run ($RUN_ID): its head $own_head is not the current head $head."
-            gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/cancel" --silent
-          fi
-          exit "$failed"
+            exit "$failed"
+          }
+          if [ "$state" != open ]; then cancel_when_pr_closed; fi
+          cancel_runs_whose_head_differs
 
   gate:
     runs-on: ubuntu-24.04
@@ -206,7 +211,7 @@ jobs:
           rm -rf .lake/cheats
           start=$SECONDS
           set +e
-          .lake/build/bin/mitos-gate cheats
+          lake exe mitos-gate cheats
           status=$?
           set -e
           echo "mitos-gate cheats: $((SECONDS - start)) s on $(nproc) vCPU, $(free -g | awk '/^Mem:/ {print $2}') GiB"

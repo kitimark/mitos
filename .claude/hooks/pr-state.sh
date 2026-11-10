@@ -270,7 +270,7 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
   [$cl[] | {n: (.number | num), closed: (.closed_at | tsn), merged: (.merged_at | tsn),
             upd: (.updated_at | ts), sha: (.head.sha | hex)}] as $cp |
   ([$cp[] | select(.closed != null and .closed >= $cutoff)] | sort_by([.closed, .n]) | reverse) as $c |
-  (($cp | length) >= $pp and $cp[-1].upd >= $cutoff) as $maybe_more |
+  (($cp | length) >= $pp and $cp[-1].upd >= $cutoff) as $closed_page_may_hold_more |
   (if ($runs | length) == 0 then "none"
    else $runs[0] | "\(.status | clean)/\(.conclusion | if . == null then "-" else clean end) head \(.head_sha | hex)" end) as $cirun |
 
@@ -305,7 +305,7 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
    else $c[0:8][] |
      "\(if .merged != null then "merged" else "closed" end) #\(.n) at \((.merged // .closed) | hm) head \(.sha)"
    end),
-  (if ($c | length) > 8 or $maybe_more then "(more not listed)" else empty end),
+  (if ($c | length) > 8 or $closed_page_may_hold_more then "(more not listed)" else empty end),
   "main \($m); latest ci run on main: \($cirun)"
 ' 2>/dev/null) || unavailable "unexpected JSON from gh"
 

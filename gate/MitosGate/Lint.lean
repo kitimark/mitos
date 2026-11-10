@@ -12,7 +12,7 @@ structure Token where
 inductive Rule where
   | parse | parseStop | parseHeader
   | importModule | importPrelude | importModifier | importComponent | importRoot | importSyntax
-  | hash | setOption | banned (token : String)
+  | hash | setOption | includeStr | banned (token : String)
   | modelCommand | modelSection | modelModifier | modelDeclaration | modelClass | modelAttribute
   | modelComputedFields | modelDeriving
   deriving BEq, Repr
@@ -29,6 +29,7 @@ def Rule.id : Rule → String
   | .importSyntax => "import:syntax"
   | .hash => "hash"
   | .setOption => "set_option"
+  | .includeStr => "include_str"
   | .banned t => "banned:" ++ t
   | .modelCommand => "model:command"
   | .modelSection => "model:section"
@@ -41,7 +42,8 @@ def Rule.id : Rule → String
 
 def Rule.fixed : List Rule :=
   [ .parse, .parseStop, .parseHeader, .importModule, .importPrelude, .importModifier,
-    .importComponent, .importRoot, .importSyntax, .hash, .setOption, .modelCommand, .modelSection,
+    .importComponent, .importRoot, .importSyntax, .hash, .setOption, .includeStr, .modelCommand,
+    .modelSection,
     .modelModifier, .modelDeclaration, .modelClass, .modelAttribute, .modelComputedFields,
     .modelDeriving ]
 
@@ -144,6 +146,9 @@ def importRules (fm : FileMap) (header : Syntax) (allowedImports : List String)
     | stx => vs := vs.push <| at_ imp .importSyntax s!"import of `{stx}` is not allowed"
   return vs
 
+def keepHashExitDropEoi (cmd : Syntax) : Bool :=
+  !cmd.isOfKind ``Parser.Command.eoi
+
 def parse (env : Environment) (src : String) :
     IO (Except Violation (FileMap × Syntax × Array Syntax)) := do
   let ictx := Parser.mkInputContext src "<source>"
@@ -157,8 +162,7 @@ def parse (env : Environment) (src : String) :
     let (cmd, st', msgs') := Parser.parseCommand ictx pctx st msgs
     st := st'
     msgs := msgs'
-    -- `#exit` is terminal too; keep it, so the rules see it.
-    unless cmd.isOfKind ``Parser.Command.eoi do cmds := cmds.push cmd
+    if keepHashExitDropEoi cmd then cmds := cmds.push cmd
     if Parser.isTerminalCommand cmd then
       unless cmd.isOfKind ``Parser.Command.eoi || cmd.isOfKind ``Parser.Command.exit do
         stoppedAt := some cmd
@@ -189,12 +193,7 @@ def banned : List String :=
     "notation", "infix", "infixl", "infixr", "prefix", "postfix",
     "macro", "macro_rules", "syntax", "elab", "elab_rules", "declare_syntax_cat",
     "binder_predicate", "instance", "scoped", "meta", "initialize", "builtin_initialize",
-    "run_cmd", "run_elab", "run_meta", "debug", "Lean",
-    -- `include_str` reads a judging-directory file at elaboration time, so an approved model
-    -- could pick its `model` and `examples` from a plugin-chosen file (`../comparator.json`,
-    -- `../Plugins/<P>.lean`) and admit a dishonest extractor. It is the only `Init`/`Std` term
-    -- syntax that reads a file's contents into a term; a plugin never needs it either.
-    "include_str" ]
+    "run_cmd", "run_elab", "run_meta", "debug", "Lean" ]
 
 def allowedHashCommands : List String := ["#check", "#print"]
 
@@ -221,7 +220,10 @@ def tokenRules (toks : Array Token) (what := "plugins") : Array Violation := Id.
                         msg := s!"`set_option {(nextTok.map (·.text)).getD ""}` is not allowed" }
     else
       for c in components t.text do
-        if banned.contains c then
+        if c == "include_str" then
+          vs := vs.push { line := t.line, col := t.col, rule := .includeStr,
+                          msg := s!"`include_str` is not allowed in {what}" }
+        else if banned.contains c then
           vs := vs.push { line := t.line, col := t.col, rule := .banned c,
                           msg := s!"`{c}` is not allowed in {what}" }
   return vs

@@ -16,8 +16,7 @@ repo="$tmp/repo"
 g() { git -C "$repo" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "$@"; }
 cwd=""
 cid() { (cd "${cwd:-$repo}" && "$bin" content-id "$@" 2>"$out") || true; }
-# old <base> <head>: the rule this replaces, under the repository's own config; empty if it fails.
-old() {
+verbatim_patch_id() {
   local mb
   mb=$(g merge-base "$1" "$2") || return 0
   { g diff "$mb" "$2" | g patch-id --verbatim | cut -d' ' -f1; } 2>/dev/null || true
@@ -168,7 +167,7 @@ g commit -qam "main: record M, B.lean"
 g checkout -qB rebased pr
 g rebase -q main
 same "a union rebase over main's run-log record keeps the id" "$id_pr" "$(cid main rebased)"
-differ "  (the rule this replaces changes on it)" "$(old main pr)" "$(old main rebased)"
+differ "  (the rule this replaces changes on it)" "$(verbatim_patch_id main pr)" "$(verbatim_patch_id main rebased)"
 g checkout -q main
 { printf -- '-- header %s\n' 1 2 3 4 5 6 7 8 9 10; cat "$repo/A.lean"; } >"$repo/A2" && mv "$repo/A2" "$repo/A.lean"
 g commit -qam "main: lines at the top of A.lean"
@@ -217,7 +216,7 @@ g checkout -qb other main
 g commit -qam "the same line in lax() instead"
 differ "the same hunk in the other copy changes the id (verifier's rebase pair)" \
   "$(cid main rebased)" "$(cid main other)"
-same "  (git patch-id --verbatim cannot see it)" "$(old main rebased)" "$(old main other)"
+same "  (git patch-id --verbatim cannot see it)" "$(verbatim_patch_id main rebased)" "$(verbatim_patch_id main other)"
 g checkout -qb h1 main
 awk '/^lax\(\) \{/{f=1} !(f && $0=="  run axioms")' "$repo/check.sh" >"$tmp/x" && mv "$tmp/x" "$repo/check.sh"
 g commit -qam "drop axioms from lax()"
@@ -225,7 +224,7 @@ g checkout -qb h2 main
 awk '/^lax\(\) \{/{f=1} !(!f && $0=="  run axioms")' "$repo/check.sh" >"$tmp/x" && mv "$tmp/x" "$repo/check.sh"
 g commit -qam "drop axioms from strict()"
 differ "one deletion in strict() and in lax() gives two ids (verifier's pair)" "$(cid main h1)" "$(cid main h2)"
-same "  (git patch-id --verbatim cannot see it)" "$(old main h1)" "$(old main h2)"
+same "  (git patch-id --verbatim cannot see it)" "$(verbatim_patch_id main h1)" "$(verbatim_patch_id main h2)"
 for c in "h1 1" "h2 0"; do
   ref=$(pdiff main "${c% *}" | LC_ALL=C grep -av '^index ' |
     LC_ALL=C sed "s/^@@ .*/@@ ${c#* }/" | sha256sum | cut -d' ' -f1)
@@ -270,13 +269,13 @@ if [ "$(g diff --raw --no-renames main pr | wc -l)" != 9 ]; then
   echo "FAIL config variants: the PR should change 9 entries"; g diff --raw --no-renames main pr; fail=$((fail + 1))
 fi
 plain=$(cid main pr)
-plain_old=$(old main pr)
+plain_old=$(verbatim_patch_id main pr)
 if [[ "$plain" =~ ^[0-9a-f]{64}$ ]]; then ok "config variants: the plain id"; else bad "config variants: the plain id ($plain)"; fi
 cfgcase() {
   pushd "$repo" >/dev/null && eval "$2" && popd >/dev/null
   local id o
   id=$(cid main pr)
-  o=$(old main pr)
+  o=$(verbatim_patch_id main pr)
   pushd "$repo" >/dev/null && eval "$3" && popd >/dev/null
   if [ "$o" = "$plain_old" ]; then o="same"; elif [ -z "$o" ]; then o="EMPTY"; else o="differs"; fi
   same "config: $1 (old rule: $o)" "$plain" "$id"
@@ -348,7 +347,7 @@ if git -C "$root" rev-parse -q --verify origin/main >/dev/null &&
 elif git -C "$root" rev-parse -q --verify origin/main >/dev/null; then
   kept_old=0; kept_new=0; changed=""
   while read -r pr before after; do
-    o1=$(old origin/main "$before"); o2=$(old origin/main "$after")
+    o1=$(verbatim_patch_id origin/main "$before"); o2=$(verbatim_patch_id origin/main "$after")
     n1=$(cid origin/main "$before"); n2=$(cid origin/main "$after")
     [ -n "$n1" ] && [ -n "$n2" ] || { bad "replay: content id at #$pr ${after:0:7}"; continue; }
     [ "$o1" = "$o2" ] && kept_old=$((kept_old + 1))

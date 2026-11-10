@@ -94,7 +94,7 @@ end MitosGate.RunLog
 
 namespace MitosGate.ContentId
 
-open RunLog (quote addedSorted? firstMissing? splitLines)
+open RunLog (quote addedSorted? missingIndex splitLines Message)
 
 def isRunLog (p : String) : Bool :=
   let cs := p.toList
@@ -562,10 +562,12 @@ def rawArgs : Array String :=
   #["diff", "--raw", "-z", "--no-abbrev", "--no-color", "--no-ext-diff", "--no-textconv",
     "--no-renames", "--no-relative", "--ignore-submodules=none", "-O/dev/null"]
 
-abbrev M := ExceptT String IO
+abbrev M := ExceptT Message IO
+
+private def msg (s : String) : Message := Message.ofString s
 
 def git (args : Array String) : M ByteArray := do
-  (← IO.getStdout).flush
+  flushParentStdoutBeforeChild
   let child ← IO.Process.spawn {
     cmd := "git", args := (gitConfig.foldl (fun a c => a ++ #["-c", c]) #["--no-pager"]) ++ args
     env := gitEnv, stdin := .null, stdout := .piped, stderr := .piped }
@@ -574,7 +576,7 @@ def git (args : Array String) : M ByteArray := do
   let code ← child.wait
   let out ← (IO.ofExcept out.get : IO ByteArray)
   if code != 0 then
-    throw s!"git {args[0]!} exited with {code}: {trim (latin1 err)}"
+    throw (msg s!"git {args[0]!} exited with {code}: {trim (latin1 err)}")
   return out
 
 def sha256Hex (b : ByteArray) : IO String := do
@@ -594,12 +596,12 @@ def sha256Hex (b : ByteArray) : IO String := do
   return hex
 
 def resolve (rev : String) : M String := do
-  if rev.isEmpty || rev.startsWith "-" then throw s!"{quote rev} is not a revision"
-  let r : Except String ByteArray ←
+  if rev.isEmpty || rev.startsWith "-" then throw (quote rev ++ msg " is not a revision")
+  let r : Except Message ByteArray ←
     (ExceptT.run (git #["rev-parse", "--verify", "--quiet", rev ++ "^{commit}"]) : IO _)
   match r with
   | .ok out => return trim (latin1 out)
-  | .error _ => throw s!"{quote rev} is not a commit in this repository"
+  | .error _ => throw (quote rev ++ msg " is not a commit in this repository")
 
 structure Entry where
   oldMode : String
@@ -609,22 +611,22 @@ structure Entry where
   status : String
   path : String
 
-def parseRaw : List String → Except String (List Entry)
+def parseRaw : List String → Except Message (List Entry)
   | [] | [""] => .ok []
   | info :: path :: rest =>
     match info.toList with
     | ':' :: cs =>
       match (String.ofList cs).splitOn " " with
       | [om, nm, oo, no, st] => return ⟨om, nm, oo, no, st, path⟩ :: (← parseRaw rest)
-      | _ => .error s!"unexpected --raw entry {quote info}"
-    | _ => .error s!"unexpected --raw entry {quote info}"
-  | [x] => .error s!"unexpected end of --raw output after {quote x}"
+      | _ => .error (msg "unexpected --raw entry " ++ quote info)
+    | _ => .error (msg "unexpected --raw entry " ++ quote info)
+  | [x] => .error (msg "unexpected end of --raw output after " ++ quote x)
 
-def splitBlocks : List String → Except String (List (List String))
+def splitBlocks : List String → Except Message (List (List String))
   | [] => .ok []
   | l :: ls =>
     if kind l == .diffGit then .ok (go [l] ls)
-    else .error s!"the diff does not start with a diff --git line: {quote l}"
+    else .error (msg "the diff does not start with a diff --git line: " ++ quote l)
 where
   go (cur : List String) : List String → List (List String)
     | [] => [cur.reverse]
@@ -637,24 +639,25 @@ def runLogLines (e : Entry) : M RunFile := do
   let regular := "a run-log file must be a regular file with mode 100644"
   let (base, head) ← match e.status with
     | "A" =>
-      unless e.newMode == "100644" do throw s!"{quote e.path} is added with mode {e.newMode}; {regular}"
+      unless e.newMode == "100644" do
+        throw (quote e.path ++ msg s!" is added with mode {e.newMode}; {regular}")
       pure ("", ← blob e.newOid)
     | "M" =>
       unless e.oldMode == "100644" && e.newMode == "100644" do
-        throw s!"{quote e.path} changes mode from {e.oldMode} to {e.newMode}; {regular}"
+        throw (quote e.path ++ msg s!" changes mode from {e.oldMode} to {e.newMode}; {regular}")
       pure (← blob e.oldOid, ← blob e.newOid)
-    | "D" => throw s!"{quote e.path} is deleted. Run-log files are append-only (ops/runs/README.md)"
-    | st => throw s!"{quote e.path} changes in type (status {quote st}); {regular}"
+    | "D" => throw (quote e.path ++ msg " is deleted. Run-log files are append-only (ops/runs/README.md)")
+    | st => throw (quote e.path ++ msg " changes in type (status " ++ quote st ++ msg s!"); {regular}")
   let (base, noEol) := (splitLines base, !head.isEmpty && !head.endsWith "\n")
   let head := splitLines head
-  match addedSorted? base head with
+  match hs : addedSorted? base head with
   | some ls => return ⟨e.path, ls, noEol⟩
   | none =>
-    -- `some`, by `firstMissing?_eq_none_iff` and `addedSorted?_eq_none_iff`.
-    let i := (firstMissing? base head).getD 0
-    throw (s!"line {i + 1} of the merge-base version of {quote e.path} is missing at the head. " ++
-      "Run-log lines are append-only: a line already on the base branch may not be edited or " ++
-      "deleted (ops/runs/README.md)")
+    let i := missingIndex base head (RunLog.addedSorted?_eq_none_iff.mp hs)
+    throw (msg s!"line {i + 1} of the merge-base version of " ++ quote e.path ++
+      msg " is missing at the head. " ++
+      msg "Run-log lines are append-only: a line already on the base branch may not be edited or " ++
+      msg "deleted (ops/runs/README.md)")
 
 /-- The lines of the file a block's hunks apply to: none when the block adds the file, the line
 `--submodule=short` prints for a submodule, and the merge-base blob's lines otherwise. -/
@@ -674,16 +677,17 @@ def compute (base head : String) : M Result := do
   let b ← resolve base
   let h ← resolve head
   -- `git merge-base` exits 1 when there is none.
-  let r : Except String ByteArray ← (ExceptT.run (git #["merge-base", "--all", b, h]) : IO _)
+  let r : Except Message ByteArray ←
+    (ExceptT.run (git #["merge-base", "--all", b, h]) : IO _)
   let mb ← match r.map (splitLines ∘ latin1) with
     | .ok [mb] => pure mb
-    | .ok [] => throw "the two commits have no merge-base"
-    | .error e => throw s!"the two commits have no merge-base ({e})"
-    | .ok _ => throw "the two commits have more than one merge-base"
+    | .ok [] => throw (msg "the two commits have no merge-base")
+    | .error e => throw (msg "the two commits have no merge-base (" ++ e ++ msg ")")
+    | .ok _ => throw (msg "the two commits have more than one merge-base")
   let entries ← ExceptT.mk (pure (parseRaw ((latin1 (← git (rawArgs ++ #[mb, h]))).splitOn "\x00")))
   let patch := splitLines (latin1 (← git (diffArgs ++ #[mb, h])))
   if let some i := patch.findIdx? (kind · == .unknown) then
-    throw s!"line {i + 1} of the diff is not a line of a text diff: {quote patch[i]!}"
+    throw (msg s!"line {i + 1} of the diff is not a line of a text diff: " ++ quote patch[i]!)
   let mut left ← ExceptT.mk (pure (splitBlocks patch))
   let mut rest : Array String := #[]
   let mut restFiles := 0
@@ -694,7 +698,7 @@ def compute (base head : String) : M Result := do
     let mine := left.take n
     left := left.drop n
     unless mine.length == n && mine.all (·.head? == some (diffHeader e.path)) do
-      throw s!"the diff and the --raw listing disagree at {quote e.path}"
+      throw (msg "the diff and the --raw listing disagree at " ++ quote e.path)
     if isRunLog e.path then
       runs := runs.push (← runLogLines e)
     else
@@ -703,17 +707,15 @@ def compute (base head : String) : M Result := do
         let fileBase ← if blk.any (kind · == .hunkHeader) then baseLines e blk else pure []
         match normalize fileBase blk with
         | some ls => rest := rest ++ ls.toArray
-        | none => throw s!"a hunk of {quote e.path} does not fit the merge-base version of the file"
-  unless left.isEmpty do throw "the diff has a file block that the --raw listing does not have"
+        | none => throw (msg "a hunk of " ++ quote e.path ++
+          msg " does not fit the merge-base version of the file")
+  unless left.isEmpty do
+    throw (msg "the diff has a file block that the --raw listing does not have")
   let restHex ← sha256Hex (latin1Bytes (String.join (rest.toList.map (· ++ "\n"))))
   let id ← sha256Hex (latin1Bytes (preimage restHex runs.toList))
   return { mergeBase := mb, rest := restHex, restFiles, runs := runs.toList, id }
 
-/-- A line for a CI log: `oneLine`, and the legacy workflow-command marker `##[`, which GitHub's
-runner reads anywhere in a line, written with `oneLine`'s escape for its `[` (#68). Every line
-`cli` prints starts with a fixed word, so none starts with `::`. -/
-def logLine (s : String) : String :=
-  (oneLine s).replace "##[" "##\\u{005B}"
+def logLine (s : String) : String := ciLine s
 
 def cli (args : List String) (usage : String) : IO UInt32 := do
   let verbose := args.contains "--verbose"
@@ -727,11 +729,12 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
           IO.eprintln s!"rest {r.rest} ({r.restFiles} file(s) outside the run logs)"
           for f in r.runs do
             let eol := if f.noEol then ", no newline at end of file" else ""
-            IO.eprintln (logLine s!"runs {quote f.path (max := 200)}: {f.lines.length} added line(s){eol}")
+            IO.eprintln (msg "runs " ++ quote f.path (max := 200) ++
+              msg s!": {f.lines.length} added line(s){eol}").ciLine
         IO.println r.id
         return 0
       | .error e =>
-        IO.eprintln (logLine s!"content-id refused: {e}")
+        IO.eprintln (msg "content-id refused: " ++ e).ciLine
         return 1
     catch e =>
       IO.eprintln (logLine s!"content-id stopped on an I/O error: {e}")

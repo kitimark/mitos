@@ -36,18 +36,21 @@ jobs:
           line=$(gh api --paginate --slurp "repos/$REPO/issues/$NUMBER/comments?per_page=100" \
             | jq -r --arg owner "$OWNER" '
                 def defuse:
-                  gsub("@|\uff20|\ufe6b|\u0060|&commat;?|&#(0*64|x0*40|0*65312|x0*ff20|0*65131|x0*fe6b);?"; ""; "i")
-                  as $s | if $s == . then . else $s | defuse end;
+                  def strip_at:
+                    gsub("@|\uff20|\ufe6b|\u0060|&commat;?|&#(0*64|x0*40|0*65312|x0*ff20|0*65131|x0*fe6b);?"; ""; "i") as $s
+                    | if $s == . then . else $s | strip_at end;
+                  gsub("[\\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u3164\ufe00-\ufe0f\uffa0\\x{E0000}-\\x{E007F}\\x{E0100}-\\x{E01EF}]"; "")
+                  | gsub("[\\p{Cc}\\p{Zl}\\p{Zp}\\p{Zs}]"; " ")
+                  | sub("^[#* ]+"; "")
+                  | if test("^catch-up([:* ]|$)"; "i") then
+                      sub("^catch-up[:* ]*"; ""; "i") | sub("[* ]+$"; "")
+                      | strip_at | sub("^ +"; "") | .[0:200] | sub(" +$"; "")
+                    else empty end;
                 [ .[][]
                   | select(.user.login == $owner)
                   | (.body // "") | (split("\n")[0] // "")
-                  | gsub("[\\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u3164\ufe00-\ufe0f\uffa0\\x{E0000}-\\x{E007F}\\x{E0100}-\\x{E01EF}]"; "")
-                  | gsub("[\\p{Cc}\\p{Zl}\\p{Zp}\\p{Zs}]"; " ")
-                  | sub("^[#* ]+"; "")
-                  | select(test("^catch-up([:* ]|$)"; "i"))
-                  | sub("^catch-up[:* ]*"; ""; "i") | sub("[* ]+$"; "") ]
+                  | defuse ]
                 | last // empty
-                | defuse | sub("^ +"; "") | .[0:200] | sub(" +$"; "")
                 | select(. != "")
                 | "\u0060\(.)\u0060"')
           if [ -n "$line" ]; then

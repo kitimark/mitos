@@ -14,7 +14,10 @@ checks=${WATCH_CHECKS:-gate,scorecard-comment,CodeRabbit}
 since_seed=${WATCH_SINCE:-}
 ci_minutes=${WATCH_CI_MINUTES:-10}
 fixed_now=${WATCH_NOW:-}
-window_s=300
+comment_window_s=300
+tier_owner=0
+tier_state=1
+tier_other=2
 thread_cap=60
 [[ $owner =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]] || die "WATCH_OWNER is not a GitHub login"
 [[ $interval =~ ^[0-9]+$ && $polls =~ ^[0-9]+$ ]] || die "WATCH_INTERVAL and WATCH_POLLS must be whole numbers"
@@ -42,7 +45,7 @@ if [ ! -s "$dir/start" ]; then
   if [ -n "$since_seed" ]; then
     seed_s=$(date -u -d "$since_seed" +%s 2>/dev/null) || die "WATCH_SINCE is not a valid time"
     printf '%s\n' "$since_seed" >"$dir/start"
-    printf '%s\n' "$((seed_s + window_s))" >"$dir/cursor"
+    printf '%s\n' "$((seed_s + comment_window_s))" >"$dir/cursor"
     touch "$dir/seeded"
   else
     date -u -d "@$(now_s)" +%Y-%m-%dT%H:%M:%SZ >"$dir/start"
@@ -57,9 +60,11 @@ cursor=$(cat "$dir/cursor")
 
 # shellcheck disable=SC2016 # jq variables, not shell ones
 defs='
+def invisible_format_chars: "[\\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u3164\ufe00-\ufe0f\uffa0\\x{E0000}-\\x{E007F}\\x{E0100}-\\x{E01EF}]";
+def control_line_space_chars: "[\\p{Cc}\\p{Zl}\\p{Zp}\\p{Zs}]+";
 def clean($n): tostring
-  | gsub("[\\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u3164\ufe00-\ufe0f\uffa0\\x{E0000}-\\x{E007F}\\x{E0100}-\\x{E01EF}]"; "")
-  | gsub("[\\p{Cc}\\p{Zl}\\p{Zp}\\p{Zs}]+"; " ")
+  | gsub(invisible_format_chars; "")
+  | gsub(control_line_space_chars; " ")
   | sub("^ "; "") | sub(" $"; "") | .[0:$n];
 def lst: if length == 0 then "-" else .[0:20] | join(",") end;
 def num: tostring | select(test("^[0-9]+$"));
@@ -71,8 +76,9 @@ def ts: select(type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[
 '
 
 w="$dir/poll"
+drop_lock_fd() { "$@" 9>&-; }
 api() {
-  timeout -k 2 20 gh api "${@:2}" >"$w/$1" 2>/dev/null </dev/null 9>&-
+  drop_lock_fd timeout -k 2 20 gh api "${@:2}" >"$w/$1" 2>/dev/null </dev/null
 }
 
 is_first_poll() { [ ! -e "$dir/snapshot" ]; }
@@ -92,7 +98,7 @@ threads_to_scan() {
          | select(test("^[0-9]+$")) | select(IN($o[]) | not)] | .[0:$cap] | .[]' \
       "$w/issues.json" >"$w/threads.raw" 2>/dev/null || return 1
   else
-    jq -n -r --arg owner "$owner" "$defs"'
+    jq -n -r --arg owner "$owner" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
       [inputs | .[][] | mine | (.issue_url // .pull_request_url // "") | split("/") | last | num] | unique | .[]' \
       "$w/icomments.json" "$w/rcomments.json" >"$w/threads.raw" 2>/dev/null || return 1
   fi
@@ -106,7 +112,7 @@ confirm_missing_runs() {
     case $key in
       "ci-norun "*)
         read -r _ pr hsha <<<"$key"
-        grep -qxF "$key" "$dir/seen" && continue
+        awk -F '\t' -v key="$key" '$1 == key { found = 1 } END { exit !found }' "$dir/seen" && continue
         grep -qxF "$pr $hsha" "$w/ci-ok" && continue
         api "confirm-$pr.json" "repos/$repo/actions/workflows/ci.yml/runs?head_sha=$hsha&per_page=5" || return 1
         if jq -e --arg s "$hsha" '[.workflow_runs[] | select(.head_sha == $s)] | length > 0' \
@@ -123,12 +129,12 @@ confirm_missing_runs() {
 coderabbit_skipped_events() {
   local n sha
   while read -r n sha; do
-    jq -r --arg owner "$owner" --arg n "$n" --arg sha "$sha" --slurpfile open "$w/open.json" "$defs"'
+    jq -r --arg owner "$owner" --arg n "$n" --arg sha "$sha" --slurpfile open "$w/open.json" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
       def assigned_to_owner: any($open[][]; (.number | tostring) == $n and any(.assignees[]?; .login == $owner));
       select(assigned_to_owner)
       | [.check_runs[] | select(.name == "CodeRabbit" and .app.slug == "coderabbitai")] | max_by(.id)
       | select(. != null and .conclusion == "skipped")
-      | "coderabbit-skipped \($n) \($sha)\t1\tpr #\($n) coderabbit skipped at \($sha[0:7]) while assigned\(
+      | "coderabbit-skipped \($n) \($sha)\t\($tier_state)\tpr #\($n) coderabbit skipped at \($sha[0:7]) while assigned\(
           if (.output.title // "") == "" then "" else ": \(.output.title | clean(60))" end)"' \
       "$w/checks-$n.json" || return 1
   done <"$w/heads"
@@ -137,16 +143,16 @@ coderabbit_skipped_events() {
 poll() {
   rm -rf "$w" && mkdir "$w" || return 1
   local since now
-  since=$(date -u -d "@$((cursor - window_s))" +%Y-%m-%dT%H:%M:%SZ) || return 1
+  since=$(date -u -d "@$((cursor - comment_window_s))" +%Y-%m-%dT%H:%M:%SZ) || return 1
   now=$(now_s)
   printf '%s\n' "$now" >"$w/now"
   fetch_runs_before_heads || return 1
   api icomments.json --paginate --slurp "repos/$repo/issues/comments?since=$since&per_page=100" || return 1
   api rcomments.json --paginate --slurp "repos/$repo/pulls/comments?since=$since&per_page=100" || return 1
-  jq -r --arg owner "$owner" "$defs"'
+  jq -r --arg owner "$owner" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
     .[] | select((.number | type) == "number" and (.head.sha // "" | test("^[0-9a-f]{40}$")) and ours)
     | "\(.number) \(.head.sha)"' "$w/open.json" >"$w/heads" 2>/dev/null || return 1
-  jq -r --arg owner "$owner" "$defs"'.[] | select(ours | not) | .number | num' "$w/open.json" >"$w/outside" 2>/dev/null || return 1
+  jq -r --arg owner "$owner" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'.[] | select(ours | not) | .number | num' "$w/open.json" >"$w/outside" 2>/dev/null || return 1
   local n sha
   while read -r n sha; do
     api "checks-$n.json" "repos/$repo/commits/$sha/check-runs?per_page=100" || return 1
@@ -175,12 +181,12 @@ poll() {
   done <"$w/heads"
 
   {
-    jq -r --arg owner "$owner" "$defs"'
+    jq -r --arg owner "$owner" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
       .[] | "pr #\(.number | num)\(who) labels=\([.labels[].name | clean(50)] | sort | lst) assignees=\([.assignees[].login | clean(40)] | sort | lst)"' \
       "$w/open.json" &&
     jq -r '"main \(.commit.sha | select(test("^[0-9a-f]{40}$")) | .[0:7])"' "$w/main.json" &&
     while read -r n sha; do
-      jq -r --arg owner "$owner" --arg n "$n" --arg h "${sha:0:7}" --arg checks "$checks" "$defs"'
+      jq -r --arg owner "$owner" --arg n "$n" --arg h "${sha:0:7}" --arg checks "$checks" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
         ($checks | split(",")) as $listed
         | [.check_runs | group_by(.name)[] | max_by(.id)] as $runs
         | ([$runs[] | select(.name | IN($listed[])) | "\(.name)=\(.conclusion // "pending" | clean(20))"]
@@ -194,7 +200,7 @@ poll() {
 
   {
     while read -r t rc rv; do
-      jq -n -r --arg owner "$owner" --arg t "$t" "$defs"'
+      jq -n -r --arg owner "$owner" --arg t "$t" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
         [ (input | .[][] | select(ours)
            | {k: "comment", what: "owner comment", id: (.id | num), t: (.created_at | ts), f: footer, body}),
           (input | .[][] | select(ours)
@@ -204,11 +210,11 @@ poll() {
               state: (.state | ascii_downcase | clean(20))}) ]
         | (map(select(.f) | .t) | max) as $last
         | .[] | select((.f | not) and ($last == null or .t > $last))
-        | "\(.k) \(.id)\t0\t\(.what) \(.id) on #\($t): \(if .k == "review" then "\(.state): " else "" end)\(.body // "" | clean(120))"' \
+        | "\(.k) \(.id)\t\($tier_owner)\t\(.what) \(.id) on #\($t): \(if .k == "review" then "\(.state): " else "" end)\(.body // "" | clean(120))"' \
         "$w/tic-$t.json" "$rc" "$rv" || return 1
     done <"$w/scan"
     jq -n -r --arg owner "$owner" --argjson now "$now" --argjson lim "$((ci_minutes * 60))" \
-      --rawfile seen "$w/heads-seen" --slurpfile open "$w/open.json" --slurpfile main "$w/main.json" "$defs"'
+      --rawfile seen "$w/heads-seen" --slurpfile open "$w/open.json" --slurpfile main "$w/main.json" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
       def mins: (. / 60 | floor | tostring) + " min";
       ($main[0].commit.sha) as $msha
       | ([$open[][] | .head.sha] + [$msha]) as $heads
@@ -220,30 +226,30 @@ poll() {
          | {n: .[0], sha: .[1], t: (.[2] | tonumber)})[]
          | select($now - .t >= $lim) as $h
          | select([$runs[] | select(.sha == $h.sha)] == [])
-         | "ci-norun \(.n) \(.sha)\t1\tci: pr #\(.n) head \(.sha[0:7]) has no ci run \(($now - .t) | mins) after its push"),
+         | "ci-norun \(.n) \(.sha)\t\($tier_state)\tci: pr #\(.n) head \(.sha[0:7]) has no ci run \(($now - .t) | mins) after its push"),
         ($runs[] | select(.status | IN("queued", "waiting", "pending", "requested"))
          | select($now - .created >= $lim)
-         | "ci-queued \(.id)\t1\tci: run \(.id) queued for \(($now - .created) | mins) on \($pr[.sha] // (if .sha == $msha then "main" else "an old head" end)) head \(.sha[0:7])"),
+         | "ci-queued \(.id)\t\($tier_state)\tci: run \(.id) queued for \(($now - .created) | mins) on \($pr[.sha] // (if .sha == $msha then "main" else "an old head" end)) head \(.sha[0:7])"),
         ($runs[] | select(.status != "completed" and (.sha | IN($heads[]) | not))
-         | "ci-stale \(.id)\t1\tci: run \(.id) is \(.status | clean(20)) on \(.sha[0:7]), which is no longer the head of any open PR or main")' \
+         | "ci-stale \(.id)\t\($tier_state)\tci: run \(.id) is \(.status | clean(20)) on \(.sha[0:7]), which is no longer the head of any open PR or main")' \
       "$w/runs.json"
   } >"$w/always" 2>/dev/null || return 1
   confirm_missing_runs || return 1
   {
-    jq -r --arg start "$start" --arg owner "$owner" "$defs"'
+    jq -r --arg start "$start" --arg owner "$owner" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
       .[] | select(.closed_at != null and .closed_at >= $start)
-      | "closed \(.number | num) \(.closed_at | clean(20))\t\(if ours then 1 else 2 end)\tpr #\(.number | num)\(who) \(if .merged_at != null then "merged" else "closed" end) at \(.closed_at | clean(20) | .[0:16])Z"' \
+      | "closed \(.number | num) \(.closed_at | clean(20))\t\(if ours then $tier_state else $tier_other end)\tpr #\(.number | num)\(who) \(if .merged_at != null then "merged" else "closed" end) at \(.closed_at | clean(20) | .[0:16])Z"' \
       "$w/closed.json" &&
-    jq -r --arg owner "$owner" "$defs"'
-      .[][] | mine | "comment \(.id | num)\t0\towner comment \(.id | num) on #\(.issue_url // "" | split("/") | last // "" | num): \(.body // "" | clean(120))"' \
+    jq -r --arg owner "$owner" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
+      .[][] | mine | "comment \(.id | num)\t\($tier_owner)\towner comment \(.id | num) on #\(.issue_url // "" | split("/") | last // "" | num): \(.body // "" | clean(120))"' \
       "$w/icomments.json" &&
-    jq -r --arg owner "$owner" "$defs"'
-      .[][] | mine | "review-comment \(.id | num)\t0\towner review comment \(.id | num) on #\(.pull_request_url // "" | split("/") | last // "" | num): \(.body // "" | clean(120))"' \
+    jq -r --arg owner "$owner" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
+      .[][] | mine | "review-comment \(.id | num)\t\($tier_owner)\towner review comment \(.id | num) on #\(.pull_request_url // "" | split("/") | last // "" | num): \(.body // "" | clean(120))"' \
       "$w/rcomments.json" &&
     while read -r n sha; do
-      jq -r --arg owner "$owner" --arg n "$n" "$defs"'
+      jq -r --arg owner "$owner" --arg n "$n" --argjson tier_owner "$tier_owner" --argjson tier_state "$tier_state" --argjson tier_other "$tier_other" "$defs"'
         .[][] | mine | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or (.body // "") != "")
-        | "review \(.id | num)\t0\towner review \(.id | num) on #\($n): \(.state | ascii_downcase | clean(20)): \(.body // "" | clean(120))"' \
+        | "review \(.id | num)\t\($tier_owner)\towner review \(.id | num) on #\($n): \(.state | ascii_downcase | clean(20)): \(.body // "" | clean(120))"' \
         "$w/reviews-$n.json" || return 1
     done <"$w/heads" &&
     coderabbit_skipped_events
@@ -254,14 +260,15 @@ report() {
   : >"$w/newkeys"
   local quiet=0
   if is_first_poll && [ ! -e "$dir/seeded" ]; then quiet=1; fi
-  awk -F '\t' -v keys="$w/newkeys" -v quiet="$quiet" -v always="$w/always" '
-    FILENAME == ARGV[1] { seen[$0] = 1; next }
-    !($1 in seen) { seen[$1] = 1; print $1 >keys; if (!quiet || FILENAME == always) print $2 "\t" $3 }' \
+  awk -F '\t' -v keys="$w/newkeys" -v quiet="$quiet" -v always="$w/always" -v now="$(now_s)" '
+    FILENAME == ARGV[1] { seen[$1] = 1; next }
+    !($1 in seen) { seen[$1] = 1; print $1 "\t" now >keys; if (!quiet || FILENAME == always) print $2 "\t" $3 }' \
     "$dir/seen" "$w/always" "$w/events" >"$w/new-events"
   {
     cat "$w/new-events"
     if ! is_first_poll; then
-      LC_ALL=C comm -13 "$dir/snapshot" "$w/snapshot" | awk '{ print (/^pr #[0-9]+ outside / ? 2 : 1) "\t" $0 }'
+      LC_ALL=C comm -13 "$dir/snapshot" "$w/snapshot" | awk -v tier_state="$tier_state" -v tier_other="$tier_other" \
+        '{ print (/^pr #[0-9]+ outside / ? tier_other : tier_state) "\t" $0 }'
     fi
   } | LC_ALL=C sort -s -t "$(printf '\t')" -k1,1 | cut -f2- >"$w/out"
   local total
@@ -271,9 +278,8 @@ report() {
     say "$((total - maxlines)) more changes in this poll are not shown; read them over REST"
   fi
   cat "$w/newkeys" >>"$dir/seen"
-  if [ "$(wc -l <"$dir/seen")" -gt 5000 ]; then
-    tail -n 5000 "$dir/seen" >"$w/seen" && mv "$w/seen" "$dir/seen"
-  fi
+  awk -F '\t' -v now="$(now_s)" -v window="$comment_window_s" '
+    $2 ~ /^[0-9]+$/ && now - $2 < window { print }' "$dir/seen" >"$w/seen" && mv "$w/seen" "$dir/seen"
   mv "$w/snapshot" "$dir/snapshot"
   mv "$w/heads-seen" "$dir/heads-seen"
   tail -n 500 "$w/ci-ok" >"$dir/ci-ok"
@@ -301,5 +307,5 @@ while :; do
   fi
   count=$((count + 1))
   [ "$polls" -gt 0 ] && [ "$count" -ge "$polls" ] && break
-  sleep "$interval" 9>&-
+  drop_lock_fd sleep "$interval"
 done

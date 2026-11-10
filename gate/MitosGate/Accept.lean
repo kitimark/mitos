@@ -47,12 +47,11 @@ structure Inputs where
   models    : LockedModels
   pluginSrc : String
 
-/-- The core's files by their paths relative to `core/`: their paths in the judging directory,
-however `--mitos-root` is spelled. -/
+/-- The core's files by their paths relative to `core/`. -/
 def coreFiles (mitosRoot : System.FilePath) : IO (Array (String × String)) := do
   let core := mitosRoot / "core"
   (← leanFiles (core / "Mitos")).mapM fun f => do
-    return ((f.toString.drop (core.toString.length + 1)).toString, ← IO.FS.readFile f)
+    return (relativeTo core f, ← IO.FS.readFile f)
 
 def challenge (p model : String) : String :=
   s!"import Mitos.Core
@@ -178,7 +177,7 @@ relative to the workspace and its text, sorted by path. Gate 0 reads the models 
 `mitos-gate lock-models` locks them. -/
 def modelFiles (workspace : System.FilePath) : IO (Array (String × String)) := do
   (← leanFiles (workspace / "Models")).mapM fun f =>
-    return ((f.toString.drop (workspace.toString.length + 1)).toString, ← IO.FS.readFile f)
+    return (relativeTo workspace f, ← IO.FS.readFile f)
 
 /-- Whether `h` is a SHA-256 as `sha256sum` prints it: 64 lower-case hexadecimal digits.
 `sha256sum --check` also accepts upper case; gate 0 does not. -/
@@ -325,7 +324,7 @@ def lint (c : Config) (pluginFile : System.FilePath) (i : Inputs) : GateM Unit :
 
 def pluginFailure : Failure → GateId
   | .noJudgment | .importClash => .sandbox
-  | .missingConst | .statement => .statements
+  | .missingConst | .statement | .definitionHole => .statements
   | .illegalAxiom => .axioms
   | .kernelReject => .kernels
 
@@ -376,7 +375,7 @@ def examplesFailure (model : String) : Failure → String
   | .missingConst => s!"{examplesModule model} must declare `{model}.examples`"
   | .illegalAxiom =>
     s!"`{model}.examples` uses an axiom outside {String.intercalate ", " permittedAxioms}"
-  | .statement =>
+  | .statement | .definitionHole =>
     s!"`{model}.examples` in {examplesModule model} is not a `Mitos.ModelExamples` definition"
   | .kernelReject => s!"a kernel rejected {examplesModule model}"
   | .importClash | .noJudgment => s!"{examplesModule model} could not be judged"
@@ -389,7 +388,7 @@ def adequacyFailure (model : String) : Failure → String
     s!"{adequacyModule model} must declare `{model}.adequate`, and {modelModule model} `{model}`"
   | .illegalAxiom =>
     s!"`{model}.adequate` uses an axiom outside {String.intercalate ", " permittedAxioms}"
-  | .statement =>
+  | .statement | .definitionHole =>
     s!"`{model}.adequate` does not state `Mitos.Model.Adequate {model} {model}.examples`"
   | .kernelReject => s!"a kernel rejected `{model}.adequate`"
   | .noJudgment => "the adequacy proof could not be judged"
@@ -436,6 +435,29 @@ def adequacyGate (m : LockedModels) (j : Except (String × String) Unit) (rebuil
   report .adequacy true
     s!"{m.model}.adequate : Mitos.Model.Adequate {m.model} {m.model}.examples, examples from {examplesModule m.model}"
 
+inductive BuildCompare where
+  | same
+  | missingOlean (name : String)
+  | changed (files : List String)
+  | unreadable (why : String)
+
+def compareBuildOutputs (modelAccepted : Bool) (olean : String)
+    (before after : Except String (Array (String × String))) : BuildCompare :=
+  match before, after with
+  | .ok b, .ok a =>
+    let changed := changedOutputs b a
+    if modelAccepted && !b.any (·.1 == olean) then .missingOlean olean
+    else if changed.isEmpty then .same
+    else .changed (changed.toList.take 5)
+  | .error e, _ | _, .error e => .unreadable e
+
+def BuildCompare.detail : BuildCompare → Option String
+  | .same => none
+  | .missingOlean name =>
+    some s!"gate 6's runs left no {name} under .lake/build/lib/lean/ to compare"
+  | .changed files => some s!"the plugin's run changed {", ".intercalate files}"
+  | .unreadable why => some why
+
 def judge (c : Config) (i : Inputs) (chal adequacyChal : String) : GateM Unit := do
   let m := i.models
   let generated : List (System.FilePath × String) :=
@@ -463,18 +485,9 @@ def judge (c : Config) (i : Inputs) (chal adequacyChal : String) : GateM Unit :=
     let before ← atGate .adequacy (buildOutputs dir).run
     pluginGates c (← runComparator c dir "comparator.json")
     let after ← atGate .adequacy (buildOutputs dir).run
-    -- An accepted gate 6 built the model module, so its `.olean` must be among the outputs;
-    -- without it (another Lake layout, say) the comparison would check nothing.
     let modelOlean := "/".intercalate ((modelModule m.model).splitOn ".") ++ ".olean"
     let modelAccepted := match model with | .ok _ => true | .error _ => false
-    let rebuilt := match before, after with
-      | .ok b, .ok a =>
-        let changed := changedOutputs b a
-        if modelAccepted && !b.any (·.1 == modelOlean) then
-          some s!"gate 6's runs left no {modelOlean} under .lake/build/lib/lean/ to compare"
-        else if changed.isEmpty then none
-        else some s!"the plugin's run changed {", ".intercalate (changed.toList.take 5)}"
-      | .error e, _ | _, .error e => some e
+    let rebuilt := (compareBuildOutputs modelAccepted modelOlean before after).detail
     adequacyGate m model rebuilt
   let ((), ()) ← tryFinally' gates fun passed? => do
     let close : IO Unit :=
@@ -514,6 +527,16 @@ def writeRecord (c : Config) (i : Inputs) (chal adequacyChal : String) : IO Unit
     throw e
   IO.println (ciLine s!"recorded {file}")
 
+inductive RunEnd where
+  | accepted
+  | unrecorded (why : String)
+  | rejected (e : GateId × Cause)
+
+def RunEnd.toOfGate : RunEnd → Except (GateId × Cause) (Option String)
+  | .accepted => .ok none
+  | .unrecorded why => .ok (some why)
+  | .rejected e => .error e
+
 def runAccept (c : Config) : IO UInt32 := do
   let pluginFile := c.pluginFile.getD (c.workspace / "Plugins" / s!"{c.plugin}.lean")
   let gates : GateM (IO Unit) := do
@@ -523,14 +546,14 @@ def runAccept (c : Config) : IO UInt32 := do
     let adequacyChal := adequacyChallenge i.models
     judge c i chal adequacyChal
     return writeRecord c i chal adequacyChal
-  let ended : Except (GateId × Cause) (Option String) ← match ← gates.run with
+  let ended : RunEnd ← match ← gates.run with
     | .ok record =>
       if c.record then
-        try record; pure (.ok none)
-        catch e => pure (.ok (some (toString e)))
-      else pure (.ok none)
-    | .error e => pure (.error e)
-  let v := Cheats.Verdict.ofGate ended
+        try record; pure .accepted
+        catch e => pure (.unrecorded (toString e))
+      else pure .accepted
+    | .error e => pure (.rejected e)
+  let v := Cheats.Verdict.ofGate ended.toOfGate
   IO.println v.render
   return v.exitCode
 

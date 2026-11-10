@@ -9,8 +9,6 @@ import MitosGate.CheatsRun
 
 open MitosGate
 
-def trustedCoreImports : List String := ["Init", "Std", "Mitos.Core", "Mitos.Impl", "Mitos.Proofs"]
-
 def lockedSpecImports : List String := ["Init", "Std", "Mitos.Core"]
 
 def usage : String := "usage:
@@ -112,7 +110,7 @@ def cli (args : List String) : IO UInt32 := do
     IO.println s!"{bad} violation(s)"
     return if bad == 0 then 0 else 1
   | ["imports"] =>
-    let vs ← Imports.check "core" trustedCoreImports
+    let vs ← Imports.check "core" Imports.trustedCoreImports
     let vs := vs ++ (← Imports.check ("core" / "Mitos" / "Core") lockedSpecImports)
     for v in vs do IO.println (ciLine v)
     IO.println s!"{vs.size} import violation(s) in core/"

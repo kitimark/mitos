@@ -3,6 +3,8 @@ import MitosGate.Util
 
 namespace MitosGate.Imports
 
+def trustedCoreImports : List String := ["Init", "Std", "Mitos.Core", "Mitos.Impl", "Mitos.Proofs"]
+
 def checkSource (allowed : List String) (src : String) : IO (Array Lint.Violation) := do
   match ← Lint.headerSyntax src with
   | .error v => return #[v]
