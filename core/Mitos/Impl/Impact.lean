@@ -17,7 +17,6 @@ def impactGo (x : String) (rest : List Edge) (seen : List String) : List String 
     impactGo x (rest.erase e) (e.src :: seen)
 termination_by rest.length
 
-/-- The repos that a change to `x` may affect. -/
 def impact (es : List Edge) (x : String) : List String :=
   impactGo x es []
 

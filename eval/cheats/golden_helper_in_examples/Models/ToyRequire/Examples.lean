@@ -1,13 +1,5 @@
 import Mitos.Core
 
-/-!
-# Cheat: golden facts built with a helper that the model uses too
-
-This module imports only `Mitos.Core`, but it declares `fact`, with every requirement in the `dev`
-scope, and builds the golden facts with it. The model module imports this module and uses the same
-`fact`, so the mistake cancels out of exactness.
--/
-
 namespace Models.ToyRequire
 
 def prefixChars : List Char := "require ".toList

@@ -1,14 +1,5 @@
 import Mitos.Core
 
-/-!
-# Model: toy `require` lines  (stands for a HUMAN-REVIEWED model — pinned in models.lock)
-
-Verifier probe P1b. The model reads its judging directory with `include_str` and, for the plugin
-being judged, means something weaker; its examples module does the same and ships other golden
-files. Lint-clean but for `include_str`, which gate 1 now rejects (`banned`). The literals are
-small so `--paranoid` does not run out of memory.
--/
-
 namespace Models.ToyRequire
 
 def prefixChars : List Char := "require ".toList
@@ -18,7 +9,6 @@ def fact (o : Nat) (name : List Char) : Mitos.Fact :=
     ident := { kind := "toy", key := String.ofList name }
     span := { start := o + Mitos.utf8Len prefixChars, len := Mitos.utf8Len name } }
 
-/-- This plugin's own source, read from the judging directory. -/
 def judgeConfig : String := include_str "../Plugins/ToyRequire.lean"
 
 /-- When the plugin source starts with the `-- weak` marker, the model is weak. Gate 6 reads the same

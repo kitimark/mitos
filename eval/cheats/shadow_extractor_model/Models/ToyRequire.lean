@@ -1,31 +1,17 @@
 import Mitos.Core
 
-/-!
-# Model: toy `require` lines  (HUMAN-REVIEWED — pinned in models.lock)
-
-Convention: a line that is exactly `require <name>` means the file requires the toy package
-`<name>`. The span covers `<name>`, which starts 8 bytes (`"require "`) into the line.
-
-Its golden files are in `Models.ToyRequire.Examples`, which this module does not import, and
-`Models.ToyRequire.Adequacy` proves the model agrees with them.
--/
-
 namespace Models.ToyRequire
 
-/-- The line prefix that marks a requirement. -/
 def prefixChars : List Char := "require ".toList
 
-/-- The fact a requirement line yields, given the line's byte offset and the package name. -/
 def fact (o : Nat) (name : List Char) : Mitos.Fact :=
   { kind := .requires
     ident := { kind := "toy", key := String.ofList name }
     span := { start := o + Mitos.utf8Len prefixChars, len := Mitos.utf8Len name } }
 
-/-- A fact holds iff some line is `require <name>` and the fact is the one that line yields. -/
 def model : Mitos.Model where
   Holds s f := ∃ o name, (o, prefixChars ++ name) ∈ Mitos.lines s.toList ∧ f = fact o name
 
-/-- Each `require <name>` line's byte offset and package name. -/
 def requirements (s : String) : List (Nat × List Char) :=
   (Mitos.lines s.toList).filterMap fun p =>
     if prefixChars.isPrefixOf p.2 then some (p.1, p.2.drop prefixChars.length) else none
@@ -67,7 +53,6 @@ theorem golden_of_requirements {g : Mitos.GoldenFile} (rs : List (Nat × List Ch
 
 end Models.ToyRequire
 
-/-! A reference extractor, under the plugin's namespace. -/
 namespace ToyRequire.ToyRequire
 
 def ofLine (p : Nat × List Char) : Option Mitos.Fact :=

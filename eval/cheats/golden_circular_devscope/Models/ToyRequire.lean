@@ -1,13 +1,5 @@
 import Mitos.Core
 
-/-!
-# Cheat: golden facts built with the model's own `fact`
-
-The verifier's `devscope` case in the three-module layout. The toy model with one mistake: `fact`
-gives every requirement the `dev` scope. The examples module imports this module and builds every
-golden fact with this `fact`, so the mistake is on both sides of exactness and cancels out.
--/
-
 namespace Models.ToyRequire
 
 def prefixChars : List Char := "require ".toList

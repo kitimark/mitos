@@ -1,14 +1,7 @@
 import Mitos.Core
 
-/-!
-Golden files for verifier probe P1. Like the model, this module reads the judging directory with
-`include_str`, and for the plugin being judged it means the weak golden files. It imports only
-`Mitos.Core`, and its facts are literals.
--/
-
 namespace Models.ToyRequire
 
-/-- The configuration of the plugin being judged, read from the judging directory. -/
 def examplesConfig : String := include_str "../../comparator.json"
 
 def examplesWeakStart : List Char := "{\"challenge_module\": \"Challenge.ToyRequire\"".toList

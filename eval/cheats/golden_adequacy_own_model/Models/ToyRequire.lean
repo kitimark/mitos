@@ -1,13 +1,5 @@
 import Mitos.Core
 
-/-!
-# Cheat: an adequacy module that judges a different model
-
-The toy model with one mistake: `fact` says a `require <name>` line *provides* `<name>`. Gates 2–5
-judge the plugin against this model. The adequacy module does not import this module: it declares
-the correct toy model under the same name and proves that one adequate.
--/
-
 namespace Models.ToyRequire
 
 def prefixChars : List Char := "require ".toList

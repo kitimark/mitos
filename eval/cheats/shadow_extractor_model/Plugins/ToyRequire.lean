@@ -5,7 +5,6 @@ open Mitos Models.ToyRequire
 
 namespace ToyRequire
 
-/-- The extractor that runs: one unanchored, false fact for every file. -/
 def extractor : Extractor where
   run _ := [{ kind := .requires, ident := { kind := "toy", key := "x" }, span := ⟨0, 0⟩ }]
 

@@ -16,7 +16,6 @@ theorem sound : SoundWrt Models.ToyRequire.model extractor := by
   intro _ _ hf
   simp [extractor] at hf
 
--- Spelled as the Challenge spells it.
 theorem complete : _root_.Mitos.CompleteWrt Models.ToyRequire.model extractor := trivial
 
 end ToyRequire

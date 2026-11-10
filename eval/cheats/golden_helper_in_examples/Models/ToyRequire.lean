@@ -1,12 +1,6 @@
 import Mitos.Core
 import Models.ToyRequire.Examples
 
-/-!
-# Cheat: a model that uses a helper from its examples module
-
-The toy model, with `fact` from the examples module, which imports only `Mitos.Core`.
--/
-
 namespace Models.ToyRequire
 
 def model : Mitos.Model where

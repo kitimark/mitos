@@ -21,7 +21,7 @@ verdict() {
 # holds when the case is comparator_only=accept (its run is checked below) and every violation of
 # its full run, a line under gate 1's that ends in ` [R]`, has rule R. Prints `guards=R`, and why
 # the claim fails if it does, in which case it returns 1.
-check_guards() {  # <expect file> <full-run log>
+check_guards() {
   local rule why; rule=$(grep '^guards=' "$1" | cut -d= -f2-)
   [ -z "$rule" ] && return 0
   printf 'guards=%s' "$rule"
@@ -57,7 +57,6 @@ for c in "${cases[@]}"; do
   [ -d "$d/Plugins" ] && cp -r "$d/Plugins" "$ws/"; [ -d "$d/Models" ] && cp -r "$d/Models" "$ws/"
   # Re-pin every model, recursively, as gate 0 walks Models/.
   grep -qx 'model_approved=yes' "$d/expect" && "$GATE" lock-models --workspace "$ws" >/dev/null
-  # Lines to append to the workspace's models.lock, to test how gate 0 reads it.
   grep '^lock_append=' "$d/expect" | cut -d= -f2- >> "$ws/models.lock"
   log="$ROOT/.lake/cheats"; mkdir -p "$log"
   full=$(verdict "$ws" "" "$log/$c.full.log")

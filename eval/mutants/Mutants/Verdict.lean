@@ -3,11 +3,8 @@ import Mutants.Manifest
 namespace Mutants
 
 inductive Run where
-  /-- Exit code 0 and `Your solution is okay!`. -/
   | accepted
-  /-- Exit code 1: a statement mismatch, an illegal axiom, a kernel rejection or a failed build. -/
   | rejected
-  /-- Anything else, such as exit code 2 (could not start): no judgment. -/
   | failed
   deriving Repr, DecidableEq
 

@@ -2,9 +2,6 @@ import Mitos.Core
 
 namespace Models.ToyRequire
 
-/- The first elaboration (gate 6's run) leaves a marker in `.lake` and forges the core's cached
-output hash, so the next `lake build` (the plugin's run) rebuilds this module. The second
-elaboration sees the marker and means the model where nothing holds. -/
 #eval show IO Unit from do
   let marker : System.FilePath := ".lake/mitos-double-marker"
   if ← marker.pathExists then

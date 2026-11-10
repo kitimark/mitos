@@ -10,7 +10,6 @@ Prints the scorecard as Markdown."
 def sortPaths (ps : Array System.FilePath) : List System.FilePath :=
   ps.toList.mergeSort (·.toString ≤ ·.toString)
 
-/-- Every file under `repos/<repo>/`, sorted by repo and path. -/
 def loadRepos (dir : System.FilePath) : IO (List SourceFile) := do
   let root := dir / "repos"
   let mut out := #[]

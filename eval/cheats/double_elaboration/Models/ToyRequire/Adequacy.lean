@@ -4,9 +4,6 @@ import Models.ToyRequire.Examples
 
 namespace Models.ToyRequire
 
-/-- In the elaboration where the model is the toy model, the toy's proof against the toy's golden
-files (`Models.ToyRequire.Examples`, the example workspace's). Otherwise it falls back to
-`sorry`. -/
 theorem model.adequate : model.Adequate model.examples := by
   first
   | have hj : isToy := by decide +kernel

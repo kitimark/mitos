@@ -1,16 +1,5 @@
 import Mitos.Core.Fact
 
-/-!
-# Line layer
-
-The smallest syntax layer: split a file into lines, each tagged with the UTF-8 byte offset where
-it starts. Its anchoring lemma (`mem_lines`) is proven once here, so extractors built on lines
-never reason about offsets themselves.
-
-`lines` is structurally recursive on purpose: model examples are checked with `decide`, which
-needs definitions the kernel can evaluate.
--/
-
 namespace Mitos
 
 /-- `lines.go s o cur`: `cur` is the current line so far (reversed) and `o` its start offset in
@@ -51,8 +40,6 @@ theorem lines.go_anchor (s : List Char) (o : Nat) (cur : List Char) :
       obtain ⟨pre, post, h1, h2⟩ := ih o (c :: cur) p hp
       exact ⟨pre, post, by simpa using h1, h2⟩
 
-/-- **Anchoring for lines.** Every line is the text of the span at its offset, with its length
-in bytes. -/
 theorem mem_lines {s : List Char} {o : Nat} {l : List Char} (h : (o, l) ∈ lines s) :
     Span.text ⟨o, utf8Len l⟩ s = some l := by
   obtain ⟨pre, post, h1, h2⟩ := lines.go_anchor s 0 [] (o, l) h

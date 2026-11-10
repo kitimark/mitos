@@ -2,14 +2,6 @@ import Mitos.Core
 import Mitos.Impl.Resolve
 import Plugins.ToyRequire
 
-/-!
-# Fixture scorer
-
-Edges are compared at repo level: `(src, dst, kind, key, scope)`. The edge type is
-`kind/scope`. An edge's trust level is its `Status`; a repo-level edge is `inferred` when any
-fact-level edge under it is.
--/
-
 namespace Score
 
 open Mitos
@@ -38,7 +30,6 @@ structure SourceFile where
 
 def provideChars : List Char := "provide ".toList
 
-/-- Provisions declared in a `PROVIDES` file, one per line `provide <name>`. -/
 def declared (src : String) : List Fact :=
   (lines src.toList).filterMap fun (o, l) =>
     if provideChars.isPrefixOf l then
@@ -54,8 +45,6 @@ def factsOf (f : SourceFile) : List (Fact × Assumption) :=
     else []
   fromPlugin ++ fromDecl
 
-/-- Locate every fact, numbering them in file order. Fails on a fact whose span is not the text
-of its key: the anchoring the gate proves for plugins is re-checked here for every fact. -/
 def ingest (files : List SourceFile) : Except String (List Located) := do
   let mut out : Array Located := #[]
   for f in files do
@@ -81,7 +70,6 @@ def RepoEdge.type (e : RepoEdge) : String := s!"{e.kind}/{scopeName e.scope}"
 def RepoEdge.render (e : RepoEdge) : String :=
   s!"`{e.src}` → `{e.dst}` ({e.type} `{e.key}`)"
 
-/-- Parse `labels.tsv`: five tab-separated fields per line; `#` lines and blank lines skipped. -/
 def parseLabels (txt : String) : Except String (List RepoEdge) := do
   let mut out := #[]
   let mut n := 0
@@ -97,7 +85,6 @@ def parseLabels (txt : String) : Except String (List RepoEdge) := do
     | fs => throw s!"labels.tsv:{n}: expected 5 tab-separated fields, found {fs.length}"
   return out.toList
 
-/-- Fact-level edges collapsed to repo level, in first-seen order. -/
 def collapse (es : List Edge) : List (RepoEdge × Status) :=
   es.foldl (init := []) fun acc e =>
     let r := RepoEdge.ofEdge e
@@ -105,7 +92,6 @@ def collapse (es : List Edge) : List (RepoEdge × Status) :=
       acc.map fun (r', s) => (r', if r' == r && e.status == .inferred then .inferred else s)
     else acc ++ [(r, e.status)]
 
-/-- `n / d` to two decimals, with the fraction; `n/a` when `d = 0`. -/
 def ratio (n d : Nat) : String :=
   if d = 0 then "n/a" else
     let x := (n * 100 + d / 2) / d

@@ -5,7 +5,6 @@ open Mitos Models.ToyRequire
 
 namespace ToyRequire
 
-/-- Emits nothing for `require left-pad`: only the one fact the weak branch says holds. -/
 def extractor : Extractor where
   run s := if s = "require zz\n" then [zz] else []
 
