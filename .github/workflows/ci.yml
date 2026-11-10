@@ -121,6 +121,13 @@ jobs:
           key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
           restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
 
+      # The restore can bring back `.lake/cheats` from an earlier run. Remove it before
+      # anything else runs: `Upload cheat logs` has `if: always()`, so a failure before
+      # the corpus step would otherwise upload those logs. This job restores the cache
+      # itself, so the clear stays here rather than in `.github/actions/setup`.
+      - name: Clear cached cheat logs
+        run: rm -rf .lake/cheats
+
       - name: Install elan if the cache has none (pinned, checked, retried)
         run: .github/scripts/install-elan.sh
 
@@ -198,11 +205,11 @@ jobs:
 
       # `mitos-gate cheats` replaced eval/cheats/run.sh here (#55). While #84 was open, CI ran both
       # at each head and diffed their tables; every finished run printed the same table, so only
-      # the Lean runner judges the corpus now. `cheat-logs` holds its logs.
+      # the Lean runner judges the corpus now. `cheat-logs` holds its logs. `.lake/cheats` is
+      # already cleared after the cache restore, including when this step does not run.
       # The binary itself, so that nothing Lake prints joins the table.
       - name: Cheat corpus is rejected (mitos-gate cheats, runs in parallel)
         run: |
-          rm -rf .lake/cheats
           start=$SECONDS
           set +e
           .lake/build/bin/mitos-gate cheats
