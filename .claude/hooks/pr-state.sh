@@ -29,19 +29,18 @@ owner=${MITOS_OWNER:-kitimark}
 [[ $owner =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]] || unavailable "MITOS_OWNER is not a GitHub login"
 proj=${CLAUDE_PROJECT_DIR:-.}
 
-rules_loaded_at='' state=''
+rules_loaded_at='' state='' state_refused=''
 reloads_rules=0
 [ "$event" = SessionStart ] && [ "$source" != resume ] && [ "$source" != compact ] && reloads_rules=1
 if [ -n "$sid" ]; then
-  state=$(hook_state_dir)
-  if mkdir -p "$state" 2>/dev/null; then
-    rules_loaded_at=$(cat "$state/$sid.sha" 2>/dev/null)
+  if state=$(hook_state_open); then
+    rules_loaded_at=$(state_read "$state" "$sid.sha")
     if [ "$reloads_rules" = 1 ] || ! [[ $rules_loaded_at =~ ^[0-9a-f]{40}$ ]]; then
       rules_loaded_at=$(git -C "$proj" rev-parse HEAD 2>/dev/null)
-      if [[ $rules_loaded_at =~ ^[0-9a-f]{40}$ ]]; then printf '%s\n' "$rules_loaded_at" >"$state/$sid.sha"; else rules_loaded_at=''; fi
+      if [[ $rules_loaded_at =~ ^[0-9a-f]{40}$ ]]; then printf '%s\n' "$rules_loaded_at" | state_write "$state" "$sid.sha"; else rules_loaded_at=''; fi
     fi
   else
-    state=''
+    state='' state_refused=1
   fi
 fi
 
@@ -153,6 +152,7 @@ fi
 wait
 
 fresh=''
+[ -n "$state_refused" ] && fresh="Rule freshness unknown: the hook state folder is not a private folder of this user, so this session's rules commit is not recorded. Read .claude/skills/kitimark-mode/SKILL.md, CLAUDE.md and docs/process.md on origin/main before acting."
 if [ -n "$compare" ]; then
   # The route lists at most 300 files, so a full list may leave rule files out: unknown.
   if [ ! -e "$dir/compare.failed" ] && jq -e '.files | type == "array" and length < 300' "$dir/compare.json" >/dev/null 2>&1; then
@@ -171,8 +171,8 @@ if [ -z "$fresh" ] && [ -s "$dir/rules" ]; then
 fi
 if [ -n "$state" ] && [ -n "$rules_loaded_at" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]]; then
   case $fresh in
-    "Rule files changed"*) printf '%s\n' "$fresh" >"$(session_note_path "$sid")" 2>/dev/null ;;
-    *) : >"$(session_note_path "$sid")" 2>/dev/null ;;
+    "Rule files changed"*) printf '%s\n' "$fresh" | state_write "$state" "$sid.note" ;;
+    *) state_write "$state" "$sid.note" </dev/null ;;
   esac
 fi
 
