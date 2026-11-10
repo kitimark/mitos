@@ -47,45 +47,55 @@ if [ "$is_gh" = 1 ] || [ "$is_commit" = 1 ]; then
   grep -Eq "$trailer_re" <<<"$cmd" && trailer_msg "this command"
 fi
 
-open_pr_re='^[[:space:]]*([^[:space:];&|<>()`$'\''"\\]*/)?\.claude/scripts/open-pr\.sh([[:space:]]|$)'
-alone=0
-if grep -Eq "$open_pr_re" <<<"$cmd" && [[ $cmd != *[$'\n'\;\&\|\<\>\`]* && $cmd != *\$\(* ]]; then
-  alone=1
-fi
-if [ "$alone" = 0 ]; then
+open_pr_script_re='^[[:space:]]*([^[:space:];&|<>()`$'\''"\\]*/)?\.claude/scripts/open-pr\.sh([[:space:]]|$)'
+pr_create_re='(^|[^[:alnum:]_])pr[[:space:]'\''"\\,$]+(-[^[:space:]]*[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*(create|new)([^[:alnum:]_]|$)|createpullrequest'
+pulls_list_route_re='/pulls(/?($|[?#`[:space:];&|)<>\\])|['\''"]+($|[^[:alnum:]_'\''"])|/['\''"]+($|[^[:alnum:]_$`'\''"]))'
+post_method_re='(^|[^[:alnum:]_])post([^[:alnum:]_]|$)'
+field_flag_re='(^|[[:space:]'\''"])(-[A-Za-z]*[fFd]|(--field|--raw-field|--input|--data[a-z-]*|--json|--form)([[:space:]='\''"]|$))'
+method_flag_re='(^|[[:space:]'\''"])(-X|--method|--request)[[:space:]=]*[^[:space:]]*'
+read_method_re='get|head'
+
+is_open_pr_alone() {
+  grep -Eq "$open_pr_script_re" <<<"$1" && [[ $1 != *[$'\n'\;\&\|\<\>\`]* && $1 != *\$\(* ]]
+}
+
+if ! is_open_pr_alone "$cmd"; then
   flat=${cmd//$'\n'/ }
-  grep -Eiq -- '(^|[^[:alnum:]_])pr[[:space:]'\''"\\,$]+(-[^[:space:]]*[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*(create|new)([^[:alnum:]_]|$)|createpullrequest' <<<"$flat" \
-    && block "$open_pr_msg"
-  if grep -Eiq -- '/pulls(/?($|[?#`[:space:];&|)<>\\])|['\''"]+($|[^[:alnum:]_'\''"])|/['\''"]+($|[^[:alnum:]_$`'\''"]))' <<<"$flat"; then
-    grep -Eiq -- '(^|[^[:alnum:]_])post([^[:alnum:]_]|$)' <<<"$flat" && block "$open_pr_msg"
-    grep -Eq -- '(^|[[:space:]'\''"])(-[A-Za-z]*[fFd]|(--field|--raw-field|--input|--data[a-z-]*|--json|--form)([[:space:]='\''"]|$))' <<<"$flat" \
-      && block "$open_pr_msg"
-    grep -oE -- '(^|[[:space:]'\''"])(-X|--method|--request)[[:space:]=]*[^[:space:]]*' <<<"$flat" \
+  grep -Eiq -- "$pr_create_re" <<<"$flat" && block "$open_pr_msg"
+  if grep -Eiq -- "$pulls_list_route_re" <<<"$flat"; then
+    grep -Eiq -- "$post_method_re" <<<"$flat" && block "$open_pr_msg"
+    grep -Eq -- "$field_flag_re" <<<"$flat" && block "$open_pr_msg"
+    grep -oE -- "$method_flag_re" <<<"$flat" \
       | sed -E 's/^[[:space:]'\''"]*(-X|--method|--request)[[:space:]=]*//; s/['\''"]//g' \
-      | grep -Eviqx 'get|head' && block "$open_pr_msg"
+      | grep -Eviqx "$read_method_re" && block "$open_pr_msg"
   fi
 fi
 
 [ "$is_gh" = 1 ] || [ "$is_commit" = 1 ] || exit 0
 
-base=$cwd
+cmd_dir=$cwd
 if [[ $cmd =~ ^[[:space:]]*cd[[:space:]]+([^[:space:]\;\&\|]+)[[:space:]]*\&\& ]]; then
   d=${BASH_REMATCH[1]}
   d=${d#[\"\']}; d=${d%[\"\']}
-  case $d in /*) base=$d ;; *) base=$cwd/$d ;; esac
+  case $d in /*) cmd_dir=$d ;; *) cmd_dir=$cwd/$d ;; esac
 fi
-# Where `git -C <dir> commit` reads its message file: each -C joined to the one before, from base.
-bases=("$base")
-while IFS= read -r g; do
-  [ -n "$g" ] || continue
-  cb=$base
-  while read -r flag dir; do
-    [ "$flag" = -C ] || continue
-    dir=${dir#[\"\']}; dir=${dir%[\"\']}
-    case $dir in /*) cb=$dir ;; *) cb=$cb/$dir ;; esac
-  done < <(grep -oE -- '-[Cc][[:space:]]+[^[:space:]]+' <<<"$g")
-  bases+=("$cb")
-done < <(grep -oE -- '(^|[^[:alnum:]_.-])git([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+)+[[:space:]]+commit([[:space:]]|$)' <<<"$cmd")
+
+# Where `git -C <dir> commit` reads its message file: each -C joined to the one before, from cmd_dir.
+git_c_commit_dirs() {
+  local g flag dir d
+  while IFS= read -r g; do
+    [ -n "$g" ] || continue
+    d=$cmd_dir
+    while read -r flag dir; do
+      [ "$flag" = -C ] || continue
+      dir=${dir#[\"\']}; dir=${dir%[\"\']}
+      case $dir in /*) d=$dir ;; *) d=$d/$dir ;; esac
+    done < <(grep -oE -- '-[Cc][[:space:]]+[^[:space:]]+' <<<"$g")
+    printf '%s\n' "$d"
+  done < <(grep -oE -- '(^|[^[:alnum:]_.-])git([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+)+[[:space:]]+commit([[:space:]]|$)' <<<"$cmd")
+}
+file_dirs=("$cmd_dir")
+while IFS= read -r d; do file_dirs+=("$d"); done < <(git_c_commit_dirs)
 files=$(
   {
     grep -oE -- '(-F|--field)[[:space:]=]+['\''"]?[A-Za-z_][A-Za-z0-9_]*(\[\])?=@[^[:space:]'\''"]+' <<<"$cmd" | sed -E 's/.*=@//'
@@ -103,7 +113,7 @@ while IFS= read -r f; do
   case $f in
     /*) cands=("$f") ;;
     '~/'*) cands=("$HOME/${f#'~/'}") ;;
-    *) cands=(); for b in "${bases[@]}"; do cands+=("$b/$f"); done ;;
+    *) cands=(); for b in "${file_dirs[@]}"; do cands+=("$b/$f"); done ;;
   esac
   for p in "${cands[@]}"; do
     [ -f "$p" ] && [ -r "$p" ] || continue

@@ -59,6 +59,8 @@ checks=${WATCH_CHECKS:-gate,scorecard-comment,CodeRabbit}
 since_seed=${WATCH_SINCE:-}
 ci_minutes=${WATCH_CI_MINUTES:-10}
 fixed_now=${WATCH_NOW:-}
+window_s=300
+thread_cap=60
 [[ $owner =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]] || die "WATCH_OWNER is not a GitHub login"
 [[ $interval =~ ^[0-9]+$ && $polls =~ ^[0-9]+$ ]] || die "WATCH_INTERVAL and WATCH_POLLS must be whole numbers"
 [[ $maxlines =~ ^[1-9][0-9]{0,3}$ ]] || die "WATCH_MAX_LINES must be a whole number from 1 to 9999"
@@ -86,7 +88,7 @@ if [ ! -s "$dir/start" ]; then
   if [ -n "$since_seed" ]; then
     seed_s=$(date -u -d "$since_seed" +%s 2>/dev/null) || die "WATCH_SINCE is not a valid time"
     printf '%s\n' "$since_seed" >"$dir/start"
-    printf '%s\n' "$((seed_s + 300))" >"$dir/cursor"
+    printf '%s\n' "$((seed_s + window_s))" >"$dir/cursor"
     touch "$dir/seeded"
   else
     date -u -d "@$(now_s)" +%Y-%m-%dT%H:%M:%SZ >"$dir/start"
@@ -122,18 +124,60 @@ api() { # file, then gh api arguments; fails on any error or a timeout
   timeout -k 2 20 gh api "${@:2}" >"$w/$1" 2>/dev/null </dev/null 9>&-
 }
 
+is_first_poll() { [ ! -e "$dir/snapshot" ]; }
+
+fetch_runs_before_heads() {
+  api runs.json "repos/$repo/actions/workflows/ci.yml/runs?per_page=100" || return 1
+  api open.json --paginate "repos/$repo/pulls?state=open&per_page=100" || return 1
+  api closed.json "repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=50" || return 1
+  api main.json "repos/$repo/branches/main" || return 1
+}
+
+threads_to_scan() {
+  if is_first_poll; then
+    api issues.json --paginate --slurp "repos/$repo/issues?state=open&sort=updated&direction=desc&per_page=100" || return 1
+    jq -r --rawfile out "$w/outside" --argjson cap "$thread_cap" '($out | split("\n") | map(select(. != ""))) as $o
+      | [.[][] | select((.comments // 0) > 0 or .pull_request != null) | .number | tostring
+         | select(test("^[0-9]+$")) | select(IN($o[]) | not)] | .[0:$cap] | .[]' \
+      "$w/issues.json" >"$w/threads.raw" 2>/dev/null || return 1
+  else
+    jq -n -r --arg owner "$owner" "$defs"'
+      [inputs | .[][] | mine | (.issue_url // .pull_request_url // "") | split("/") | last | num] | unique | .[]' \
+      "$w/icomments.json" "$w/rcomments.json" >"$w/threads.raw" 2>/dev/null || return 1
+  fi
+}
+
+confirm_missing_runs() {
+  : >"$w/always.ok"
+  if [ -e "$dir/ci-ok" ]; then cp "$dir/ci-ok" "$w/ci-ok" || return 1; else : >"$w/ci-ok"; fi
+  local key rest pr hsha
+  while IFS=$'\t' read -r key rest; do
+    case $key in
+      "ci-norun "*)
+        read -r _ pr hsha <<<"$key"
+        grep -qxF "$key" "$dir/seen" && continue
+        grep -qxF "$pr $hsha" "$w/ci-ok" && continue
+        api "confirm-$pr.json" "repos/$repo/actions/workflows/ci.yml/runs?head_sha=$hsha&per_page=5" || return 1
+        if jq -e --arg s "$hsha" '[.workflow_runs[] | select(.head_sha == $s)] | length > 0' \
+          "$w/confirm-$pr.json" >/dev/null 2>&1; then
+          echo "$pr $hsha" >>"$w/ci-ok"
+          continue
+        fi ;;
+    esac
+    printf '%s\t%s\n' "$key" "$rest" >>"$w/always.ok"
+  done <"$w/always"
+  mv "$w/always.ok" "$w/always" || return 1
+}
+
 # One poll into $w. Any failed call or unexpected JSON fails the whole poll, so a partial read
 # never shows up as a change.
 poll() {
   rm -rf "$w" && mkdir "$w" || return 1
   local since now
-  since=$(date -u -d "@$((cursor - 300))" +%Y-%m-%dT%H:%M:%SZ) || return 1
+  since=$(date -u -d "@$((cursor - window_s))" +%Y-%m-%dT%H:%M:%SZ) || return 1
   now=$(now_s)
   printf '%s\n' "$now" >"$w/now"
-  api runs.json "repos/$repo/actions/workflows/ci.yml/runs?per_page=100" || return 1
-  api open.json --paginate "repos/$repo/pulls?state=open&per_page=100" || return 1
-  api closed.json "repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=50" || return 1
-  api main.json "repos/$repo/branches/main" || return 1
+  fetch_runs_before_heads || return 1
   api icomments.json --paginate --slurp "repos/$repo/issues/comments?since=$since&per_page=100" || return 1
   api rcomments.json --paginate --slurp "repos/$repo/pulls/comments?since=$since&per_page=100" || return 1
   # Only the owner's account's PRs get calls of their own (see Cost and outside text above).
@@ -147,17 +191,7 @@ poll() {
     api "reviews-$n.json" --paginate --slurp "repos/$repo/pulls/$n/reviews?per_page=100" || return 1
   done <"$w/heads"
 
-  if [ -e "$dir/snapshot" ]; then
-    jq -n -r --arg owner "$owner" "$defs"'
-      [inputs | .[][] | mine | (.issue_url // .pull_request_url // "") | split("/") | last | num] | unique | .[]' \
-      "$w/icomments.json" "$w/rcomments.json" >"$w/threads.raw" 2>/dev/null || return 1
-  else
-    api issues.json --paginate --slurp "repos/$repo/issues?state=open&sort=updated&direction=desc&per_page=100" || return 1
-    jq -r --rawfile out "$w/outside" '($out | split("\n") | map(select(. != ""))) as $o
-      | [.[][] | select((.comments // 0) > 0 or .pull_request != null) | .number | tostring
-         | select(test("^[0-9]+$")) | select(IN($o[]) | not)] | .[0:60] | .[]' \
-      "$w/issues.json" >"$w/threads.raw" 2>/dev/null || return 1
-  fi
+  threads_to_scan || return 1
   grep -vxF -f "$w/outside" "$w/threads.raw" >"$w/threads" || :
   echo '[[]]' >"$w/none.json"
   : >"$w/scan"
@@ -235,25 +269,7 @@ poll() {
          | "ci-stale \(.id)\t1\tci: run \(.id) is \(.status | clean(20)) on \(.sha[0:7]), which is no longer the head of any open PR or main")' \
       "$w/runs.json"
   } >"$w/always" 2>/dev/null || return 1
-  : >"$w/always.ok"
-  if [ -e "$dir/ci-ok" ]; then cp "$dir/ci-ok" "$w/ci-ok" || return 1; else : >"$w/ci-ok"; fi
-  local key rest pr hsha
-  while IFS=$'\t' read -r key rest; do
-    case $key in
-      "ci-norun "*)
-        read -r _ pr hsha <<<"$key"
-        grep -qxF "$key" "$dir/seen" && continue
-        grep -qxF "$pr $hsha" "$w/ci-ok" && continue
-        api "confirm-$pr.json" "repos/$repo/actions/workflows/ci.yml/runs?head_sha=$hsha&per_page=5" || return 1
-        if jq -e --arg s "$hsha" '[.workflow_runs[] | select(.head_sha == $s)] | length > 0' \
-          "$w/confirm-$pr.json" >/dev/null 2>&1; then
-          echo "$pr $hsha" >>"$w/ci-ok"
-          continue
-        fi ;;
-    esac
-    printf '%s\t%s\n' "$key" "$rest" >>"$w/always.ok"
-  done <"$w/always"
-  mv "$w/always.ok" "$w/always" || return 1
+  confirm_missing_runs || return 1
   {
     jq -r --arg start "$start" --arg owner "$owner" "$defs"'
       .[] | select(.closed_at != null and .closed_at >= $start)
@@ -278,14 +294,14 @@ poll() {
 report() {
   : >"$w/newkeys"
   local quiet=0
-  [ -e "$dir/snapshot" ] || [ -e "$dir/seeded" ] || quiet=1
+  if is_first_poll && [ ! -e "$dir/seeded" ]; then quiet=1; fi
   awk -F '\t' -v keys="$w/newkeys" -v quiet="$quiet" -v always="$w/always" '
     FILENAME == ARGV[1] { seen[$0] = 1; next }
     !($1 in seen) { seen[$1] = 1; print $1 >keys; if (!quiet || FILENAME == always) print $2 "\t" $3 }' \
     "$dir/seen" "$w/always" "$w/events" >"$w/new-events"
   {
     cat "$w/new-events"
-    if [ -e "$dir/snapshot" ]; then
+    if ! is_first_poll; then
       LC_ALL=C comm -13 "$dir/snapshot" "$w/snapshot" | awk '{ print (/^pr #[0-9]+ outside / ? 2 : 1) "\t" $0 }'
     fi
   } | LC_ALL=C sort -s -t "$(printf '\t')" -k1,1 | cut -f2- >"$w/out"
