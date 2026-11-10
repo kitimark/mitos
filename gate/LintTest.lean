@@ -411,9 +411,6 @@ def timeoutCase (script : String) (code : UInt32) : IO (List String) := do
   | none => errs := errs.push "no run directory was made"
   return errs.toList
 
-/-- The acceptance record's temp file (#70, note 1). A path that already exists is left in place,
-a free path is renamed over the record, and a temp file this run created is removed when the
-rename fails. `writeRecord` writes the record through `Accept.writeByRename`. -/
 def recordWrite : IO (List String) := do
   let dir ← IO.FS.createTempDir
   let errs ← try
