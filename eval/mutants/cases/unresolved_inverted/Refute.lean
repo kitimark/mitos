@@ -4,7 +4,6 @@ import Mitos.Impl.Impact
 namespace Mitos.Refute
 open Mitos
 
-/-- `a` requires a library that nothing provides. -/
 def fs : List Located :=
   [{ id := 0, repo := "a", rev := "", path := "", origin := .extractor "x",
      fact := { kind := .requires, ident := ⟨"npm", "lib"⟩, span := ⟨0, 0⟩ } }]

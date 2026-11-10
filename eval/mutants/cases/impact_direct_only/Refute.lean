@@ -8,7 +8,6 @@ def edge (src dst : String) : Edge :=
   { src, dst, ident := ⟨"npm", "lib"⟩, scope := .runtime, req := 0, prov := 0, assumes := [],
     status := .confirmed }
 
-/-- `c` requires `b`, which requires `a`: a change to `a` affects `c`. -/
 def es : List Edge := [edge "b" "a", edge "c" "b"]
 
 theorem impact_correct : ¬ Spec.ImpactCorrect Impl.impact := by

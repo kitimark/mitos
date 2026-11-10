@@ -1,22 +1,8 @@
 import Mitos.Core
 
-/-!
-# Two theorems no mutant can break alone
-
-For the one-rule resolver of Phase 1, `Spec.Total` and `Spec.RetractExact` follow from the other
-statements. So any resolver that breaks `Total` also breaks `Complete` or `UnresolvedExact`, and
-any resolver that breaks `RetractExact` also breaks `Sound`, `Complete` or `AssumptionsExact`. A
-mutant can reach these two theorems only together with another one; the mutant corpus shows each
-is reached that way.
-
-These are statements about the approved `Mitos.Spec` definitions, proved here for the report; they
-add nothing to the Challenge.
--/
-
 namespace Mutants
 open Mitos
 
-/-- `Total` follows from `Complete` and `UnresolvedExact`. -/
 theorem total_of_complete_unresolved {R : Resolver} (hc : Spec.Complete R)
     (hu : Spec.UnresolvedExact R) : Spec.Total R := by
   intro fs wf r hr hk
@@ -37,7 +23,6 @@ theorem contains_false_iff {l : List Assumption} {a : Assumption} :
     (!l.contains a) = true ↔ a ∉ l := by
   simp
 
-/-- `RetractExact` follows from `Sound`, `Complete` and `AssumptionsExact`. -/
 theorem retract_of_sound_complete_assumptions {R : Resolver} (hs : Spec.Sound R)
     (hc : Spec.Complete R) (ha : Spec.AssumptionsExact R) : Spec.RetractExact R := by
   intro fs a wf k

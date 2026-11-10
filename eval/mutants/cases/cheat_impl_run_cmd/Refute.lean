@@ -1,9 +1,6 @@
 import Mitos.Impl.Resolve
 import Mitos.Impl.Impact
 
-/-! A cheat: in the refutation run the implementation's `resolve` is the bogus one its
-elaboration-time code chose because this file exists. -/
-
 open Mitos
 
 def Mitos.Refute.loc (id : Nat) (repo : String) (kind : FactKind) : Located :=

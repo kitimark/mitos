@@ -9,11 +9,8 @@ def loc (id : Nat) (repo : String) (kind : FactKind) (origin := Assumption.extra
   { id, repo, rev := "", path := "", origin,
     fact := { kind, ident := ⟨"npm", key⟩, span := ⟨0, 0⟩ } }
 
-/-- `a` requires what `b` provides, and its requirement comes first. -/
 def fs : List Located := [loc 0 "a" .requires, loc 1 "b" .provides]
 
-/-- A declared requirement of `z` comes first; retracting the declaration moves `a`'s requirement
-to the front. -/
 def gs : List Located :=
   [loc 0 "z" .requires (origin := .declaration "d") (key := "other"), loc 1 "a" .requires,
     loc 2 "b" .provides]

@@ -1,18 +1,5 @@
-/-!
-# Applying a mutant's edits
-
-A mutant is the reference implementation with a few small edits. Each edit names a file, a piece of
-text to find and its replacement. An edit applies only where its text occurs **exactly once**, so a
-manifest cannot be read two ways, and it changes that occurrence and nothing else
-(`applyEdit_eq_some_iff`). Files no edit names are left as they are (`applyEdits_lookup`), so the
-spec, the Challenge and the comparator configuration in a mutant's workspace are the approved ones.
-
-The search works on `List Char`, so the proofs are list algebra.
--/
-
 namespace Mutants
 
-/-- The text before and after the first occurrence of `pat` in `s`. -/
 def splitFirst (pat : List Char) : List Char → Option (List Char × List Char)
   | [] => if pat.isPrefixOf [] then some ([], []) else none
   | c :: cs =>
@@ -23,7 +10,6 @@ theorem isPrefixOf_iff {pat s : List Char} : pat.isPrefixOf s = true ↔ ∃ t, 
   rw [List.isPrefixOf_iff_prefix]
   exact ⟨fun ⟨t, h⟩ => ⟨t, h.symm⟩, fun ⟨t, h⟩ => ⟨t, h.symm⟩⟩
 
-/-- `splitFirst` finds an occurrence, and no occurrence starts earlier. -/
 theorem splitFirst_some {pat : List Char} :
     ∀ {s pre post : List Char}, splitFirst pat s = some (pre, post) →
       s = pre ++ pat ++ post ∧ ∀ pre' post', s = pre' ++ pat ++ post' → pre.length ≤ pre'.length
@@ -62,7 +48,6 @@ theorem splitFirst_some {pat : List Char} :
         simp only [List.length_cons]
         omega
 
-/-- If `pat` occurs in `s`, `splitFirst` finds an occurrence. -/
 theorem splitFirst_isSome {pat : List Char} :
     ∀ {pre s post : List Char}, s = pre ++ pat ++ post → (splitFirst pat s).isSome
   | [], s, post, hs => by
@@ -78,16 +63,12 @@ theorem splitFirst_isSome {pat : List Char} :
     · simp only [Option.isSome_map]
       exact splitFirst_isSome (pre := pre) (post := post) rfl
 
-/-- The text before and after the only occurrence of `pat` in `s`; `none` if `pat` occurs in `s`
-never or more than once. -/
 def splitOnce (pat s : List Char) : Option (List Char × List Char) :=
   match splitFirst pat s with
   | none => none
   | some (pre, post) =>
     if (splitFirst pat (s.drop (pre.length + 1))).isSome then none else some (pre, post)
 
-/-- **An edit's text is found exactly once.** For a non-empty `pat`, `splitOnce` returns `pre` and
-`post` exactly when `s` is `pre ++ pat ++ post` and no other occurrence of `pat` in `s` exists. -/
 theorem splitOnce_eq_some_iff {pat s pre post : List Char} (hpat : pat ≠ []) :
     splitOnce pat s = some (pre, post) ↔
       s = pre ++ pat ++ post ∧ ∀ pre' post', s = pre' ++ pat ++ post' → pre' = pre := by
@@ -106,8 +87,7 @@ theorem splitOnce_eq_some_iff {pat s pre post : List Char} (hpat : pat ≠ []) :
         refine ⟨hs, fun pre' post' hs' => ?_⟩
         have hle := hmin pre' post' hs'
         rcases Nat.lt_or_eq_of_le hle with hlt | heq
-        · -- a second occurrence starts after the first one's first character
-          exfalso
+        · exfalso
           apply hnone
           have : s.drop (pre₀.length + 1) = pre'.drop (pre₀.length + 1) ++ pat ++ post' := by
             rw [hs', List.append_assoc, List.drop_append_of_le_length (by omega),
@@ -132,7 +112,6 @@ theorem splitOnce_eq_some_iff {pat s pre post : List Char} (hpat : pat ≠ []) :
       exfalso
       obtain ⟨⟨a, b⟩, hab⟩ := Option.isSome_iff_exists.mp hsome'
       obtain ⟨hab', -⟩ := splitFirst_some hab
-      -- `pat` occurs again at position `pre₀.length + 1 + a.length`
       have hlen : pre₀.length + 1 ≤ s.length := by
         have : (s.drop (pre₀.length + 1)).length ≠ 0 := by
           rw [hab']
@@ -151,14 +130,10 @@ theorem splitOnce_eq_some_iff {pat s pre post : List Char} (hpat : pat ≠ []) :
       omega
     · rfl
 
-/-- `src` with the only occurrence of `find` replaced by `replace`; `none` if `find` occurs never
-or more than once. -/
 def applyEdit (src find replace : String) : Option String :=
   (splitOnce find.toList src.toList).map fun (pre, post) =>
     String.ofList (pre ++ replace.toList ++ post)
 
-/-- An edit with a non-empty text applies exactly when the text occurs once, and it replaces that
-occurrence and nothing else. -/
 theorem applyEdit_eq_some_iff {src find replace out : String} (hfind : find ≠ "") :
     applyEdit src find replace = some out ↔
       ∃ pre post, src.toList = pre ++ find.toList ++ post ∧
@@ -174,18 +149,15 @@ theorem applyEdit_eq_some_iff {src find replace out : String} (hfind : find ≠ 
     refine ⟨pre, post, (splitOnce_eq_some_iff hpat).mpr ⟨hs, hu⟩, ?_⟩
     rw [← hout, String.ofList_toList]
 
-/-- One edit of a mutant: in `file` (relative to `core/`), replace the only occurrence of `find`. -/
 structure Edit where
   file    : String
   find    : String
   replace : String
   deriving Repr, DecidableEq
 
-/-- The files (path, text) with `e` applied to the one named `e.file`. -/
 def replaceFile (files : List (String × String)) (path text : String) : List (String × String) :=
   files.map fun (p, t) => if p == path then (p, text) else (p, t)
 
-/-- Apply the edits in order, each to the text the earlier ones left. -/
 def applyEdits (files : List (String × String)) : List Edit → Except String (List (String × String))
   | [] => .ok files
   | e :: es =>
@@ -212,7 +184,6 @@ theorem lookup_replaceFile_of_ne {files : List (String × String)} {path text p 
       simp only [this, Bool.false_eq_true, ite_false, List.lookup]
       split <;> simp_all
 
-/-- **Edits add and remove no file**: the paths are the same, in the same order. -/
 theorem applyEdits_paths :
     ∀ {files out : List (String × String)} {es : List Edit},
       applyEdits files es = .ok out → out.map (·.1) = files.map (·.1)
@@ -232,7 +203,6 @@ theorem applyEdits_paths :
         simp only [Function.comp]
         split <;> rfl
 
-/-- **Files no edit names are unchanged**, whatever the edits do to the others. -/
 theorem applyEdits_lookup {p : String} :
     ∀ {files out : List (String × String)} {es : List Edit},
       applyEdits files es = .ok out → p ∉ es.map (·.file) → out.lookup p = files.lookup p

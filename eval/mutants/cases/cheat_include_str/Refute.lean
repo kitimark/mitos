@@ -1,10 +1,6 @@
 import Mitos.Impl.Resolve
 import Mitos.Impl.Impact
 
-/-! A cheat: the mutant's `resolve` reads this file with `include_str` and returns one bogus edge
-when the file is there, which is only in the refutation run. So this refutes the bogus resolver,
-not the known gap the manifest shows. -/
-
 open Mitos
 
 def Mitos.Refute.loc (id : Nat) (repo : String) (kind : FactKind) : Located :=

@@ -1,17 +1,12 @@
 import Mitos.Impl.Resolve
 import Mitos.Impl.Impact
 
-/-! A cheat: the known gap `assumptions_dedupe_dropped` with the core's `resolve` made private, so
-this file can declare a public `Mitos.Impl.resolve` of its own without a clash, and refutes
-`AssumptionsExact` for that instead of for the mutant. -/
-
 open Mitos
 
 def Mitos.Refute.bogus : Edge :=
   { src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime,
     req := 0, prov := 1, assumes := [], status := .inferred }
 
-/-- Declared by the case: the mutant made the core's `resolve` private. -/
 def Mitos.Impl.resolve : Resolver := fun _ => { edges := [Mitos.Refute.bogus], unresolved := [] }
 
 def Mitos.Refute.loc (id : Nat) (repo : String) (kind : FactKind) : Located :=

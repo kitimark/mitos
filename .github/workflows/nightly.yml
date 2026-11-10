@@ -35,8 +35,6 @@ jobs:
             --model Models.ToyRequire.model --paranoid
       - run: eval/cheats/run.sh
 
-      # Mutation testing (eval/mutants): each mutant of the resolver or impact analysis is rejected
-      # by the approved Challenge, and a refutation of the theorems it names is accepted.
       - name: Build the mutant runner
         run: lake --dir eval/mutants build
 

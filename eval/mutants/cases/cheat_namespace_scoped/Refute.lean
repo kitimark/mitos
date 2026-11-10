@@ -1,11 +1,6 @@
 import Mitos.Impl.Resolve
 import Mitos.Impl.Impact
 
-/-! A cheat on the lint's parse: entering namespace `Int` switches on `Init`'s scoped syntax
-`-[n+1]`, so Lean reads the example below as `Int.negSucc 1 = Int.negSucc 1`, while `Init`'s
-syntax alone reads `-[1+1]` as `-` applied to the list `[1+1]`. The example declares nothing, so
-only the namespace itself is refused. The refutation is `src_dst_swapped`'s. -/
-
 namespace Int
 
 example : Int.negSucc 1 = -[1+1] := rfl

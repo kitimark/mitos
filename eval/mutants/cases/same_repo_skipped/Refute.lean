@@ -8,7 +8,6 @@ def loc (id : Nat) (repo : String) (kind : FactKind) : Located :=
   { id, repo, rev := "", path := "", origin := .extractor "x",
     fact := { kind, ident := ⟨"npm", "lib"⟩, span := ⟨0, 0⟩ } }
 
-/-- Repo `a` requires a library it also provides. -/
 def fs : List Located := [loc 0 "a" .requires, loc 1 "a" .provides]
 
 theorem resolve_complete : ¬ Spec.Complete Impl.resolve := by

@@ -1,7 +1,6 @@
 name = "mitos-mutants"
 defaultTargets = ["mitos-mutants"]
 
-# A `sorry` or any other warning in the runner's proofs fails the build.
 [leanOptions]
 warningAsError = true
 
@@ -9,7 +8,6 @@ warningAsError = true
 name = "mitos-core"
 path = "../../core"
 
-# The root package, for gate 1's lint (`MitosGate.Lint`), which `Mutants.Lint` reuses.
 [[require]]
 name = "mitos"
 path = "../.."
@@ -20,5 +18,4 @@ name = "Mutants"
 [[lean_exe]]
 name = "mitos-mutants"
 root = "Main"
-# `Mutants.Lint` loads Lean's own syntax to parse a case's Lean text, as `mitos-gate` does.
 supportInterpreter = true

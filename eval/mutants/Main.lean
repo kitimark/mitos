@@ -1,23 +1,6 @@
 import Lean.Data.Json
 import Mutants
 
-/-!
-# `mitos-mutants`: the mutant runner
-
-Run from the repository root: `lake --dir eval/mutants exe mitos-mutants [--paranoid] [<case>...]`.
-
-First it checks, with Lean, its reading of the approved Challenge and every Challenge it will
-generate: the approved Challenge as Lean builds it (`Mutants.CrossCheck`) and as Lean's parser
-reads it, and each generated Challenge as Lean builds it (`Mutants.Output`); it stops on any
-difference. For each case in `eval/mutants/cases/`, it applies the case's edits to a copy of
-`core/` (sources only, no build outputs), lints the case's Lean text (`Mutants.Lint`), and judges
-it with the sandboxed `lake comparator`, as `Mutants.Verdict` describes: the hole run, the gate's
-run, then the values or the refutation run. Each run gets a fresh copy, which is removed
-afterwards. The pure parts (manifest, edits, lint decisions, the generated Challenges and solution
-modules, the comparisons with Lean's build and parse, verdict) are in `Mutants/` with their proofs;
-this file only reads, parses, writes and runs.
--/
-
 open Mutants Lean
 
 def usage : String := "usage: mitos-mutants [--paranoid] [--keep] [<case>...]
@@ -52,8 +35,6 @@ def parseArgs : List String → Config → Except String Config
   | a :: rest, c =>
     if a.startsWith "-" then .error s!"unknown option {a}" else parseArgs rest { c with cases := c.cases ++ [a] }
 
-/-- Text from a case or from Lean, on one line: control, line-separator and bidi characters are
-written as `\u{XXXX}`. -/
 def clean (s : String) : String :=
   String.join <| s.toList.map fun c =>
     let n := c.toNat
@@ -62,7 +43,6 @@ def clean (s : String) : String :=
       s!"\\u\{{String.ofList (Nat.toDigits 16 n)}}"
     else c.toString
 
-/-- Every file under `core/` but build outputs, by its path relative to `core/`. -/
 def coreFiles (core : System.FilePath) : IO (List (String × String)) := do
   let paths ← core.walkDir fun p => pure (p.fileName != some ".lake")
   let mut out := #[]
@@ -72,7 +52,6 @@ def coreFiles (core : System.FilePath) : IO (List (String × String)) := do
     out := out.push (rel, ← IO.FS.readFile p)
   return (out.qsort (·.1 < ·.1)).toList
 
-/-- A fresh workspace with `files`, judged once by `lake comparator`, then removed. -/
 def judge (cfg : Config) (toolchain : String) (files : List (String × String))
     (config : Option String) (log : System.FilePath) : IO Run := do
   let dir ← IO.FS.createTempDir
@@ -94,41 +73,27 @@ def judge (cfg : Config) (toolchain : String) (files : List (String × String))
   finally
     if cfg.keep then IO.println s!"  (workspace kept: {dir})" else IO.FS.removeDirAll dir
 
-/-- The approved inputs every case is judged against. -/
 structure Approved where
   toolchain  : String
   files      : List (String × String)
   config     : Json
-  /-- The Challenge module, as `core/comparator.json` names it. -/
   chalModule : String
   challenge  : List Line
   theorems   : List String
-  /-- The approved configuration's definition holes. -/
   defs       : List String
-  /-- The implementation modules: every module under `Mitos/Impl/` of the approved core. A case's
-  edits change no path (`Mutants.applyEdits_paths`), so these are every case's too. -/
   impls      : List String
-  /-- The texts of the generated Challenges the output check passed (`Mutants.Output`); `prepare`
-  writes no other. -/
   checked    : List String := []
 
 def strs (xs : List String) : Json := Json.arr (xs.toArray.map Json.str)
 
-/-- The hole run's configuration: the approved Challenge, definition holes and permitted axioms,
-no theorem, and the generated module that imports every implementation module as the solution. -/
 def holesConfig (a : Approved) : String :=
   ((a.config.setObjVal! "solution_module" (.str "Mitos.Proofs.Holes")).setObjVal!
     "theorem_names" (strs [])).pretty
 
-/-- The values run's configuration: the approved one with the approved Challenge by value
-(`Mutants.approvedByValue`), so no definition holes. -/
 def valuesConfig (a : Approved) : String :=
   ((a.config.setObjVal! "challenge_module" (.str "Challenge.Mutant")).setObjVal!
     "definition_names" (strs [])).pretty
 
-/-- The refutation configuration: the generated Challenge, the generated solution module
-(`Mutants.refutationSolution`), `Mitos.Refute.holes` and the refuted theorems, no definition holes;
-the permitted axioms stay as approved. -/
 def refutationConfig (a : Approved) (ts : List String) : String :=
   let names := Output.refutationNames a.defs ts
   ((((a.config.setObjVal! "challenge_module" (.str "Challenge.Mutant")).setObjVal!
@@ -139,22 +104,14 @@ def generated : List String :=
   ["Challenge/Mutant.lean", "Mitos/Proofs/Holes.lean", "Mitos/Proofs/Refute.lean",
     "Mitos/Proofs/RefuteCase.lean", "holes.json", "values.json", "mutant.json"]
 
-/-- A case, ready to judge: its manifest, the hole run's workspace, the mutated core for the gate's
-run, the files the values run adds to it, and for a `breaks=` case the files the refutation run
-adds to it. -/
 structure Prepared where
   mutant     : Mutant
-  /-- What the lint found in the case's Lean text (`Mutants.Lint`); nothing is built unless it is
-  empty. -/
   lint       : List String
   holes      : List (String × String)
   approved   : List (String × String)
   values     : List (String × String)
   refutation : Option (List (String × String))
 
-/-- What the lint finds in a case's Lean text: each `replace=` text as plain text, each file the
-edits change as a whole (`Lint.targets`), and the case's `Refute.lean`, which may declare the
-approved definition holes `defs` besides names under `Mitos.Refute`. -/
 def lintCase (env : Environment) (m : Mutant) (files : List (String × String))
     (refute : Option String) (defs : List String) : ExceptT String IO (List String) := do
   let mut found := #[]
@@ -189,17 +146,12 @@ def prepare (env : Environment) (a : Approved) (casesDir : System.FilePath) (nam
   let refuteSrc ← match m.expect with
     | .breaks _ => some <$> IO.FS.readFile (dir / "Refute.lean")
     | .survives _ => pure none
-  -- Before anything is built: the case's Lean text runs no code and declares no syntax.
   let lint ← lintCase env m files refuteSrc a.defs
-  -- The hole run's core: no `Mitos/Proofs/`, no file of the case, only the implementation edits
-  -- (`Mutants.holeCore_spec`).
   let core ← match holeCore a.files m with
     | .ok fs => pure fs
     | .error e => throw e
   let holes := core ++ [("Mitos/Proofs/Holes.lean", holesSolution (core.map (·.1))),
     ("holes.json", holesConfig a)]
-  -- The generated Challenges import the mutated implementation, so the comparator compares the
-  -- holes by value. Each is a text the output check passed, as Lean built it.
   let checked (g : Except String Output.Gen) : ExceptT String IO String := do
     let g ← match g with
       | .ok g => pure g
@@ -218,20 +170,17 @@ def prepare (env : Environment) (a : Approved) (casesDir : System.FilePath) (nam
       ("mutant.json", refutationConfig a ts)]
     return { mutant := m, lint, holes, approved := files, values, refutation := some extra }
 
-/-- A case's log files, newest run first. -/
 def caseLogs (logDir : System.FilePath) (name : String) : List System.FilePath :=
   ["refutation", "values", "approved", "holes"].map fun s => logDir / s!"{name}.{s}.log"
 
 def runCase (cfg : Config) (env : Environment) (a : Approved) (casesDir logDir : System.FilePath)
     (name : String) : IO Judged := do
-  -- Logs from an earlier run must not be read as this one's.
   for log in caseLogs logDir name do
     if ← log.pathExists then IO.FS.removeFile log
   let p ← match ← (prepare env a casesDir name).run with
     | .ok p => pure p
     | .error e => return .invalid e
   let ran := Judged.ran p.mutant.expect p.mutant.rejects
-  -- A case the lint finds anything in is not built at all.
   unless p.lint.isEmpty do return ran { lint := p.lint }
   let holes ← judge cfg a.toolchain p.holes (some "holes.json") (logDir / s!"{name}.holes.log")
   if holes != .accepted then return ran { holes }
@@ -256,10 +205,6 @@ def writeFiles (toolchain : String) (dir : System.FilePath) (files : List (Strin
     if let some d := (dir / rel).parent then IO.FS.createDirAll d
     IO.FS.writeFile (dir / rel) txt
 
-/-- The Challenges the runner will judge with for `cases` (`Mutants.Output`): the values
-Challenge, and the refutation Challenge of each distinct `breaks=` list, once per distinct text. A
-case whose manifest cannot be read or whose refutation cannot be generated adds none; `prepare`
-finds it invalid. -/
 def generatedFor (a : Approved) (casesDir : System.FilePath) (cases : List String) :
     IO (List Output.Gen) := do
   let add (gs : Array Output.Gen) : Except String Output.Gen → Array Output.Gen
@@ -273,19 +218,11 @@ def generatedFor (a : Approved) (casesDir : System.FilePath) (cases : List Strin
         gens := add gens (Output.refutationGen a.impls a.defs a.challenge ts)
   return gens.toList
 
-/-- What the checks with Lean compared. -/
 structure Checked where
   decls    : Nat
   commands : Nat
   gens     : Nat
 
-/-- The checks with Lean (`Mutants.CrossCheck`, `Mutants.Output`), in a fresh copy of the approved
-core. First it builds the approved Challenge module and the cross-check's probes with `lake build`
-and loads each as Lean built it: the cross-check compares the approved Challenge's declarations
-with the reader's lines, and the parse check compares Lean's parse of the approved Challenge (with
-the syntax of its imports) with them. Then it builds the generated Challenges `gens` and the output
-check's probes in the same copy, and the output check compares each one's constants with what it
-must state. Each must show no problem, and each probe its known ones. -/
 def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
     ExceptT String IO Checked := do
   let genPath (k : Nat) : String := s!"Challenge/MutantsOutput{k}.lean"
@@ -307,8 +244,6 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
   let dir ← IO.FS.createTempDir
   try
     IO.FS.writeFile log ""
-    -- Writes `files`, then `lake build` of `mods`, its log appended; on a failure, Lean's first
-    -- error names the file.
     let build (what : String) (files : List (String × String)) (mods : List String) :
         ExceptT String IO Unit := do
       writeFiles a.toolchain dir files
@@ -324,7 +259,6 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
       (a.chalModule :: first.map (moduleOf ·.1))
     initSearchPath (← findSysroot) [dir / ".lake" / "build" / "lib" / "lean"]
     let import_ (m : String) : IO Environment := importModules #[{ module := m.toName }] {}
-    -- The cross-check: Lean declares in the approved Challenge exactly what the reader read.
     let load (m : String) : ExceptT String IO (Environment × List String × List CrossCheck.Decl) := do
       let env ← import_ m
       let some (imps, ds) := CrossCheck.built env m.toName
@@ -341,8 +275,6 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
         let found := (CrossCheck.problems p.lines p.defs pi pd).map (·.text)
         throw (s!"the cross-check missed a known misread in {p.path}: " ++
           s!"expected {p.expect}, found {found}")
-    -- The parse check: every command Lean's parser reads is a module doc or one of the reader's
-    -- hole and theorem lines, whole.
     let penv ← Output.parseEnv (CrossCheck.importNames a.challenge)
     let parsed (src : String) : ExceptT String IO (List String × List String × List Output.Cmd) :=
       ExceptT.adapt (s!"Lean's parser stops: {·}") (ExceptT.mk (Output.readParse penv src))
@@ -359,8 +291,6 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
       let found := (Output.parseProblems ls h i c).map (·.key)
       unless p.expect.all found.contains do
         throw s!"the parse check missed a known misread in probe {p.name}: expected {p.expect}, found {found}"
-    -- The output check: each generated Challenge, as Lean built it, declares exactly the theorems
-    -- it must, each stating exactly what it must, by the approved Challenge module `am` in `aenv`.
     build "the generated Challenges and the output check's probes" second (second.map (moduleOf ·.1))
     let check (aenv : Environment) (am m : String) (g : Output.Gen) :
         ExceptT String IO (List Output.OutProblem) := do
@@ -383,9 +313,6 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
   finally
     IO.FS.removeDirAll dir
 
-/-- Writes each case's workspaces without judging them, so a case's author can build them:
-`<out>/<case>/` is the refutation run's for a `breaks=` case (`lake build Mitos.Proofs.Refute`
-there) and the values run's for a `survives=` case; `<out>/<case>.holes/` is the hole run's. -/
 def writeWorkspaces (env : Environment) (a : Approved) (casesDir out : System.FilePath)
     (cases : List String) : IO UInt32 := do
   let mut code := 0
@@ -438,8 +365,6 @@ def readApproved (root : System.FilePath) : ExceptT String IO Approved := do
   let defs ← match config.getObjValAs? (Array String) "definition_names" with
     | .ok ds => pure ds.toList
     | .error _ => pure []
-  -- Every generated statement names everything absolutely (`Mutants.qualify`); a Challenge whose
-  -- statements the runner cannot write that way is not judged at all.
   if let some e := unqualified challenge defs then throw s!"core/{chalPath}: {e}"
   return { toolchain, files, config, chalModule, challenge, theorems, defs,
            impls := implModules (files.map (·.1)) }
@@ -461,10 +386,6 @@ def main (args : List String) : IO UInt32 := do
       pure (((← casesDir.readDir).map (·.fileName)).qsort (· < ·)).toList
     else pure cfg.cases
   if cases.isEmpty then IO.eprintln "mitos-mutants: no cases in eval/mutants/cases/"; return 2
-  -- Before anything is prepared or judged: Lean declares in the approved Challenge exactly what the
-  -- reader read, Lean's parser reads no command in it that the reader did not, and every Challenge
-  -- the runner will generate for these cases states, as Lean builds it, exactly what it must
-  -- (`Mutants.CrossCheck`, `Mutants.Output`).
   let gens ← generatedFor a casesDir cases
   let t0 ← IO.monoMsNow
   let checked ← try (leanCheck a gens (logDir / "challenge.log")).run
@@ -502,8 +423,6 @@ def main (args : List String) : IO UInt32 := do
     let mark := if r.ok then "" else "  <-- FAIL"
     let why := match j with | .invalid w => s!" ({clean w})" | _ => ""
     IO.println s!"{pad (clean name) w}{pad (outcomeText r.outcome) 23}{pad s!"{secs / 10}.{secs % 10}s" 8}{expectText j}{why}{mark}"
-    -- The evidence of a rejection: for a case that did not go as expected, and for every cheat
-    -- case, the lint's first finding, or the first error line of the case's last comparator run.
     let cheat := j matches .ran _ (some _) _
     if let .ran _ _ x := j then
       if let l :: more := x.lint then
@@ -513,8 +432,6 @@ def main (args : List String) : IO UInt32 := do
       for log in caseLogs logDir name do
         if ← log.pathExists then
           let lines := (← IO.FS.readFile log).splitOn "\n"
-          -- The exporter's panic names a constant the solution lacks, such as a hidden hole; else
-          -- Lean's first error in a file (a bad import, say), or the comparator's verdict.
           let has (pat : String) (l : String) := (splitFirst pat.toList l.toList).isSome
           let err (l : String) := l.startsWith "error:"
           if let some l := lines.find? (has "PANIC") <|> lines.find? (fun l => err l && has ".lean:" l) <|>
@@ -527,7 +444,6 @@ def main (args : List String) : IO UInt32 := do
   for t in a.theorems do
     let bs := breakers rs t
     IO.println s!"{pad t 32}{if bs.isEmpty then "none" else s!"{bs.length}: " ++ ", ".intercalate bs}"
-  -- A known gap is a `survives=` case that is no cheat case; any other survivor is unexpected.
   let survivors (known : Bool) := rs.filterMap fun r =>
     match r.judged with
     | .ran e c x =>
