@@ -13,13 +13,6 @@
 #     after the watcher first saw it, a run queued that long, and a queued or running run on a
 #     commit that is no longer the head of any open PR or main. Each prints once.
 #
-# Unanswered owner comments (#91, B3). A comment or review from the owner's account that does not
-# end with the footer and is newer than the latest footer post on the same issue or PR counts as
-# unanswered, whatever the cursor says. The first poll of a new state directory reads every open
-# issue with comments and every open PR of the owner's account in full and prints those, so a new
-# directory no longer swallows a comment made while no watcher ran (#87). Later polls read in full
-# each thread on which the comment window shows a new owner comment.
-#
 # Usage: watch-github.sh <state-dir>
 # The state directory keeps the last snapshot, the events already printed and the comment cursor,
 # so a re-armed monitor neither repeats nor misses an event. Use one directory for the whole
@@ -93,7 +86,6 @@ if [ ! -s "$dir/start" ]; then
   if [ -n "$since_seed" ]; then
     seed_s=$(date -u -d "$since_seed" +%s 2>/dev/null) || die "WATCH_SINCE is not a valid time"
     printf '%s\n' "$since_seed" >"$dir/start"
-    # The comment window reaches back 300 s before the cursor, so this starts it at WATCH_SINCE.
     printf '%s\n' "$((seed_s + 300))" >"$dir/cursor"
     touch "$dir/seeded"
   else
@@ -138,8 +130,6 @@ poll() {
   since=$(date -u -d "@$((cursor - 300))" +%Y-%m-%dT%H:%M:%SZ) || return 1
   now=$(now_s)
   printf '%s\n' "$now" >"$w/now"
-  # The runs first: every run read then predates the heads read after it, so a push in between
-  # cannot make a run on a current head look stale.
   api runs.json "repos/$repo/actions/workflows/ci.yml/runs?per_page=100" || return 1
   api open.json --paginate "repos/$repo/pulls?state=open&per_page=100" || return 1
   api closed.json "repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=50" || return 1
@@ -157,16 +147,12 @@ poll() {
     api "reviews-$n.json" --paginate --slurp "repos/$repo/pulls/$n/reviews?per_page=100" || return 1
   done <"$w/heads"
 
-  # The threads read in full for unanswered owner comments: on a new directory, every open issue
-  # with comments and every open PR, at most 60 by latest update; later, each thread on which the
-  # comment window has an owner comment without the footer. PRs from other accounts are left out.
   if [ -e "$dir/snapshot" ]; then
     jq -n -r --arg owner "$owner" "$defs"'
       [inputs | .[][] | mine | (.issue_url // .pull_request_url // "") | split("/") | last | num] | unique | .[]' \
       "$w/icomments.json" "$w/rcomments.json" >"$w/threads.raw" 2>/dev/null || return 1
   else
     api issues.json --paginate --slurp "repos/$repo/issues?state=open&sort=updated&direction=desc&per_page=100" || return 1
-    # PRs from other accounts go before the cap, so a flood of them cannot push an issue out.
     jq -r --rawfile out "$w/outside" '($out | split("\n") | map(select(. != ""))) as $o
       | [.[][] | select((.comments // 0) > 0 or .pull_request != null) | .number | tostring
          | select(test("^[0-9]+$")) | select(IN($o[]) | not)] | .[0:60] | .[]' \
@@ -186,7 +172,6 @@ poll() {
     printf '%s %s %s\n' "$t" "$rc" "$rv" >>"$w/scan"
   done <"$w/threads"
 
-  # When the watcher first saw each owner head: kept from the last poll, or now for a new one.
   : >"$w/heads-seen"
   while read -r n sha; do
     awk -v n="$n" -v s="$sha" -v now="$now" '$1 == n && $2 == s { t = $3 } END { print n, s, (t ? t : now) }' \
@@ -213,8 +198,7 @@ poll() {
   LC_ALL=C sort "$w/snapshot.raw" >"$w/snapshot" || return 1
 
   # Events: printed once each, keyed in the seen file. Each line is key, tier, text; tier 0 (the
-  # owner's words) prints first, tier 2 (other accounts' PRs) last. The `always` events (unanswered
-  # owner comments and CI health) print even on the first poll of a new directory.
+  # owner's words) prints first, tier 2 (other accounts' PRs) last.
   {
     while read -r t rc rv; do
       jq -n -r --arg owner "$owner" --arg t "$t" "$defs"'
@@ -251,9 +235,6 @@ poll() {
          | "ci-stale \(.id)\t1\tci: run \(.id) is \(.status | clean(20)) on \(.sha[0:7]), which is no longer the head of any open PR or main")' \
       "$w/runs.json"
   } >"$w/always" 2>/dev/null || return 1
-  # A head's run can be older than the newest 100 runs, so a missing run is confirmed with one call
-  # for that head before its line prints. A head found to have a run is kept in ci-ok, so it costs
-  # that call once.
   : >"$w/always.ok"
   if [ -e "$dir/ci-ok" ]; then cp "$dir/ci-ok" "$w/ci-ok" || return 1; else : >"$w/ci-ok"; fi
   local key rest pr hsha
@@ -293,8 +274,7 @@ poll() {
   } >"$w/events" 2>/dev/null || return 1
 }
 
-# Prints what changed since the last poll, at most $maxlines lines, and stores the new state. The
-# first poll of a new state directory prints only the `always` events, unless WATCH_SINCE seeded it.
+# Prints what changed since the last poll, at most $maxlines lines, and stores the new state.
 report() {
   : >"$w/newkeys"
   local quiet=0

@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# PreToolUse hook for the Agent tool. It never blocks a spawn. It adds one message, to the root's
-# context and as a system message, when:
-#   - the call sets no model or effort, or a fork sets either (kitimark-mode, Roles);
-#   - run_in_background is not true (kitimark-mode, Roles: every spawn runs in the background);
-#   - a PR owner or verifier spawn sets no isolation: "worktree". The role is read from the
-#     description and the first 600 characters of the prompt, so a brief that names neither role
-#     is not checked, and one that only mentions a verifier gets the warning anyway;
-#   - pr-state.sh found rule files that changed on main since this session loaded its rules
-#     (#91, B2). Its note for this session is added, so the root passes it into the brief.
 
 command -v jq >/dev/null || exit 0
 input=$(cat)

@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016 # backticks and $4 in single quotes are meant literally
-# Tests for check-no-session-link.sh. Run: .claude/hooks/check-no-session-link.test.sh
-# Each case feeds one PreToolUse input and wants exit 2 (blocked, with a message on stderr) or exit
-# 0 (allowed, silent). HOOK_UNDER_TEST=<path> runs the cases against another copy of the hook, such
-# as one taken from an earlier commit with git show.
+# shellcheck disable=SC2016
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 hook=${HOOK_UNDER_TEST:-$here/check-no-session-link.sh}
@@ -25,13 +21,13 @@ printf 'Fix the thing.\n\n%s\n' "$link" >"$work/scratch/bad.md"
 printf 'We dropped the `Claude-Session:` trailer.%s' "$footer" >"$work/mention.md"
 jq -n --arg b "x $link" '{title:"t", body:$b}' >"$work/input.json"
 
-bash_in() { # command -> hook input
+bash_in() {
   jq -cn --arg c "$1" --arg cwd "$work" '{tool_name:"Bash", cwd:$cwd, tool_input:{command:$c}}'
 }
-mcp_in() { # tool name, input JSON
+mcp_in() {
   jq -cn --arg t "$1" --argjson i "$2" --arg cwd "$work" '{tool_name:$t, cwd:$cwd, tool_input:$i}'
 }
-check() { # name, input, want (block|allow), [stderr substring]
+check() {
   local err code
   err=$("$hook" <<<"$2" 2>&1 >/dev/null)
   code=$?
@@ -45,7 +41,6 @@ check() { # name, input, want (block|allow), [stderr substring]
   fi
 }
 
-# The session link.
 check "gh api comment with the link inline" \
   "$(bash_in "gh api repos/o/r/issues/5/comments -f body='done $link'")" block "session link"
 check "gh api PATCH with a body file that holds the link" \
@@ -85,7 +80,6 @@ check "the link in a command that is not gh or git commit" \
 check "a read of the link through gh api with --jq" \
   "$(bash_in "gh api repos/o/r/pulls/5 --jq '.body | test(\"session_\")'")" allow
 
-# The Claude-Session line.
 check "git commit -m with the trailer" \
   "$(bash_in "git commit -m 'Fix' -m 'Claude-Session: abc'")" block "Claude-Session"
 check "git commit with the trailer in a heredoc" \
@@ -119,7 +113,6 @@ check "a gh body with the trailer as its own line" \
 check "git log grep for the trailer" \
   "$(bash_in "git log --grep 'Claude-Session:'")" allow
 
-# A PR create that skips open-pr.sh.
 check "gh api -X POST to the pulls route" \
   "$(bash_in "gh api -X POST repos/kitimark/mitos/pulls -f title=t -f head=h -f base=main -F body=@$work/clean.md")" block "open-pr.sh"
 check "gh api --method=POST with placeholders" \
@@ -146,8 +139,6 @@ check "the create message says to split a pulls read from another tool's flags" 
   "$(bash_in "gh api 'repos/o/r/pulls?state=open' --jq '.[].title' | cut -d' ' -f1")" block "split the command into two calls"
 check "the pulls list is a read" \
   "$(bash_in "gh api 'repos/o/r/pulls?state=open&per_page=100' --jq '.[] | .number'")" allow
-# The hook reads text, so a field on the pulls list route blocks even with -X GET; a read takes its
-# filters in the query string, as above.
 check "the pulls list with -X GET and a field is blocked" \
   "$(bash_in "gh api -X GET repos/o/r/pulls -f state=open")" block "query string"
 check "a PATCH of one PR" \
@@ -173,7 +164,6 @@ check "gh api -X GET with no field is a read" \
   "$(bash_in "gh api -X GET 'repos/o/r/pulls?state=open' --jq '.[].number'")" allow
 check "gh api --method=head with no field is a read" \
   "$(bash_in "gh api --method=head repos/o/r/pulls")" allow
-# A create in any shell form.
 check "an env assignment before gh api" \
   "$(bash_in "GH_TOKEN=x gh api -X POST repos/o/r/pulls -f title=t")" block "open-pr.sh"
 check "xargs -I{} gh api" \
@@ -254,8 +244,6 @@ check "curl -d to the pulls route" \
   "$(bash_in "curl -d @b.json https://api.github.com/repos/o/r/pulls")" block "open-pr.sh"
 check "requests.post to the pulls route" \
   "$(bash_in "python3 -c \"import requests; requests.post('https://api.github.com/repos/o/r/pulls', json={})\"")" block "open-pr.sh"
-# A quote after a long field flag (a list form of a script language, or a quoted shell word) or a
-# short flag cluster must not end the match (round 4, B1).
 check "gh api route with a quoted --input" \
   "$(bash_in 'gh api repos/o/r/pulls "--input" q.json')" block "open-pr.sh"
 check "gh api route with a single-quoted --input" \
@@ -286,7 +274,6 @@ check "gh api with -if glued before a field" \
   "$(bash_in "gh api repos/o/r/pulls -if title=t -if head=h")" block "open-pr.sh"
 check "gh api with -iF glued before a field" \
   "$(bash_in "gh api repos/o/r/pulls -iF body=@b.md")" block "open-pr.sh"
-# One case for each long flag, bare and with =, so that dropping one from the list fails a test.
 check "curl --json to the pulls route" \
   "$(bash_in "curl --json @b.json https://api.github.com/repos/o/r/pulls")" block "open-pr.sh"
 check "curl --data-binary to the pulls route" \
@@ -299,8 +286,6 @@ check "gh api --raw-field to the pulls route" \
   "$(bash_in "gh api repos/o/r/pulls --raw-field title=t")" block "open-pr.sh"
 check "gh api --input to the pulls route" \
   "$(bash_in "gh api repos/o/r/pulls --input q.json")" block "open-pr.sh"
-# A quote after /pulls ends the list route when it closes the path; a PR number in quotes after
-# /pulls/ makes the route one PR's, as the process's own commands write it (round 4).
 check "a quoted pulls list route with -f still blocks" \
   "$(bash_in 'gh api -X POST "repos/o/r/pulls" -f title=t')" block "open-pr.sh"
 check "a single-quoted pulls list route with -f still blocks" \
@@ -315,9 +300,6 @@ check "the merge PUT on pulls/\"\$pr\"/merge passes" \
   "$(bash_in "gh api -X PUT repos/kitimark/mitos/pulls/\"\$pr\"/merge -f merge_method=rebase -f sha=\"\$head\"")" allow
 check "a review reply on pulls/\"\$n\"/comments/\"\$c\"/replies passes" \
   "$(bash_in "gh api repos/kitimark/mitos/pulls/\"\$n\"/comments/\"\$c\"/replies -F body=@$work/clean.md")" allow
-# The list route ends at ? # backtick space ; & | ) < > \ or a run of quotes that closes the path
-# (round 5). Each probe is a plain create with the route last or followed by one of these; dropping
-# its character from the hook's end-of-route set lets it through.
 while IFS= read -r c; do
   check "end of the list route: $c" "$(bash_in "$c")" block "open-pr.sh"
 done <<'PROBES'
@@ -332,8 +314,6 @@ gh api --input q.json repos/o/r/pulls<<<""
 gh api --input q.json repos/o/r/pulls>out.json
 python3 -c "import subprocess; subprocess.run(\"gh api --input q.json repos/o/r/pulls\", shell=True)"
 PROBES
-# A route closed by a quote, with another quote, a backtick or $ right after it: the route is last
-# inside a quoted string or backticks, or the quote is followed by an empty string or a variable.
 while IFS= read -r c; do
   check "a quoted list route, closed inside another string: $c" "$(bash_in "$c")" block "open-pr.sh"
 done <<'PROBES'
@@ -362,9 +342,6 @@ check "a list route in a python shell=True string, closed by a quote" \
   "$(bash_in $'python3 - <<\'EOF\'\nimport subprocess\nsubprocess.run("gh api -X POST --input q.json \'repos/o/r/pulls\'", shell=True)\nEOF')" block "open-pr.sh"
 check "a list route in a python bash -c list, closed by a quote" \
   "$(bash_in $'python3 - <<\'EOF\'\nimport subprocess\nsubprocess.run(["bash", "-c", "gh api --input q.json \'repos/o/r/pulls\'"])\nEOF')" block "open-pr.sh"
-# One PR's route passes, whatever follows the number: a variable, a command, a literal. A word
-# character or a quote after the closing quote joins the path (`"o/r/pulls"98` is `o/r/pulls98`), so
-# it is no list route.
 while IFS= read -r c; do
   check "one PR's route passes: $c" "$(bash_in "$c")" allow
 done <<'PROBES'
@@ -380,7 +357,6 @@ gh api -X PATCH "repos/o/r/pulls"'98' -F body=@clean.md
 gh api -X PATCH "repos/o/r/pulls/"_98 -F body=@clean.md
 gh api -X PATCH "repos/o/r/pulls/"'98' -F body=@clean.md
 PROBES
-# open-pr.sh run alone passes whatever its title says; run with anything else, it does not.
 check "open-pr.sh alone with a title that names gh pr create" \
   "$(bash_in ".claude/scripts/open-pr.sh --head h --title 'kitimark-mode: block gh pr create' --body-file $work/clean.md")" allow
 check "open-pr.sh by an absolute path, with a title that names the POST route" \
@@ -393,8 +369,6 @@ check "open-pr.sh with gh pr create in a \$( ) title" \
   "$(bash_in ".claude/scripts/open-pr.sh --head h --title \"\$(gh pr create --fill)\" --body-file b.md")" block "open-pr.sh"
 check "open-pr.sh with gh pr create in a backtick title" \
   "$(bash_in ".claude/scripts/open-pr.sh --head h --title \"\`gh pr create --fill\`\" --body-file b.md")" block "open-pr.sh"
-# Each character that ends the open-pr.sh exemption has its own case, holding no other excluded
-# character, so a hook that drops one of them fails exactly one case (round 4, B2).
 check "open-pr.sh then ; gh pr create" \
   "$(bash_in ".claude/scripts/open-pr.sh --head h --title t --body-file b.md; gh pr create --fill")" block "open-pr.sh"
 check "open-pr.sh piped to gh pr create" \
@@ -409,7 +383,6 @@ check "open-pr.sh after a cd, with a title that names gh pr create" \
   "$(bash_in "cd /x && .claude/scripts/open-pr.sh --head h --title 'block gh pr create' --body-file b.md")" block "open-pr.sh"
 check "open-pr.sh by a path with a variable, with a title that names gh pr create" \
   "$(bash_in "\"\$D\"/.claude/scripts/open-pr.sh --head h --title 'block gh pr create' --body-file b.md")" block "open-pr.sh"
-# Reads of PRs and the pulls list pass.
 check "gh pr list" \
   "$(bash_in "gh pr list --state open --json number,headRefOid")" allow
 check "gh pr view with the body" \
@@ -421,9 +394,6 @@ check "the files of one PR" \
 check "a comment POST on an issue" \
   "$(bash_in "gh api -X POST repos/o/r/issues/98/comments -F body=@$work/clean.md")" allow
 
-# Text that only names a create, the route or the link pattern is blocked too (#98, round 3). The
-# round-2 hook let these pass by parsing the shell, and that parsing let real creates through (the
-# verifier probes below); the message says to move the text into a file or reword it.
 check "a commit message with an & that names gh pr create" \
   "$(bash_in "git commit -m 'docs: R&D notes on gh pr create'")" block "put the text in a file"
 check "a grep with flags for gh pr create" \
@@ -453,11 +423,6 @@ check "a comment that names the link pattern with no id" \
 check "a comment with a link and an id" \
   "$(bash_in "gh issue comment 5 --body 'see https://claude.ai/code/session_x1'")" block "session link"
 
-# The round-2 verifiers' probes on #98 that the hook at 26d54ad blocked and the hook at 72d6bca let
-# through: 48 creates from one verifier and 44 from the other, then 14 link forms (7 and 8, one
-# shared). Each runs as a real create or post in bash; the four backtick creates the round-2
-# replies named are among them (backticks run unquoted and inside double quotes). Run with
-# HOOK_UNDER_TEST set to the hook at 72d6bca, every case in this section fails.
 while IFS= read -r c; do
   check "r2 probe, create: $c" "$(bash_in "$c")" block "open-pr.sh"
 done <<'PROBES'
@@ -575,7 +540,6 @@ check "r2 probe, link: an id after a newline in double quotes" \
 check "r2 probe, link: an id after a backslash newline in double quotes" \
   "$(bash_in $'gh issue comment 5 --body "https://claude.ai/code/session_\\\n01ABCdef"')" block "session link"
 
-# The GitHub MCP tools.
 check "MCP create_pull_request" \
   "$(mcp_in mcp__github__create_pull_request '{"owner":"o","repo":"r","title":"t","head":"h","base":"main","body":"x"}')" block "open-pr.sh"
 check "MCP add_issue_comment with the link" \
@@ -591,7 +555,6 @@ check "MCP search_issues for the link is a read" \
 check "MCP pull_request_read is a read" \
   "$(mcp_in mcp__github__pull_request_read "$(jq -cn --arg q "$link" '{method:"get",body:$q}')")" allow
 
-# settings.json runs the hook before Bash and every GitHub MCP tool, and not before other tools.
 settings=$here/../settings.json
 matchers=$(jq -r '.hooks.PreToolUse[] | select(any(.hooks[]; .command | endswith("/check-no-session-link.sh"))) | .matcher' "$settings")
 for t in Bash mcp__github__create_pull_request mcp__github__add_issue_comment; do
@@ -603,7 +566,6 @@ for t in Read Agent Edit; do
   else echo "ok    settings.json does not run it before $t"; fi
 done
 
-# Other tools and bad input.
 check "another tool" '{"tool_name":"Read","tool_input":{"file_path":"/x"}}' allow
 check "input that is not JSON" 'not json' allow
 check "empty input" '' allow

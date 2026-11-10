@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tests for user-turns.sh. Run: .claude/skills/reflect/scripts/user-turns.test.sh
 set -u
 script="$(cd "$(dirname "$0")" && pwd)/user-turns.sh"
 failed=0
@@ -23,7 +22,7 @@ t=$work/t.jsonl
   jq -cn '{type:"user", timestamp:"2026-11-09T10:00:00Z", message:{content:"why did <task> fail?"}}'
 } >"$t"
 
-is() { # name, got, want
+is() {
   if [ "$2" = "$3" ]; then echo "ok    $1"; else
     echo "FAIL  $1"; printf '      got:  %q\n      want: %q\n' "$2" "$3"; failed=1
   fi

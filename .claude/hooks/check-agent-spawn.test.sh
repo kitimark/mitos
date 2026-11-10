@@ -26,7 +26,7 @@ check() {
     echo "FAIL  $name: $out"; failed=1
   fi
 }
-lacks() { # name, input, substring that must not be in the message
+lacks() {
   local out
   out=$("$hook" <<<"$2" 2>/dev/null)
   if grep -qF -- "$3" <<<"$out"; then echo "FAIL  $1: $out"; failed=1; else echo "ok    $1"; fi
@@ -48,7 +48,6 @@ check "fork with effort only" \
   '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","effort":"low","run_in_background":true,"prompt":"p"}}' "sets effort, which a fork ignores"
 check "input that is not JSON" 'not json' ""
 
-# B6: the background and worktree settings (#91).
 check "no run_in_background" \
   '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"sonnet","effort":"low","prompt":"Watch #84."}}' \
   "does not set run_in_background: true"
@@ -81,7 +80,6 @@ lacks "a fork is not checked for a worktree" \
 lacks "a role named past the first 600 characters is not read" \
   "$(jq -cn --arg p "$(printf 'x%.0s' $(seq 700)) verifier" '{tool_name:"Agent",tool_input:{subagent_type:"general-purpose",model:"sonnet",effort:"low",run_in_background:true,prompt:$p}}')" "isolation"
 
-# B2: the rules-freshness note pr-state.sh left for this session.
 mkdir -p "$MITOS_HOOK_STATE"
 note='Rule files changed on main since this session loaded its rules at beb6f01: .claude/skills/kitimark-mode/SKILL.md. Read these before acting: git fetch origin main, then git show origin/main:<file>.'
 printf '%s\n' "$note" >"$MITOS_HOOK_STATE/s1.note"

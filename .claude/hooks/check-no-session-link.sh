@@ -1,46 +1,4 @@
 #!/usr/bin/env bash
-# PreToolUse hook for Bash and the GitHub MCP tools. It blocks, with exit 2, a call that would put a
-# session link (claude.ai/code/session_...) or a Claude-Session: line into this public repository,
-# and a Bash command that names a PR create, unless the command is a call of
-# .claude/scripts/open-pr.sh alone. The session proxy rewrites the body of every PR create so that
-# it ends with a session link, whatever the body holds (the probe in #91), so open-pr.sh reads the
-# body back and cleans it.
-#
-# What it reads:
-#   - every Bash command, for a PR create (below);
-#   - a Bash command that names `gh api`, `gh pr`, `gh issue` or `git commit`: the command text, and
-#     the files it names with `-F <field>=@<file>`, `--body-file <file>`, `--input <file>`, `-F <file>`
-#     (gh pr, gh issue, git commit) and `--file <file>`. A relative path is taken from the hook's cwd, or
-#     from a leading `cd <dir> &&`; for a `git -C <dir> commit` it is also taken from <dir> (each -C
-#     joined to the one before, as git does), because git reads the message file there. A path with a
-#     variable in it cannot be read, so it is skipped;
-#   - any GitHub MCP tool that is not a read (get_, list_, search_, *_read): its whole input.
-# A Claude-Session: line counts at the start of a line (a trailer); in a `git commit` command any
-# mention counts. The session link counts anywhere, with or without an id after session_.
-#
-# A PR create is read from the command's text, not parsed from its shell (#98, round 3). Two review
-# rounds showed that a hook cannot tell a create from a mention by parsing bash: each narrowing let
-# real creates through (backticks, `bash -e -c`, `X="a b" gh`, `2>/dev/null gh`, find -exec, ...).
-# So the check fails closed. The text, case-insensitive and with newlines read as spaces, names a
-# create when it holds
-#   - `pr create` or `pr new`, with any spaces, quotes, backslashes, commas or `$` between the
-#     words and any flags with a value (`gh pr create`, `gh -R o/r pr create`, `gh pr -R o/r
-#     create`, `gh "pr" create`, ['gh','pr','create']), or `createPullRequest`; or
-#   - the pulls list route (`/pulls` with an optional / and then the end of the path: the end of the
-#     text, a space or one of ? # ; & | ) < > backtick \, or a run of quotes that closes the path,
-#     even inside another quoted string; `pulls/"$n"` and `pulls/12` are one PR's route) together
-#     with the word POST, a field or body flag
-#     (-f, -F, -d, a short cluster such as -if, --field, --raw-field, --input, --data*, --json,
-#     --form, each with or without a quote after it) or a method flag (-X, --method, --request) whose value is not GET or HEAD.
-# These words anywhere in the command count, in a commit message, an echo or a grep as much as in a
-# real create, so such a command is blocked too. The message says to put the text in a file or
-# reword it. What the text check cannot see, a create built at run time (a route or a subcommand in
-# a variable, words split by quotes, an alias or a script written by an earlier call) or a create
-# through another tool, is caught after the fact by open-pr.sh's read-back on its own creates and by
-# pr-state.sh, which names each open PR whose body holds a session link.
-#
-# If jq is missing or the input is not the JSON this hook expects, it exits 0. It runs before every
-# Bash call, so an error of its own must not block them all, and open-pr.sh still cleans a PR body.
 set -u
 
 command -v jq >/dev/null 2>&1 || exit 0
@@ -53,10 +11,10 @@ trailer_re='(^|\\n|["'\''])[[:space:]>]*Claude-Session:'
 open_pr_msg="Blocked: this command names a PR create: pr create or pr new, createPullRequest, or the pulls list route (/pulls) with POST, a field flag (-f, -F, --field, --input, ...) or a method other than GET. The session proxy adds a session link to the body of every PR create, so open a PR only with .claude/scripts/open-pr.sh --head <branch> --title <title> --body-file <file>, run as a command of its own; the script reads the body back and cleans it. The hook reads the text, not the shell, so a command that only mentions these words is blocked too: put the text in a file that you write with the Write tool, not with a heredoc (a heredoc holds the same words and is blocked again), then use git commit -F <file>, --body-file <file> or grep -f <file>; or use the Grep tool, or reword it. A read of the pulls list takes its filters in the query string ('repos/<owner>/<repo>/pulls?state=open'), with no -f or -X. The hook reads the whole command, so another tool's flag in the same command as a pulls read (cut -d, grep -F, jq -f, a second gh call with -X or -f) blocks it too: split the command into two calls."
 
 block() { printf '%s\n' "$1" >&2; exit 2; }
-link_msg() { # where
+link_msg() {
   block "Blocked: $1 holds a session link or its pattern (claude.ai/code/session_), and this repository is public. Remove it and retry, for example with sed -i -E 's#https://claude\\.ai/code/session_[A-Za-z0-9_-]+#https://claude.ai/code#g' <file>. The footer is a --- line, then _Generated by [Claude Code](https://claude.ai/code)_ (CLAUDE.md, Attribution). To search for the pattern, escape its dots: claude\\.ai/code/session_."
 }
-trailer_msg() { # where
+trailer_msg() {
   block "Blocked: $1 holds a Claude-Session line, which the owner dropped from commits and posts (CLAUDE.md, Attribution). Remove the line and retry, for example with sed -i '/^Claude-Session/d' <file>, or leave it out of the -m message."
 }
 
@@ -89,9 +47,6 @@ if [ "$is_gh" = 1 ] || [ "$is_commit" = 1 ]; then
   grep -Eq "$trailer_re" <<<"$cmd" && trailer_msg "this command"
 fi
 
-# A PR create, from the text (see the header). The one exception is open-pr.sh run alone: its path,
-# relative or absolute and with no variable or quote in it, starts the command, and the command
-# holds no newline, ; & | < > backtick or $( that could run anything else.
 open_pr_re='^[[:space:]]*([^[:space:];&|<>()`$'\''"\\]*/)?\.claude/scripts/open-pr\.sh([[:space:]]|$)'
 alone=0
 if grep -Eq "$open_pr_re" <<<"$cmd" && [[ $cmd != *[$'\n'\;\&\|\<\>\`]* && $cmd != *\$\(* ]]; then
@@ -101,18 +56,10 @@ if [ "$alone" = 0 ]; then
   flat=${cmd//$'\n'/ }
   grep -Eiq -- '(^|[^[:alnum:]_])pr[[:space:]'\''"\\,$]+(-[^[:space:]]*[[:space:]]+([^-[:space:]][^[:space:]]*[[:space:]]+)?)*(create|new)([^[:alnum:]_]|$)|createpullrequest' <<<"$flat" \
     && block "$open_pr_msg"
-  # The list route: /pulls, then the end of the path. Without a / that is the end of the text, one of
-  # ? # backtick space ; & | ) < > \, or a run of quotes (a closing quote, even one inside another
-  # quoted string) followed by the end of the text or anything but a word character or a quote.
-  # With a / the same ends count, and a run of quotes after the / does too unless a word character,
-  # $, backtick or quote follows it: `pulls/"$n"` and ``pulls/"`cat n`"`` are one PR's route.
   if grep -Eiq -- '/pulls(/?($|[?#`[:space:];&|)<>\\])|['\''"]+($|[^[:alnum:]_'\''"])|/['\''"]+($|[^[:alnum:]_$`'\''"]))' <<<"$flat"; then
     grep -Eiq -- '(^|[^[:alnum:]_])post([^[:alnum:]_]|$)' <<<"$flat" && block "$open_pr_msg"
-    # A short cluster (`-if title=t`) counts, and a quote after a long flag does (`"--input"` in a list).
     grep -Eq -- '(^|[[:space:]'\''"])(-[A-Za-z]*[fFd]|(--field|--raw-field|--input|--data[a-z-]*|--json|--form)([[:space:]='\''"]|$))' <<<"$flat" \
       && block "$open_pr_msg"
-    # Each method flag's value, quotes taken out; any value but GET or HEAD counts, an empty or
-    # variable one too.
     grep -oE -- '(^|[[:space:]'\''"])(-X|--method|--request)[[:space:]=]*[^[:space:]]*' <<<"$flat" \
       | sed -E 's/^[[:space:]'\''"]*(-X|--method|--request)[[:space:]=]*//; s/['\''"]//g' \
       | grep -Eviqx 'get|head' && block "$open_pr_msg"
@@ -121,7 +68,6 @@ fi
 
 [ "$is_gh" = 1 ] || [ "$is_commit" = 1 ] || exit 0
 
-# The files the command sends.
 base=$cwd
 if [[ $cmd =~ ^[[:space:]]*cd[[:space:]]+([^[:space:]\;\&\|]+)[[:space:]]*\&\& ]]; then
   d=${BASH_REMATCH[1]}
@@ -129,7 +75,6 @@ if [[ $cmd =~ ^[[:space:]]*cd[[:space:]]+([^[:space:]\;\&\|]+)[[:space:]]*\&\& ]
   case $d in /*) base=$d ;; *) base=$cwd/$d ;; esac
 fi
 # Where `git -C <dir> commit` reads its message file: each -C joined to the one before, from base.
-# A relative file is tried there as well as in base, so gh's files keep their own base.
 bases=("$base")
 while IFS= read -r g; do
   [ -n "$g" ] || continue
@@ -154,7 +99,7 @@ files=$(
 while IFS= read -r f; do
   [ -n "$f" ] && [ "$f" != - ] || continue
   case $f in *'$'* | *'`'*) continue ;; esac
-  # shellcheck disable=SC2088 # a literal ~/ prefix in the command text, made into $HOME here
+  # shellcheck disable=SC2088
   case $f in
     /*) cands=("$f") ;;
     '~/'*) cands=("$HOME/${f#'~/'}") ;;

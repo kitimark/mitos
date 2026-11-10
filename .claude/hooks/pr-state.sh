@@ -8,34 +8,6 @@
 # PR), and it is printed under a header that says "trust this over memory". So every printed string
 # is cut to a small safe charset and a length cap, and a field of the wrong type or shape makes the
 # whole answer "unavailable" instead of a half-trusted one.
-#
-# Rules freshness (#91, B2). At a SessionStart that starts or clears a conversation it records the
-# commit whose rules the session loaded (HEAD of the project checkout) under the session id from
-# the hook input; a resume or a compaction keeps the record. On every run it names
-# the rule files (.claude/, CLAUDE.md, docs/process.md) that changed on main since that commit and
-# says to read them, and it leaves the same note where check-agent-spawn.sh adds it to each spawn.
-# A session with no record yet records HEAD at its first prompt.
-#
-# Merge readiness (#91, B5). For each open PR from the owner's account it adds `gate` at the head,
-# the verdict head on the Owner dashboard, the owner's unanswered comments and whether the PR
-# touches a path the user keeps. Only when the dashboard's verdict head is the current head, `gate`
-# is green there and no owner comment is unanswered, it prints a merge command pinned to that head.
-# It never prints one that reads the head when it runs, because that drops the link to the head the
-# verifiers checked. An owner comment is unanswered (B3) when it does not end with the Claude Code
-# footer and is newer than the latest footer post anywhere on the same PR. For a PR whose verdict
-# covers its head, every comment, review comment and review is read; for the others, and for the
-# issues line, only the newest 100 issue comments and the newest 100 review comments of the
-# repository, and watch-github.sh reads whole threads.
-#
-# Session links (#98). It names each listed open PR whose body holds claude.ai/code/session_, from
-# the open list it already reads. This catches a create that check-no-session-link.sh could not see
-# in a command's text, such as one built from variables, at the next prompt.
-#
-# Cost per run, at every prompt and monitor wake: 7 REST calls, 2 per open owner PR, 3 or more per
-# PR whose verdict covers its head, and 1 compare when a commit is not local (19 with 6 owner PRs).
-#
-# Environment: MITOS_OWNER, the owner's login (default kitimark); MITOS_HOOK_STATE, the directory
-# for the per-session records (default $TMPDIR/mitos-hook-state).
 set -u
 
 unavailable() { echo "GitHub state unavailable: $1"; exit 0; }
@@ -43,7 +15,6 @@ unavailable() { echo "GitHub state unavailable: $1"; exit 0; }
 command -v gh >/dev/null 2>&1 || unavailable "gh is not installed"
 command -v jq >/dev/null 2>&1 || unavailable "jq is not installed"
 
-# The hook input names the session and the event; a run by hand has none.
 input=''
 [ -t 0 ] || input=$(cat 2>/dev/null)
 sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)
@@ -54,10 +25,6 @@ owner=${MITOS_OWNER:-kitimark}
 [[ $owner =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]] || unavailable "MITOS_OWNER is not a GitHub login"
 proj=${CLAUDE_PROJECT_DIR:-.}
 
-# The commit whose rules this session loaded: HEAD at a SessionStart that starts or clears the
-# conversation, or at the first run that finds no record. A resumed or compacted session keeps the
-# record, because the rule text it read earlier can still be in its context. Without a session id
-# there is nothing to key it by, so freshness is skipped.
 loaded='' state=''
 fresh_start=0
 [ "$event" = SessionStart ] && [ "$source" != resume ] && [ "$source" != compact ] && fresh_start=1
@@ -103,10 +70,6 @@ name_re='^[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+$'
 dir=$(mktemp -d 2>/dev/null) || unavailable "cannot make a temp dir"
 trap 'rm -rf "$dir"' EXIT
 
-# Two rounds of parallel calls, each cut at 5 seconds plus 1 second of grace before SIGKILL, so the
-# worst case stays under the hook's 15 second timeout. The first four answers are needed; the rest
-# only add detail, and a failure there shows as `?`. The closed route asks for 50 so that a busy
-# day still fits.
 closed_pp=50
 fetch() { # name, route
   timeout -k 1 5 gh api "$2" >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
@@ -124,9 +87,6 @@ for n in open closed main ci; do
   [ -e "$dir/$n.failed" ] && unavailable "gh api for $n failed or timed out"
 done
 
-# The verdict head per PR from the In flight table of the owner's "Owner dashboard" issue. The row's
-# last cell is the verdict: `PASS <who> at <head>`, `wording-only at <head>`, or `PASS carried
-# from <old>`, which covers the row's Head cell (kitimark-mode, Verdicts). Anything else is none.
 verdicts=null
 if [ ! -e "$dir/dash.failed" ]; then
   verdicts=$(jq -c --arg owner "$owner" '
@@ -148,14 +108,11 @@ if [ ! -e "$dir/dash.failed" ]; then
   [ -n "$verdicts" ] || verdicts=null
 fi
 
-# The owner's PRs among the ten listed, and their heads. A PR whose verdict covers its head is a
-# merge candidate, so all its comments and reviews are read too, not only the newest 100 of the
-# repository: its merge line must not miss an older unanswered comment.
 jq -r --arg owner "$owner" '.[0:10][]
   | select(type == "object" and (.user.login? // "") == $owner and (.number | type) == "number"
            and ((.head.sha // "") | type == "string" and test("^[0-9a-f]{40}$")))
   | "\(.number) \(.head.sha)"' "$dir/open.json" >"$dir/heads" 2>/dev/null || : >"$dir/heads"
-fetchp() { # name, route; every page, as one array of pages
+fetchp() {
   timeout -k 1 5 gh api "$2" --paginate --slurp >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
 }
 : >"$dir/candidates"
@@ -171,8 +128,6 @@ while read -r n sha; do
   fi
 done <"$dir/heads"
 
-# Rules freshness: the rule files main changed since the loaded commit, from local objects when
-# both commits are here, or else from the REST compare route.
 main_sha=$(jq -r '.commit.sha // empty' "$dir/main.json" 2>/dev/null)
 compare=''
 if [ -n "$loaded" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]] && [ "$loaded" != "$main_sha" ]; then
@@ -205,7 +160,6 @@ if [ -z "$fresh" ] && [ -s "$dir/rules" ]; then
   [ "$total" -gt 8 ] && more=" (+$((total - 8)) more)"
   fresh="Rule files changed on main since this session loaded its rules at ${loaded:0:7}: $names$more. Read these before acting: git fetch origin main, then git show origin/main:<file>."
 fi
-# check-agent-spawn.sh adds the note to each spawn of this turn.
 if [ -n "$state" ] && [ -n "$loaded" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]]; then
   case $fresh in
     "Rule files changed"*) printf '%s\n' "$fresh" >"$state/$sid.note" 2>/dev/null ;;
@@ -213,8 +167,6 @@ if [ -n "$state" ] && [ -n "$loaded" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]]; the
   esac
 fi
 
-# Per PR: `gate` at the head, and whether the PR touches a path the user keeps (kitimark-mode, What
-# stays with the user). A full page of files may be incomplete, so it counts as unknown.
 : >"$dir/extra.ndjson"
 while read -r n sha; do
   gate='?' kept='?'
@@ -237,7 +189,6 @@ while read -r n sha; do
   fi
   [ -n "$gate" ] || gate='?'
   [ -n "$kept" ] || kept='?'
-  # A candidate's unanswered owner posts from all of its comments, review comments and reviews.
   exact=null
   if grep -qx "$n" "$dir/candidates"; then
     exact='"?"'
@@ -263,7 +214,6 @@ while read -r n sha; do
     '{n: $n, sha: $sha, gate: $gate, kept: $kept, exact: $exact}' >>"$dir/extra.ndjson"
 done <"$dir/heads"
 
-# The owner's unanswered comments per issue or PR, from the newest 100 of each kind.
 unans=null
 if [ ! -e "$dir/icomments.failed" ] && [ ! -e "$dir/rcomments.failed" ]; then
   unans=$(jq -n -c --arg owner "$owner" --slurpfile ic "$dir/icomments.json" --slurpfile rc "$dir/rcomments.json" '
