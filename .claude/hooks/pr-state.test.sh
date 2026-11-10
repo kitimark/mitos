@@ -832,18 +832,20 @@ if [ "$(id -u)" = 0 ]; then
   expect "a symlink of another user in a sticky folder: it is refused" "$refused"
 fi
 ln -s loop "$work/loop"
-# shellcheck disable=SC2016 # the inner shell expands them
-r=$(timeout 20 bash -c '. "$1" && hook_state_resolve "$2" "$(id -u)"' _ "${hook%/*}/hook-state.sh" "$work/loop/st")
-code=$?
-if [ "$code" = 1 ] && [ -z "$r" ]; then pass "a symlink loop is refused"; else fail "a symlink loop: exit $code, '$r'"; fi
-
-run_hook_state() {
-  # shellcheck disable=SC2016
+hs() { # verb, args...: one hook_state command in a fresh shell
+  # shellcheck disable=SC2016 # the inner shell expands them
   timeout 20 bash -c '. "$1" && shift && "$@"' _ "${hook%/*}/hook-state.sh" "$@" 2>/dev/null
 }
 phys() { (cd -P "$1" && pwd -P); }
-resolves_for_me() { [ "$(run_hook_state hook_state_resolve "$1" "$(id -u)")" = "$(phys "$1")" ]; }
+r=$(hs hook_state trusted_path "$work/loop/st")
+code=$?
+if [ "$code" = 1 ] && [ -z "$r" ]; then pass "a symlink loop is refused"; else fail "a symlink loop: exit $code, '$r'"; fi
+
+# Pins for the checks above (#104, ported from #128 onto trusted_path). Each case fails when its
+# check is dropped or loosened. trusted_path is the walk; the uid is what `id -u` prints.
 if [ "$(id -u)" = 0 ]; then
+  # A sticky folder passes only when it belongs to this user or root, so a private folder under a
+  # sticky folder of another user, who can then rename what is in it, is refused.
   mkdir -m 755 "$work/ostk"; mkdir -m 700 "$work/ostk/st"; chmod 1777 "$work/ostk"; chown 65534 "$work/ostk"
   srun MITOS_HOOK_STATE="$work/ostk/st" "$ss"
   empty_dir "a folder under a sticky folder of another user: nothing is written" "$work/ostk/st"
@@ -855,45 +857,77 @@ if [ "$(id -u)" = 0 ]; then
   empty_dir "no missing folder is made in a folder of another user" "$work/omk"
 fi
 if [ "$(id -u)" != 0 ]; then
-  own_sticky=$(mktemp -d "${TMPDIR:-/tmp}/pr-state-test-sticky.XXXXXX")
-  other_uid=$(($(id -u) + 1))
-  chmod 1777 "$own_sticky"; mkdir -m 700 "$own_sticky/st"
-  if resolves_for_me "$own_sticky/st"; then
-    r=$(run_hook_state hook_state_resolve "$own_sticky/st" "$other_uid")
-    if [ -z "$r" ]; then pass "a sticky folder of another user is refused by the resolver"; else fail "sticky folder of another user: '$r'"; fi
+  # The same without chown: a sticky folder of this user, directly under the temp folder, is the
+  # sticky folder of another user for a caller of any other uid. Skipped when the temp folder
+  # is not itself a safe folder for this user.
+  sk=$(mktemp -d "${TMPDIR:-/tmp}/pr-state-test-sticky.XXXXXX")
+  chmod 1777 "$sk"; mkdir -m 700 "$sk/st"
+  if [ "$(hs hook_state trusted_path "$sk/st")" = "$(phys "$sk/st")" ]; then
+    r=$(PATH="$work/otheruser:$PATH" hs hook_state trusted_path "$sk/st")
+    if [ -z "$r" ]; then pass "a sticky folder of another user is refused by trusted_path"; else fail "sticky folder of another user: '$r'"; fi
   fi
-  rm -rf "${own_sticky:?}"
+  rm -rf "${sk:?}"
 fi
+# A missing folder is made only inside a folder that passed the check, never before it.
 mkdir "$work/mg"; chmod 770 "$work/mg"
 srun MITOS_HOOK_STATE="$work/mg/new/deeper" "$ss"
 empty_dir "no missing folder is made in a group-writable folder" "$work/mg"
 mkdir "$work/mo"; chmod 707 "$work/mo"
 srun MITOS_HOOK_STATE="$work/mo/new" "$ss"
 empty_dir "no missing folder is made in a folder others can write" "$work/mo"
+# A chain of symlinks of this user in safe folders is followed.
 mkdir -m 755 "$work/ch"; mkdir -m 700 "$work/ch/real" "$work/ch/real/st"
 ln -s "$work/ch/real" "$work/ch/l2"; ln -s "$work/ch/l2" "$work/ch/l1"
 srun MITOS_HOOK_STATE="$work/ch/l1/st" "$ss"
 same_text "a chain of two symlinks of this user in safe folders is followed" "$work/ch/real/st/s1.sha" "$A"
+# The path the walk prints is the resolved one, not the name it was given. ensure and the record
+# verbs use this walk and print no folder, so the private and open pins both land here.
 want=$(phys "$work/rp/st")
-r=$(run_hook_state hook_state_private "$work/lp/st")
-if [ "$r" = "$want" ]; then pass "a folder behind a symlinked parent: hook_state_private prints the real path"; else fail "private printed '$r', wanted '$want'"; fi
-r=$(MITOS_HOOK_STATE="$work/lp/st" run_hook_state hook_state_open)
-if [ "$r" = "$want" ]; then pass "a folder behind a symlinked parent: hook_state_open prints the real path"; else fail "open printed '$r', wanted '$want'"; fi
+r=$(hs hook_state trusted_path "$work/lp/st")
+if [ "$r" = "$want" ]; then pass "a folder behind a symlinked parent: trusted_path prints the real path"; else fail "trusted_path printed '$r', wanted '$want'"; fi
+r=$(MITOS_HOOK_STATE="$work/lp/st" hs hook_state ensure)
+code=$?
+if [ "$code" = 0 ] && [ -z "$r" ]; then pass "ensure of a folder behind a symlinked parent prints no path"; else fail "ensure printed '$r' (exit $code)"; fi
 want=$(phys "$work/rk/stk")
-r=$(run_hook_state hook_state_private "$work/lk/../stk")
-if [ "$r" = "$want" ]; then pass "a '..' after a symlink: hook_state_private prints the real path"; else fail "private printed '$r', wanted '$want'"; fi
+r=$(hs hook_state trusted_path "$work/lk/../stk")
+if [ "$r" = "$want" ]; then pass "a '..' after a symlink: trusted_path prints the real path"; else fail "trusted_path printed '$r', wanted '$want'"; fi
+# A symlink of root in a safe folder is followed for any user: as root with another uid given by
+# `id`, and as the running user with a system link such as /bin, when the system has one.
 if [ "$(id -u)" = 0 ]; then
   mkdir -m 755 "$work/rt" "$work/rt/real"; ln -s "$work/rt/real" "$work/rt/l"
-  r=$(run_hook_state hook_state_resolve "$work/rt/l" 1000)
+  mkdir -m 755 "$work/as1000"
+  printf '#!/bin/sh\necho 1000\n' >"$work/as1000/id"
+  chmod +x "$work/as1000/id"
+  r=$(PATH="$work/as1000:$PATH" hs hook_state trusted_path "$work/rt/l")
   if [ "$r" = "$(phys "$work/rt/real")" ]; then pass "a symlink of root in a safe folder is followed for another user"; else fail "root symlink: '$r'"; fi
 fi
+mkdir -m 755 "$work/asroot"
+printf '#!/bin/sh\necho 0\n' >"$work/asroot/id"
+chmod +x "$work/asroot/id"
 for l in /bin /sbin /lib /var/run /var/lock; do
   [ -z "$(find "$l" -prune -type l -user 0 -print 2>/dev/null)" ] && continue
-  [ -n "$(run_hook_state hook_state_resolve "$l" 0)" ] || continue
-  r=$(run_hook_state hook_state_resolve "$l" "$(id -u)")
+  [ -n "$(PATH="$work/asroot:$PATH" hs hook_state trusted_path "$l")" ] || continue
+  r=$(hs hook_state trusted_path "$l")
   if [ "$r" = "$(phys "$l")" ] && [ -n "$r" ]; then pass "a symlink of root in a safe folder ($l) is followed for this user"; else fail "$l: '$r'"; fi
   break
 done
+
+mkdir -m 700 "$work/noread"
+r=$(MITOS_HOOK_STATE="$work/noread/missing" hs hook_state read s1 note)
+code=$?
+if [ "$code" != 0 ] && [ ! -e "$work/noread/missing" ] && [ -z "$r" ]; then pass "read walks without creating the folder"; else fail "read created a folder or printed '$r' (exit $code)"; fi
+mkdir -m 700 "$work/real-pub" "$work/decoy-pub"
+printf 'abc\n' | MITOS_HOOK_STATE="$work/real-pub" hs hook_state publish s1 sha "$work/decoy-pub"
+if [ "$(cat "$work/real-pub/s1.sha" 2>/dev/null)" = abc ] && [ -z "$(entries "$work/decoy-pub")" ]; then pass "publish takes a session id and a kind, not a folder"; else fail "publish took a folder: real=$(entries "$work/real-pub") decoy=$(entries "$work/decoy-pub")"; fi
+r=$(printf 'x\n' | MITOS_HOOK_STATE="$work/real-pub" hs hook_state publish s1 '../outside')
+code=$?
+if [ "$code" = 2 ] && [ ! -e "$work/outside" ] && [ "$(entries "$work/real-pub")" = s1.sha ]; then pass "a kind other than sha or note is refused"; else fail "bad kind: exit $code, entries $(entries "$work/real-pub")"; fi
+printf 'abc\n' | MITOS_HOOK_STATE="$work/real-pub" hs hook_state publish '../nope' sha
+if [ "$(entries "$work/real-pub")" = s1.sha ] && [ ! -e "$work/nope.sha" ]; then pass "publish refuses a session id that is not a plain name"; else fail "bad session id wrote $(entries "$work/real-pub")"; fi
+names=$(bash -c '. "$1"; hook_state >/dev/null 2>&1; declare -F' _ "${hook%/*}/hook-state.sh" | sed 's/^declare -f //' | LC_ALL=C sort | paste -sd' ' -)
+if [ "$names" = "hook_state session_id_ok" ]; then pass "after a call, only hook_state and session_id_ok are defined"; else fail "defined functions: $names"; fi
+code=$(bash -c '. "$1"; hook_state nosuch >/dev/null 2>&1; echo $?' _ "${hook%/*}/hook-state.sh")
+if [ "$code" = 2 ]; then pass "an unknown verb is refused"; else fail "unknown verb exit $code"; fi
 
 mkdir -m 700 "$work/st-u"
 srun MITOS_HOOK_STATE="$work/st-u" PATH="$work/otheruser:$work/bin:$PATH" "$ss"
