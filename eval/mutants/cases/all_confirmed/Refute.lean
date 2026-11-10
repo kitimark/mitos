@@ -4,14 +4,18 @@ import Mitos.Impl.Impact
 namespace Mitos.Refute
 open Mitos
 
-def str (cs : List Char) : String := String.ofList cs
+def strNoLiterals (cs : List Char) : String := String.ofList cs
 
 def loc (id : Nat) (repo : String) (kind : FactKind) : Located :=
-  { id, repo, rev := str [], path := str [], origin := .extractor (str ['x']),
-    fact := { kind, ident := ⟨str ['n', 'p', 'm'], str ['l', 'i', 'b']⟩, span := ⟨0, 0⟩ } }
+  { id, repo, rev := strNoLiterals [], path := strNoLiterals [],
+    origin := .extractor (strNoLiterals ['x']),
+    fact := { kind, ident := ⟨strNoLiterals ['n', 'p', 'm'], strNoLiterals ['l', 'i', 'b']⟩,
+              span := ⟨0, 0⟩ } }
 
 def fs : List Located :=
-  [loc 0 (str ['a']) .requires, loc 1 (str ['b']) .provides, loc 2 (str ['c']) .provides]
+  [loc 0 (strNoLiterals ['a']) .requires,
+    loc 1 (strNoLiterals ['b']) .provides,
+    loc 2 (strNoLiterals ['c']) .provides]
 
 theorem resolve_status_honest : ¬ Spec.StatusHonest Impl.resolve := by
   intro h

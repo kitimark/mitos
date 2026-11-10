@@ -165,8 +165,10 @@ core and the implementation see:
 - no attribute anywhere (`@[…]`);
 - no token with a component in gate 1's plugin list, imported from `gate/MitosGate/Lint.lean`
   (`banned`: `macro_rules`, `include_str`, `Lean`, `native_decide`, `sorry`, …), nor `by_elab` or
-  `run_tac`, the forms that run code inside an allowed declaration, nor `set_option` or
-  `attribute` inside a declaration either; and no `#` token. A term-level `open … in` stays
+  `run_tac`, the forms that run code inside an allowed declaration (`runsCodeInTerm`), nor
+  `set_option` or `attribute` inside a declaration either (`commandsInTerm`); and no `#` token.
+  `Mutants.Lint.bans` is gate 1's list and these, with round 4's `deriving` (`addsInstance`) and
+  round 5's `with_decl_name` (`declaresNestedAbsolute`). A term-level `open … in` stays
   allowed, for a namespace under `Mitos` only (round 4): `Init` declares scoped syntax that `open`
   switches on (`open Int` adds `-[n+1]`), which the lint's parse would not see.
 
@@ -286,8 +288,8 @@ the refutation run rejected it on the statement mismatch. This is the second tim
 the lint can list every name a case declares has failed.
 
 **Decision.** The guarantee rests on the statements part alone (round 4 above, checked by
-`Mutants.Resolution` at every build). The lint's name rules stay as defence in depth, and the docs
-now say what they check: the names of top-level declarations, and `namespace`s and `open`s. Nested
+`Mutants.Resolution` at every build). The lint's name rules stay as defence in depth, and they
+check only the names of top-level declarations, and `namespace`s and `open`s. Nested
 names are not read, and no `let rec` or `where` tracking is added: it would rest the claim on more
 unproved reading of Lean's parse, for a class the statements part already closes. `with_decl_name`
 is banned, as the token `with_decl_name%` (`bannedComponent`: a banned word followed by `%`) and as
@@ -315,8 +317,10 @@ not come right after the opener (`/--/` does not close, because Lean skips the c
 opener); any other line, only if it is a line comment or holds neither, nor a `"` or a `«`.
 `readLine_comments` proves that on every line the reader takes, `leanScan`, a transcription of Lean's
 `Lean.Parser.finishCommentBlock`, ends where the reader goes on. The transcription is not proved;
-`CommentProbe.probes` checks its premises against Lean at every build (code after a closer is read;
-comments nest; the character after an opener is skipped, for `/-` and `/--`). The scratch inputs of
+`Mutants.CommentProbe` checks its premises against Lean at every build, one theorem each: code
+after a closer is read (`afterClose_is_code`), comments nest (`nested_does_not_close`), and the
+character after an opener is skipped, for `/-` and `/--` (`opener_skips_next_char`,
+`doc_opener_skips_next_char`). The scratch inputs of
 the review, and five more, are `#guard`s: the reader at 24b19e4 accepts all nine, the new one
 refuses them.
 
@@ -327,10 +331,10 @@ with ` := sorry`, whatever came between. Lean reads `def f : T := 0 -- := sorry`
 `:= sorry` being a line comment, and `def f : T := 0 where g : T := sorry` the same way, the
 `sorry` being the value of `f.g`. The reader dropped such a line as a hole, so the generated
 Challenges took `f` from the mutated implementation and lost the value `0` the approved Challenge
-states; the module doc said no line that could change a statement is dropped (review on #86 by
-CodeRabbit at e852fd5, which named the line comment; the `where` and tactic forms were found in this
-round). Each needs an owner edit of the approved Challenge, whose two hole lines read the same
-before and after the fix.
+states; `Mutants.Challenge`'s doc said no line that could change a statement is dropped (review on
+#86 by CodeRabbit at e852fd5, which named the line comment; the `where` and tactic forms were found
+in this round). Each needs an owner edit of the approved Challenge, whose two hole lines read the
+same before and after the fix.
 
 **Decision.** A hole line must also hold no `--` anywhere and no `:=` before its final ` := sorry`
 (`holeLine`), so the value Lean reads is the `sorry`; any other `def` line is refused, with the
@@ -361,21 +365,27 @@ names.
 
 **Decision.** A positive form (`holeForm`). A hole line is exactly `def <name> : <type> := sorry`,
 where `qualName` takes the name, every character of the type is an ASCII letter or digit, `_`, `.`,
-a space or `→` (`typeChar`), and its words, between single spaces, are `→`, `List`, `String`, `Nat`
-or names under `Mitos` (`typeWord`). Any other line that starts with `def ` stops the runner with
-the reader's error, as before. This set is the smallest that keeps every existing `#guard` as it
-is: the approved Challenge's two holes use `Mitos.Resolver`, `List`, `Mitos.Edge`, `String` and
-`→`, and the `#guard`s' scratch holes use `Nat`. It has no parenthesis, `×` or comma, which the
+a space or `→` (`typeChar`), and its words, between single spaces, are `→`, `List`, `String` or
+names under `Mitos` (`typeWord`). Any other line that starts with `def ` stops the runner with the
+reader's error, as before. These are the words the approved Challenge's two holes use:
+`Mitos.Resolver`, `List`, `Mitos.Edge`, `String` and `→`. (Round 8 also allowed `Nat`, only for the
+`#guard`s' scratch holes; the no-comments round removed it, and those holes now have the type
+`String`.) It has no parenthesis, `×` or comma, which the
 approved Challenge does not need; a Challenge that needs them stops the runner until the reader
 takes them. A word list instead of "identifiers except keywords" keeps the form positive at the
 word level too: no keyword can be a word, because every allowed word is fixed or under `Mitos`.
 
 `readLine_hole` (replaced) proves that every line the reader takes as a hole is outside a comment,
 kept as it is, and exactly this form, through `holeForm_spec`; it says so and no more (m1). That
-Lean reads the value of such a line as its `sorry` is a fact about Lean's parser, stated in the
-module doc and not proved: Lean reads `def`, the name and `: <type>` (no binder), the type up to the
-` := ` (no character that starts a binder, comment, string, equation, `:=` or tactic block), and
-then the value `:= sorry`, the `declValSimple` form. The one premise about keywords is checked:
+Lean reads the value of such a line as its `sorry` is a fact about Lean's parser
+(`Lean.Parser.Command.definition`, pinned v4.35.0), not proved: Lean reads `def`, the name and
+`: <type>` (no binder, since `:` follows the name), the type up to the ` := ` (no character that
+starts a binder, comment, string, equation, `:=` or tactic block), and then the value `:= sorry`,
+the `declValSimple` form; no word is a keyword (below), so no contract clause (`given`, `requires`,
+`ensures`) comes first. The line ends with the `sorry`, and the reader takes the next line only as
+a blank, a comment, an import, a hole or a theorem, so no `termination_by`, `where` or `deriving`
+continues the declaration. Since round 9 the cross-check also requires, at every run, each hole's
+value as Lean built it to be exactly `sorry` of its type. The one premise about keywords is checked:
 `Mutants.Tokens` fails the build if a token of Lean's syntax or of `Mitos.Core` holds whitespace or
 is a `typeWord` other than `→`. Its probe in this round found `Type`, `Sort`, `Prop` and `StateRefT`
 among the tokens of a name's shape, which is why the allowed words are a list and not "capitalised
@@ -400,14 +410,14 @@ holes, with the reader at debeac7 and the new one.
 same gap in import lines: the reader took any line that starts with `import ` for an import and
 kept it. Lean's `import` takes one module name and reads what follows it as another import or as
 commands after the header, so `import Mitos.Core namespace Mitos.Refute` put every generated
-statement inside that namespace, against the module doc's "the generated files have no
-`namespace` or `open`", and `import Mitos.Core theorem Mitos.Proofs.t : …` hid a theorem the reader
-neither negates nor drops. CodeRabbit marked it minor; I judged it blocking as B1, because a doc
-line of this PR is false for such a Challenge, and fixed it the same positive way: an import line
-is exactly `import <module>`, each component a `qualPart` (`importForm`). `readLine_imp` proves
-that every line read as an import is exactly that. Three `#guard`s refuse the forms above (the
-reader at e9fa024 takes all three), and one accepts two plain imports; the approved Challenge's
-`import Mitos.Core` reads as before.
+statement inside that namespace, against `Mutants.Challenge`'s doc, which said the generated files
+have no `namespace` or `open`, and `import Mitos.Core theorem Mitos.Proofs.t : …` hid a theorem
+the reader neither negates nor drops. CodeRabbit marked it minor; I judged it blocking as B1,
+because a doc line of this PR was false for such a Challenge, and fixed it the same positive way:
+an import line is exactly `import <module>`, each component a `qualPart` (`importForm`).
+`readLine_imp` proves that every line read as an import is exactly that. Three `#guard`s refuse
+the forms above (the reader at e9fa024 takes all three), and one accepts two plain imports; the
+approved Challenge's `import Mitos.Core` reads as before.
 
 ### Lean cross-check (round 9)
 
@@ -459,7 +469,7 @@ Lean's side (`declOf`: the constants, their positions, the `sorry`) is not prove
 
 **Probes.** So that the check cannot go blind unnoticed, the same `lake build` builds three scratch
 Challenge modules, and the comparison must find each one's known misread, every run: the decoy
-(`undeclared Mitos.Proofs.decoy`), the reverse with `def Mitos.Impl.extra : Nat := sorry`
+(`undeclared Mitos.Proofs.decoy`), the reverse with `def Mitos.Impl.extra : String := sorry`
 (`undeclared Mitos.Impl.extra`), and round 8's value hole
 `def Mitos.Impl.f : Nat → Nat | _ => 0 where g : Nat := sorry` (`differs Mitos.Impl.f`, value not
 `sorry`, and `unread Mitos.Impl.f.g`). The first two lists of lines are what `readChallenge`
@@ -467,10 +477,11 @@ reads (a `#guard`); the value line the reader refuses, so that probe reads it as
 looser reader would. On the approved Challenge the runner prints
 `challenge (reader against Lean's build): AGREE on 10 declarations, 3 probes caught`.
 
-**The reader.** Its lexer stays as it is. Its docs now claim only what holds: it reads comments as
-`leanScan` does, which is not all of how Lean reads them; it is a fast first pass, and the
-cross-check is what stops the runner on a misread that changes a declaration (round 10 adds the
-checks for a misread that changes none). m1's sentence on rounds 7 and 8 is reworded.
+**The reader.** Its lexer stays as it is. It reads comments as `leanScan` does, which is not all
+of how Lean reads them; it is a fast first pass, and the cross-check is what stops the runner on a
+misread that changes a declaration (round 10 adds the checks for a misread that changes none).
+Round 9 reworded the reader's docs to say only this, and m1's sentence on rounds 7 and 8; the
+no-comments round removed those docs, and this file keeps what they said.
 
 **Evidence** (one local run each, default kernel; the check does not depend on `--paranoid`).
 `--prepare decoy_case` on a copy of the repository whose approved Challenge holds, before the
@@ -604,12 +615,44 @@ Challenge's own hidden commands unseen. m1 (each `differs` reported twice): the 
 lists each difference once (`eraseDups`); `CrossCheck.problems` itself is unchanged, since changing
 it would take its proof and a `#guard` with it.
 
+### Comments cut (no-comments round)
+
+**What changed.** The owner's `/no-comments` pass cut the runner's comments and module docs, keeping
+a few docstrings and `Mutants.Tokens`'s doc. What the cut docs said that matters is in this file:
+what is proved and what is not (The rest, below), and the facts about Lean's parser (rounds 6 to
+10). Seven places were reshaped so that the code says what a comment said, with no change in
+behaviour:
+- `Mutants.leanTypeNames` is `List` and `String`. `Nat` was there only for the `#guard`s' scratch
+  holes; those 23 `#guard`s and the reverse probe now use `String` and are otherwise unchanged.
+- `Mutants.CommentProbe` is a module of its own, one theorem per Lean fact (round 6).
+- `Mutants.Lint.bans` is gate 1's list and four lists named by their reason (round 3): the same
+  list, in the same order.
+- `Mutants.Output.hiddenVariableSource` (was `b1Source`) is named after its trick, as
+  `trailingSource` is.
+- The status refutations' `str` is `strNoLiterals` (String literals and the replay kernels, below).
+- `rejectionEvidence` in `Main.lean` gives the evidence lines the case loop printed, through named
+  predicates (`isPanic`, `isFileError`, `isLogError`, `isCheatCase`, `unexpectedRejection`).
+- `CrossCheck.thmDecl`, `holeDecl`, `holeName` and `importNames` take their columns and drops from
+  `"theorem ".length`, `"def ".length` and `"import ".length`.
+
+**Evidence** (one local run each, default kernel). The full corpus: all 42 cases as expected, 20
+refuted, 2 known gaps, 20 cheat cases rejected (457 s); the four renamed refutations also with
+`--paranoid`. The shapes of rounds 9 and 10 in copies of the approved Challenge (the hidden
+`variable … in include … in`, a trailing `namespace` and `#exit`, the decoy and the reverse) stop
+`--prepare` with exit 2, and the runner prints the same as the 38ff9f1 runner on each and on the
+approved Challenge, which still reads to 23 lines, 2 of them holes. The diff against 38ff9f1
+removes no `#guard` or theorem but those re-added with the renames above, and
+`CommentProbe.probes`, split into four.
+
 ### Cases
 
 `eval/mutants/cases/<name>/` holds a manifest `mutant` (`why=`, `breaks=` or `survives=`, an
 optional `rejects=`, and `file=`/`find=`/`replace=` edits) and, for `breaks=`, `Refute.lean`.
-Edits instead of copies of the implementation files (#9 copied them): the manifest shows the bug
-as a one-line diff, and when `core/Mitos/Impl/` changes, a mutant whose text no longer occurs
+The manifest holds one `key=value` per line, the value being everything after the first `=`,
+spaces included; empty lines are skipped, and `file=` (a path under `core/`) sets the file for the
+`find=`/`replace=` pairs after it. Edits instead of copies of the implementation files (#9 copied
+them): the manifest shows the bug as a one-line diff, and when `core/Mitos/Impl/` changes, a
+mutant whose text no longer occurs
 exactly once fails as INVALID instead of silently testing an old copy. A `breaks=` case may edit
 only `Mitos/Impl/`. A `survives=` case records a known gap: its gate run and its values run must
 accept, with proof repairs under `Mitos/Proofs/` where a proof needs one, which shows the mutant
@@ -699,7 +742,7 @@ a `sorry` fails it:
   any Challenge line that could change a statement's meaning if dropped (`open`, `namespace`, a
   multi-line statement), and on every line it takes, `leanScan` (Lean's scan of a comment's text)
   ends where the reader goes on (`readLine_comments`, from `commentLine_scan` and
-  `openerLine_scan`); `leanScan` transcribes Lean's lexer without proof, and `CommentProbe.probes`
+  `openerLine_scan`); `leanScan` transcribes Lean's lexer without proof, and `Mutants.CommentProbe`
   checks its premises at build. It is not all of how Lean reads a comment (a doc comment's opener,
   round 9), so the reader is a first pass and `Mutants.CrossCheck` stops the runner when it
   misreads. Every line it takes as a definition hole is exactly
@@ -733,8 +776,8 @@ literals, but the comparator rejected them: with `decide`, Lean's kernel could n
 replayed `decide` term to `true`, and with `simp` (as #9 did), lean4lean failed on `loc` with
 `unknown constant 'Char.ofNat'`: the export declared `loc`, with its literals, before
 `Char.ofNat`. Those four refutations therefore write their strings with `String.ofList`
-(`str ['a']`), which makes the export declare it first; with `decide` they then pass all five
-kernels under `--paranoid`. The other refutations pass all five with literals (`decide`, and
+(`strNoLiterals ['a']`), which makes the export declare it first; with `decide` they then pass all
+five kernels under `--paranoid`. The other refutations pass all five with literals (`decide`, and
 `decide +kernel` for impact). Which constants the export holds matters too: with only `resolve`'s
 definition in it, Lean's replay kernel could not reduce the `decide` in `src_dst_swapped`'s
 refutation, and with `impact`'s as well it could (bisected to `List.get!Internal`, which `impact`

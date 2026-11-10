@@ -18,13 +18,14 @@ structure Decl where
   deriving DecidableEq, Repr
 
 def holeName (t : String) : String :=
-  String.ofList ((t.toList.drop 4).takeWhile (· != ' '))
+  String.ofList ((t.toList.drop "def ".length).takeWhile (· != ' '))
 
 def thmDecl (i : Nat) (n s : String) : Decl :=
-  { name := "Mitos.Proofs." ++ n, pos := some (i, 8), kind := .thm (some (s.splitOn " ")) }
+  { name := "Mitos.Proofs." ++ n, pos := some (i, "theorem ".length),
+    kind := .thm (some (s.splitOn " ")) }
 
 def holeDecl (i : Nat) (t : String) : Decl :=
-  { name := holeName t, pos := some (i, 4), kind := .hole }
+  { name := holeName t, pos := some (i, "def ".length), kind := .hole }
 
 def expectedFrom : Nat → List Line → List Decl
   | _, [] => []
@@ -38,7 +39,7 @@ def holeNames (ls : List Line) : List String :=
   ls.filterMap fun | .hole t => some (holeName t) | _ => none
 
 def importNames (ls : List Line) : List String :=
-  ls.filterMap fun | .imp t => some (String.ofList (t.toList.drop 7)) | _ => none
+  ls.filterMap fun | .imp t => some (String.ofList (t.toList.drop "import ".length)) | _ => none
 
 inductive Problem where
   | unread (lean : Decl)
@@ -175,7 +176,7 @@ theorem holeName_of_holeForm {cs n ty : List Char} (h : holeForm cs = some (n, t
       exact List.all_eq_true.mp this
     · simp at h
   unfold holeName
-  rw [String.toList_ofList, hs.1]
+  rw [String.toList_ofList, hs.1, show "def ".length = 4 by decide]
   simp only [List.append_assoc]
   rw [show "def ".toList = ['d', 'e', 'f', ' '] from rfl, List.drop_append_of_le_length (by simp),
     List.drop_eq_nil_of_le (by simp), List.nil_append, List.takeWhile_append_of_pos hn]
@@ -261,7 +262,7 @@ def decoySource : String :=
   "import Mitos.Core\n\n/--\n-- -/\ntheorem Mitos.Proofs.decoy : Mitos.Spec.Sound Mitos.Impl.resolve := sorry\n-- -/\ndef Mitos.Impl.resolve : Mitos.Resolver := sorry\n"
 
 def reverseSource : String :=
-  "import Mitos.Core\n\n/--\n-- -/\ndef Mitos.Impl.extra : Nat := sorry\n-- -/\ndef Mitos.Impl.resolve : Mitos.Resolver := sorry\n"
+  "import Mitos.Core\n\n/--\n-- -/\ndef Mitos.Impl.extra : String := sorry\n-- -/\ndef Mitos.Impl.resolve : Mitos.Resolver := sorry\n"
 
 def valueLine : String := "def Mitos.Impl.f : Nat → Nat | _ => 0 where g : Nat := sorry"
 
@@ -274,7 +275,7 @@ def probes : List Probe := [
     defs := ["Mitos.Impl.resolve"], expect := [("undeclared", "Mitos.Proofs.decoy")] },
   { path := "Challenge/CrossCheckReverse.lean", source := reverseSource,
     lines := [.imp "import Mitos.Core", .keep "", .keep "/--", .keep "-- -/",
-      .hole "def Mitos.Impl.extra : Nat := sorry", .keep "-- -/",
+      .hole "def Mitos.Impl.extra : String := sorry", .keep "-- -/",
       .hole "def Mitos.Impl.resolve : Mitos.Resolver := sorry", .keep ""],
     defs := ["Mitos.Impl.extra", "Mitos.Impl.resolve"],
     expect := [("undeclared", "Mitos.Impl.extra")] },
@@ -302,11 +303,11 @@ def Probe.caught (p : Probe) (imps : List String) (ds : List Decl) : Bool :=
 #guard (problems (probes.head!.lines) ["Mitos.Impl.resolve"] ["Init", "Mitos.Core"]
     [{ name := "Mitos.Impl.resolve", pos := some (7, 4), kind := .hole }]).map (·.key) ==
   [("undeclared", "Mitos.Proofs.decoy")]
-#guard problems [.imp "import Mitos.Core", .hole "def Mitos.Impl.f : Nat := sorry",
+#guard problems [.imp "import Mitos.Core", .hole "def Mitos.Impl.f : String := sorry",
     .thm "t" "Mitos.Spec.P Mitos.Impl.f" "theorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry"]
     ["Mitos.Impl.f"] ["Init", "Init", "Mitos.Core"]
-    [thmDecl 3 "t" "Mitos.Spec.P Mitos.Impl.f", holeDecl 2 "def Mitos.Impl.f : Nat := sorry"] == []
-#guard (problems [.hole "def Mitos.Impl.f : Nat := sorry",
+    [thmDecl 3 "t" "Mitos.Spec.P Mitos.Impl.f", holeDecl 2 "def Mitos.Impl.f : String := sorry"] == []
+#guard (problems [.hole "def Mitos.Impl.f : String := sorry",
     .thm "t" "Mitos.Spec.P Mitos.Impl.f" "theorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry"]
     ["Mitos.Impl.g"] ["Init", "Mitos.Core"]
     [{ name := "Mitos.Proofs.t", pos := some (3, 8), kind := .thm (some ["Mitos.Spec.P", "Mitos.Impl.f"]) },

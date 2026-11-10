@@ -1,6 +1,7 @@
 import Mutants.Edit
 import Mutants.Manifest
 import Mutants.Challenge
+import Mutants.CommentProbe
 import Mutants.CrossCheck
 import Mutants.Output
 import Mutants.Verdict

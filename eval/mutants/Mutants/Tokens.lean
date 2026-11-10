@@ -6,8 +6,8 @@ import Mutants.Challenge
 # No word of a definition hole line is a keyword
 
 `Mutants.readLine` takes a line for a definition hole only in the form
-`def <name> : <type> := sorry`, where the name and every word of the type is `→`, `List`, `String`,
-`Nat` or a name under `Mitos` (`Mutants.typeWord`, `Mutants.readLine_hole`), and a single space
+`def <name> : <type> := sorry`, where the name and every word of the type is `→`, `List`, `String`
+or a name under `Mitos` (`Mutants.typeWord`, `Mutants.readLine_hole`), and a single space
 follows every word of the type. That Lean reads the value of such a line as its `sorry` rests on
 Lean reading each of those words as a name or as the arrow, never as a keyword such as `where`,
 which would start another form of the value.

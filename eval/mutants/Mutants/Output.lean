@@ -301,7 +301,7 @@ def OutProblem.key : OutProblem → String × String
   | .extra n => ("extra", n)
   | .imports _ _ => ("imports", "")
 
-def b1Source : String :=
+def hiddenVariableSource : String :=
   "import Mitos.Core\n\ndef Mitos.Impl.resolve : Mitos.Resolver := sorry\n/-!\n-- -/\n/-- x -/\n-- -/ variable (h : False) in include h in\ndef Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry\ntheorem Mitos.Proofs.resolve_total : Mitos.Spec.Total Mitos.Impl.resolve := sorry\n"
 
 def trailingSource (code : String) : String :=
@@ -315,7 +315,7 @@ structure ParseProbe where
   expect : List (String × Nat)
 
 def parseProbes : List ParseProbe := [
-  { name := "b1", source := b1Source, expect := [("command", 7)] },
+  { name := "b1", source := hiddenVariableSource, expect := [("command", 7)] },
   { name := "namespace", source := trailingSource "namespace Mitos.Impl", expect := [("command", 9)] },
   { name := "exit", source := trailingSource "#exit", expect := [("command", 9)] },
   { name := "decoy", source := decoySource, expect := [("command", 3), ("missing", 5), ("missing", 7)] },
@@ -328,19 +328,19 @@ structure OutProbe where
   expect : List (String × String)
 
 def outProbes : List OutProbe := [
-  { path := "Challenge/OutputProbeB1.lean", source := b1Source, breaks := ["resolve_total"],
+  { path := "Challenge/OutputProbeB1.lean", source := hiddenVariableSource, breaks := ["resolve_total"],
     expect := [("differs", "Mitos.Refute.resolve_total")] },
   { path := "Challenge/OutputProbeExit.lean", source := trailingSource "#exit",
     breaks := ["resolve_total"], expect := [("missing", holesName)] }]
 
 #guard parseProbes.all fun p => (readChallenge p.source).toOption.isSome
 #guard outProbes.all fun p => (readChallenge p.source).toOption.isSome
-#guard ((readChallenge b1Source).toOption.map declLines) ==
+#guard ((readChallenge hiddenVariableSource).toOption.map declLines) ==
   some [(3, "def Mitos.Impl.resolve : Mitos.Resolver := sorry"),
     (8, "def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry"),
     (9, "theorem Mitos.Proofs.resolve_total : Mitos.Spec.Total Mitos.Impl.resolve := sorry")]
 
-#guard ((readChallenge b1Source).toOption.map fun ls =>
+#guard ((readChallenge hiddenVariableSource).toOption.map fun ls =>
     (parseProblems ls [] ["Mitos.Core"] [
       { line := 3, col := 0, kind := declKind, text := "def Mitos.Impl.resolve : Mitos.Resolver := sorry" },
       { line := 4, col := 0, kind := moduleDocKind, text := "" },
@@ -349,12 +349,12 @@ def outProbes : List OutProbe := [
         text := "theorem Mitos.Proofs.resolve_total : Mitos.Spec.Total Mitos.Impl.resolve := sorry" }]).map
       (·.key)) ==
   some [("command", 7), ("missing", 8)]
-#guard ((readChallenge b1Source).toOption.map fun ls =>
+#guard ((readChallenge hiddenVariableSource).toOption.map fun ls =>
     parseProblems ls [] ["Mitos.Core"] ((declLines ls).map fun (i, t) =>
       { line := i, col := 0, kind := declKind, text := t })) == some []
-#guard (parseProblems [.imp "import Mitos.Core", .hole "def Mitos.Impl.f : Nat := sorry"]
+#guard (parseProblems [.imp "import Mitos.Core", .hole "def Mitos.Impl.f : String := sorry"]
     ["a `prelude` keyword"] ["Mitos.Core", "Mitos.Impl"]
-    [{ line := 2, col := 1, kind := declKind, text := "def Mitos.Impl.f : Nat := sorry" }]).map (·.key) ==
+    [{ line := 2, col := 1, kind := declKind, text := "def Mitos.Impl.f : String := sorry" }]).map (·.key) ==
   [("command", 2), ("missing", 2), ("header", 0), ("imports", 0)]
 
 #guard outProblems (· == ·) [("Mitos.Refute.t", "¬ P"), (holesName, "H")] ["Mitos.Core"]
@@ -365,10 +365,10 @@ def outProbes : List OutProbe := [
       (·.key) ==
   [("differs", "Mitos.Refute.t"), ("missing", holesName), ("notTheorem", "Mitos.Refute.u"),
     ("extra", "Mitos.Impl.x"), ("imports", "")]
-#guard (((readChallenge b1Source).toOption.map fun ls => refutationGen [] probeDefs ls ["resolve_total"]).map
+#guard (((readChallenge hiddenVariableSource).toOption.map fun ls => refutationGen [] probeDefs ls ["resolve_total"]).map
     fun g => g.toOption.map (·.wants)) ==
   some (some [(holesName, .holes probeDefs), ("Mitos.Refute.resolve_total", .negated "resolve_total")])
-#guard ((readChallenge b1Source).toOption.map fun ls => (valuesGen ["Mitos.Impl.Resolve"] ls).toOption.map
+#guard ((readChallenge hiddenVariableSource).toOption.map fun ls => (valuesGen ["Mitos.Impl.Resolve"] ls).toOption.map
     fun g => (g.wants, g.imports)) ==
   some (some ([("Mitos.Proofs.resolve_total", .stated "resolve_total")], ["Mitos.Impl.Resolve", "Mitos.Core"]))
 
