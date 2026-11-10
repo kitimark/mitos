@@ -23,11 +23,11 @@ def usage : String := "usage:
                     [--plugin-file <f>] [--paranoid] [--record] [--keep] [--skip-lint]
   mitos-gate runlog [--base <dir>] --head <dir>   run-log records parse, one per (task, role, attempt),
                                                  each record file named by its key; with --base, every
-                                                 base record is kept and no day file is added
+                                                 day file equals the base and every base record file
+                                                 is kept
   mitos-gate content-id <base> <head> [--verbose]
-                                                 the id a verdict covers: the diff from the merge-base
-                                                 outside ops/runs/*.ndjson, plus the run-log lines the
-                                                 PR adds; refuses a run-log edit
+                                                 the id a verdict covers: the diff from the merge-base,
+                                                 whitespace and where each hunk applies included
   mitos-gate carry <base> <verified-head> <head>  whether a verdict carries: the branch's pushes on
                                                  standard input (the REST activity route as TSV),
                                                  all updater rebases from the verified head to the
