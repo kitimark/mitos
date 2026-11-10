@@ -3,8 +3,6 @@ import MitosGate.Util
 
 namespace MitosGate.Imports
 
-/-- The import violations of one core source: a header that fails to parse, or an import outside
-`allowed`. -/
 def checkSource (allowed : List String) (src : String) : IO (Array Lint.Violation) := do
   match ← Lint.headerSyntax src with
   | .error v => return #[v]

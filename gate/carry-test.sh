@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Tests for `mitos-gate carry` (gate/MitosGate/Carry.lean) on a scratch repository, with push lists
-# written as the REST activity route prints them (newest first; time, type, actor, before, after,
-# tab-separated): #83's round-2 laundering, an updater-only chain, and each way a chain breaks.
-# Run from anywhere: gate/carry-test.sh
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -20,9 +16,7 @@ repo="$tmp/repo"
 g() { git -C "$repo" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "$@"; }
 cid() { (cd "$repo" && "$bin" content-id "$@" 2>/dev/null) || true; }
 bot="mitos-pr-updater[bot]"
-# push <type> <actor> <before> <after>: one line of the route's TSV.
 push() { printf '2026-11-09T10:00:00Z\t%s\t%s\t%s\t%s\n' "$1" "$2" "$(g rev-parse "$3")" "$(g rev-parse "$4")"; }
-# expect <name> <exit code> <grep -E pattern> <base> <verified> <head>, with the pushes on stdin.
 expect() {
   local name=$1 code=$2 pat=$3 got=0
   shift 3
@@ -44,17 +38,14 @@ g add -A
 g commit -qm M1
 g tag M1
 
-# V, the verified head: drops axioms from lax(), with its run-log record.
 g checkout -qb pr
 awk '/^lax\(\) \{/{f=1} !(f && $0=="  run axioms")' "$repo/check.sh" >"$tmp/x" && mv "$tmp/x" "$repo/check.sh"
 echo '{"task":"pr","attempt":1}' >>"$repo/ops/runs/d.ndjson"
 g commit -qam V
 g tag V
-# V2, an owner's push on V: axioms back in lax(), dropped from strict() instead.
 { echo 'strict() {'; blk | grep -v axioms; echo '}'; echo 'lax() {'; blk; echo '}'; } >"$repo/check.sh"
 g commit -qam V2
 g tag V2
-# main adds pre(), with the same steps, above strict(); then the updater rebases V2 to X.
 g checkout -q main
 { echo 'pre() {'; blk; echo '}'; echo 'strict() {'; blk; echo '}'; echo 'lax() {'; blk; echo '}'; } >"$repo/check.sh"
 echo '{"task":"m1"}' >>"$repo/ops/runs/d.ndjson"
@@ -82,7 +73,6 @@ expect "the updater's rebase of V over pre() changes the content id" 1 \
   main V H \
   < <(push force_push "$bot" V H)
 
-# An updater-only chain on another main: a run-log record, then an edit elsewhere.
 g checkout -qb main2 M1
 echo '{"task":"n1"}' >>"$repo/ops/runs/d.ndjson"
 g commit -qam N1
@@ -135,7 +125,6 @@ expect "a hostile login prints on one line with no workflow command" 1 \
   '^no carry: .* by "::warning::x ##\\u\{005B\}error\]y", not' main2 V Y2 \
   < <(printf '%s\t%s\t%s\t%s\t%s\n' t force_push '::warning::x ##[error]y' "$(g rev-parse V)" "$(g rev-parse Y2)")
 
-# The content id's refusals stop the carry.
 g checkout -qb edit Y2
 sed -i 's/n1/n9/' "$repo/ops/runs/d.ndjson"
 g commit -qam edit

@@ -26,32 +26,22 @@ def obligationNames (p : String) : List String :=
 def modelModule (model : String) : String :=
   String.intercalate "." ((model.splitOn ".").dropLast)
 
-/-- The module that must declare `<model>.examples`: `Models.X.Examples` for `Models.X.model`. -/
 def examplesModule (model : String) : String := modelModule model ++ ".Examples"
 
-/-- The module that must prove `<model>.adequate`: `Models.X.Adequacy` for `Models.X.model`. -/
 def adequacyModule (model : String) : String := modelModule model ++ ".Adequacy"
 
 def moduleFile (mod : String) : String :=
   ((System.mkFilePath (mod.splitOn ".")).addExtension "lean").toString
 
-/-- The models and `models.lock` exactly as gate 0 read and checked them. Only `provenance` builds
-one, and every later gate and the record use these bytes instead of the workspace. -/
 structure LockedModels where
   private mk ::
   model : String
   files : Array (String × String)
   lock  : String
 
-/-- Everything the gate judges and records, as gate 0 read it. Only `provenance` builds one: the
-judging directory, every later gate and the record use these bytes, so the record hashes what was
-judged and nothing is read twice. -/
 structure Inputs where
   private mk ::
-  /-- Mitos's `lean-toolchain`, which the workspace's must match. -/
   toolchain : String
-  /-- Every `.lean` file under `core/Mitos/`, by its path relative to `core/`, such as
-  `Mitos/Core.lean`. -/
   core      : Array (String × String)
   models    : LockedModels
   pluginSrc : String
@@ -101,11 +91,8 @@ theorem _root_.{m.model}.adequate :
     _root_.Mitos.Model.Adequate _root_.{m.model} _root_.{m.model}.examples := sorry
 "
 
-/-- Gate 6's Challenge module. A plugin name is a plain identifier, so `Challenge.{p}` is never
-this module and `Challenge/{p}.lean` never its file. -/
 def adequacyChallengeModule : String := "Challenge.Mitos.ModelAdequacy"
 
-/-- A comparator configuration against gate 6's Challenge. -/
 def gate6ComparatorJson (solution : String) (theorems definitions : List String) : String :=
   let axs := String.intercalate ", " (permittedAxioms.map quote)
   let names (xs : List String) := String.intercalate ", " (xs.map quote)
@@ -115,18 +102,13 @@ def gate6ComparatorJson (solution : String) (theorems definitions : List String)
  \"permitted_axioms\": [{axs}]}
 "
 
-/-- Gate 6's first run: the examples module on its own declares `<model>.examples`, a
-`Mitos.ModelExamples`. -/
 def examplesComparatorJson (m : LockedModels) : String :=
   gate6ComparatorJson (examplesModule m.model) [] [s!"{m.model}.examples"]
 
-/-- Gate 6's second run: the adequacy module proves `<model>.adequate` of the model and the examples
-it imports. -/
 def adequacyComparatorJson (m : LockedModels) : String :=
   gate6ComparatorJson (adequacyModule m.model) [s!"{m.model}.adequate"]
     [m.model, s!"{m.model}.examples"]
 
-/-- The modules a source file's header imports, as Lean's own parser reads them. -/
 def headerImports (src : String) : IO (Except String (Array Lean.Name)) := do
   let (imports, _, msgs) ← Lean.Elab.parseImports src
   if msgs.hasErrors then return .error "its header does not parse"
@@ -135,20 +117,6 @@ def headerImports (src : String) : IO (Except String (Array Lean.Name)) := do
 def underAny (prefixes : List Lean.Name) (n : Lean.Name) : Bool :=
   prefixes.any (·.isPrefixOf n)
 
-/-- Gate 6's check, on the locked headers, that the golden facts and the model share no
-definition outside `Mitos.Core`. For `Models.X.model`:
-- every import's components are plain identifiers (`Lint.plainComponents`). Lean finds a module's
-  file by joining its name's components with `/`, so a component such as `«..»` or `«X/Examples»`
-  would name a file outside the locked models, or the examples module's file, under another name;
-- the examples module `Models.X.Examples` imports only `Mitos.Core` (and `Init`);
-- the adequacy module `Models.X.Adequacy` imports `Models.X` and `Models.X.Examples`;
-- no other model module imports the examples module, and none imports the adequacy module, so the
-  model module cannot reach anything the examples module declares;
-- model modules import only `Init`, `Std`, `Mitos.Core` and `Models` modules, so every import path
-  stays in the locked files.
-
-The examples run then checks that the examples module declares `<model>.examples`. Since the
-adequacy module imports it, no other module can declare that name for the adequacy run. -/
 def examplesLayout (m : LockedModels) : IO (Except String Unit) := do
   let model := modelModule m.model
   let ex := examplesModule m.model
@@ -197,17 +165,12 @@ def report (g : GateId) (ok : Bool) (detail : String := "") : IO Unit := do
 private def validIdent (s : String) : Bool :=
   !s.isEmpty && s.toList.all (fun c => c.isAlphanum || c == '_') && (s.toList.head!).isAlpha
 
-/-- A rejection is the gate that failed and what failed in it when that was not the gate's own
-judgment (`I/O error`), otherwise `""`. -/
 abbrev GateM := ExceptT (GateId × String) IO
 
-/-- `x` as part of gate `g`: an I/O error in it fails `g`. -/
 def atGate (g : GateId) (x : GateM α) : GateM α :=
   tryCatchThe IO.Error x fun e => do
     report g false s!"I/O error: {e}"
     throw (g, "I/O error")
-
-/-! ## `models.lock` -/
 
 /-- A workspace's model files: every `.lean` file under `Models/`, recursively, with its path
 relative to the workspace and its text, sorted by path. Gate 0 reads the models with it, and
@@ -229,8 +192,6 @@ them: the SHA-256, two spaces and the path, one file per line. -/
 def renderLock (es : List (String × String)) : String :=
   String.join (es.map fun (path, h) => h ++ "  " ++ path ++ "\n")
 
-/-- A line of `models.lock`, as its path and SHA-256: the SHA-256, two spaces, and the rest of the
-line is the path, which holds no two spaces in a row. -/
 def lockLine (l : List Char) : Except String (String × String) :=
   let malformed : Except String (String × String) :=
     .error s!"models.lock has a malformed line: {String.ofList l}"
@@ -240,12 +201,10 @@ def lockLine (l : List Char) : Except String (String × String) :=
     else malformed
   | _ => malformed
 
-/-- A path the list holds twice, if there is one. -/
 def listedTwice : List String → Option String
   | [] => none
   | p :: ps => if ps.contains p then some p else listedTwice ps
 
-/-- Gate 0's reading of `models.lock`: each line that is not empty, as its path and SHA-256. -/
 def lockEntries (lock : String) : Except String (List (String × String)) := do
   let entries ← ((lock.toList.splitOn '\n').filter (!·.isEmpty)).mapM lockLine
   if let some p := listedTwice (entries.map (·.1)) then throw s!"models.lock lists {p} twice"
@@ -256,7 +215,6 @@ theorem listedTwice_eq_none {ps : List String} : listedTwice ps = none ↔ ps.No
   | nil => simp [listedTwice]
   | cons p ps ih => by_cases h : p ∈ ps <;> simp [listedTwice, h, ih]
 
-/-- A lock that gate 0 reads lists no path twice, so `List.lookup` finds a path's only line. -/
 theorem lockEntries_nodup {lock : String} {es : List (String × String)}
     (h : lockEntries lock = .ok es) : (es.map (·.1)).Nodup := by
   simp only [lockEntries, bind, Except.bind] at h
@@ -268,9 +226,6 @@ theorem lockEntries_nodup {lock : String} {es : List (String × String)}
       cases h
       exact listedTwice_eq_none.mp (Option.eq_none_iff_forall_ne_some.mpr twice)
 
-/-- Gate 0 reads back exactly what `mitos-gate lock-models` writes: model files with distinct
-paths that hold no line break and no two spaces in a row, each with its SHA-256 as `sha256sum`
-prints it. -/
 theorem lockEntries_renderLock {es : List (String × String)}
     (hashes : ∀ e ∈ es, isSha256 e.2.toList) (paths : ∀ e ∈ es, '\n' ∉ e.1.toList)
     (spaces : ∀ e ∈ es, ¬[' ', ' '] <:+: e.1.toList)
@@ -367,32 +322,17 @@ def lint (c : Config) (pluginFile : System.FilePath) (i : Inputs) : GateM Unit :
   for v in shown do IO.println (ciLine s!"  {v}")
   unless shown.isEmpty do throw (.lint, "")
 
-/-! ## What a comparator run decided -/
-
-/-- What one `lake comparator` run decided. `Outcome.parse` reads it from the run's exit code and
-output, and nothing else in the gate decides anything from comparator text. Gates 2–5
-(`pluginFailure`) and both runs of gate 6 (`examplesFailure`, `adequacyFailure`) match every
-constructor. -/
 inductive Outcome
-  /-- Exit code 0 and `Your solution is okay!`: everything built, the statements and definition holes
-  match the Challenge's, only permitted axioms are used, and every kernel accepts. -/
   | ok
-  /-- A theorem or definition uses an axiom outside the permitted ones. -/
   | illegalAxiom
-  /-- A constant the configuration names is missing from the solution. -/
   | missingConst
   /-- A statement or definition hole differs from the Challenge's. -/
   | statement
-  /-- A kernel rejected the solution. -/
   | kernelReject
-  /-- A module did not build because two modules it imports declare one name. -/
   | importClash
-  /-- No judgment: any other build error, or the comparator did not run. -/
   | noJudgment
   deriving DecidableEq
 
-/-- Whether `pat` occurs in `s` as consecutive characters. On lists, because `decide` cannot
-evaluate `String.splitOn` in the examples below. -/
 def occursIn (pat : List Char) : List Char → Bool
   | [] => pat.isEmpty
   | s@(_ :: rest) => pat.isPrefixOf s || occursIn pat rest
@@ -401,8 +341,6 @@ def occursIn (pat : List Char) : List Char → Bool
 `Lake.Check.compareAt`'s own. -/
 def missingMarkers : List String := ["not found in environment", "Const not found in solution"]
 
-/-- `Lake.Check.compareAt`'s messages for a statement or definition hole that is not the
-Challenge's. -/
 def statementMarkers : List String :=
   [ "Const not found in challenge",
     "Const does not match between challenge and target",
@@ -424,7 +362,6 @@ def Outcome.parse (code : UInt32) (out : String) : Outcome :=
   else if has "environment already contains" then .importClash
   else .noJudgment
 
-/-- Only a run that exited with code 0 is `ok`. -/
 theorem Outcome.parse_ok {code : UInt32} {out : String} (h : Outcome.parse code out = .ok) :
     code = 0 := by
   simp only [Outcome.parse] at h
@@ -433,13 +370,6 @@ theorem Outcome.parse_ok {code : UInt32} {out : String} (h : Outcome.parse code 
   · repeat' split at h
     all_goals simp_all
 
-/-! Each outcome, from the last lines of a real run as the gate prints them, without its `  | `
-prefix. Unless its comment says otherwise, the text is from the named log in CI's `cheat-logs`
-artifact for main at c79e03f. The exit codes are the ones Lake's `CLI/Check.lean` returns: 0 for an
-accepted run, 1 for any error once the run has started. -/
-
--- The `cd core && lake comparator --paranoid` step of the same CI run: the gate prints no
--- comparator output for an accepted run.
 example : Outcome.parse 0 "Running con-ron kernel on solution
 con-ron: accepted 1885 declarations (--verified)
 con-ron kernel accepts the solution
@@ -448,32 +378,26 @@ Lean default kernel accepts the solution
 Your solution is okay!
 " = .ok := by decide +kernel
 
--- `admit.comparator.log`.
 example : Outcome.parse 1 "warning: Plugins/ToyRequire.lean:38:8: declaration uses `sorry`
 Build completed successfully (11 jobs).
 error: Illegal axiom detected: 'sorryAx'
 " = .illegalAxiom := by decide +kernel
 
--- `missing_obligation.full.log`.
 example : Outcome.parse 1 "Build completed successfully (11 jobs).
 PANIC at LeanExport.dumpConstant LeanExport.Basic:254:48: Constant ToyRequire.complete not found in environment.
 error: Child exited with 134
 " = .missingConst := by decide +kernel
 
--- `weakened_statement.full.log`.
 example : Outcome.parse 1 "Building Plugins.ToyRequire
 Build completed successfully (11 jobs).
 error: Challenge and solution theorem statement do not match: 'ToyRequire.complete'
 " = .statement := by decide +kernel
 
--- `env_hack.comparator.log`.
 example : Outcome.parse 1 "Running Lean default kernel on solution
 Lean default kernel rejected the solution
 error: Lean default exited with 1
 " = .kernelReject := by decide +kernel
 
--- No cheat case reaches this outcome. A local run on the toy, with `model.examples` declared in
--- the model module as well as in the examples module.
 example : Outcome.parse 1 "error: Models/ToyRequire/Adequacy.lean:1:0: import Models.ToyRequire.Examples failed, environment already contains 'Models.ToyRequire.model.examples' from Models.ToyRequire
 Some required targets logged failures:
 - Models.ToyRequire.Adequacy
@@ -481,7 +405,6 @@ error: build failed
 error: Child exited with 1
 " = .importClash := by decide +kernel
 
--- `escaped_sorry.comparator.log`.
 example : Outcome.parse 1 "error: Plugins/ToyRequire.lean:39:8: Unknown identifier `«sorry»`
 Some required targets logged failures:
 - Plugins.ToyRequire
@@ -489,7 +412,6 @@ error: build failed
 error: Child exited with 1
 " = .noJudgment := by decide +kernel
 
-/-- The gate that rejects the plugin's run, or `none` when the run passes gates 2–5. -/
 def pluginFailure : Outcome → Option GateId
   | .ok => none
   | .noJudgment | .importClash => some .sandbox
@@ -497,7 +419,6 @@ def pluginFailure : Outcome → Option GateId
   | .illegalAxiom => some .axioms
   | .kernelReject => some .kernels
 
-/-- One comparator run: what it decided, and its output to show. -/
 structure Judgment where
   outcome : Outcome
   output  : String
@@ -523,8 +444,6 @@ partial def regularFiles (dir : System.FilePath) (rel : String := "") :
     | _ => throw s!"{r} is neither a regular file nor a directory"
   return out.qsort (· < ·)
 
-/-- The build outputs in the judging directory (`.lake/build/lib/lean/`) and the SHA-256 of each,
-read by the gate process after a comparator run, when nothing in the sandbox is running. -/
 def buildOutputs (dir : System.FilePath) : ExceptT String IO (Array (String × String)) := do
   let lib := dir / ".lake" / "build" / "lib" / "lean"
   if !(← lib.isDir) then return #[]
@@ -535,11 +454,9 @@ def buildOutputs (dir : System.FilePath) : ExceptT String IO (Array (String × S
   unless code == 0 && lines.length == files.size do throw s!"sha256sum failed: {out}"
   return files.zip lines.toArray
 
-/-- Every build output of `before` that `after` lacks or holds with other bytes. -/
 def changedOutputs (before after : Array (String × String)) : Array String :=
   before.filterMap fun (f, h) => if after.contains (f, h) then none else some f
 
-/-- Why gate 6's examples run failed, or `none` when it passed. -/
 def examplesFailure (model : String) : Outcome → Option String
   | .ok => none
   | .missingConst => some s!"{examplesModule model} must declare `{model}.examples`"
@@ -550,7 +467,6 @@ def examplesFailure (model : String) : Outcome → Option String
   | .kernelReject => some s!"a kernel rejected {examplesModule model}"
   | .importClash | .noJudgment => some s!"{examplesModule model} could not be judged"
 
-/-- Why gate 6's adequacy run failed, or `none` when it passed. -/
 def adequacyFailure (model : String) : Outcome → Option String
   | .ok => none
   | .importClash =>
@@ -565,9 +481,6 @@ def adequacyFailure (model : String) : Outcome → Option String
   | .kernelReject => some s!"a kernel rejected `{model}.adequate`"
   | .noJudgment => some "the adequacy proof could not be judged"
 
-/-- Gate 6, in order, each step only if the one before passed: the layout of the models
-(`examplesLayout`), the examples module alone (`examples.json`), then the adequacy module
-(`adequacy.json`). -/
 def judgeModel (c : Config) (m : LockedModels) (dir : System.FilePath) :
     IO (Except (String × String) Unit) := do
   if let .error e := ← examplesLayout m then return .error (e, "")
@@ -577,9 +490,6 @@ def judgeModel (c : Config) (m : LockedModels) (dir : System.FilePath) :
   if let some why := adequacyFailure m.model ad.outcome then return .error (why, ad.output)
   return .ok ()
 
-/-- The lines `showComparatorTail` prints for a comparator run's output: the last 15, without
-progress lines and backtrace frames, each through `ciLine`. `gate/LintTest.lean` checks them on
-hostile output. -/
 def comparatorTail (out : String) : List String :=
   let frame (l : String) := l == "backtrace:" || (l.startsWith "/" && (l.splitOn " [0x").length > 1)
   let lines := (out.splitOn "\n").filter fun l =>
@@ -599,10 +509,6 @@ def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
   report .axioms true (String.intercalate ", " permittedAxioms)
   report .kernels true (if c.paranoid then "lean4lean, nanoda, con-leche, con-ron, paranoid" else "Lean kernel only (use --paranoid for independent kernels)")
 
-/-- Gate 6's verdict. `j` is the layout and the two runs, with the reason and the comparator output
-to show on failure. `rebuilt` says why gates 3 and 6 may not have judged one elaboration of the
-model: the plugin's run changed or removed a build output of gate 6's runs, or the outputs could
-not be compared. -/
 def adequacyGate (m : LockedModels) (j : Except (String × String) Unit) (rebuilt : Option String) :
     GateM Unit := do
   if let .error (reason, out) := j then
@@ -616,12 +522,6 @@ def adequacyGate (m : LockedModels) (j : Except (String × String) Unit) (rebuil
   report .adequacy true
     s!"{m.model}.adequate : Mitos.Model.Adequate {m.model} {m.model}.examples, examples from {examplesModule m.model}"
 
-/-- One judging directory, so gates 3 and 6 see one elaboration of the model. Gate 6 is judged
-first, before the plugin is built, so nothing the plugin's build writes can reach it. The plugin's
-run must then reuse every output gate 6's run built: a module that runs code while it elaborates
-could otherwise make Lake rebuild the model, and gate 3 would judge a different elaboration from
-gate 6's. Writing and removing the directory is gate 2's; gate 6's runs and the hashing of their
-outputs are gate 6's. Gates 2–5 are reported before gate 6. -/
 def judge (c : Config) (i : Inputs) (chal adequacyChal : String) : GateM Unit := do
   let m := i.models
   let generated : List (System.FilePath × String) :=
@@ -634,7 +534,6 @@ def judge (c : Config) (i : Inputs) (chal adequacyChal : String) : GateM Unit :=
   let paths (fs : Array (String × String)) : List (System.FilePath × String) :=
     fs.toList.map fun (r, t) => (⟨r⟩, t)
   let files := paths m.files ++ generated
-  -- The core is written to `Mitos/`; every other file needs a path of its own.
   let rels := files.map (·.1.toString)
   let dir ← atGate .sandbox do
     if let some r := rels.find? fun r => r.startsWith "Mitos/" || (rels.filter (· == r)).length > 1 then
@@ -663,8 +562,6 @@ def judge (c : Config) (i : Inputs) (chal adequacyChal : String) : GateM Unit :=
         else some s!"the plugin's run changed {", ".intercalate (changed.toList.take 5)}"
       | .error e, _ | _, .error e => some e
     adequacyGate m model rebuilt
-  -- The first failure decides the verdict: once a gate has failed, an error removing the
-  -- directory is only reported.
   let ((), ()) ← tryFinally' gates fun passed? => do
     let close : IO Unit :=
       if c.keep then IO.println (ciLine s!"  (judging directory kept: {dir})")
@@ -672,8 +569,6 @@ def judge (c : Config) (i : Inputs) (chal adequacyChal : String) : GateM Unit :=
     if passed?.isSome then atGate .sandbox close
     else tryCatchThe IO.Error close fun e => report .sandbox false s!"I/O error: {e}"
 
-/-- The record of an accepted plugin, written to a file of its own in `accepted/` and renamed over
-the old record, so a reader sees the old record or the new one, never part of one. -/
 def writeRecord (c : Config) (i : Inputs) (chal adequacyChal : String) : IO Unit := do
   let mut coreCat := ""
   for (rel, txt) in i.core do coreCat := coreCat ++ rel ++ "\n" ++ txt

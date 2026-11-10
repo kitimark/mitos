@@ -2,38 +2,15 @@ import MitosGate.Accept
 import MitosGate.Cheats
 import MitosGate.Util
 
-/-!
-# `mitos-gate cheats`: the I/O around `Cheats`
-
-This lists the cases, copies a workspace for each run, starts the gate in a child process, stops
-it at the timeout, writes the logs and prints the table. `Cheats` makes every decision: which runs
-are jobs (`jobs`), their order (`order`), when one may start (`Sched.start?`), each run's verdict and
-each case's row (`table`), and the exit code (`exitCode`). Each line it prints that holds a case
-name, a value from an `expect` file, an argument or an I/O error goes through `ciLine`, so it stays
-one line and starts no workflow command in a CI log (`ciLine_not_startsCommand`). On an ASCII line
-`ciLine` changes only a `\`, a control character, a `:` that would come first and a `[` right after
-`##`. No line of the corpus's table holds one, so the table stays `run.sh`'s byte for byte, as
-CI showed while #84 ran both runners. The gate's output goes only to the logs, and `timing.tsv`
-holds the case names through `oneLine`.
-
-The workspace is `run.sh`'s: the example workspace's `lakefile.toml`, `lean-toolchain`,
-`models.lock`, `Models/` and `Plugins/`, then the case's `Plugins/` and `Models/` over them. With
-`model_approved=yes`, `models.lock` is rewritten as `mitos-gate lock-models` writes it, from the
-models gate 0's walker reads; then each `lock_append=` line is appended.
--/
-
 namespace MitosGate.CheatsRun
 
 open Cheats
 
 structure Options where
-  /-- How many runs may run at once. -/
   jobs : Nat := 4
-  /-- Seconds a run may take before the runner stops it. -/
   timeout : Nat := 600
   cases : List String := []
 
-/-- A case name from the command line: a directory directly in `eval/cheats/`. -/
 def plainName (s : String) : Bool :=
   !s.isEmpty && !s.startsWith "." && !s.contains '/'
 
@@ -55,8 +32,6 @@ def parseArgs : List String → Options → Except String Options
     else if o.cases.contains a then .error s!"case {a} is given twice"
     else parseArgs rest { o with cases := o.cases ++ [a] }
 
-/-- The cases: the directories in `dir` whose names do not start with `.`, as `ls -d */` lists
-them, in byte order. -/
 def listCases (dir : System.FilePath) : IO (List String) := do
   let mut names := #[]
   for e in ← dir.readDir do
@@ -73,7 +48,6 @@ def readCase (cheats : System.FilePath) (name : String) : IO Case := do
       | .error err => .error s!"expect: {err}" }
   catch err => return { name, expect := .error s!"expect: {err}" }
 
-/-- Copy the regular files under `src` to the same paths under `dst`. Anything else is an error. -/
 partial def copyTree (src dst : System.FilePath) : IO Unit := do
   for e in ← src.readDir do
     match (← e.path.symlinkMetadata).type with
@@ -81,7 +55,6 @@ partial def copyTree (src dst : System.FilePath) : IO Unit := do
     | .file => copyFile e.path (dst / e.fileName)
     | _ => throw <| IO.userError s!"{e.path} is neither a regular file nor a directory"
 
-/-- Write `ws`'s workspace for case `c`. -/
 def prepare (root : System.FilePath) (c : String) (e : Expect) (ws : System.FilePath) : IO Unit := do
   let acme := root / "examples" / "acme"
   for f in ["lakefile.toml", "lean-toolchain", "models.lock"] do copyFile (acme / f) (ws / f)
@@ -89,7 +62,6 @@ def prepare (root : System.FilePath) (c : String) (e : Expect) (ws : System.File
   let dir := root / "eval" / "cheats" / c
   for d in ["Plugins", "Models"] do
     if ← (dir / d).isDir then copyTree (dir / d) (ws / d)
-  -- What `mitos-gate lock-models` writes: the models gate 0's walker reads, in its lock format.
   if e.modelApproved then
     let es ← (← Accept.modelFiles ws).toList.mapM fun (rel, txt) => return (rel, ← sha256 txt)
     IO.FS.writeFile (ws / "models.lock") (Accept.renderLock es)
@@ -136,8 +108,6 @@ def runChild (cmd : String) (args : Array String) (cwd tmp : System.FilePath) (t
   let err ← IO.ofExcept (← IO.wait err)
   return { exitCode := code, output := out ++ err, timedOut }
 
-/-- Run the gate on `ws`, with `TMPDIR` set to `tmp`, where it makes its judging directory, and stop
-it after `timeout` seconds (`runChild`). -/
 def runGate (gate : String) (root ws tmp : System.FilePath) (m : Mode) (timeout : Nat) :
     IO Run :=
   runChild gate (#["accept", "--workspace", ws.toString, "--plugin", "ToyRequire",
@@ -145,9 +115,6 @@ def runGate (gate : String) (root ws tmp : System.FilePath) (m : Mode) (timeout 
       (match m with | .full => #[] | .comparatorOnly => #["--skip-lint"]))
     root tmp (timeout * 1000)
 
-/-- Run `act` in a fresh directory of its own, which holds `ws/` and `tmp/`, and remove the
-directory afterwards. So a run stopped at the timeout, which cannot clean up, leaves nothing behind.
-Any I/O error is the run's output, which then has no verdict. -/
 def inRunDir (act : System.FilePath → IO Run) : IO Run := do
   let dir ← IO.FS.createTempDir
   let run ← try
@@ -159,14 +126,11 @@ def inRunDir (act : System.FilePath → IO Run) : IO Run := do
   catch err => IO.eprintln (ciLine s!"warning: could not remove the job directory {dir}: {err}")
   return run
 
-/-- One job: its run, and when it started and ended, in ms since the runner started. -/
 structure Done where
   run : Run
   startMs : Nat
   endMs : Nat
 
-/-- Run a job in a directory of its own (`inRunDir`): the workspace is `ws/` and the gate's
-`TMPDIR` is `tmp/`. Then write its log. -/
 def runJob (gate : String) (root logs : System.FilePath) (t0 : Nat) (timeout : Nat) (c : String)
     (e : Expect) (m : Mode) : IO Done := do
   let startMs := (← IO.monoMsNow) - t0
@@ -179,7 +143,6 @@ def runJob (gate : String) (root logs : System.FilePath) (t0 : Nat) (timeout : N
 
 abbrev Pending := Task (Job × Except IO.Error Done)
 
-/-- Start jobs while `Sched.start?` allows, otherwise wait for one to finish. -/
 partial def schedule (n : Nat) (launch : Job → IO Pending) (report : Job × Done → IO Unit)
     (st : Sched Job) (running : List Pending) (acc : Array (Job × Done)) :
     IO (Array (Job × Done)) := do
@@ -232,7 +195,6 @@ def runCorpus (o : Options) : IO UInt32 := do
   let res (i : Nat) (m : Mode) : Option Run :=
     (done.find? fun (j, _) => j.case == i && j.mode == m).map (·.2.run)
   let rows := table res cases
-  -- When each run started and ended, for the timing of the corpus.
   let tsv := done.toList.map fun (j, d) =>
     s!"{oneLine names[j.case]!}\t{j.mode.logName}\t{d.startMs}\t{d.endMs}\t{d.run.exitCode}\t" ++
       s!"{d.run.timedOut}\n"
@@ -245,8 +207,6 @@ def runCorpus (o : Options) : IO UInt32 := do
     s!"--jobs {o.jobs}, --timeout {o.timeout}")
   return exitCode rows
 
-/-- `runCorpus`, but an I/O error it throws is printed through `ciLine`, with exit 2: the Lean
-runtime would print it raw, and it names the path it failed on. -/
 def cli (args : List String) (usage : String) : IO UInt32 := do
   match parseArgs args {} with
   | .error e => IO.eprintln (ciLine e); IO.eprintln usage; return 2

@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Tests for `mitos-gate content-id` (gate/MitosGate/ContentId.lean) on scratch repositories: what
-# changes the id and what keeps it, where a hunk applies, the run-log refusals, the git config and
-# environment variants, and a shell reference for the normalized diff. Then, when the commits are
-# in this clone, a replay of the updater's rebases of open PRs. Run from anywhere:
-# gate/content-id-test.sh
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -19,8 +14,6 @@ bad() { echo "FAIL $1"; [ -s "$out" ] && sed 's/^/  | /' "$out"; fail=$((fail + 
 
 repo="$tmp/repo"
 g() { git -C "$repo" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "$@"; }
-# cid <base> <head> [--verbose]: the id, or empty with the message in $out. It runs in $cwd, or
-# at the top of $repo.
 cwd=""
 cid() { (cd "${cwd:-$repo}" && "$bin" content-id "$@" 2>"$out") || true; }
 # old <base> <head>: the rule this replaces, under the repository's own config; empty if it fails.
@@ -29,7 +22,6 @@ old() {
   mb=$(g merge-base "$1" "$2") || return 0
   { g diff "$mb" "$2" | g patch-id --verbatim | cut -d' ' -f1; } 2>/dev/null || true
 }
-# pdiff <from> <to>: the diff with the tool's pinned options, for the shell references.
 pdiff() {
   g -c core.quotePath=true -c diff.suppressBlankEmpty=false diff --patch --no-color --no-ext-diff \
     --no-textconv --no-renames --text --full-index --diff-algorithm=myers --indent-heuristic \
@@ -38,7 +30,6 @@ pdiff() {
 }
 same() { if [ -n "$2" ] && [ "$2" = "$3" ]; then ok "$1"; else echo "  ids: '$2' '$3'"; bad "$1"; fi; }
 differ() { if [ -n "$2" ] && [ -n "$3" ] && [ "$2" != "$3" ]; then ok "$1"; else echo "  ids: '$2' '$3'"; bad "$1"; fi; }
-# refused <name> <grep -E pattern> <base> <head>: exit 1, no id, and the message on one line.
 refused() {
   local name=$1 pat=$2 got=0 id
   shift 2
@@ -49,7 +40,7 @@ refused() {
 }
 
 rec() { printf '{"task":"%s","role":"builder","attempt":%s}\n' "$1" "$2"; }
-lean() { # A.lean with 40 lines; $1 is the proof line of theorem t at line 21.
+lean() {
   for i in $(seq 1 19); do echo "def v$i : Nat := $i"; done
   echo "theorem t (h : True) : True := by"
   echo "$1"
@@ -69,7 +60,6 @@ g add -A
 g commit -qm base
 g tag base
 
-# The PR: a proof change in A.lean and a run-log record.
 g checkout -qb pr
 lean "  exact h.elim" >"$repo/A.lean"
 rec C 1 >>"$repo/ops/runs/d1.ndjson"
@@ -79,7 +69,6 @@ if [[ "$id_pr" =~ ^[0-9a-f]{64}$ ]]; then ok "the id is 64 hex digits"; else bad
 same "the id is the same on a second run" "$id_pr" "$(cid main pr)"
 same "the base can be a name or a commit id" "$id_pr" "$(cid "$(g rev-parse main)" "$(g rev-parse pr)")"
 
-# A whitespace-only change: one space less of indentation, which Lean reads.
 g checkout -qb ws base
 lean " exact h.elim" >"$repo/A.lean"
 rec C 1 >>"$repo/ops/runs/d1.ndjson"
@@ -91,7 +80,6 @@ same "  (git patch-id without --verbatim cannot see it)" \
   "$(g diff "$mbp" pr -- A.lean | g patch-id | cut -d' ' -f1)" \
   "$(g diff "$mbw" ws -- A.lean | g patch-id | cut -d' ' -f1)"
 
-# Other real changes.
 for change in "binary byte:printf 'bin\\0arY\\377\\r\\n' >blob.bin" \
   "carriage return:printf 'b1\\r\\nb2\\n' >B.lean" \
   "mode:chmod +x tool.sh" "symlink:rm tool.sh; ln -s A.lean tool.sh" \
@@ -104,7 +92,6 @@ for change in "binary byte:printf 'bin\\0arY\\377\\r\\n' >blob.bin" \
   differ "a change changes the id: ${change%%:*}" "$id_pr" "$(cid main var)"
 done
 
-# Replace refs and grafts in the clone do not change the id: git reads the commits as they are.
 g replace "$(g rev-parse pr:A.lean)" "$(g rev-parse base:B.lean)"
 same "a replace ref for a head blob does not change the id" "$id_pr" "$(cid main pr)"
 g replace "$(g rev-parse pr)" "$(g rev-parse ws)"
@@ -115,7 +102,6 @@ if g merge-base main pr >/dev/null 2>&1; then bad "  (the graft should hide the 
 same "a graft in info/grafts does not change the id" "$id_pr" "$(cid main pr)"
 rm "$repo/.git/info/grafts"
 
-# A run-log line with and without a final newline: two ids.
 g checkout -qB eol1 base
 rec D 1 >>"$repo/ops/runs/d1.ndjson"
 g commit -qam eol1
@@ -128,7 +114,6 @@ rec D 1 | sed 's/$/\r/' >>"$repo/ops/runs/d1.ndjson"
 g commit -qam eol3
 differ "a run-log record with and without a carriage return gives two ids" "$(cid main eol1)" "$(cid main eol3)"
 
-# The run-log part ignores where the added lines are.
 g checkout -qB order base
 { rec A 1; rec D 1; rec B 1; rec C 1; } >"$repo/ops/runs/d1.ndjson"
 g commit -qam order1
@@ -137,7 +122,6 @@ o1=$(cid main order)
 g commit -qam order2
 same "added run-log lines count wherever they are" "$o1" "$(cid main order)"
 
-# Run-log changes that are not append-only are refused.
 g checkout -qB edit base
 { rec A 1; rec B 2; } >"$repo/ops/runs/d1.ndjson"
 g commit -qam edit
@@ -166,8 +150,6 @@ ln -s ../../A.lean "$repo/ops/runs/d1.ndjson"
 g add -A
 g commit -qm typef
 refused "a run-log file turned into a symlink is refused" 'changes in type' main typef
-# A hostile name: the refusal stays one line, with no raw newline or workflow command in either
-# form, `::` at the start of a line or `##[` anywhere in it.
 g checkout -qB evil base
 evil=$'ops/runs/x\n::warning::forged\xe2\x80\x8b##[warning]too.ndjson'
 rec Z 1 >"$repo/$evil"
@@ -179,7 +161,6 @@ g commit -qm evil
 refused "a hostile run-log name prints on one line" '"ops/runs/x\\u\{000A\}::warning::forged.*##\\u\{005B\}warning\]too' evil-base evil
 if grep -qF '##[' "$out" || grep -qE '^[[:space:]]*::' "$out"; then bad "  (a workflow command in the refusal)"; fi
 
-# Rebases. main appends its own run-log record and changes a file the PR does not touch.
 g checkout -q main
 rec M 1 >>"$repo/ops/runs/d1.ndjson"
 printf 'b1\nb2\nb3\n' >"$repo/B.lean"
@@ -188,14 +169,12 @@ g checkout -qB rebased pr
 g rebase -q main
 same "a union rebase over main's run-log record keeps the id" "$id_pr" "$(cid main rebased)"
 differ "  (the rule this replaces changes on it)" "$(old main pr)" "$(old main rebased)"
-# main adds lines far above the PR's hunk: the hunk moves, the id stays.
 g checkout -q main
 { printf -- '-- header %s\n' 1 2 3 4 5 6 7 8 9 10; cat "$repo/A.lean"; } >"$repo/A2" && mv "$repo/A2" "$repo/A.lean"
 g commit -qam "main: lines at the top of A.lean"
 g checkout -qB moved pr
 g rebase -q main
 same "a rebase that moves the PR's hunk keeps the id" "$id_pr" "$(cid main moved)"
-# main creates the run-log file the PR creates: union merges the two adds.
 g checkout -qB newlog main
 rec N 1 >"$repo/ops/runs/2026-01-01.ndjson"
 g add -A
@@ -208,7 +187,6 @@ g commit -qm "main: the same new run-log file"
 g checkout -q newlog
 g rebase -q main
 same "a union rebase over the same new run-log file keeps the id" "$id_newlog" "$(cid main newlog)"
-# main changes a line within the PR hunk's three context lines: the id changes.
 g checkout -q main
 sed -i 's/^def v19 : Nat := 19$/def v19 : Nat := 190/' "$repo/A.lean"
 g commit -qam "main: context of the PR's hunk"
@@ -216,8 +194,6 @@ g checkout -qB ctx pr
 g rebase -q main
 differ "a main change in the hunk's context changes the id" "$id_pr" "$(cid main ctx)"
 
-# Where a hunk applies. The same hunk text can apply at two places of a file; the marker `@@ <k>`
-# counts how many times the hunk's old-side lines occur above it in the merge-base file.
 repo="$tmp/pos"
 mkdir -p "$repo"
 g init -q -b main
@@ -242,7 +218,6 @@ g commit -qam "the same line in lax() instead"
 differ "the same hunk in the other copy changes the id (verifier's rebase pair)" \
   "$(cid main rebased)" "$(cid main other)"
 same "  (git patch-id --verbatim cannot see it)" "$(old main rebased)" "$(old main other)"
-# The same deletion in strict() and in lax(), at one merge-base.
 g checkout -qb h1 main
 awk '/^lax\(\) \{/{f=1} !(f && $0=="  run axioms")' "$repo/check.sh" >"$tmp/x" && mv "$tmp/x" "$repo/check.sh"
 g commit -qam "drop axioms from lax()"
@@ -251,14 +226,12 @@ awk '/^lax\(\) \{/{f=1} !(!f && $0=="  run axioms")' "$repo/check.sh" >"$tmp/x" 
 g commit -qam "drop axioms from strict()"
 differ "one deletion in strict() and in lax() gives two ids (verifier's pair)" "$(cid main h1)" "$(cid main h2)"
 same "  (git patch-id --verbatim cannot see it)" "$(old main h1)" "$(old main h2)"
-# The marker, against a shell reference: 1 for the copy in lax(), 0 for the one in strict().
 for c in "h1 1" "h2 0"; do
   ref=$(pdiff main "${c% *}" | LC_ALL=C grep -av '^index ' |
     LC_ALL=C sed "s/^@@ .*/@@ ${c#* }/" | sha256sum | cut -d' ' -f1)
   (cd "$repo" && "$bin" content-id --verbose main "${c% *}" >/dev/null 2>"$out") || true
   same "the marker of ${c% *} is @@ ${c#* } (shell reference)" "$ref" "$(sed -n 's/^rest \([0-9a-f]*\) .*/\1/p' "$out")"
 done
-# main adds a copy of the hunk's lines above it: the count moves, so the id changes (fail safe).
 g checkout -q main
 { echo 'pre() {'; blk; echo '}'; echo 'strict() {'; blk; echo '}'; echo 'lax() {'; blk; echo '}'; } >"$repo/check.sh"
 g commit -qam "main: pre() with the same checks, above strict()"
@@ -266,9 +239,6 @@ g checkout -qb above rebased
 g rebase -q main
 differ "a rebase over a copy of the hunk's lines above it changes the id" "$id_pos" "$(cid main above)"
 
-# Git config and environment. Each variant must give the id of the plain config. The repository
-# for these has a rename, a mode change, a binary file, a tab and a quote and a byte that is not
-# ASCII in a name, a CRLF line, blank lines in a hunk's context, and a .lean hunk.
 repo="$tmp/cfg"
 mkdir -p "$repo"
 g init -q -b main
@@ -281,7 +251,6 @@ printf 'bin\0ary\377\n' >"$repo/blob.bin"
 printf 'x\n' >"$repo/tool.sh"
 rec A 1 >"$repo/ops/runs/d1.ndjson"
 g add -A
-# A submodule, as a gitlink with no checkout.
 mkdir "$repo/sub"
 g update-index --add --cacheinfo 160000,0123456789012345678901234567890123456789,sub
 g commit -qm base
@@ -303,7 +272,7 @@ fi
 plain=$(cid main pr)
 plain_old=$(old main pr)
 if [[ "$plain" =~ ^[0-9a-f]{64}$ ]]; then ok "config variants: the plain id"; else bad "config variants: the plain id ($plain)"; fi
-cfgcase() { # cfgcase <name> <setup> <undo>: the id under the setup equals the plain id.
+cfgcase() {
   pushd "$repo" >/dev/null && eval "$2" && popd >/dev/null
   local id o
   id=$(cid main pr)
@@ -333,11 +302,6 @@ cfgcase "attributes: a function-name pattern" "printf '*.lean diff=fn\n' >.git/i
 cfgcase "core.attributesFile with -diff" "printf '*.lean -diff\n' >$tmp/attrs; gc core.attributesFile $tmp/attrs" "gc --unset core.attributesFile"
 cfgcase "run from a subdirectory" "mkdir -p dir; cwd=$repo/dir" "cwd="
 
-# The shell reference: with no run-log change, `rest` is the SHA-256 of the pinned diff with its
-# index lines dropped and its hunk headers written as markers. Every hunk here applies at the only
-# place its old-side lines occur in the file, a submodule, a deleted file, a binary file and a new
-# file included, so each marker is `@@ 0`. This checks the byte handling (a NUL, a byte that is
-# not UTF-8, a CR) and the normalization against an independent implementation.
 g checkout -qB norl pr
 g checkout -q main -- ops/runs/d1.ndjson
 g commit -qm "no run-log change"
@@ -349,7 +313,6 @@ same "rest is the SHA-256 of the normalized diff (shell reference)" "$ref" "$(se
 pre=$(printf 'rest %s\nruns\n' "$ref" | sha256sum | cut -d' ' -f1)
 same "the id is the SHA-256 of 'rest <rest>' and an empty runs list" "$pre" "$(cid main norl)"
 
-# Usage and revisions.
 got=0; (cd "$repo" && "$bin" content-id main >"$out" 2>&1) || got=$?
 if [ "$got" = 2 ]; then ok "one argument is a usage error"; else bad "one argument is a usage error (exit $got)"; fi
 refused "a name that is not a commit is refused" '"nope" is not a commit in this repository' main nope
@@ -358,12 +321,6 @@ g checkout -q --orphan other
 g commit -qm "unrelated root"
 refused "commits with no merge-base are refused" 'no merge-base' main other
 
-# Replay the updater's rebases: the 19 force-pushes by mitos-pr-updater[bot] on PRs #61 to #86 up
-# to 2026-11-09 09:25 UTC (the PR timelines), each with the head just before it (the last `ci`
-# run on the branch before the force-push, a plain push included). The old rule kept the id on
-# none of them. The content id keeps it on all but #62's two, where the rebase replayed an edit of
-# the PR's own run-log record and union kept both versions, a real change (#74). Run only where
-# those commits are in the clone (CI's checkout does not have them).
 heads="61 6ca77036fa2d3eaf5d5e53447d3af64c2a4668c3 11282769e7f0907593165eea6ef68150b9689269
 61 e197a4fcd997d9aa2b410ad93e0fd8dc76953f78 b14fa5a6ef8638b97d961ecff4e5200c8c92942f
 62 1d7d159db55b5532afdcfd579664619d19b1b6df 09a65980a7c56c0c535f906ea98a634cf8be8485
