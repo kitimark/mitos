@@ -12,6 +12,10 @@ set -u
 
 unavailable() { echo "GitHub state unavailable: $1"; exit 0; }
 
+hook_dir=${BASH_SOURCE[0]%/*}; [[ $hook_dir == "${BASH_SOURCE[0]}" ]] && hook_dir=.
+# shellcheck source-path=SCRIPTDIR source=hook-state.sh
+. "$hook_dir/hook-state.sh" || unavailable "hook-state.sh is missing"
+
 command -v gh >/dev/null 2>&1 || unavailable "gh is not installed"
 command -v jq >/dev/null 2>&1 || unavailable "jq is not installed"
 
@@ -20,21 +24,21 @@ input=''
 sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)
 event=$(jq -r '.hook_event_name // empty' <<<"$input" 2>/dev/null)
 source=$(jq -r '.source // empty' <<<"$input" 2>/dev/null)
-[[ $sid =~ ^[A-Za-z0-9_-]{1,100}$ ]] || sid=''
+session_id_ok "$sid" || sid=''
 owner=${MITOS_OWNER:-kitimark}
 [[ $owner =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]] || unavailable "MITOS_OWNER is not a GitHub login"
 proj=${CLAUDE_PROJECT_DIR:-.}
 
-loaded='' state=''
-fresh_start=0
-[ "$event" = SessionStart ] && [ "$source" != resume ] && [ "$source" != compact ] && fresh_start=1
+rules_loaded_at='' state=''
+reloads_rules=0
+[ "$event" = SessionStart ] && [ "$source" != resume ] && [ "$source" != compact ] && reloads_rules=1
 if [ -n "$sid" ]; then
-  state=${MITOS_HOOK_STATE:-${TMPDIR:-/tmp}/mitos-hook-state}
+  state=$(hook_state_dir)
   if mkdir -p "$state" 2>/dev/null; then
-    loaded=$(cat "$state/$sid.sha" 2>/dev/null)
-    if [ "$fresh_start" = 1 ] || ! [[ $loaded =~ ^[0-9a-f]{40}$ ]]; then
-      loaded=$(git -C "$proj" rev-parse HEAD 2>/dev/null)
-      if [[ $loaded =~ ^[0-9a-f]{40}$ ]]; then printf '%s\n' "$loaded" >"$state/$sid.sha"; else loaded=''; fi
+    rules_loaded_at=$(cat "$state/$sid.sha" 2>/dev/null)
+    if [ "$reloads_rules" = 1 ] || ! [[ $rules_loaded_at =~ ^[0-9a-f]{40}$ ]]; then
+      rules_loaded_at=$(git -C "$proj" rev-parse HEAD 2>/dev/null)
+      if [[ $rules_loaded_at =~ ^[0-9a-f]{40}$ ]]; then printf '%s\n' "$rules_loaded_at" >"$state/$sid.sha"; else rules_loaded_at=''; fi
     fi
   else
     state=''
@@ -71,8 +75,14 @@ dir=$(mktemp -d 2>/dev/null) || unavailable "cannot make a temp dir"
 trap 'rm -rf "$dir"' EXIT
 
 closed_pp=50
+files_per_page=100
+hook_timeout_s=15 fetch_rounds=2 fetch_timeout_s=5 fetch_kill_s=1
+(( fetch_rounds * (fetch_timeout_s + fetch_kill_s) < hook_timeout_s )) || unavailable "fetch budget exceeds the hook timeout"
 fetch() { # name, route
-  timeout -k 1 5 gh api "$2" >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
+  timeout -k "$fetch_kill_s" "$fetch_timeout_s" gh api "$2" >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
+}
+fetch_all_pages() { # name, route
+  timeout -k "$fetch_kill_s" "$fetch_timeout_s" gh api "$2" --paginate --slurp >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
 }
 fetch open "repos/$repo/pulls?state=open&per_page=11" &
 fetch closed "repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=$closed_pp" &
@@ -90,9 +100,7 @@ done
 verdicts=null
 if [ ! -e "$dir/dash.failed" ]; then
   verdicts=$(jq -c --arg owner "$owner" '
-    [.[] | select(type == "object" and .title == "Owner dashboard" and .pull_request == null
-                  and .user.login == $owner)][0]
-    | if . == null then {} else
+    def verdict_heads_from_dashboard:
       [(.body // "") | if type == "string" then . else error("bad body") end | split("\n")[]
        | select(test("^\\s*\\|\\s*#[0-9]+"))
        | (capture("^\\s*\\|\\s*#(?<n>[0-9]+)").n) as $n
@@ -104,7 +112,11 @@ if [ ! -e "$dir/dash.failed" ]; then
                (($v | capture("carried (from `?[0-9a-f]{7,40}`? )?to `?(?<h>[0-9a-f]{7,40})").h)? // $headcell)
              else (($v | capture("\\bat `?(?<h>[0-9a-f]{7,40})\\b").h)? // null) end)
           else null end) as $h
-       | {key: $n, value: $h}] | from_entries end' "$dir/dash.json" 2>/dev/null) || verdicts=null
+       | {key: $n, value: $h}] | from_entries;
+
+    [.[] | select(type == "object" and .title == "Owner dashboard" and .pull_request == null
+                  and .user.login == $owner)][0]
+    | if . == null then {} else verdict_heads_from_dashboard end' "$dir/dash.json" 2>/dev/null) || verdicts=null
   [ -n "$verdicts" ] || verdicts=null
 fi
 
@@ -112,33 +124,30 @@ jq -r --arg owner "$owner" '.[0:10][]
   | select(type == "object" and (.user.login? // "") == $owner and (.number | type) == "number"
            and ((.head.sha // "") | type == "string" and test("^[0-9a-f]{40}$")))
   | "\(.number) \(.head.sha)"' "$dir/open.json" >"$dir/heads" 2>/dev/null || : >"$dir/heads"
-fetchp() {
-  timeout -k 1 5 gh api "$2" --paginate --slurp >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
-}
-: >"$dir/candidates"
+: >"$dir/full_thread_prs"
 while read -r n sha; do
   fetch "gate-$n" "repos/$repo/commits/$sha/check-runs?check_name=gate&per_page=30" &
-  fetch "files-$n" "repos/$repo/pulls/$n/files?per_page=100" &
+  fetch "files-$n" "repos/$repo/pulls/$n/files?per_page=$files_per_page" &
   v=$(jq -r --arg n "$n" '.[$n] // empty' <<<"$verdicts" 2>/dev/null)
   if [[ $v =~ ^[0-9a-f]{7,40}$ && $sha == "$v"* ]]; then
-    echo "$n" >>"$dir/candidates"
-    fetchp "thread-ic-$n" "repos/$repo/issues/$n/comments?per_page=100" &
-    fetchp "thread-rc-$n" "repos/$repo/pulls/$n/comments?per_page=100" &
-    fetchp "thread-rv-$n" "repos/$repo/pulls/$n/reviews?per_page=100" &
+    echo "$n" >>"$dir/full_thread_prs"
+    fetch_all_pages "thread-ic-$n" "repos/$repo/issues/$n/comments?per_page=100" &
+    fetch_all_pages "thread-rc-$n" "repos/$repo/pulls/$n/comments?per_page=100" &
+    fetch_all_pages "thread-rv-$n" "repos/$repo/pulls/$n/reviews?per_page=100" &
   fi
 done <"$dir/heads"
 
 main_sha=$(jq -r '.commit.sha // empty' "$dir/main.json" 2>/dev/null)
 compare=''
-if [ -n "$loaded" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]] && [ "$loaded" != "$main_sha" ]; then
+if [ -n "$rules_loaded_at" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]] && [ "$rules_loaded_at" != "$main_sha" ]; then
   if git -C "$proj" cat-file -e "$main_sha^{commit}" 2>/dev/null \
-    && git -C "$proj" cat-file -e "$loaded^{commit}" 2>/dev/null \
-    && git -C "$proj" diff --name-only "$loaded...$main_sha" -- .claude CLAUDE.md docs/process.md \
+    && git -C "$proj" cat-file -e "$rules_loaded_at^{commit}" 2>/dev/null \
+    && git -C "$proj" diff --name-only "$rules_loaded_at...$main_sha" -- .claude CLAUDE.md docs/process.md \
       >"$dir/rules" 2>/dev/null; then
     :
   else
     compare=1
-    fetch compare "repos/$repo/compare/$loaded...$main_sha" &
+    fetch compare "repos/$repo/compare/$rules_loaded_at...$main_sha" &
   fi
 fi
 wait
@@ -150,7 +159,7 @@ if [ -n "$compare" ]; then
     jq -r '.files[] | .filename | select(type == "string")' "$dir/compare.json" 2>/dev/null \
       | grep -E '^(\.claude/|CLAUDE\.md$|docs/process\.md$)' >"$dir/rules"
   else
-    fresh="Rule freshness unknown: main could not be compared with ${loaded:0:7}, the commit this session loaded its rules from. Read .claude/skills/kitimark-mode/SKILL.md, CLAUDE.md and docs/process.md on origin/main before acting."
+    fresh="Rule freshness unknown: main could not be compared with ${rules_loaded_at:0:7}, the commit this session loaded its rules from. Read .claude/skills/kitimark-mode/SKILL.md, CLAUDE.md and docs/process.md on origin/main before acting."
   fi
 fi
 if [ -z "$fresh" ] && [ -s "$dir/rules" ]; then
@@ -158,12 +167,12 @@ if [ -z "$fresh" ] && [ -s "$dir/rules" ]; then
   names=$(LC_ALL=C sed 's#[^A-Za-z0-9._/+-]#_#g' "$dir/rules" | cut -c1-80 | head -n 8 | paste -sd, - | sed 's/,/, /g')
   more=''
   [ "$total" -gt 8 ] && more=" (+$((total - 8)) more)"
-  fresh="Rule files changed on main since this session loaded its rules at ${loaded:0:7}: $names$more. Read these before acting: git fetch origin main, then git show origin/main:<file>."
+  fresh="Rule files changed on main since this session loaded its rules at ${rules_loaded_at:0:7}: $names$more. Read these before acting: git fetch origin main, then git show origin/main:<file>."
 fi
-if [ -n "$state" ] && [ -n "$loaded" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]]; then
+if [ -n "$state" ] && [ -n "$rules_loaded_at" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]]; then
   case $fresh in
-    "Rule files changed"*) printf '%s\n' "$fresh" >"$state/$sid.note" 2>/dev/null ;;
-    *) : >"$state/$sid.note" 2>/dev/null ;;
+    "Rule files changed"*) printf '%s\n' "$fresh" >"$(session_note_path "$sid")" 2>/dev/null ;;
+    *) : >"$(session_note_path "$sid")" 2>/dev/null ;;
   esac
 fi
 
@@ -177,23 +186,23 @@ while read -r n sha; do
       "$dir/gate-$n.json" 2>/dev/null) || gate='?'
   fi
   if [ ! -e "$dir/files-$n.failed" ]; then
-    kept=$(jq -r '
+    kept=$(jq -r --argjson files_per_page "$files_per_page" '
       def kept: test("^(gate/|eval/cheats/|\\.github/|\\.claude/|\\.cursor/|plan/|core/Mitos/Core/|core/Challenge/)")
         or IN("lean-toolchain", "lakefile.toml", "core/lakefile.toml", "core/Mitos/Core.lean",
               "core/comparator.json", "CLAUDE.md", "docs/process.md")
         or test("(^|/)(statements|models)\\.lock$");
-      if type != "array" then error("not an array") elif length >= 100 then "?"
+      if type != "array" then error("not an array") elif length >= $files_per_page then "?"
       else [.[] | .filename, (.previous_filename // empty)
             | if type == "string" then . else error("bad name") end]
         | if any(.[]; kept) then "yes" else "no" end end' "$dir/files-$n.json" 2>/dev/null) || kept='?'
   fi
   [ -n "$gate" ] || gate='?'
   [ -n "$kept" ] || kept='?'
-  exact=null
-  if grep -qx "$n" "$dir/candidates"; then
-    exact='"?"'
+  full_thread_unanswered=null
+  if grep -qx "$n" "$dir/full_thread_prs"; then
+    full_thread_unanswered='"?"'
     if [ ! -e "$dir/thread-ic-$n.failed" ] && [ ! -e "$dir/thread-rc-$n.failed" ] && [ ! -e "$dir/thread-rv-$n.failed" ]; then
-      exact=$(jq -n -c --arg owner "$owner" --slurpfile ic "$dir/thread-ic-$n.json" \
+      full_thread_unanswered=$(jq -n -c --arg owner "$owner" --slurpfile ic "$dir/thread-ic-$n.json" \
         --slurpfile rc "$dir/thread-rc-$n.json" --slurpfile rv "$dir/thread-rv-$n.json" '
         def footer: test("_Generated by \\[Claude Code\\]\\(https://claude\\.ai/code\\)_\\s*$");
         def ts: select(type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"));
@@ -206,17 +215,17 @@ while read -r n sha; do
          ($rv[0] | items | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or (.body // "") != "")
                  | post(.submitted_at))]
         | (map(select(.agent) | .t) | max) as $f
-        | [.[] | select((.agent | not) and ($f == null or .t > $f)) | .id] | unique' 2>/dev/null) || exact='"?"'
-      [ -n "$exact" ] || exact='"?"'
+        | [.[] | select((.agent | not) and ($f == null or .t > $f)) | .id] | unique' 2>/dev/null) || full_thread_unanswered='"?"'
+      [ -n "$full_thread_unanswered" ] || full_thread_unanswered='"?"'
     fi
   fi
-  jq -cn --argjson n "$n" --arg sha "$sha" --arg gate "$gate" --arg kept "$kept" --argjson exact "$exact" \
-    '{n: $n, sha: $sha, gate: $gate, kept: $kept, exact: $exact}' >>"$dir/extra.ndjson"
+  jq -cn --argjson n "$n" --arg sha "$sha" --arg gate "$gate" --arg kept "$kept" --argjson full_thread_unanswered "$full_thread_unanswered" \
+    '{n: $n, sha: $sha, gate: $gate, kept: $kept, full_thread_unanswered: $full_thread_unanswered}' >>"$dir/extra.ndjson"
 done <"$dir/heads"
 
-unans=null
+owner_unanswered_by_thread=null
 if [ ! -e "$dir/icomments.failed" ] && [ ! -e "$dir/rcomments.failed" ]; then
-  unans=$(jq -n -c --arg owner "$owner" --slurpfile ic "$dir/icomments.json" --slurpfile rc "$dir/rcomments.json" '
+  owner_unanswered_by_thread=$(jq -n -c --arg owner "$owner" --slurpfile ic "$dir/icomments.json" --slurpfile rc "$dir/rcomments.json" '
     def footer: test("_Generated by \\[Claude Code\\]\\(https://claude\\.ai/code\\)_\\s*$");
     def ts: if type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
             then . else error("bad timestamp") end;
@@ -231,8 +240,8 @@ if [ ! -e "$dir/icomments.failed" ] && [ ! -e "$dir/rcomments.failed" ]; then
     | map((map(select(.agent) | .t) | max) as $f
           | {key: (.[0].n | tostring),
              value: ([.[] | select((.agent | not) and ($f == null or .t > $f)) | .id] | sort)})
-    | map(select(.value != [])) | from_entries' 2>/dev/null) || unans=null
-  [ -n "$unans" ] || unans=null
+    | map(select(.value != [])) | from_entries' 2>/dev/null) || owner_unanswered_by_thread=null
+  [ -n "$owner_unanswered_by_thread" ] || owner_unanswered_by_thread=null
 fi
 
 now=$(date -u +%Y-%m-%dT%H:%M)
@@ -240,7 +249,7 @@ cutoff=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) \
   || unavailable "cannot compute the 24 hour cutoff"
 
 out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp" --arg repo "$repo" \
-  --arg fresh "$fresh" --argjson verdicts "$verdicts" --argjson unans "$unans" \
+  --arg fresh "$fresh" --argjson verdicts "$verdicts" --argjson owner_unanswered_by_thread "$owner_unanswered_by_thread" \
   --slurpfile open "$dir/open.json" --slurpfile closed "$dir/closed.json" \
   --slurpfile main "$dir/main.json" --slurpfile ci "$dir/ci.json" --slurpfile extra "$dir/extra.ndjson" '
   # Any value of the wrong type or shape raises an error, and the hook then fails closed.
@@ -285,9 +294,9 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
    else $op[0:10][] | .n as $n | $ex[$n] as $e |
      (if $e == null then null else
         ($verdicts | if . == null then "?" else (.[$n] // "none") end) as $v |
-        (if $e.exact != null
-         then ($e.exact | if . == "?" then "?" elif length == 0 then "-" else map(tostring) | lst end)
-         else ($unans | if . == null then "?"
+        (if $e.full_thread_unanswered != null
+         then ($e.full_thread_unanswered | if . == "?" then "?" elif length == 0 then "-" else map(tostring) | lst end)
+         else ($owner_unanswered_by_thread | if . == null then "?"
                         else ((.[$n] // []) | if length == 0 then "-" else map(tostring) | lst end) end) end) as $u |
         {v: $v, u: $u, head: ($v != "?" and $v != "none" and ($e.sha | startswith($v)))} end) as $r |
      "open #\($n) head \(.sha) \(if .draft then "draft" else "ready" end) labels=\(.labels | lst) assignees=\(.who | lst)\(
@@ -301,7 +310,7 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
   ([$op[0:10][] | select(.link) | "#\(.n)"]
    | if length == 0 then empty
      else "session link in the body of open \(join(", ")): patch each clean with gh api -X PATCH repos/\($repo)/pulls/<n> -F body=@<clean file>, then read it back (open-pr.sh does both)" end),
-  (($unans // {}) | to_entries | map(select(.key as $k | $ex | has($k) | not))
+  (($owner_unanswered_by_thread // {}) | to_entries | map(select(.key as $k | $ex | has($k) | not))
    | if length == 0 then empty
      else "owner comments with no later footer comment, elsewhere: "
        + (.[0:5] | map("#\(.key) \(.value | map(tostring) | lst)") | join("; "))

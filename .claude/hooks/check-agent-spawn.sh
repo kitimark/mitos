@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 
 command -v jq >/dev/null || exit 0
+hook_dir=${BASH_SOURCE[0]%/*}; [[ $hook_dir == "${BASH_SOURCE[0]}" ]] && hook_dir=.
+# shellcheck source-path=SCRIPTDIR source=hook-state.sh
+. "$hook_dir/hook-state.sh" || exit 0
 input=$(cat)
 
 note=''
 sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)
-if [[ $sid =~ ^[A-Za-z0-9_-]{1,100}$ ]]; then
-  f=${MITOS_HOOK_STATE:-${TMPDIR:-/tmp}/mitos-hook-state}/$sid.note
+if session_id_ok "$sid"; then
+  f=$(session_note_path "$sid")
   [ -f "$f" ] && note=$(head -c 2000 "$f" | head -n 1)
 fi
 
 jq -c --arg note "$note" '
+  def brief_chars: 600;
+  def names_pr_owner_or_verifier($in):
+    ((($in.description // "") | tostring) + " " + (($in.prompt // "") | tostring | .[0:brief_chars]))
+    | test("\\b(PR owner|verifier)\\b"; "i");
+
   .tool_input as $in
   | ($in.subagent_type // "") as $type
   | [ "model", "effort" ] as $fields
@@ -25,12 +33,11 @@ jq -c --arg note "$note" '
         else "This Agent call sets no \(join(" or ")). Set both from the role table in .claude/skills/kitimark-mode/SKILL.md, or say why the session default is right."
         end
     end] as $fields_msg
-  | ((($in.description // "") | tostring) + " " + (($in.prompt // "") | tostring | .[0:600])) as $brief
   | [ $fields_msg[],
       (if $in.run_in_background != true then
          "This Agent call does not set run_in_background: true. Every spawn runs in the background, so the root stays free to answer the user (kitimark-mode, Roles)."
        else empty end),
-      (if $type != "fork" and ($brief | test("\\b(PR owner|verifier)\\b"; "i")) and $in.isolation != "worktree" then
+      (if $type != "fork" and names_pr_owner_or_verifier($in) and $in.isolation != "worktree" then
          "This PR owner or verifier spawn sets no isolation: \"worktree\". Give it one and name the commit to start from (kitimark-mode, Roles, Briefs)."
        else empty end),
       (if $note != "" then "\($note) Put this in the brief too." else empty end) ]
