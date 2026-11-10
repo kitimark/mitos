@@ -137,9 +137,6 @@ def stopsRejected : List (String × String) :=
     ("mid-file import, then @[implemented_by]",
       "\nimport Init.«..».Lake\ndef evil (_ : Nat) : Nat := 0\n@[implemented_by evil] def f (n : Nat) : Nat := n\n") ]
 
-/-- The roots `mitos-gate imports` allows in `core/`, as in `gate/Main.lean`. -/
-def coreImports : List String := ["Init", "Std", "Mitos.Core", "Mitos.Impl", "Mitos.Proofs"]
-
 def coreCases : List (String × String × Bool) :=
   [ ("plain core header", "import Init\nimport Mitos.Core\n\ndef x : Nat := 1\n", true),
     ("tab before import Lean", "\timport Lean\n\ndef x : Nat := 1\n", false),
@@ -162,7 +159,7 @@ def ruleCases : List (String × String × List Lint.Rule) :=
     ("plugin", "import Mitos.Core\n#eval 1\n", [.hash]),
     ("plugin", "import Mitos.Core\nset_option pp.all true\n", [.setOption]),
     ("plugin", "import Mitos.Core\ndef s : String := include_str \"../comparator.json\"\n",
-      [.banned "include_str"]),
+      [.includeStr]),
     ("model", model "variable (n : Nat)", [.modelCommand]),
     ("model", model "public section\nend", [.modelSection]),
     ("model", model "private def x : Nat := 1", [.modelModifier]),
@@ -173,12 +170,6 @@ def ruleCases : List (String × String × List Lint.Rule) :=
       [.modelComputedFields]),
     ("model", model "inductive C where\n  | red\n  deriving Repr", [.modelDeriving]) ]
 
-/-- The bans no cheat case guards yet; `eval/cheats/unguarded` must list exactly these. Each must
-stay in `Lint.banned`, so dropping or renaming one takes an edit here, in trusted code the owner
-merges. Guarding a ban takes it off here and off `eval/cheats/unguarded`. A new ban needs a guarding
-case, whose directory no conflict resolution can drop, or an entry in both lists. A list in the
-test, rather than a comparison with `main`'s copy, needs no git history or CI step, so the test
-gives the same answer locally and in CI. -/
 def unguardedBans : List String :=
   [ "sorry", "admit", "axiom", "unsafe", "partial", "opaque", "noncomputable",
     "export", "csimp", "init", "builtin_init", "never_extract",
@@ -229,9 +220,11 @@ def ratchet (guards : Array (String × String)) (unguarded : List String) : Arra
 
 structure CiCase where
   name : String
-  args : List String
+  args : List String := []
   files : List (String × String) := []
   toy : Bool := false
+  /-- Lines checked in place of a `mitos-gate` run. The comparator tail is this case. -/
+  direct : Option (List String) := none
 
 def ciCases (root : String) : List CiCase :=
   let plugin := "import Mitos.Core\n\ntheorem t : True := sorry\n"
@@ -265,7 +258,10 @@ def ciCases (root : String) : List CiCase :=
       args := ["cheats", "--jobs", "##[warning]forged"] },
     { name := "cheats, table rows of cases named :: and with the legacy form"
       args := ["cheats", "::warning::forged", "x##[warning]forged"],
-      files := [("eval/cheats/README", ""), ("examples/acme/README", "")] } ]
+      files := [("eval/cheats/README", ""), ("examples/acme/README", "")] },
+    { name := "accept, the comparator tail of gates 2 to 6"
+      direct := some (Accept.comparatorTail
+        "error: ##[warning]forged\nx\r::warning::forged\n::error::forged") } ]
 
 def runnerLines (out : String) : List String :=
   (out.splitOn "\n").flatMap (·.splitOn "\r")
@@ -278,36 +274,37 @@ def ciLog (root : System.FilePath) : IO (Array (String × String)) := do
   let gate := root / ".lake" / "build" / "bin" / "mitos-gate"
   let mut fails := #[]
   for c in ciCases root.toString do
-    let dir ← IO.FS.createTempDir
-    try
-      for (rel, txt) in c.files do
-        if let some p := (dir / rel).parent then IO.FS.createDirAll p
-        IO.FS.writeFile (dir / rel) txt
-      if c.toy then
-        let acme := root / "examples" / "acme"
-        copyFile (acme / "lean-toolchain") (dir / "lean-toolchain")
-        copyFile (acme / "models.lock") (dir / "models.lock")
-        copyLeanTree (acme / "Models") (dir / "Models")
-      let out ← IO.Process.output { cmd := gate.toString, args := c.args.toArray, cwd := dir }
-      let bad := (runnerLines out.stdout ++ runnerLines out.stderr).filter (startsCommand ·)
+    match c.direct with
+    | some lines =>
+      let text := "\n".intercalate lines
+      let bad := (lines.flatMap runnerLines).filter (startsCommand ·)
       if let some l := bad.head? then
         fails := fails.push (c.name, s!"a line starts a workflow command: {l}")
-      else unless ((out.stdout ++ out.stderr).splitOn "forged").length > 1 do
+      else unless (text.splitOn "forged").length > 1 do
         fails := fails.push (c.name, "the output does not show the hostile text")
-    catch e => fails := fails.push (c.name, s!"could not run: {e}")
-    IO.FS.removeDirAll dir
-  -- Gates 2 to 6 print the comparator's output only through `Accept.comparatorTail`. A comparator
-  -- run is too slow for this test, so the tail's lines are checked here directly.
-  let tail := Accept.comparatorTail "error: ##[warning]forged\nx\r::warning::forged\n::error::forged"
-  let name := "accept, the comparator tail of gates 2 to 6"
-  if let some l := (tail.flatMap runnerLines).find? (startsCommand ·) then
-    fails := fails.push (name, s!"a line starts a workflow command: {l}")
-  else unless (("\n".intercalate tail).splitOn "forged").length > 1 do
-    fails := fails.push (name, "the output does not show the hostile text")
+    | none =>
+      let dir ← IO.FS.createTempDir
+      try
+        for (rel, txt) in c.files do
+          if let some p := (dir / rel).parent then IO.FS.createDirAll p
+          IO.FS.writeFile (dir / rel) txt
+        if c.toy then
+          let acme := root / "examples" / "acme"
+          copyFile (acme / "lean-toolchain") (dir / "lean-toolchain")
+          copyFile (acme / "models.lock") (dir / "models.lock")
+          copyLeanTree (acme / "Models") (dir / "Models")
+        let out ← IO.Process.output { cmd := gate.toString, args := c.args.toArray, cwd := dir }
+        let bad := (runnerLines out.stdout ++ runnerLines out.stderr).filter (startsCommand ·)
+        if let some l := bad.head? then
+          fails := fails.push (c.name, s!"a line starts a workflow command: {l}")
+        else unless ((out.stdout ++ out.stderr).splitOn "forged").length > 1 do
+          fails := fails.push (c.name, "the output does not show the hostile text")
+      catch e => fails := fails.push (c.name, s!"could not run: {e}")
+      IO.FS.removeDirAll dir
   return fails
 
-/-- The number of cases `ciLog` runs: `ciCases` and the comparator tail. -/
-def ciCount : Nat := (ciCases "").length + 1
+/-- The number of cases `ciLog` runs. -/
+def ciCount : Nat := (ciCases "").length
 
 /-! ## The cheat runner's timeout
 
@@ -386,6 +383,10 @@ structure Case where
   src : String
   wantOk : Bool
 
+def importSyntaxExcludedFromRuleCases : Lint.Rule → Bool
+  | .importSyntax => true
+  | _ => false
+
 def main : IO UInt32 := do
   let env ← Lint.syntaxEnv
   let toy ← IO.FS.readFile ("examples" / "acme" / "Models" / "ToyRequire.lean")
@@ -410,7 +411,7 @@ def main : IO UInt32 := do
       coreCases.map (fun (n, s, w) => ⟨"core", n, s, w⟩)
   let lintAs (kind src : String) : IO (Array Lint.Violation) :=
     if kind == "model" then Lint.checkModel env Accept.pluginImports src
-    else if kind == "core" then Imports.checkSource coreImports src
+    else if kind == "core" then Imports.checkSource Imports.trustedCoreImports src
     else Lint.check env Accept.pluginImports src
   let mut fails := 0
   for c in cases do
@@ -426,9 +427,8 @@ def main : IO UInt32 := do
     if !ok then fails := fails + 1
     let ids (rs : List Lint.Rule) := ", ".intercalate (rs.map (·.id))
     IO.println s!"{if ok then "ok  " else "FAIL"} rules [{ids want}] ({kind}): got [{ids got}]"
-  -- `import:syntax` has no case: on a header that parses, every import names a module.
   let missing := Lint.Rule.fixed.filter fun r =>
-    r != .importSyntax && !ruleCases.any (·.2.2.contains r)
+    !importSyntaxExcludedFromRuleCases r && !ruleCases.any (·.2.2.contains r)
   unless missing.isEmpty do
     fails := fails + 1
     IO.println s!"FAIL rule cases: none for {", ".intercalate (missing.map (·.id))}"

@@ -412,9 +412,7 @@ fi
 
 # Replays of record files, one per attempt, rebased as .github/scripts/rebase-prs.sh rebases
 # (`checkout --detach`, then `rebase` onto main), with the repository's .gitattributes.
-# pid <rev>: the change id of <rev> against its merge base with main, with git's diff settings
-# pinned so that no local configuration changes it.
-pid() {
+verbatim_patch_id_against_main() {
   g -c core.attributesFile=/dev/null diff --no-color --no-ext-diff --no-textconv --no-renames \
     --full-index --src-prefix=a/ --dst-prefix=b/ "$(g merge-base main "$1")" "$1" |
     git patch-id --verbatim | cut -d' ' -f1
@@ -442,7 +440,7 @@ g add -A
 g commit -qm "pr: a change and its record"
 put "$runs" 2026-11-10 X 1 corrected
 g commit -qam "pr: correct its own record"
-before=$(pid pr)
+before=$(verbatim_patch_id_against_main pr)
 g checkout -q main
 put "$runs" 2026-11-10 Y 1
 put "$runs" 2026-11-10 Z 3
@@ -453,7 +451,7 @@ g checkout -q --detach pr
 if ! g rebase -q main >"$out" 2>&1; then
   echo "FAIL files replay: the rebase stopped"; sed 's/^/  | /' "$out"; fail=$((fail + 1)); g rebase --abort
 else
-  after=$(pid HEAD)
+  after=$(verbatim_patch_id_against_main HEAD)
   if [ "$before" = "$after" ] && [ -n "$before" ]; then
     echo "ok   files replay: the change id is kept over the rebase (${before:0:12})"; pass=$((pass + 1))
   else

@@ -1,0 +1,1 @@
+{"task":"133-mechanical-must-kill-trust","role":"builder","model":"grok-4.7","attempt":1,"iterations":8,"wall_min":20,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"tokens not metered. Trust-path mechanical MUST KILL reshapes for #133, opened from main."}

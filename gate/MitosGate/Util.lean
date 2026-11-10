@@ -1,12 +1,21 @@
 namespace MitosGate
 
-/-- Run `cmd` and return its exit code and output. Standard output is flushed first: a child that
-fails to start would otherwise write the gate's buffered lines into the output it returns. -/
+/-- Flush the parent's stdout so a child that fails to start cannot write those buffered lines
+into the output `run` returns. -/
+def flushParentStdoutBeforeChild : IO Unit := do
+  (← IO.getStdout).flush
+
+/-- Run `cmd` and return its exit code and output. -/
 def run (cmd : String) (args : Array String) (cwd : Option System.FilePath := none)
     (stdin : Option String := none) : IO (UInt32 × String) := do
-  (← IO.getStdout).flush
+  flushParentStdoutBeforeChild
   let out ← IO.Process.output { cmd, args, cwd } stdin
   return (out.exitCode, out.stdout ++ out.stderr)
+
+/-- `path` relative to `root`, by path components, so the spelling of `root` does not remain. -/
+def relativeTo (root path : System.FilePath) : String :=
+  String.intercalate (String.singleton System.FilePath.pathSeparator)
+    (path.components.drop root.components.length)
 
 def leanFiles (dir : System.FilePath) : IO (Array System.FilePath) := do
   if !(← dir.isDir) then return #[]
@@ -20,7 +29,7 @@ def copyFile (src dst : System.FilePath) : IO Unit := do
 
 def copyLeanTree (src dst : System.FilePath) : IO Unit := do
   for f in ← leanFiles src do
-    let rel := (f.toString.drop (src.toString.length + 1)).toString
+    let rel := relativeTo src f
     copyFile f (dst / rel)
 
 def sha256 (s : String) : IO String := do
@@ -122,17 +131,29 @@ def hexVal (d : Char) : Nat := if d.toNat < 58 then d.toNat - 48 else d.toNat - 
 
 def ofHex (ds : List Char) : Nat := ds.foldl (fun n d => 16 * n + hexVal d) 0
 
-/-- `unescape`, from a state: `none` outside an escape, or `some (k, ds)` inside one, with `k` code
-points of `u{` still to pass and the digits `ds` read so far. -/
-def unescapeFrom : Option (Nat × List Char) → List Char → List Char
-  | _, [] => []
-  | none, c :: l => if c = '\\' then unescapeFrom (some (2, [])) l else c :: unescapeFrom none l
-  | some (k + 1, ds), _ :: l => unescapeFrom (some (k, ds)) l
-  | some (0, ds), c :: l =>
-    if c = '}' then Char.ofNat (ofHex ds) :: unescapeFrom none l
-    else unescapeFrom (some (0, ds ++ [c])) l
+/-- Where `unescapeFrom` is in an escape: outside one, skipping the `u{` prefix, or collecting
+hexadecimal digits. -/
+inductive UnescapeState where
+  | outside
+  | skippingPrefix (left : Nat)
+  | collectingDigits (digits : List Char)
 
-def unescape (l : List Char) : List Char := unescapeFrom none l
+def unescapeFrom : UnescapeState → List Char → List Char
+  | .outside, [] => []
+  | .skippingPrefix _, [] => []
+  | .collectingDigits _, [] => []
+  | .outside, c :: l =>
+    if c = '\\' then unescapeFrom (.skippingPrefix 2) l else c :: unescapeFrom .outside l
+  | .skippingPrefix 0, c :: l =>
+    if c = '}' then Char.ofNat (ofHex []) :: unescapeFrom .outside l
+    else unescapeFrom (.collectingDigits [c]) l
+  | .skippingPrefix 1, _ :: l => unescapeFrom (.collectingDigits []) l
+  | .skippingPrefix (k + 2), _ :: l => unescapeFrom (.skippingPrefix (k + 1)) l
+  | .collectingDigits ds, c :: l =>
+    if c = '}' then Char.ofNat (ofHex ds) :: unescapeFrom .outside l
+    else unescapeFrom (.collectingDigits (ds ++ [c])) l
+
+def unescape (l : List Char) : List Char := unescapeFrom .outside l
 
 theorem hexVal_hexDigit {d : Nat} (h : d < 16) : hexVal (hexDigit d) = d := by
   revert d; decide
@@ -163,7 +184,7 @@ theorem unescape_cons {c : Char} (h : c ≠ '\\') (l : List Char) :
   simp [unescape, unescapeFrom, h]
 
 theorem unescapeFrom_digits {ds : List Char} (h : ∀ d ∈ ds, d ≠ '}') (acc l : List Char) :
-    unescapeFrom (some (0, acc)) (ds ++ '}' :: l) =
+    unescapeFrom (.collectingDigits acc) (ds ++ '}' :: l) =
       Char.ofNat (ofHex (acc ++ ds)) :: unescape l := by
   induction ds generalizing acc with
   | nil => simp [unescapeFrom, unescape]

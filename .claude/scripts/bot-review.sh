@@ -94,7 +94,7 @@ out=$(jq -n -r --arg head "$head" --arg bot 'coderabbitai[bot]' \
      | min_by(.id) | .body // "") as $summary
   | ($summary | contains("<!-- This is an auto-generated comment: review paused by coderabbit.ai -->")) as $pausednote
   | ((if $pausednote then [$summary | capture("Last reviewed commit: (?<s>[0-9a-f]{40})")] | .[0].s
-      else null end) // $review.commit_id // "-") as $last
+      else null end) // $review.commit_id // "") as $last
   | (if $run == null then null else $run.completed_at end) as $since
   | ([$all[] | select((.author_association // "") | IN("OWNER", "MEMBER", "COLLABORATOR"))
       | select((.body // "" | split("\n") | .[0] | sub("^[ \\t]+"; "") | sub("[ \\t\\r]+$"; ""))
@@ -102,30 +102,30 @@ out=$(jq -n -r --arg head "$head" --arg bot 'coderabbitai[bot]' \
       | select(.created_at | ts) | select($since == null or ($since | ts | not) or .created_at > $since)]
      | max_by(.id)) as $req
   | (if $req != null and ([$botc[] | select((.created_at // "") > $req.created_at)] == [])
-     then $req.id | tostring else "-" end) as $open
-  | if $run != null and $run.status == "completed" and $run.conclusion == "success" then ["reviewed", "-"]
-    elif $run != null and $run.status != "completed" then ["pending", "-"]
-    elif $last == $head then ["reviewed", "-"]
+     then $req.id | tostring else "" end) as $open
+  | if $run != null and $run.status == "completed" and $run.conclusion == "success" then ["reviewed", ""]
+    elif $run != null and $run.status != "completed" then ["pending", ""]
+    elif $last == $head then ["reviewed", ""]
     elif $run != null and $run.conclusion == "skipped" then
       ($run.output.title // "" | tostring) as $t
-      | if ($t | test("paused"; "i")) then ["paused", "-"]
+      | if ($t | test("paused"; "i")) then ["paused", ""]
         elif ($t | limit) then ["refused", ($t | sub("^Review skipped:?"; "") | clean)]
-        else ["behind", "-"] end
-    elif $run != null then ["behind", "-"]
-    elif $pausednote then ["paused", "-"]
+        else ["behind", ""] end
+    elif $run != null then ["behind", ""]
+    elif $pausednote then ["paused", ""]
     elif ($summary | test("## Review skipped")) then
       ([$summary | capture("## Review skipped[ \\t]*\\n(>[ \\t]*\\n)*>?[ \\t]*(?<r>[^\\n]+)")] | .[0].r // "") as $r
-      | if ($r | limit) then ["refused", ($r | clean)] else ["behind", "-"] end
-    else ["pending", "-"] end
-  | [.[0], $last, .[1], $open, ($pr[0].state | tostring | clean)] | join("\t")' 2>/dev/null) \
+      | if ($r | limit) then ["refused", ($r | clean)] else ["behind", ""] end
+    else ["pending", ""] end
+  | [.[0], $last, .[1], $open, ($pr[0].state | tostring | clean)] | join("\u001f")' 2>/dev/null) \
   || die "unexpected JSON from GitHub for PR #$pr"
-IFS=$'\t' read -r state last reason open prstate <<<"$out"
-[[ $last == - || $last =~ ^[0-9a-f]{40}$ ]] && [[ $open == - || $open =~ ^[0-9]+$ ]] \
+IFS=$'\x1f' read -r state last reason open prstate <<<"$out"
+[[ -z $last || $last =~ ^[0-9a-f]{40}$ ]] && [[ -z $open || $open =~ ^[0-9]+$ ]] \
   || die "unexpected JSON from GitHub for PR #$pr"
 
 h=${head:0:7}
 l=${last:0:7}
-[ "$last" = - ] && l=none
+[ -z "$last" ] && l=none
 case $state in
   reviewed) echo "coderabbit #$pr: reviewed $h"; exit 0 ;;
   refused) echo "coderabbit #$pr: refused: $reason"; exit 1 ;;
@@ -136,7 +136,7 @@ esac
 if [ "$request" = 1 ] && [[ $state == paused || $state == behind ]]; then
   if [ "$prstate" != open ]; then
     echo "coderabbit #$pr: no request posted: the PR is $prstate"
-  elif [ "$open" != - ]; then
+  elif [ -n "$open" ]; then
     echo "coderabbit #$pr: no request posted: comment $open already requests a review"
   else
     # -f sends the body as a string; -F would read a file named after the `@`.

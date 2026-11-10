@@ -13,25 +13,28 @@ gh label create needs-rebase --color FBCA04 \
 # `gh stack push`). So no PR in a stack is rebased or labelled `needs-rebase` here.
 # `GET repos/{owner}/{repo}/stacks` lists every stack with its `pull_requests`. A pull request
 # object also carries a `stack` field, but only for members and `gh pr list --json` cannot select
-# it, so the stack list is the source.
+# it, so the stack list is the source. Every PR number in any stack is skipped, whatever the
+# stack's `open` or the PR's `state` say: `gh pr list --state open` already keeps only open PRs,
+# and a filter on those fields would skip nothing if they changed.
+stack_numbers_on_well_formed_pages() {
+  jq -s -c 'def int: type == "number" and . == floor;
+      def pr: type == "object" and (.number | int);
+      def stack: type == "object" and (.pull_requests | type == "array" and all(.[]; pr));
+      def page: type == "array" and all(.[]; stack);
+      if length == 1 and (.[0] | type == "array" and length > 0 and all(.[]; page))
+      then [.[0][][].pull_requests[].number] else error("unexpected stack list") end'
+}
 if ! stacked=$(gh api --paginate --slurp -H "X-GitHub-Api-Version: 2026-03-10" \
-    "repos/{owner}/{repo}/stacks?per_page=100" \
-    | jq -s -c 'def int: type == "number" and . == floor;
-        def pr: type == "object" and (.number | int);
-        def stack: type == "object" and (.pull_requests | type == "array" and all(.[]; pr));
-        def page: type == "array" and all(.[]; stack);
-        if length == 1 and (.[0] | type == "array" and length > 0 and all(.[]; page))
-        then [.[0][][].pull_requests[].number] else error("unexpected stack list") end'); then
+    "repos/{owner}/{repo}/stacks?per_page=100" | stack_numbers_on_well_formed_pages); then
   echo "::error::could not read the stack list; no PR was rebased"
   exit 1
 fi
 echo "PRs in a stack, skipped: $stacked"
 
 prs=$(gh pr list --base "$BASE" --state open --limit 100 \
-  --json number,headRefName,headRefOid,baseRefName,isCrossRepository,isDraft,labels \
-  | jq -c --arg base "$BASE" --argjson stacked "$stacked" \
+  --json number,headRefName,headRefOid,isCrossRepository,isDraft,labels \
+  | jq -c --argjson stacked "$stacked" \
       '.[] | select((.isCrossRepository or .isDraft) | not)
-           | select(.baseRefName == $base)
            | select([.number] | inside($stacked) | not)
            | select([.labels[].name] | index("no-auto-rebase") | not)
            | {number, ref: .headRefName, oid: .headRefOid,

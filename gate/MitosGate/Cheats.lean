@@ -772,17 +772,24 @@ def lintWhy (s : Scan) : String :=
     else if s.others ≠ [] then "the full run also has violations " ++ ", ".intercalate s.others
     else ""
 
-/-- Why the claim `guards=R` fails, or `""` when it holds. `--skip-lint` skips gate 1 only, and lint
-is a pure function of the bytes, so "without R the full run is ACCEPTED" holds when the
-comparator-only run is accepted (`comparator_only=accept`, checked by `judge`) and every violation
-of the full run has rule R. -/
-def guardsWhy (rule : String) (comp : CompExpect) (out : String) : String :=
-  if out = "" then "no full-run log"
+def withoutRuleFullRunAccepted (rule : String) (comp : CompExpect) (out : String) : Prop :=
+  out ≠ "" ∧ comp = .accept ∧
+    ∃ n, 0 < n ∧ (scan rule out).count = some n ∧ (scan rule out).listed = n ∧
+      (scan rule out).others = []
+
+inductive GuardClaim where
+  | holds
+  | fails (why : String)
+  deriving DecidableEq, Repr
+
+def guardsWhy (rule : String) (comp : CompExpect) (out : String) : GuardClaim :=
+  if out = "" then .fails "no full-run log"
   else
     let why := lintWhy (scan rule out)
-    if comp = .accept then why
-    else if why = "" then notAccept
-    else why ++ "; " ++ notAccept
+    if comp = .accept then
+      if why = "" then .holds else .fails why
+    else if why = "" then .fails notAccept
+    else .fails (why ++ "; " ++ notAccept)
 
 theorem ne_empty_of_length {s : String} (h : 0 < s.length) : s ≠ "" := by
   rintro rfl; simp at h
@@ -817,21 +824,22 @@ theorem lintWhy_eq_empty_iff {s : Scan} :
         simp only [ne_eq, hl, not_false_eq_true, ite_true, hne, false_iff, not_exists, not_and]
         intro x _ h; cases h; exact fun h' => absurd h' hl
 
-theorem guardsWhy_eq_empty_iff {rule : String} {comp : CompExpect} {out : String} :
-    guardsWhy rule comp out = "" ↔ out ≠ "" ∧ comp = .accept ∧
-      ∃ n, 0 < n ∧ (scan rule out).count = some n ∧ (scan rule out).listed = n ∧
-        (scan rule out).others = [] := by
-  unfold guardsWhy
+theorem guardsWhy_holds_iff {rule : String} {comp : CompExpect} {out : String} :
+    guardsWhy rule comp out = .holds ↔ withoutRuleFullRunAccepted rule comp out := by
+  unfold guardsWhy withoutRuleFullRunAccepted
   by_cases ho : out = ""
   · simp [ho]
   · simp only [ho, ite_false, ne_eq, not_false_eq_true, true_and]
     by_cases hc : comp = .accept
-    · simp [hc, lintWhy_eq_empty_iff]
+    · simp only [hc, ite_true, true_and]
+      by_cases hw : lintWhy (scan rule out) = ""
+      · simp only [hw, ite_true, true_iff]
+        exact lintWhy_eq_empty_iff.mp hw
+      · simp only [hw, ite_false, reduceCtorEq, false_iff]
+        intro h
+        exact hw (lintWhy_eq_empty_iff.mpr h)
     · simp only [hc, ite_false, false_and, iff_false]
-      have : 0 < notAccept.length := by decide
-      split
-      · exact ne_empty_of_length this
-      · apply ne_empty_of_length; simp only [String.length_append]; omega
+      split <;> simp
 
 def evalCommandLog : String := "GATE 0 provenance: PASS
 GATE 1 lint: FAIL — 1 violation(s)
@@ -840,20 +848,22 @@ VERDICT: REJECTED (gate 1: lint)
 "
 
 example : readVerdict evalCommandLog = some (.rejected .lint .judged) := by decide +kernel
-example : guardsWhy "hash" .accept evalCommandLog = "" := by decide +kernel
+example : guardsWhy "hash" .accept evalCommandLog = .holds := by decide +kernel
 example : guardsWhy "banned:sorry" .accept evalCommandLog =
-    "the full run also has violations [hash]" := by decide +kernel
+    .fails "the full run also has violations [hash]" := by decide +kernel
 example : guardsWhy "hash" (.rejectAt .axioms) evalCommandLog =
-    "it is not comparator_only=accept" := by decide +kernel
+    .fails "it is not comparator_only=accept" := by decide +kernel
 example : guardsWhy "hash" .accept "GATE 1 lint: FAIL — 2 violation(s)
   Plugins/ToyRequire.lean:8:1: command `#eval` is not allowed [hash]
 VERDICT: REJECTED (gate 1: lint)
-" = "gate 1 counts 2 violations and lists 1" := by decide +kernel
+" = .fails "gate 1 counts 2 violations and lists 1" := by decide +kernel
 example : guardsWhy "hash" .accept "VERDICT: REJECTED (gate 3: statements)\n" =
-    "the full run reports no gate-1 violation" := by decide +kernel
+    .fails "the full run reports no gate-1 violation" := by decide +kernel
 
-def guardText (rule why : String) : String :=
-  "guards=" ++ rule ++ (if why = "" then "" else ": " ++ why)
+def guardText (rule : String) (why : GuardClaim) : String :=
+  match why with
+  | .holds => "guards=" ++ rule
+  | .fails w => "guards=" ++ rule ++ ": " ++ w
 
 def fullOk (g : GateId) : Option Verdict → Bool
   | some (.rejected g' .judged) => g' == g
@@ -874,7 +884,7 @@ example : CompExpect.ok (.rejectAt .adequacy) (some (.rejected .adequacy .judged
 def guardsOk (e : Expect) (full : Run) : Bool :=
   match e.guards with
   | none => true
-  | some r => guardsWhy r e.comparatorOnly full.output == ""
+  | some r => guardsWhy r e.comparatorOnly full.output == .holds
 
 def pad (n : Nat) (s : String) : String := s ++ String.ofList (List.replicate (n - s.length) ' ')
 
@@ -908,7 +918,7 @@ def CompExpect.Holds : CompExpect → Option Verdict → Prop
 theorem judge_pass_iff {case : String} {e : Expect} {full comp : Run} :
     (judge case e full comp).pass = true ↔
       full.verdict = some (.rejected e.full .judged) ∧ e.comparatorOnly.Holds comp.verdict ∧
-        ∀ r, e.guards = some r → guardsWhy r e.comparatorOnly full.output = "" := by
+        ∀ r, e.guards = some r → guardsWhy r e.comparatorOnly full.output = .holds := by
   simp only [judge, Bool.and_eq_true, and_assoc]
   apply and_congr
   · generalize full.verdict = v

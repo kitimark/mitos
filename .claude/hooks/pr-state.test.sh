@@ -714,7 +714,7 @@ proj=$fr HOOK_INPUT='{"session_id":"../../etc/x","hook_event_name":"SessionStart
 reject "a session id that is not a plain name is ignored" "Rule"
 if [ -e "$work/state/../../etc/x.sha" ] || [ -e "$work/etc" ]; then fail "a session id wrote outside the state dir"; else pass "a session id never names a path"; fi
 
-srun() {
+runHookWithExplicitState() {
   out=$(env -u MITOS_HOOK_STATE -u XDG_RUNTIME_DIR FAKE_MODE=ok FAKE_DIR="$work" CLAUDE_PROJECT_DIR="$fr" \
     PATH="$work/bin:$PATH" "${@:1:$#-1}" timeout 40 "$hook" 2>/dev/null <<<"${!#}")
   code=$?
@@ -735,7 +735,7 @@ chmod +x "$work/otheruser/id"
 freset
 git -C "$fr" checkout -q "$A"
 
-srun MITOS_HOOK_STATE="$work/st" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st" "$ss"
 expect "a private folder: the note is printed" "$fresh_line"
 reject "a private folder is not refused" "$refused"
 if [ -n "$(find "$work/st" -prune -perm 700)" ]; then pass "a missing folder is made with mode 700"; else fail "folder mode: $(ls -ld "$work/st")"; fi
@@ -745,89 +745,89 @@ if [ "$(entries "$work/st")" = "s1.note s1.sha" ]; then pass "no temp file is le
 
 mkdir -m 700 "$work/real"
 ln -s "$work/real" "$work/st-link"
-srun MITOS_HOOK_STATE="$work/st-link" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-link" "$ss"
 empty_dir "a symlinked folder is not written" "$work/real"
 expect "a symlinked folder is refused" "$refused"
 exit0 "a refused folder"
 expect "a refused folder: the PR state is still printed" "main ${B:0:7}; latest ci run on main"
 for end in / // /.; do
-  srun MITOS_HOOK_STATE="$work/st-link$end" "$ss"
+  runHookWithExplicitState MITOS_HOOK_STATE="$work/st-link$end" "$ss"
   empty_dir "a symlinked folder named with '$end' at the end is not written" "$work/real"
 done
-srun MITOS_HOOK_STATE="$work/st-link/.." "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-link/.." "$ss"
 if [ -e "$work/s1.sha" ]; then fail "a folder named with '/..' at the end was written"; else pass "a folder named with '/..' at the end is not written"; fi
 
 mkdir "$work/st-g"; chmod 770 "$work/st-g"
-srun MITOS_HOOK_STATE="$work/st-g" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-g" "$ss"
 empty_dir "a group-writable folder is not written" "$work/st-g"
 expect "a group-writable folder is refused" "$refused"
 mkdir "$work/st-o"; chmod 1707 "$work/st-o"
-srun MITOS_HOOK_STATE="$work/st-o" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-o" "$ss"
 empty_dir "a folder others can write, sticky as /tmp, is not written" "$work/st-o"
 expect "a folder others can write is refused" "$refused"
 : >"$work/st-f"; chmod 600 "$work/st-f"
-srun MITOS_HOOK_STATE="$work/st-f" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-f" "$ss"
 expect "a file in place of the folder is refused" "$refused"
 
 mkdir "$work/gp"; chmod 770 "$work/gp"; mkdir -m 700 "$work/gp/st"
-srun MITOS_HOOK_STATE="$work/gp/st" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/gp/st" "$ss"
 empty_dir "a folder under a group-writable parent is not written" "$work/gp/st"
 expect "a folder under a group-writable parent is refused" "$refused"
 mkdir "$work/gg"; chmod 707 "$work/gg"; mkdir -m 700 "$work/gg/mid" "$work/gg/mid/st"
-srun MITOS_HOOK_STATE="$work/gg/mid/st" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/gg/mid/st" "$ss"
 empty_dir "a folder two levels under a folder others can write is not written" "$work/gg/mid/st"
 ln -s "$work/gp" "$work/lgp"
-srun MITOS_HOOK_STATE="$work/lgp/st" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/lgp/st" "$ss"
 empty_dir "a folder reached through a symlink into a group-writable folder is not written" "$work/gp/st"
 if [ "$(id -u)" = 0 ]; then
   mkdir -m 700 "$work/op" "$work/op/st"; chown 65534 "$work/op"
-  srun MITOS_HOOK_STATE="$work/op/st" "$ss"
+  runHookWithExplicitState MITOS_HOOK_STATE="$work/op/st" "$ss"
   empty_dir "a folder under a parent of another user is not written" "$work/op/st"
 fi
 mkdir "$work/sp"; chmod 1777 "$work/sp"; mkdir -m 700 "$work/sp/st"
-srun MITOS_HOOK_STATE="$work/sp/st" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/sp/st" "$ss"
 same_text "a folder under a sticky parent others can write, as /tmp, is used" "$work/sp/st/s1.sha" "$A"
 mkdir -m 700 "$work/rp" "$work/rp/st"
 ln -s "$work/rp" "$work/lp"
-srun MITOS_HOOK_STATE="$work/lp/st" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/lp/st" "$ss"
 same_text "a folder reached through a symlinked parent is used by its real path" "$work/rp/st/s1.sha" "$A"
 mkdir -m 700 "$work/rk" "$work/rk/a" "$work/rk/stk" "$work/stk"
 ln -s "$work/rk/a" "$work/lk"
-srun MITOS_HOOK_STATE="$work/lk/../stk" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/lk/../stk" "$ss"
 same_text "a '..' after a symlink goes up from its target, as in the kernel" "$work/rk/stk/s1.sha" "$A"
 mkdir -m 700 "$work/rr" "$work/rr/st"
 ln -s rr "$work/lrr"
-srun MITOS_HOOK_STATE="$work/lrr/st" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/lrr/st" "$ss"
 same_text "a relative symlink is followed from its own folder" "$work/rr/st/s1.sha" "$A"
 empty_dir "a '..' after a symlink: the folder beside the symlink is not written" "$work/stk"
 mkdir -m 700 "$work/rs" "$work/rs/st"
 ln -s "$work/rs" "$work/sp/mine"
-srun MITOS_HOOK_STATE="$work/sp/mine/st" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/sp/mine/st" "$ss"
 same_text "a symlink of this user in a sticky folder is followed" "$work/rs/st/s1.sha" "$A"
 
 mkdir -m 700 "$work/victim" "$work/victim/.ssh"
 mkdir "$work/shared"; chmod 777 "$work/shared"
 ln -s "$work/victim" "$work/shared/team"
-srun MITOS_HOOK_STATE="$work/shared/team/.ssh" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/shared/team/.ssh" "$ss"
 empty_dir "a symlink in a folder others can write, to a private folder: nothing is written" "$work/victim/.ssh"
 expect "a symlink in a folder others can write, to a private folder: it is refused" "$refused"
-srun MITOS_HOOK_STATE="$work/shared/team/new" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/shared/team/new" "$ss"
 if [ "$(entries "$work/victim")" = .ssh ]; then pass "a symlink in a folder others can write: no missing folder is made through it"; else fail "made through a symlink: $(entries "$work/victim")"; fi
 mkdir -m 700 "$work/pt" "$work/pt/st"
 mkdir "$work/wt"; chmod 777 "$work/wt"
 ln -s "$work/pt" "$work/wt/l2"
 ln -s "$work/wt/l2" "$work/lt"
-srun MITOS_HOOK_STATE="$work/lt/st" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/lt/st" "$ss"
 empty_dir "a symlink whose target passes a symlink in a folder others can write: nothing is written" "$work/pt/st"
 expect "a symlink whose target passes a symlink in a folder others can write: it is refused" "$refused"
 if [ "$(id -u)" = 0 ]; then
   mkdir -m 700 "$work/victim2" "$work/victim2/.ssh"
   mkdir -m 755 "$work/oshared"; ln -s "$work/victim2" "$work/oshared/team"; chown 65534 "$work/oshared"
-  srun MITOS_HOOK_STATE="$work/oshared/team/.ssh" "$ss"
+  runHookWithExplicitState MITOS_HOOK_STATE="$work/oshared/team/.ssh" "$ss"
   empty_dir "a symlink in a folder of another user, to a private folder: nothing is written" "$work/victim2/.ssh"
   expect "a symlink in a folder of another user, to a private folder: it is refused" "$refused"
   ln -s "$work/victim2" "$work/sp/theirs"; chown -h 65534 "$work/sp/theirs"
-  srun MITOS_HOOK_STATE="$work/sp/theirs/.ssh" "$ss"
+  runHookWithExplicitState MITOS_HOOK_STATE="$work/sp/theirs/.ssh" "$ss"
   empty_dir "a symlink of another user in a sticky folder: nothing is written" "$work/victim2/.ssh"
   expect "a symlink of another user in a sticky folder: it is refused" "$refused"
 fi
@@ -845,13 +845,13 @@ if [ "$(id -u)" = 0 ]; then
   # A sticky folder passes only when it belongs to this user or root, so a private folder under a
   # sticky folder of another user, who can then rename what is in it, is refused.
   mkdir -m 755 "$work/ostk"; mkdir -m 700 "$work/ostk/st"; chmod 1777 "$work/ostk"; chown 65534 "$work/ostk"
-  srun MITOS_HOOK_STATE="$work/ostk/st" "$ss"
+  runHookWithExplicitState MITOS_HOOK_STATE="$work/ostk/st" "$ss"
   empty_dir "a folder under a sticky folder of another user: nothing is written" "$work/ostk/st"
   expect "a folder under a sticky folder of another user is refused" "$refused"
-  srun MITOS_HOOK_STATE="$work/ostk/new" "$ss"
+  runHookWithExplicitState MITOS_HOOK_STATE="$work/ostk/new" "$ss"
   if [ "$(entries "$work/ostk")" = st ]; then pass "no missing folder is made in a sticky folder of another user"; else fail "made in a sticky folder of another user: $(entries "$work/ostk")"; fi
   mkdir -m 755 "$work/omk"; chown 65534 "$work/omk"
-  srun MITOS_HOOK_STATE="$work/omk/new/deeper" "$ss"
+  runHookWithExplicitState MITOS_HOOK_STATE="$work/omk/new/deeper" "$ss"
   empty_dir "no missing folder is made in a folder of another user" "$work/omk"
 fi
 if [ "$(id -u)" != 0 ]; then
@@ -864,14 +864,14 @@ if [ "$(id -u)" != 0 ]; then
   rm -rf "${sk:?}"
 fi
 mkdir "$work/mg"; chmod 770 "$work/mg"
-srun MITOS_HOOK_STATE="$work/mg/new/deeper" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/mg/new/deeper" "$ss"
 empty_dir "no missing folder is made in a group-writable folder" "$work/mg"
 mkdir "$work/mo"; chmod 707 "$work/mo"
-srun MITOS_HOOK_STATE="$work/mo/new" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/mo/new" "$ss"
 empty_dir "no missing folder is made in a folder others can write" "$work/mo"
 mkdir -m 755 "$work/ch"; mkdir -m 700 "$work/ch/real" "$work/ch/real/st"
 ln -s "$work/ch/real" "$work/ch/l2"; ln -s "$work/ch/l2" "$work/ch/l1"
-srun MITOS_HOOK_STATE="$work/ch/l1/st" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/ch/l1/st" "$ss"
 same_text "a chain of two symlinks of this user in safe folders is followed" "$work/ch/real/st/s1.sha" "$A"
 want=$(phys "$work/rp/st")
 r=$(hs hook_state trusted_path "$work/lp/st")
@@ -942,12 +942,12 @@ code=$(bash -c '. "$1"; hook_state nosuch >/dev/null 2>&1; echo $?' _ "${hook%/*
 if [ "$code" = 2 ]; then pass "an unknown verb is refused"; else fail "unknown verb exit $code"; fi
 
 mkdir -m 700 "$work/st-u"
-srun MITOS_HOOK_STATE="$work/st-u" PATH="$work/otheruser:$work/bin:$PATH" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-u" PATH="$work/otheruser:$work/bin:$PATH" "$ss"
 empty_dir "a folder of another user is not written" "$work/st-u"
 expect "a folder of another user is refused" "$refused"
 if [ "$(id -u)" = 0 ]; then
   mkdir -m 700 "$work/st-u2"; chown 65534 "$work/st-u2"
-  srun MITOS_HOOK_STATE="$work/st-u2" "$ss"
+  runHookWithExplicitState MITOS_HOOK_STATE="$work/st-u2" "$ss"
   empty_dir "a folder chowned to another user is not written" "$work/st-u2"
 fi
 mkdir -m 700 "$work/rel"
@@ -958,36 +958,36 @@ empty_dir "a relative folder is not written" "$work/rel"
 mkdir -m 700 "$work/st-n"
 echo keep >"$work/victim-note"
 ln -s "$work/victim-note" "$work/st-n/s1.note"
-srun MITOS_HOOK_STATE="$work/st-n" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-n" "$ss"
 same_text "a symlinked note: its target is not written" "$work/victim-note" keep
 expect "a symlinked note: the freshness line is still printed" "$fresh_line"
 if [ -L "$work/st-n/s1.note" ]; then pass "a symlinked note is left as it is"; else fail "a symlinked note was replaced"; fi
 mkdir -m 700 "$work/st-h"
 echo keep >"$work/victim-hard"
 ln "$work/victim-hard" "$work/st-h/s1.note"
-srun MITOS_HOOK_STATE="$work/st-h" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-h" "$ss"
 same_text "a hard-linked note: the other name's file is not written" "$work/victim-hard" keep
 same_text "a hard-linked note: the note is written" "$work/st-h/s1.note" "$fresh_line"
 mkdir -m 700 "$work/st-d" "$work/st-d/s1.note"
-srun MITOS_HOOK_STATE="$work/st-d" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-d" "$ss"
 empty_dir "a folder named as the note: nothing is moved into it" "$work/st-d/s1.note"
 mkdir -m 700 "$work/st-s"
 echo keep >"$work/victim-sha"
 ln -s "$work/victim-sha" "$work/st-s/s1.sha"
-srun MITOS_HOOK_STATE="$work/st-s" "$ss"
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-s" "$ss"
 same_text "a symlinked record: its target is not written" "$work/victim-sha" keep
 mkdir -m 700 "$work/st-r"
 echo "$B" >"$work/planted-sha"
 ln -s "$work/planted-sha" "$work/st-r/s1.sha"
-srun MITOS_HOOK_STATE="$work/st-r" '{"session_id":"s1","hook_event_name":"UserPromptSubmit"}'
+runHookWithExplicitState MITOS_HOOK_STATE="$work/st-r" '{"session_id":"s1","hook_event_name":"UserPromptSubmit"}'
 expect "a symlinked record is not read" "$fresh_line"
 
 mkdir -p "$work/home" "$work/tmpd"
-srun HOME="$work/home" TMPDIR="$work/tmpd" "$ss"
+runHookWithExplicitState HOME="$work/home" TMPDIR="$work/tmpd" "$ss"
 same_text "the default folder is under HOME/.cache" "$work/home/.cache/mitos-hook-state/s1.sha" "$A"
 empty_dir "the default folder is not under TMPDIR" "$work/tmpd"
 mkdir -m 700 "$work/xdg"
-srun XDG_RUNTIME_DIR="$work/xdg" HOME="$work/home2" "$ss"
+runHookWithExplicitState XDG_RUNTIME_DIR="$work/xdg" HOME="$work/home2" "$ss"
 same_text "XDG_RUNTIME_DIR comes first" "$work/xdg/mitos-hook-state/s1.sha" "$A"
 
 exit "$failed"

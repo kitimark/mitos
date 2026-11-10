@@ -4,6 +4,7 @@ inductive Failure
   | illegalAxiom
   | missingConst
   | statement
+  | definitionHole
   | kernelReject
   | importClash
   | noJudgment
@@ -52,8 +53,10 @@ private def rules : List MarkerRule :=
         [.text "Const not found in challenge",
           .text "Const does not match between challenge and target",
           .text "Challenge and solution constant kind don't match",
-          .text "Challenge and solution theorem statement do not match",
-          .text "Challenge constant is not a definition",
+          .text "Challenge and solution theorem statement do not match"] },
+    { failure := .definitionHole
+      markers :=
+        [.text "Challenge constant is not a definition",
           .text "Solution constant is not a definition"] },
     { failure := .kernelReject
       markers := [.allOf ["kernel", "reject"]] },
