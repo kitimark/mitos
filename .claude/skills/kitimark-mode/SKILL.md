@@ -206,8 +206,7 @@ default" names the same exception.
    own files until it merges, and a file on `main` never changes: an update to an earlier record
    goes in the next attempt's `note`. Before each push,
    `git diff --name-status --no-renames origin/main...HEAD -- ops/runs ':!ops/runs/README.md'`
-   shows only `A` lines, except an `M` line for a day file that a PR opened before this rule
-   appended to and keeps until it lands (`ops/runs/README.md`, Transition). The PR body says
+   shows only `A` lines. The PR body says
    `Closes #n` for the task's issue when the PR finishes the task, and `Part of #n` otherwise.
    The plan holds no status, so a task PR leaves `plan/` alone.
 7. Push every known fix, then report the head as merge-ready or as waiting on the user.
@@ -271,9 +270,9 @@ watcher's echo filter and the merge rule below rely on both.
   judged, because a head that edits the tool would judge itself. Fetch the branch and the verified
   head first (`git fetch origin <branch> <verified-head>`), because the tool refuses a commit the
   clone lacks. The content id (`lake exe mitos-gate content-id origin/main <head>`) covers the
-  exact diff from the merge-base outside `ops/runs/*.ndjson`, whitespace included because Lean
-  reads indentation, where in its file each hunk applies, and the run-log lines the PR adds,
-  wherever union put them. Git config does not change it (`gate/MitosGate/ContentId.lean`). Ids
+  exact diff from the merge-base, whitespace included because Lean reads indentation, and where
+  in its file each hunk applies. A day file is an ordinary file in that diff. Git config does not
+  change it (`gate/MitosGate/ContentId.lean`). Ids
   from different builds are not comparable, and `carry` computes both with one. A carried head
   still needs its own green `gate` because the base is not the same. No PR in a stack carries a
   verdict, because the updater skips stacks: a stack needs a verifier at every head after a

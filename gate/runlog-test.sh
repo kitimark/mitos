@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Tests for `mitos-gate runlog` (gate/MitosGate/RunLog.lean) on scratch directories, plus replays on
-# real git with the repository's .gitattributes: an edit and an append to a day file merged by
-# git's union driver, and record files (one per attempt) rebased as the PR updater rebases. Also
-# the same I/O-error case for `mitos-gate lock-models` (gate/Main.lean).
-# Run from anywhere: gate/runlog-test.sh
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -51,12 +46,12 @@ fresh() {
 fresh append
 { rec A 1; rec B 1; } >"$b/d1.ndjson"
 { rec A 1; rec B 1; rec C 1; rec A 2; } >"$h/d1.ndjson"
-expect "append-only additions pass" 0 '^run log OK: 1 file\(s\), 4 record\(s\).*1 file\(s\) compared' --base "$b" --head "$h"
+expect "an appended day-file line fails" 1 "^::error file=$h/d1.ndjson,line=3::line 3 is not in the merge-base version: a day file may not gain a line" --base "$b" --head "$h"
 
 fresh edit
 { rec A 1; rec B 1; rec C 1; } >"$b/d1.ndjson"
 { rec A 1; rec B 1 "corrected"; rec C 1; } >"$h/d1.ndjson"
-expect "an edited line fails at its line" 1 "^::error file=$h/d1.ndjson,line=2::line 2 of the merge-base version is missing" --base "$b" --head "$h"
+expect "an edited line fails at its line" 1 "^::error file=$h/d1.ndjson,line=2::line 2 of the merge-base version differs from this file" --base "$b" --head "$h"
 
 fresh delete
 { rec A 1; rec B 1; rec C 1; } >"$b/d1.ndjson"
@@ -127,12 +122,12 @@ expect "a new day file fails" 1 "^::error file=$h/d2.ndjson,line=1::a new day fi
 fresh order
 { rec A 1; rec B 1; rec C 1; } >"$b/d1.ndjson"
 { rec X 1; rec C 1; rec Y 1; rec A 1; rec B 1; } >"$h/d1.ndjson"
-expect "interleaved order passes" 0 '^run log OK' --base "$b" --head "$h"
+expect "a reordered day file fails" 1 "^::error file=$h/d1.ndjson,line=1::line 1 of the merge-base version differs" --base "$b" --head "$h"
 
 fresh nonl
 rec A 1 | tr -d '\n' >"$b/d1.ndjson"
-{ rec A 1; rec B 1 | tr -d '\n'; } >"$h/d1.ndjson"
-expect "a last line without a newline is a line" 0 '^run log OK: 1 file\(s\), 2 record\(s\)' --base "$b" --head "$h"
+rec A 1 | tr -d '\n' >"$h/d1.ndjson"
+expect "a last line without a newline is a line" 0 '^run log OK: 1 file\(s\), 1 record\(s\)' --base "$b" --head "$h"
 
 fresh other
 rec A 1 >"$h/d1.ndjson"
@@ -144,7 +139,7 @@ expect "a day file in a folder does not belong" 1 "^::error file=$h/sub/x.ndjson
 
 fresh hidden
 echo 'not json' >"$h/.ndjson"
-expect "a name that union's *.ndjson matches is read, dot or not" 1 "file=$h/.ndjson,line=1::the line is not valid JSON" --head "$h"
+expect "a name ending in .ndjson is read, dot or not" 1 "file=$h/.ndjson,line=1::the line is not valid JSON" --head "$h"
 
 fresh linkdir
 rec A 1 >"$h/d1.ndjson"
@@ -170,7 +165,7 @@ put "$h" 2026-11-10 B 1
 put "$h" 2026-11-10 C 1
 put "$h" 2026-11-11 B 2
 echo 'not json' >"$h/README.md"
-expect "record files pass next to a day file" 0 '^run log OK: 4 file\(s\), 4 record\(s\).*every merge-base line and record file kept \(2 file\(s\) compared\)' --base "$b" --head "$h"
+expect "record files pass next to a day file" 0 '^run log OK: 4 file\(s\), 4 record\(s\).*every day file matches the merge base and every record file is kept \(2 file\(s\) compared\)' --base "$b" --head "$h"
 rec A 1 | sed 's/"builder"/"red-team"/' >"$h/2026-11-11/A-red-team-1.json"
 expect "the role is part of the name" 0 '^run log OK: 5 file\(s\), 5 record\(s\)' --base "$b" --head "$h"
 
@@ -403,12 +398,8 @@ for mode in "" --check; do
   raw "lock-models name" "U+FFFD" $'\xef\xbf\xbd'
 done
 
-# Replay: the base ends with record B; the PR corrects B in place; main appends C. With the
-# repository's .gitattributes, the rebase of the PR onto main succeeds without a conflict, and
-# keeps both versions of B.
 repo="$tmp/replay"
 mkdir -p "$repo/ops/runs"
-cp "$root/.gitattributes" "$repo/.gitattributes"
 g() { git -C "$repo" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "$@"; }
 g init -q -b main
 { rec A 1; rec B 1 "wrong"; } >"$repo/ops/runs/d1.ndjson"
@@ -424,26 +415,19 @@ g commit -qam "main: append C"
 snap() { rm -rf "${tmp:?}/$1"; mkdir -p "$tmp/$1"; g archive "$2" ops/runs | tar -x -C "$tmp/$1"; }
 snap pr-base "$(g merge-base main pr)"
 snap pr-head pr
-expect "replay: the PR alone fails the append-only check" 1 "^::error file=$tmp/pr-head/ops/runs/d1.ndjson,line=2::line 2 of the merge-base version" --base "$tmp/pr-base/ops/runs" --head "$tmp/pr-head/ops/runs"
+expect "replay: the PR's edit fails equality" 1 "^::error file=$tmp/pr-head/ops/runs/d1.ndjson,line=2::line 2 of the merge-base version differs" --base "$tmp/pr-base/ops/runs" --head "$tmp/pr-head/ops/runs"
 
 g checkout -q pr
-if ! g rebase -q main >"$out" 2>&1; then
-  echo "FAIL replay: the rebase stopped on a conflict"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
+if g rebase -q main >"$out" 2>&1; then
+  echo "FAIL replay: the rebase succeeded"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
+elif g status --porcelain | grep -q '^UU ops/runs/d1.ndjson$'; then
+  echo "ok   replay: an edit rebased over an append stops on a conflict"; pass=$((pass + 1))
 else
-  echo "ok   replay: the rebase succeeds with merge=union"; pass=$((pass + 1))
-  snap main-head main
-  sed 's/^/  | /' "$repo/ops/runs/d1.ndjson"
-  # The rebased PR keeps base line B, so append-only passes; the duplicate key is what fails.
-  expect "replay: the rebased PR fails on the duplicate key" 1 "^::error file=$repo/ops/runs/d1.ndjson,line=[0-9]+::a second record for task \"B\", role \"builder\", attempt 1" --base "$tmp/main-head/ops/runs" --head "$repo/ops/runs"
-  if grep -q 'merge-base version' "$out"; then echo "FAIL replay: append-only failed too"; fail=$((fail + 1)); fi
-  n=$(grep -n '"corrected"' "$repo/ops/runs/d1.ndjson" | cut -d: -f1)
-  m=$(grep -n '"wrong"' "$repo/ops/runs/d1.ndjson" | cut -d: -f1)
-  second=$((n > m ? n : m))
-  expect "replay: the annotation names the later version's line ($second)" 1 "^::error file=$repo/ops/runs/d1.ndjson,line=$second::" --head "$repo/ops/runs"
+  echo "FAIL replay: no conflict in the day file"; g status --porcelain | sed 's/^/  | /'; fail=$((fail + 1))
 fi
+g rebase --abort 2>/dev/null || true
 
 # Replays of record files, one per attempt, rebased as .github/scripts/rebase-prs.sh rebases
-# (`checkout --detach`, then `rebase` onto main), with the repository's .gitattributes.
 # pid <rev>: the change id of <rev> against its merge base with main, with git's diff settings
 # pinned so that no local configuration changes it.
 pid() {
@@ -460,7 +444,6 @@ gate() {
 repo="$tmp/replay-files"
 runs="$repo/ops/runs"
 mkdir -p "$runs" "$repo/src"
-cp "$root/.gitattributes" "$repo/.gitattributes"
 g init -q -b main
 printf 'one\ntwo\nthree\n' >"$repo/src/a.txt"
 rec M 1 >"$runs/2026-11-09.ndjson"
@@ -563,34 +546,6 @@ elif [ "$(g rev-parse HEAD)" = "$(g rev-parse main)" ]; then
   echo "ok   identical replay: the commit is dropped, one file remains"; pass=$((pass + 1))
 else
   echo "FAIL identical replay: the commit was kept"; fail=$((fail + 1))
-fi
-
-# The transition: a PR that appends to a day file is rebased over main, which gained a record file
-# and another PR's append to that day file. Union keeps both lines, and the rebased PR passes.
-g checkout -q -B leg1 main
-rec L1 1 >>"$runs/2026-11-09.ndjson"
-g commit -qam "leg1: append"
-g checkout -q -B leg2 main
-rec L2 1 >>"$runs/2026-11-09.ndjson"
-g commit -qam "leg2: append"
-g checkout -q main
-put "$runs" 2026-11-12 T 1
-g add -A
-g commit -qm "main: T"
-# leg1 lands: the updater rebases it onto main, and main moves to it.
-g checkout -q --detach leg1
-g rebase -q main
-g branch -qf main HEAD
-g checkout -q --detach leg2
-if ! g rebase -q main >"$out" 2>&1; then
-  echo "FAIL transition replay: the rebase stopped"; sed 's/^/  | /' "$out"; fail=$((fail + 1)); g rebase --abort
-else
-  gate rt main HEAD
-  if grep -q '^run log OK' "$out" && [ "$(grep -c '"task":"L[12]"' "$runs/2026-11-09.ndjson")" = 2 ]; then
-    echo "ok   transition replay: union keeps both appends and the rebased PR passes"; pass=$((pass + 1))
-  else
-    echo "FAIL transition replay"; sed 's/^/  | /' "$out"; fail=$((fail + 1))
-  fi
 fi
 
 echo "$pass passed, $fail failed"

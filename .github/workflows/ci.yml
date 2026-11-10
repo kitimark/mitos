@@ -136,9 +136,7 @@ jobs:
       - name: Build core and gate
         run: lake build
 
-      # On a PR, every run-log line of the merge-base must still be there, so union merges stay
-      # correct (ops/runs/README.md); on main, the records parse with one per attempt.
-      - name: Run-log lines are append-only, one record per (task, role, attempt)
+      - name: Run-log day files match the base, one record per (task, role, attempt)
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}

@@ -1,5 +1,0 @@
-# The run-log day files from before one file per attempt (#91): every line is an independent
-# record. When two branches append different lines, keep both sides instead of reporting a
-# conflict. Only until the PRs that append to a day file have landed (#113); a record file,
-# ops/runs/<date>/<task>-<role>-<attempt>.json, needs no merge driver. See ops/runs/README.md.
-ops/runs/*.ndjson merge=union

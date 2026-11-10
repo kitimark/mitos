@@ -16,15 +16,19 @@ or stops on as a conflict.
   (`fileName`). `recordFile_ok` states this; `fileName_safe` shows such a name is one plain path
   entry; `day_keys_nodup` shows a day folder then holds each key at most once.
 * `problems`: the whole check on a merge-base tree and a head tree, read into a `Tree`.
-  `problems_eq_nil` states what a pass means: every merge-base record is kept
-  (`records_kept`), no two head records share a key, every head record file passes
-  `recordFile` in a folder named by a date, and the head has no day file the base lacks.
+  `problems_eq_nil` states what a pass means: each base day file's lines equal the head file of
+  the same name, every merge-base record is kept (`records_kept`), no two head records share a
+  key, every head record file passes `recordFile` in a folder named by a date, and the head has
+  no day file the base lacks.
 
-The day files from before, `ops/runs/<YYYY-MM-DD>.ndjson`, keep the rules below while the open PRs
-that append to them land (`ops/runs/README.md`, Transition): `.gitattributes` still merges them
-with git's `union` driver, which keeps the lines of both sides. That is right only while no branch
-edits or deletes a line it did not add: union turns an edited line into two records for one
-attempt and reports no conflict. A PR may not add a day file.
+The day files from before one record per attempt, `ops/runs/<YYYY-MM-DD>.ndjson`, are frozen
+(`ops/runs/README.md`). Each one on the head must equal the one on the base, line for line and in
+order. A PR may not add a day file, and may not append, edit, delete or reorder a line.
+
+The `appendOnly` and union theorems stay as the record of why those files were safe to freeze.
+While git's `union` driver merged them, a change was right only when no branch edited or deleted
+a line it did not add: union turns an edited line into two records for one attempt and reports no
+conflict. The check does not use them.
 
 * `appendOnly base head`: every line of the merge-base file is still in the head file, at least as
   often; order is ignored (`appendOnly_iff_count`, `appendOnly_iff_subperm`). Equivalently, the
@@ -38,8 +42,7 @@ attempt and reports no conflict. A PR may not add a day file.
   (`noDupKeys_eq_false_of_mem`, `edit_then_union`).
 
 `check` is the executable. It reads the files into a `Tree` (`readTree`), parses each record with
-Lean core's `Lean.Json`, and decides with `problems`, which uses `appendOnly`, `noDupKeys`,
-`recordFile` and the proved locators `firstMissing?` and `dupAt?`. The file I/O, the JSON parser
+Lean core's `Lean.Json`, and decides with `problems`. The file I/O, the JSON parser
 and the field checks in `parseRecord` are not proved; the theorems about `problems` hold for any
 parser. Every line
 `check` and `cli` print that holds a file name, a field value, a message or an I/O error is the
@@ -153,10 +156,11 @@ theorem appendOnly_delete (p s : List String) (l : String) :
   rw [List.count_append, List.count_append, List.count_cons_self]
   omega
 
-/-- **Union keeps the base.** The model of git's union merge, an assumption about git that is not
-proved here: when one side is the base plus lines `a` and the other the base plus lines `b`, union
-keeps each base line once and every added line of each side, so its result `r` is some order of
-`base ++ a ++ b`. The replays in `gate/runlog-test.sh` check such merges on real git. -/
+/-- **Union keeps the base.** The model of the `union` driver that merged day files until #113, an
+assumption about git that is not proved here: when one side is the base plus lines `a` and the
+other the base plus lines `b`, union keeps each base line once and every added line of each side,
+so its result `r` is some order of `base ++ a ++ b`. The check no longer uses this. It is why an
+append-only union kept every base line, and so why those files were safe to freeze as equality. -/
 theorem union_appendOnly {base a b r : List String} (hunion : r.Perm (base ++ a ++ b)) :
     appendOnly base r = true :=
   appendOnly_iff_perm_append.mpr ⟨a ++ b, by rw [← List.append_assoc]; exact hunion⟩
@@ -310,9 +314,10 @@ example : noDupKeys [⟨"T", "builder", 1⟩, ⟨"T", "builder", 2⟩, ⟨"T", "
 example : noDupKeys [⟨"T", "builder", 1⟩, ⟨"U", "builder", 1⟩, ⟨"T", "builder", 1⟩] = false := by
   decide
 
-/-- The replay in `gate/runlog-test.sh`: the base is `A`, `B`; the PR corrects `B` to `B'` in place;
-`main` appends `C`; git's rebase with `merge=union` gives `A`, `B`, `C`, `B'`. Against `main`, the
-rebased PR passes `appendOnly`, since `B` is still there, and fails `noDupKeys`. -/
+/-- The old union replay: the base is `A`, `B`; the PR corrects `B` to `B'` in place; `main` appends
+`C`; git's rebase with `merge=union` gave `A`, `B`, `C`, `B'`. Against `main`, that result passes
+`appendOnly`, since `B` is still there, and fails `noDupKeys`. The driver is gone; equality
+rejects both the edit and the append. -/
 example :
     appendOnly ["A", "B"] ["A", "B'"] = false ∧
     appendOnly ["A", "B", "C"] ["A", "B", "C", "B'"] = true ∧
@@ -654,25 +659,35 @@ def dupProblems (parse : String → Except String Record) (dir : System.FilePath
     let (fi, li, r) := recs[i]!
     let (fj, lj, _) := recs[j]!
     [⟨fj, lj, s!"a second record for {keyText r}; the first is at {fi}:{li}. An attempt has " ++
-      "one record: a correction goes in the next attempt's record. Union keeps both versions " ++
-      "of an edited day-file line (ops/runs/README.md)"⟩]
+      "one record: a correction goes in the next attempt's record (ops/runs/README.md)"⟩]
 
-/-- What the head `h` lost or added against the merge base `b`: a day-file line of the base that
-the head's file of the same name lacks (`appendOnly`, located by `firstMissing?`), a day file the
-base lacks, and a record file of the base that the head lacks or holds with other text. -/
+def firstDiff? : List String → List String → Nat
+  | [], _ => 0
+  | _ :: _, [] => 0
+  | a :: as, b :: bs => if a == b then firstDiff? as bs + 1 else 0
+
+example : firstDiff? ["a", "b"] ["a", "b", "c"] = 2 := by decide
+example : firstDiff? ["a", "b", "c"] ["a", "x", "c"] = 1 := by decide
+example : firstDiff? ["a", "b"] ["a"] = 1 := by decide
+
 def keptProblems (dir : System.FilePath) (b h : Tree) : List Problem :=
   b.days.filterMap (fun d =>
     let hl := linesOf h d.1
-    if appendOnly d.2 hl then none
+    if d.2 == hl then none
     else
-      -- `some` here, by `firstMissing?_eq_none_iff`; the line it names is right by
-      -- `firstMissing?_spec`.
-      let i := (firstMissing? d.2 hl).getD 0
-      let what := if h.days.any (·.1 == d.1) then "is missing from this file" else
-        "is missing: the file was deleted"
-      some ⟨(dir / d.1).toString, i + 1, s!"line {i + 1} of the merge-base version {what}. " ++
-        "Run-log lines are append-only: a line already on the base branch may not be edited " ++
-        "or deleted (ops/runs/README.md)"⟩) ++
+      let i := firstDiff? d.2 hl
+      let line := i + 1
+      let msg :=
+        if !h.days.any (·.1 == d.1) then
+          s!"line {line} of the merge-base version is missing: the file was deleted. " ++
+            "A day file on the base branch is frozen and must match main (ops/runs/README.md)"
+        else if i ≥ d.2.length then
+          s!"line {line} is not in the merge-base version: a day file may not gain a line. " ++
+            "A day file on the base branch is frozen and must match main (ops/runs/README.md)"
+        else
+          s!"line {line} of the merge-base version differs from this file. " ++
+            "A day file on the base branch is frozen and must match main (ops/runs/README.md)"
+      some ⟨(dir / d.1).toString, line, msg⟩) ++
   h.days.filterMap (fun d =>
     if b.days.any (·.1 == d.1) then none
     else some ⟨(dir / d.1).toString, 1, "a new day file. Each attempt's record goes in its own " ++
@@ -686,8 +701,6 @@ def keptProblems (dir : System.FilePath) (b h : Tree) : List Problem :=
         s!"{what}. A record file never changes once it is on main: a correction goes in the " ++
         "note of the next attempt's record (ops/runs/README.md)"⟩)
 
-/-- The whole check: the records parse, no two share a key, and, given the merge-base tree, the
-head keeps it (`keptProblems`). `problems_eq_nil` states what an empty result means. -/
 def problems (parse : String → Except String Record) (dir : System.FilePath) (base : Option Tree)
     (head : Tree) : List Problem :=
   parseProblems parse dir head ++ dupProblems parse dir head ++
@@ -723,14 +736,15 @@ theorem dupProblems_eq_nil {parse : String → Except String Record} {dir : Syst
   · cases h
 
 theorem keptProblems_eq_nil {dir : System.FilePath} {b h : Tree} (hk : keptProblems dir b h = []) :
-    (∀ d ∈ b.days, appendOnly d.2 (linesOf h d.1) = true) ∧
+    (∀ d ∈ b.days, linesOf h d.1 = d.2) ∧
       (∀ d ∈ h.days, ∃ d' ∈ b.days, d'.1 = d.1) ∧ (∀ f ∈ b.files, f ∈ h.files) := by
   simp only [keptProblems, List.append_eq_nil_iff, List.filterMap_eq_nil_iff] at hk
   obtain ⟨⟨h1, h2⟩, h3⟩ := hk
   refine ⟨fun d hd => ?_, fun d hd => ?_, fun f hf => ?_⟩
   · have := h1 d hd
     split at this
-    · assumption
+    · rename_i heq
+      exact (beq_iff_eq.mp heq).symm
     · cases this
   · have := h2 d hd
     split at this
@@ -743,20 +757,15 @@ theorem keptProblems_eq_nil {dir : System.FilePath} {b h : Tree} (hk : keptProbl
     · exact List.contains_iff_mem.mp (by assumption)
     · cases this
 
-/-- **Every merge-base record is kept.** When each base day file's lines are still in the head
-file of the same name, as often (`appendOnly`), and each base record file is in the head with the
-same text, every record of the base is a record of the head, for any parser. -/
 theorem records_kept (parse : String → Except String Record) {b h : Tree}
-    (hdays : ∀ d ∈ b.days, appendOnly d.2 (linesOf h d.1) = true)
+    (hdays : ∀ d ∈ b.days, linesOf h d.1 = d.2)
     (hfiles : ∀ f ∈ b.files, f ∈ h.files) :
     ∀ r ∈ records parse b, r ∈ records parse h := by
   intro r hr
   simp only [records, List.mem_append, List.mem_flatMap, List.mem_filterMap] at hr ⊢
   rcases hr with ⟨d, hd, l, hl, hp⟩ | ⟨f, hf, hp⟩
   · left
-    have hlh : l ∈ linesOf h d.1 := by
-      have := appendOnly_iff_count.mp (hdays d hd) l
-      exact List.count_pos_iff.mp (Nat.lt_of_lt_of_le (List.count_pos_iff.mpr hl) this)
+    have hlh : l ∈ linesOf h d.1 := (hdays d hd).symm ▸ hl
     unfold linesOf at hlh
     cases hfind : h.days.find? (fun x => x.1 == d.1) with
     | none => simp [hfind] at hlh
@@ -765,17 +774,13 @@ theorem records_kept (parse : String → Except String Record) {b h : Tree}
       exact ⟨d', List.mem_of_find?_eq_some hfind, l, hlh, hp⟩
   · exact Or.inr ⟨f, hfiles f hf, hp⟩
 
-/-- **What a pass means.** When `problems` finds nothing: no two records of the head, in day files
-and record files together, share a key; every line of a head day file is a record; every head
-record file is in a folder named by a date and passes `recordFile`, so it is one line, one record,
-named by its key (`recordFile_ok`). Given the merge-base tree `b`, also every record of `b` is a
-record of the head (`records_kept`), and the head has no day file that `b` lacks. -/
 theorem problems_eq_nil (parse : String → Except String Record) (dir : System.FilePath)
     {base : Option Tree} {h : Tree} (hp : problems parse dir base h = []) :
     noDupKeys (records parse h) = true ∧
       (∀ d ∈ h.days, ∀ l ∈ d.2, ∃ r, parse l = .ok r) ∧
       (∀ f ∈ h.files, isDate f.1 = true ∧ ∃ r, recordFile parse f.2.1 f.2.2 = .ok r) ∧
-      (∀ b, base = some b → (∀ r ∈ records parse b, r ∈ records parse h) ∧
+      (∀ b, base = some b → (∀ d ∈ b.days, linesOf h d.1 = d.2) ∧
+        (∀ r ∈ records parse b, r ∈ records parse h) ∧
         ∀ d ∈ h.days, ∃ d' ∈ b.days, d'.1 = d.1) := by
   unfold problems at hp
   rw [List.append_eq_nil_iff, List.append_eq_nil_iff] at hp
@@ -784,7 +789,7 @@ theorem problems_eq_nil (parse : String → Except String Record) (dir : System.
   refine ⟨dupProblems_eq_nil hdup, hl, hf, fun b hb => ?_⟩
   subst hb
   obtain ⟨k1, k2, k3⟩ := keptProblems_eq_nil hkept
-  exact ⟨records_kept parse k1 k3, k2⟩
+  exact ⟨k1, records_kept parse k1 k3, k2⟩
 
 /-! ## Record files, checked by the kernel -/
 
@@ -883,8 +888,7 @@ def sortedEntries (dir : System.FilePath) : IO (Array IO.FS.DirEntry) :=
   return (← dir.readDir).qsort (·.fileName < ·.fileName)
 
 /-- Read a run-log directory into a `Tree`. A name directly in `dir` that ends in `.ndjson` is a
-day file: the set `.gitattributes` merges with union, whose `*` also matches a name that starts
-with a dot. A directory directly in `dir`, not a symlink to one, is a folder of record files: each
+day file. A directory directly in `dir`, not a symlink to one, is a folder of record files: each
 entry in it whose name ends in `.json`. `problems` checks the folder's name and the files.
 
 It also returns the problems with what it cannot read or what does not belong, and the paths it
@@ -942,7 +946,7 @@ def check (base : Option System.FilePath) (head : System.FilePath) : IO UInt32 :
   ps := ps ++ ((problems parseRecord head b? h).filter fun p => !hbad.contains p.file).toArray
   if ps.isEmpty then
     let vs := match b? with
-      | some b => s!", every merge-base line and record file kept " ++
+      | some b => s!", every day file matches the merge base and every record file is kept " ++
           s!"({b.days.length + b.files.length} file(s) compared)"
       | none => ""
     IO.println (s!"run log OK: {h.days.length + h.files.length} file(s), " ++

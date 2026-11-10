@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Tests for `mitos-gate content-id` (gate/MitosGate/ContentId.lean) on scratch repositories: what
-# changes the id and what keeps it, where a hunk applies, the run-log refusals, the git config and
-# environment variants, and a shell reference for the normalized diff. Then, when the commits are
-# in this clone, a replay of the updater's rebases of open PRs. Run from anywhere:
-# gate/content-id-test.sh
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -58,7 +53,6 @@ lean() { # A.lean with 40 lines; $1 is the proof line of theorem t at line 21.
 
 mkdir -p "$repo"
 g init -q -b main
-cp "$root/.gitattributes" "$repo/.gitattributes"
 mkdir -p "$repo/ops/runs" "$repo/src"
 lean "  exact h" >"$repo/A.lean"
 printf 'b1\nb2\n' >"$repo/B.lean"
@@ -69,10 +63,8 @@ g add -A
 g commit -qm base
 g tag base
 
-# The PR: a proof change in A.lean and a run-log record.
 g checkout -qb pr
 lean "  exact h.elim" >"$repo/A.lean"
-rec C 1 >>"$repo/ops/runs/d1.ndjson"
 g commit -qam pr
 id_pr=$(cid main pr)
 if [[ "$id_pr" =~ ^[0-9a-f]{64}$ ]]; then ok "the id is 64 hex digits"; else bad "the id is 64 hex digits ($id_pr)"; fi
@@ -82,7 +74,6 @@ same "the base can be a name or a commit id" "$id_pr" "$(cid "$(g rev-parse main
 # A whitespace-only change: one space less of indentation, which Lean reads.
 g checkout -qb ws base
 lean " exact h.elim" >"$repo/A.lean"
-rec C 1 >>"$repo/ops/runs/d1.ndjson"
 g commit -qam ws
 differ "a whitespace-only change in a .lean file changes the id" "$id_pr" "$(cid main ws)"
 mbw=$(g merge-base main ws)
@@ -95,8 +86,8 @@ same "  (git patch-id without --verbatim cannot see it)" \
 for change in "binary byte:printf 'bin\\0arY\\377\\r\\n' >blob.bin" \
   "carriage return:printf 'b1\\r\\nb2\\n' >B.lean" \
   "mode:chmod +x tool.sh" "symlink:rm tool.sh; ln -s A.lean tool.sh" \
-  "new empty file:: >empty.txt" "deleted file:rm B.lean" "file under ops/runs/sub:mkdir -p ops/runs/sub; echo x >ops/runs/sub/x.ndjson" \
-  "second run-log record:rec D 1 >>ops/runs/d1.ndjson" "new run-log file:rec E 1 >ops/runs/d2.ndjson"; do
+  "new empty file:: >empty.txt" "deleted file:rm B.lean" \
+  "file under ops/runs/sub:mkdir -p ops/runs/sub; echo x >ops/runs/sub/x.ndjson"; do
   g checkout -qB var pr
   (cd "$repo" && eval "${change#*:}")
   g add -A
@@ -115,79 +106,12 @@ if g merge-base main pr >/dev/null 2>&1; then bad "  (the graft should hide the 
 same "a graft in info/grafts does not change the id" "$id_pr" "$(cid main pr)"
 rm "$repo/.git/info/grafts"
 
-# A run-log line with and without a final newline: two ids.
-g checkout -qB eol1 base
-rec D 1 >>"$repo/ops/runs/d1.ndjson"
-g commit -qam eol1
-g checkout -qB eol2 base
-rec D 1 | tr -d '\n' >>"$repo/ops/runs/d1.ndjson"
-g commit -qam eol2
-differ "a run-log record with and without a final newline gives two ids" "$(cid main eol1)" "$(cid main eol2)"
-g checkout -qB eol3 base
-rec D 1 | sed 's/$/\r/' >>"$repo/ops/runs/d1.ndjson"
-g commit -qam eol3
-differ "a run-log record with and without a carriage return gives two ids" "$(cid main eol1)" "$(cid main eol3)"
-
-# The run-log part ignores where the added lines are.
-g checkout -qB order base
-{ rec A 1; rec D 1; rec B 1; rec C 1; } >"$repo/ops/runs/d1.ndjson"
-g commit -qam order1
-o1=$(cid main order)
-{ rec A 1; rec B 1; rec C 1; rec D 1; } >"$repo/ops/runs/d1.ndjson"
-g commit -qam order2
-same "added run-log lines count wherever they are" "$o1" "$(cid main order)"
-
-# Run-log changes that are not append-only are refused.
-g checkout -qB edit base
-{ rec A 1; rec B 2; } >"$repo/ops/runs/d1.ndjson"
-g commit -qam edit
-refused "a run-log line edit is refused" '^content-id refused: line 2 of the merge-base version of "ops/runs/d1.ndjson" is missing at the head\. Run-log lines are append-only' main edit
-g checkout -qB del base
-rec B 1 >"$repo/ops/runs/d1.ndjson"
-g commit -qam del
-refused "a run-log line deletion is refused" 'line 1 of the merge-base version' main del
-g checkout -qB delfile base
-g rm -q ops/runs/d1.ndjson
-g commit -qm delfile
-refused "a deleted run-log file is refused" '"ops/runs/d1.ndjson" is deleted' main delfile
-g checkout -qB modef base
-chmod +x "$repo/ops/runs/d1.ndjson"
-rec C 1 >>"$repo/ops/runs/d1.ndjson"
-g commit -qam modef
-refused "a run-log mode change is refused" 'changes mode from 100644 to 100755' main modef
-g checkout -qB linkf base
-ln -s ../../A.lean "$repo/ops/runs/d3.ndjson"
-g add -A
-g commit -qm linkf
-refused "a run-log symlink is refused" '"ops/runs/d3.ndjson" is added with mode 120000' main linkf
-g checkout -qB typef base
-rm "$repo/ops/runs/d1.ndjson"
-ln -s ../../A.lean "$repo/ops/runs/d1.ndjson"
-g add -A
-g commit -qm typef
-refused "a run-log file turned into a symlink is refused" 'changes in type' main typef
-# A hostile name: the refusal stays one line, with no raw newline or workflow command in either
-# form, `::` at the start of a line or `##[` anywhere in it.
-g checkout -qB evil base
-evil=$'ops/runs/x\n::warning::forged\xe2\x80\x8b##[warning]too.ndjson'
-rec Z 1 >"$repo/$evil"
-g add -A
-g commit -qm evil-base
-g tag evil-base
-g rm -q "$evil"
-g commit -qm evil
-refused "a hostile run-log name prints on one line" '"ops/runs/x\\u\{000A\}::warning::forged.*##\\u\{005B\}warning\]too' evil-base evil
-if grep -qF '##[' "$out" || grep -qE '^[[:space:]]*::' "$out"; then bad "  (a workflow command in the refusal)"; fi
-
-# Rebases. main appends its own run-log record and changes a file the PR does not touch.
 g checkout -q main
-rec M 1 >>"$repo/ops/runs/d1.ndjson"
 printf 'b1\nb2\nb3\n' >"$repo/B.lean"
-g commit -qam "main: record M, B.lean"
+g commit -qam "main: B.lean"
 g checkout -qB rebased pr
 g rebase -q main
-same "a union rebase over main's run-log record keeps the id" "$id_pr" "$(cid main rebased)"
-differ "  (the rule this replaces changes on it)" "$(old main pr)" "$(old main rebased)"
+same "a rebase over a file the PR does not touch keeps the id" "$id_pr" "$(cid main rebased)"
 # main adds lines far above the PR's hunk: the hunk moves, the id stays.
 g checkout -q main
 { printf -- '-- header %s\n' 1 2 3 4 5 6 7 8 9 10; cat "$repo/A.lean"; } >"$repo/A2" && mv "$repo/A2" "$repo/A.lean"
@@ -195,19 +119,6 @@ g commit -qam "main: lines at the top of A.lean"
 g checkout -qB moved pr
 g rebase -q main
 same "a rebase that moves the PR's hunk keeps the id" "$id_pr" "$(cid main moved)"
-# main creates the run-log file the PR creates: union merges the two adds.
-g checkout -qB newlog main
-rec N 1 >"$repo/ops/runs/2026-01-01.ndjson"
-g add -A
-g commit -qm "pr: new run-log file"
-id_newlog=$(cid main newlog)
-g checkout -q main
-rec O 1 >"$repo/ops/runs/2026-01-01.ndjson"
-g add -A
-g commit -qm "main: the same new run-log file"
-g checkout -q newlog
-g rebase -q main
-same "a union rebase over the same new run-log file keeps the id" "$id_newlog" "$(cid main newlog)"
 # main changes a line within the PR hunk's three context lines: the id changes.
 g checkout -q main
 sed -i 's/^def v19 : Nat := 19$/def v19 : Nat := 190/' "$repo/A.lean"
@@ -272,7 +183,6 @@ differ "a rebase over a copy of the hunk's lines above it changes the id" "$id_p
 repo="$tmp/cfg"
 mkdir -p "$repo"
 g init -q -b main
-cp "$root/.gitattributes" "$repo/.gitattributes"
 mkdir -p "$repo/ops/runs"
 lean "  exact h" >"$repo/A.lean"
 printf 'one\n\ntwo\n\nthree\nfour\nfive\nsix\nseven\n' >"$repo/blank.txt"
@@ -357,56 +267,6 @@ refused "a name that starts with - is refused" '"--output=x" is not a revision' 
 g checkout -q --orphan other
 g commit -qm "unrelated root"
 refused "commits with no merge-base are refused" 'no merge-base' main other
-
-# Replay the updater's rebases: the 19 force-pushes by mitos-pr-updater[bot] on PRs #61 to #86 up
-# to 2026-11-09 09:25 UTC (the PR timelines), each with the head just before it (the last `ci`
-# run on the branch before the force-push, a plain push included). The old rule kept the id on
-# none of them. The content id keeps it on all but #62's two, where the rebase replayed an edit of
-# the PR's own run-log record and union kept both versions, a real change (#74). Run only where
-# those commits are in the clone (CI's checkout does not have them).
-heads="61 6ca77036fa2d3eaf5d5e53447d3af64c2a4668c3 11282769e7f0907593165eea6ef68150b9689269
-61 e197a4fcd997d9aa2b410ad93e0fd8dc76953f78 b14fa5a6ef8638b97d961ecff4e5200c8c92942f
-62 1d7d159db55b5532afdcfd579664619d19b1b6df 09a65980a7c56c0c535f906ea98a634cf8be8485
-62 d5828ef11311ab94cb17b704cdb97375d20d7d82 d60080fbadf74efc94a888743a60e72abc6e2536
-64 dd314f46093f8fb7e3147b3a10a9dfdc154086f8 c3184fe21eef9d0dfed1f34c1f64e940ce9022db
-64 c3184fe21eef9d0dfed1f34c1f64e940ce9022db d165747e5a037c5eb79c8b0c193a69653290644b
-65 4c2d2d36bbf8882f5857305c937b0dcb1e187bab 89c4d2d461e00c53e0c1aafbdaa941600b360e3d
-65 d183ff725ba9a5c7d465b3e38e9f2fb7a499ef09 882d62b7c9ffe14ee06756a1f18eaa395ecd8d7a
-65 402874afeaad537b35da0d345cacffe3df3139d8 db3a359051b2c8b377f75e96517c78ec73bf75c3
-73 f206d1f2bdf1c084aba8932ea49b1b5a4c034fff 79e5479b3332bc667d7904d62b856b034d6e0a55
-78 16feff883e34988e2a9a04f79fc9f0eae7f6f00d a7f21be99478254795186249b6a37ce2328939d4
-78 430c4cb01c83d44192c68fbab753897d3021b921 07d9fadbec2b16f005199000681db568691a3d21
-81 5901fed8c81a3a41619bee29edc4578461dba7b3 935efda6bba23380375ba1bcc8e4980424399ed2
-81 935efda6bba23380375ba1bcc8e4980424399ed2 bf1d1384b37e891085440fd546d19a6ea530edbb
-82 fd137193d8eb35ef847cd314f315482e238d6ecc 5d32d52c100f554a475f6bd830fd1aaed8273958
-82 fddbc83f34e99a17fc0960b9803d6e94a7672c5d d358c86e0eda9316aa1798c0114b72431940f5a7
-83 b9771fdcd31e0df4763bc6ec83f8770062e9a80c d944a75a7d53c20ccf5b1baf3625af12dfa9b189
-84 e7d9347beb1cc18213e09dd708930debedadd634 00e437d9c8a684c7213e7f157c563fde429f93c7
-86 b7dde79703a85426661ce1563cc43f033e794bd0 20341e2b2eca7e6bbe33a28358aae86172317b77"
-total=$(echo "$heads" | wc -l)
-repo="$root"
-if git -C "$root" rev-parse -q --verify origin/main >/dev/null &&
-  echo "$heads" | awk '{print $2; print $3}' | git -C "$root" cat-file --batch-check | grep -v ' commit ' >/dev/null; then
-  echo "skip replay: the replayed heads are not in this clone"
-elif git -C "$root" rev-parse -q --verify origin/main >/dev/null; then
-  kept_old=0; kept_new=0; changed=""
-  while read -r pr before after; do
-    o1=$(old origin/main "$before"); o2=$(old origin/main "$after")
-    n1=$(cid origin/main "$before"); n2=$(cid origin/main "$after")
-    [ -n "$n1" ] && [ -n "$n2" ] || { bad "replay: content id at #$pr ${after:0:7}"; continue; }
-    [ "$o1" = "$o2" ] && kept_old=$((kept_old + 1))
-    if [ "$n1" = "$n2" ]; then kept_new=$((kept_new + 1)); else changed="$changed #$pr:${after:0:7}"; fi
-    echo "  #$pr ${before:0:7} -> ${after:0:7}  old $([ "$o1" = "$o2" ] && echo kept || echo changed)  new $([ "$n1" = "$n2" ] && echo kept || echo changed)"
-  done <<<"$heads"
-  echo "  replay: old rule kept $kept_old of $total, content id kept $kept_new of $total; changed:$changed"
-  if [ "$kept_old" = 0 ] && [ "$kept_new" = 17 ] && [ "$changed" = " #62:09a6598 #62:d60080f" ]; then
-    ok "replay: old rule keeps 0 of 19 updater rebases, the content id 17 of 19"
-  else
-    bad "replay: old rule keeps 0 of 19 updater rebases, the content id 17 of 19"
-  fi
-else
-  echo "skip replay: no origin/main in this clone"
-fi
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

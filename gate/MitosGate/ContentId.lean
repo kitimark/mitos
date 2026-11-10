@@ -10,13 +10,12 @@ and `main`'s new run-log lines shift the context lines of each PR's own run-log 
 nearly every bot rebase, and every rebase needed a new verifier (#79). The content id stays put when
 only that happens, and changes on any other change.
 
-`mitos-gate content-id <base> <head>` prints `sha256 (preimage rest runs)` as 64 hex digits. With
+`mitos-gate content-id <base> <head>` prints `sha256 (preimage rest [])` as 64 hex digits. With
 `mb` the one merge-base of `<base>` and `<head>`:
 
-* `rest` is the SHA-256 of the diff from `mb` to `<head>` over every path that is not a run log
-  (`isRunLog`: `ops/runs/*.ndjson`, as `.gitattributes` matches it), after `normalize` against
-  each file's merge-base version. That drops each `index` line, which names the base blob, and
-  writes each hunk header as `@@ <k>`. The header's line numbers and function context, which
+* `rest` is the SHA-256 of the diff from `mb` to `<head>` over every path, after `normalize`
+  against each file's merge-base version. That drops each `index` line, which names the base blob,
+  and writes each hunk header as `@@ <k>`. The header's line numbers and function context, which
   move when `main` adds lines above the hunk, are gone. `k` counts how many times the hunk's
   old-side lines (its context and removed lines) start earlier in the merge-base file (`occ`), so
   with that file it names the one place where the hunk applies (`occ_inj`, `normalize_pos_ne`).
@@ -25,15 +24,6 @@ only that happens, and changes on any other change.
   the id, as long as `main` adds no copy of the hunk's old-side lines above it
   (`occ_append_left`, `occ_append_right`, `normalize_index`), and a change in any added, removed
   or context line changes it.
-* `runs` lists each run-log file the PR changes, with the lines the PR adds to it, sorted
-  (`RunLog.addedSorted?`), and whether the head file ends without a newline. The change must be
-  append-only, as `mitos-gate runlog` already requires
-  in CI: the file is added or modified, not deleted or changed in type, it is a regular file
-  (mode 100644) on both sides, and every merge-base line is still there. Otherwise the tool refuses
-  and prints no id (`RunLog.addedSorted?_eq_none_iff`, `RunLog.addedSorted?_edit`). The sorted lines
-  depend only on which lines the PR adds, not on where union put them among `main`'s
-  (`RunLog.addedSorted?_of_perm_append`), so a union rebase keeps them
-  (`RunLog.addedSorted?_union`).
 
 The id does not depend on the caller's git config or environment. Every option that changes what
 `git diff` prints is pinned (`diffArgs`, `rawArgs`), config without a flag is pinned with `-c`,
@@ -46,7 +36,7 @@ line no text diff has (`kind`, `.unknown`), and checks that the patch has exactl
 `--raw` lists, in its order, with the header git prints for each path (`diffHeader`).
 
 What the id leaves out, on purpose: the base blob of each file outside the hunks, which is
-`main`'s, and so also a hunk's line numbers; and where union put the added run-log lines. So a
+`main`'s, and so also a hunk's line numbers. So a
 rebase over a `main` change elsewhere in a file keeps the id, a binary file included, where
 `git patch-id` hashes a binary file's blob ids and changes. A `main` change within three lines of
 a PR hunk changes the id, because the verifier read that context, and so does a `main` change
@@ -56,139 +46,12 @@ the head needs a new verifier.
 The pure parts are proved or checked by the kernel here. The git calls, the parse of `--raw`, the
 block matching, which base file a block's hunks apply to (`baseLines`) and the hashing
 (`sha256sum`, as `Util.sha256`) are not proved, and the parse of a hunk header (`hunkOld`) is
-checked on examples only. `gate/content-id-test.sh` runs them on scratch repositories, with each
-git config variant, and replays the updater's rebases of the open PRs.
+checked on examples only.
 -/
-
-namespace MitosGate.RunLog
-
-/-! ## The lines a PR adds to a run-log file -/
-
-/-- The lines `head` adds over `base`: `head` with one occurrence of each line of `base` removed. -/
-def added : List String → List String → List String
-  | [], head => head
-  | b :: bs, head => added bs (head.erase b)
-
-theorem count_added (base head : List String) (l : String) :
-    (added base head).count l = head.count l - base.count l := by
-  induction base generalizing head with
-  | nil => simp [added]
-  | cons b bs ih =>
-    rw [added, ih, List.count_erase, List.count_cons]
-    split <;> omega
-
-/-- **#79's theorem.** A head that passes the append-only check is the base plus the lines `added`
-names, in some order. -/
-theorem appendOnly_iff_perm_added {base head : List String} :
-    appendOnly base head = true ↔ head.Perm (base ++ added base head) := by
-  constructor
-  · intro h
-    apply List.perm_iff_count.mpr
-    intro l
-    rw [List.count_append, count_added]
-    have := appendOnly_iff_count.mp h l
-    omega
-  · intro h
-    exact appendOnly_iff_perm_append.mpr ⟨_, h⟩
-
-/-- The lines `added` names are the lines the PR added, whatever order they are in: the same
-`added` means the same records. -/
-theorem added_perm_of_perm_append {base head a : List String} (h : head.Perm (base ++ a)) :
-    (added base head).Perm a := by
-  apply List.perm_iff_count.mpr
-  intro l
-  rw [count_added, List.perm_iff_count.mp h l, List.count_append]
-  omega
-
-/-- The order the content id lists added lines in: `String`'s `≤`, a total order. -/
-def sortLines (ls : List String) : List String :=
-  ls.mergeSort fun a b => decide (a ≤ b)
-
-theorem sortLines_eq_of_perm {l₁ l₂ : List String} (h : l₁.Perm l₂) :
-    sortLines l₁ = sortLines l₂ := by
-  have trans : ∀ a b c : String, decide (a ≤ b) = true → decide (b ≤ c) = true →
-      decide (a ≤ c) = true := fun _ _ _ hab hbc =>
-    decide_eq_true (String.le_trans (of_decide_eq_true hab) (of_decide_eq_true hbc))
-  have total : ∀ a b : String, (decide (a ≤ b) || decide (b ≤ a)) = true := fun a b => by
-    rcases String.le_total a b with h | h <;> simp [h]
-  apply List.Perm.eq_of_pairwise (le := fun a b => decide (a ≤ b) = true)
-  · intro a b _ _ hab hba
-    exact String.le_antisymm (of_decide_eq_true hab) (of_decide_eq_true hba)
-  · exact List.pairwise_mergeSort trans total _
-  · exact List.pairwise_mergeSort trans total _
-  · exact (List.mergeSort_perm _ _).trans (h.trans (List.mergeSort_perm _ _).symm)
-
-/-- The lines `head` adds over `base`, sorted, or `none` when `head` is not append-only. -/
-def addedSorted? (base head : List String) : Option (List String) :=
-  if appendOnly base head then some (sortLines (added base head)) else none
-
-theorem addedSorted?_eq_none_iff {base head : List String} :
-    addedSorted? base head = none ↔ appendOnly base head = false := by
-  unfold addedSorted?
-  cases appendOnly base head <;> simp
-
-/-- An edit to a base line, anywhere in the file, is refused. -/
-theorem addedSorted?_edit (p s : List String) {l l' : String} (hne : l ≠ l') :
-    addedSorted? (p ++ l :: s) (p ++ l' :: s) = none :=
-  addedSorted?_eq_none_iff.mpr (appendOnly_edit p s hne)
-
-/-- A deleted base line is refused. -/
-theorem addedSorted?_delete (p s : List String) (l : String) :
-    addedSorted? (p ++ l :: s) (p ++ s) = none :=
-  addedSorted?_eq_none_iff.mpr (appendOnly_delete p s l)
-
-/-- The result depends only on the lines the PR adds: a head that is the base plus `a`, in any
-order, gives `a` sorted. -/
-theorem addedSorted?_of_perm_append {base head a : List String} (h : head.Perm (base ++ a)) :
-    addedSorted? base head = some (sortLines a) := by
-  have hb : appendOnly base head = true := appendOnly_iff_perm_append.mpr ⟨a, h⟩
-  simp only [addedSorted?, hb, ↓reduceIte, sortLines_eq_of_perm (added_perm_of_perm_append h)]
-
-/-- **A union rebase keeps the run-log part of the id.** The PR's head is its merge-base `mb` plus
-lines `a`; `main` is `mb` plus lines `m`. Rebasing with union gives a head that is some order of
-`mb ++ a ++ m`, the model of union stated at `union_appendOnly`. Against the new merge-base,
-`main`, the rebased head adds the same lines as before. -/
-theorem addedSorted?_union {mb main a m head head' : List String}
-    (hhead : head.Perm (mb ++ a)) (hmain : main.Perm (mb ++ m))
-    (hunion : head'.Perm (mb ++ a ++ m)) :
-    addedSorted? main head' = addedSorted? mb head := by
-  rw [addedSorted?_of_perm_append hhead]
-  apply addedSorted?_of_perm_append
-  have hswap : (mb ++ a ++ m).Perm (mb ++ m ++ a) := by
-    rw [List.append_assoc, List.append_assoc]
-    exact List.Perm.append_left mb List.perm_append_comm
-  exact hunion.trans (hswap.trans (hmain.append_right a).symm)
-
-example : added ["A", "B"] ["A", "B", "D", "C"] = ["D", "C"] := by decide
-/-- Union put `main`'s `M` between the PR's `C` and `D`. -/
-example : added ["A", "B", "M"] ["A", "B", "C", "M", "D"] = ["C", "D"] := by decide
-example : added ["A", "A"] ["A", "B", "A", "A"] = ["B", "A"] := by decide
-example : addedSorted? ["A", "B"] ["A", "B'", "C"] = none := by decide
-example : addedSorted? ["A", "B"] ["A", "C"] = none := by decide
-example : addedSorted? ["A", "A"] ["A", "B"] = none := by decide
-
-end MitosGate.RunLog
 
 namespace MitosGate.ContentId
 
-open RunLog (quote addedSorted? firstMissing? splitLines)
-
-/-! ## Which paths are run logs -/
-
-/-- `ops/runs/*.ndjson` as `.gitattributes` matches it: the files directly in `ops/runs/` whose
-name ends in `.ndjson`, a name that starts with a dot and the bare `.ndjson` included. The same
-set as the day files `RunLog.readTree` reads, which `mitos-gate runlog` checks. -/
-def isRunLog (p : String) : Bool :=
-  let cs := p.toList
-  "ops/runs/".toList.isPrefixOf cs && ".ndjson".toList.isSuffixOf cs && !(cs.drop 9).contains '/'
-
-example : isRunLog "ops/runs/2026-11-09.ndjson" = true := by decide
-example : isRunLog "ops/runs/.ndjson" = true := by decide
-example : isRunLog "ops/runs/.x.ndjson" = true := by decide
-example : isRunLog "ops/runs/sub/x.ndjson" = false := by decide
-example : isRunLog "ops/runs/README.md" = false := by decide
-example : isRunLog "ops/runs.ndjson" = false := by decide
-example : isRunLog "x/ops/runs/a.ndjson" = false := by decide
+open RunLog (quote splitLines)
 
 /-! ## The lines of the pinned diff -/
 
@@ -688,8 +551,6 @@ def runsText (runs : List RunFile) : String :=
     s!"file {f.path.length}:{f.path}\n" ++ String.join (f.lines.map fun l => s!"+{l.length}:{l}\n") ++
       (if f.noEol then "noeol\n" else "")
 
-/-- The bytes the id is the SHA-256 of. `rest` is the hex SHA-256 of the normalized diff outside
-the run logs. -/
 def preimage (rest : String) (runs : List RunFile) : String :=
   "rest " ++ rest ++ "\nruns\n" ++ runsText runs
 
@@ -817,30 +678,6 @@ where
 def blob (oid : String) : M String :=
   return latin1 (← git #["cat-file", "blob", oid])
 
-/-- The lines the PR adds to the run-log file `e`, sorted, or why it refuses. -/
-def runLogLines (e : Entry) : M RunFile := do
-  let regular := "a run-log file must be a regular file with mode 100644"
-  let (base, head) ← match e.status with
-    | "A" =>
-      unless e.newMode == "100644" do throw s!"{quote e.path} is added with mode {e.newMode}; {regular}"
-      pure ("", ← blob e.newOid)
-    | "M" =>
-      unless e.oldMode == "100644" && e.newMode == "100644" do
-        throw s!"{quote e.path} changes mode from {e.oldMode} to {e.newMode}; {regular}"
-      pure (← blob e.oldOid, ← blob e.newOid)
-    | "D" => throw s!"{quote e.path} is deleted. Run-log files are append-only (ops/runs/README.md)"
-    | st => throw s!"{quote e.path} changes in type (status {quote st}); {regular}"
-  let (base, noEol) := (splitLines base, !head.isEmpty && !head.endsWith "\n")
-  let head := splitLines head
-  match addedSorted? base head with
-  | some ls => return ⟨e.path, ls, noEol⟩
-  | none =>
-    -- `some`, by `firstMissing?_eq_none_iff` and `addedSorted?_eq_none_iff`.
-    let i := (firstMissing? base head).getD 0
-    throw (s!"line {i + 1} of the merge-base version of {quote e.path} is missing at the head. " ++
-      "Run-log lines are append-only: a line already on the base branch may not be edited or " ++
-      "deleted (ops/runs/README.md)")
-
 /-- The lines of the file a block's hunks apply to: none when the block adds the file, the line
 `--submodule=short` prints for a submodule, and the merge-base blob's lines otherwise. -/
 def baseLines (e : Entry) (blk : List String) : M (List String) := do
@@ -873,7 +710,6 @@ def compute (base head : String) : M Result := do
   let mut left ← ExceptT.mk (pure (splitBlocks patch))
   let mut rest : Array String := #[]
   let mut restFiles := 0
-  let mut runs : Array RunFile := #[]
   for e in entries do
     -- A change of type (file, symlink, submodule) is two blocks: a deletion and an addition.
     let n := if e.status == "T" then 2 else 1
@@ -881,19 +717,16 @@ def compute (base head : String) : M Result := do
     left := left.drop n
     unless mine.length == n && mine.all (·.head? == some (diffHeader e.path)) do
       throw s!"the diff and the --raw listing disagree at {quote e.path}"
-    if isRunLog e.path then
-      runs := runs.push (← runLogLines e)
-    else
-      restFiles := restFiles + 1
-      for blk in mine do
-        let fileBase ← if blk.any (kind · == .hunkHeader) then baseLines e blk else pure []
-        match normalize fileBase blk with
-        | some ls => rest := rest ++ ls.toArray
-        | none => throw s!"a hunk of {quote e.path} does not fit the merge-base version of the file"
+    restFiles := restFiles + 1
+    for blk in mine do
+      let fileBase ← if blk.any (kind · == .hunkHeader) then baseLines e blk else pure []
+      match normalize fileBase blk with
+      | some ls => rest := rest ++ ls.toArray
+      | none => throw s!"a hunk of {quote e.path} does not fit the merge-base version of the file"
   unless left.isEmpty do throw "the diff has a file block that the --raw listing does not have"
   let restHex ← sha256Hex (latin1Bytes (String.join (rest.toList.map (· ++ "\n"))))
-  let id ← sha256Hex (latin1Bytes (preimage restHex runs.toList))
-  return { mergeBase := mb, rest := restHex, restFiles, runs := runs.toList, id }
+  let id ← sha256Hex (latin1Bytes (preimage restHex []))
+  return { mergeBase := mb, rest := restHex, restFiles, runs := [], id }
 
 /-- A line for a CI log: `oneLine`, and the legacy workflow-command marker `##[`, which GitHub's
 runner reads anywhere in a line, written with `oneLine`'s escape for its `[` (#68). Every line
@@ -903,8 +736,7 @@ def logLine (s : String) : String :=
 
 /-- `mitos-gate content-id <base> <head> [--verbose]`. Prints the id on standard output, exit 0;
 or one line on standard error, through `logLine`, with exit 1 when it refuses and 2 on a usage
-error. `--verbose` also prints the merge-base, the `rest` digest and the run-log files with their
-counts of added lines, and whether each ends without a newline, on standard error. -/
+error. `--verbose` also prints the merge-base and the `rest` digest on standard error. -/
 def cli (args : List String) (usage : String) : IO UInt32 := do
   let verbose := args.contains "--verbose"
   match args.filter (· != "--verbose") with
@@ -914,10 +746,7 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
       | .ok r =>
         if verbose then
           IO.eprintln s!"merge-base {r.mergeBase}"
-          IO.eprintln s!"rest {r.rest} ({r.restFiles} file(s) outside the run logs)"
-          for f in r.runs do
-            let eol := if f.noEol then ", no newline at end of file" else ""
-            IO.eprintln (logLine s!"runs {quote f.path (max := 200)}: {f.lines.length} added line(s){eol}")
+          IO.eprintln s!"rest {r.rest} ({r.restFiles} file(s))"
         IO.println r.id
         return 0
       | .error e =>
