@@ -1,12 +1,15 @@
 # shellcheck shell=bash
 # Sourced by pr-state.sh, which writes a session's .sha and .note files, and check-agent-spawn.sh,
 # which puts the note into agent briefs. Another local user must not choose that text or turn a
-# write into a write elsewhere (CWE-59, CWE-367). So the folder is used only by its physical path
-# (symlinks above it resolved), and only when no other user can change any part of that path: the
-# folder is a real folder, not a symlink, of this user with no group or other write bit, and every
-# folder above it belongs to this user or root and has no group or other write bit unless it is
-# sticky, as /tmp is, where nobody else can rename an entry they do not own. No file in it is read
-# or written through a symlink. The default is per user, so that nobody else can create it first.
+# write into a write elsewhere (CWE-59, CWE-367). So the folder's name is resolved one part at a
+# time, following each symlink as the kernel does, and the folder is used, and a missing folder on
+# the way made, only by the physical path that gives, and only when no other user can change where
+# the name leads: every folder a part is looked up in, the parts of a symlink's target included,
+# belongs to this user or root and has no group or other write bit unless it is sticky, as /tmp
+# is, where nobody else can rename an entry they do not own; every symlink on the way belongs to
+# this user or root; and the folder is a real folder, not a symlink, of this user with no group or
+# other write bit. No file in it is read or written through a symlink. The default is per user, so
+# that nobody else can create it first.
 
 hook_state_dir() {
   local d=${MITOS_HOOK_STATE:-}
@@ -20,19 +23,46 @@ hook_state_dir() {
   printf '%s\n' "$d"
 }
 
+# Prints the physical path of an absolute name, resolved one part at a time as the kernel does, when
+# each folder a part is looked up in belongs to this user or root and has no group or other write
+# bit unless it is sticky, and each symlink on the way belongs to this user or root. Every folder
+# above the result was looked up in on the way. With "make", a missing folder is made, with mode
+# 700, in a folder that passed. It follows at most 40 symlinks.
+hook_state_resolve() { # name, uid, [make]
+  local cur=/ rest=$1 c n t links=0
+  while [ -n "$rest" ]; do
+    c=${rest%%/*}
+    if [[ $rest == */* ]]; then rest=${rest#*/}; else rest=''; fi
+    case $c in
+      '' | .) continue ;;
+      ..) cur=${cur%/*}; cur=${cur:-/}; continue ;;
+    esac
+    [ -n "$(find "$cur" -prune -type d \( -user "$2" -o -user 0 \) \
+      \( -perm -1000 -o \( ! -perm -g+w ! -perm -o+w \) \) -print 2>/dev/null)" ] || return 1
+    n=${cur%/}/$c
+    if [ -L "$n" ]; then
+      links=$((links + 1))
+      [ "$links" -le 40 ] || return 1
+      [ -n "$(find "$n" -prune -type l \( -user "$2" -o -user 0 \) -print 2>/dev/null)" ] || return 1
+      t=$(readlink -- "$n") || return 1
+      [[ $t == /* ]] && cur=/
+      rest=$t/$rest
+    elif [ -d "$n" ] || { [ "${3:-}" = make ] && (umask 077 && mkdir -- "$n") 2>/dev/null; }; then
+      cur=$n
+    else
+      return 1
+    fi
+  done
+  printf '%s\n' "$cur"
+}
+
 # Prints the folder's physical path when it is private.
 hook_state_private() { # dir
-  local uid p a
+  local uid p
   uid=$(id -u) || return 1
   [ -n "$(find "$1" -prune -type d -print 2>/dev/null)" ] || return 1
-  p=$(cd -P "$1" 2>/dev/null && pwd -P) || return 1
+  p=$(hook_state_resolve "$1" "$uid") || return 1
   [ -n "$(find "$p" -prune -type d -user "$uid" ! -perm -g+w ! -perm -o+w -print 2>/dev/null)" ] || return 1
-  a=$p
-  while [ "$a" != / ]; do
-    a=${a%/*}; a=${a:-/}
-    [ -n "$(find "$a" -prune -type d \( -user "$uid" -o -user 0 \) \
-      \( -perm -1000 -o \( ! -perm -g+w ! -perm -o+w \) \) -print 2>/dev/null)" ] || return 1
-  done
   printf '%s\n' "$p"
 }
 
@@ -41,7 +71,7 @@ hook_state_private() { # dir
 hook_state_open() {
   local d
   d=$(hook_state_dir) || return 1
-  [ -e "$d" ] || [ -L "$d" ] || (umask 077 && mkdir -p "$d") 2>/dev/null
+  [ -e "$d" ] || [ -L "$d" ] || hook_state_resolve "$d" "$(id -u)" make >/dev/null
   hook_state_private "$d"
 }
 

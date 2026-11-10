@@ -819,6 +819,53 @@ mkdir -m 700 "$work/rp" "$work/rp/st"
 ln -s "$work/rp" "$work/lp"
 srun MITOS_HOOK_STATE="$work/lp/st" "$ss"
 same_text "a folder reached through a symlinked parent is used by its real path" "$work/rp/st/s1.sha" "$A"
+mkdir -m 700 "$work/rk" "$work/rk/a" "$work/rk/stk" "$work/stk"
+ln -s "$work/rk/a" "$work/lk"
+srun MITOS_HOOK_STATE="$work/lk/../stk" "$ss"
+same_text "a '..' after a symlink goes up from its target, as in the kernel" "$work/rk/stk/s1.sha" "$A"
+mkdir -m 700 "$work/rr" "$work/rr/st"
+ln -s rr "$work/lrr"
+srun MITOS_HOOK_STATE="$work/lrr/st" "$ss"
+same_text "a relative symlink is followed from its own folder" "$work/rr/st/s1.sha" "$A"
+empty_dir "a '..' after a symlink: the folder beside the symlink is not written" "$work/stk"
+mkdir -m 700 "$work/rs" "$work/rs/st"
+ln -s "$work/rs" "$work/sp/mine"
+srun MITOS_HOOK_STATE="$work/sp/mine/st" "$ss"
+same_text "a symlink of this user in a sticky folder is followed" "$work/rs/st/s1.sha" "$A"
+
+# A symlink on the way counts only in a folder no other user can change, and so does each part of
+# its target. Otherwise another user points the name at any private folder of this user.
+mkdir -m 700 "$work/victim" "$work/victim/.ssh"
+mkdir "$work/shared"; chmod 777 "$work/shared"
+ln -s "$work/victim" "$work/shared/team"
+srun MITOS_HOOK_STATE="$work/shared/team/.ssh" "$ss"
+empty_dir "a symlink in a folder others can write, to a private folder: nothing is written" "$work/victim/.ssh"
+expect "a symlink in a folder others can write, to a private folder: it is refused" "$refused"
+srun MITOS_HOOK_STATE="$work/shared/team/new" "$ss"
+if [ "$(entries "$work/victim")" = .ssh ]; then pass "a symlink in a folder others can write: no missing folder is made through it"; else fail "made through a symlink: $(entries "$work/victim")"; fi
+mkdir -m 700 "$work/pt" "$work/pt/st"
+mkdir "$work/wt"; chmod 777 "$work/wt"
+ln -s "$work/pt" "$work/wt/l2"
+ln -s "$work/wt/l2" "$work/lt"
+srun MITOS_HOOK_STATE="$work/lt/st" "$ss"
+empty_dir "a symlink whose target passes a symlink in a folder others can write: nothing is written" "$work/pt/st"
+expect "a symlink whose target passes a symlink in a folder others can write: it is refused" "$refused"
+if [ "$(id -u)" = 0 ]; then
+  mkdir -m 700 "$work/victim2" "$work/victim2/.ssh"
+  mkdir -m 755 "$work/oshared"; ln -s "$work/victim2" "$work/oshared/team"; chown 65534 "$work/oshared"
+  srun MITOS_HOOK_STATE="$work/oshared/team/.ssh" "$ss"
+  empty_dir "a symlink in a folder of another user, to a private folder: nothing is written" "$work/victim2/.ssh"
+  expect "a symlink in a folder of another user, to a private folder: it is refused" "$refused"
+  ln -s "$work/victim2" "$work/sp/theirs"; chown -h 65534 "$work/sp/theirs"
+  srun MITOS_HOOK_STATE="$work/sp/theirs/.ssh" "$ss"
+  empty_dir "a symlink of another user in a sticky folder: nothing is written" "$work/victim2/.ssh"
+  expect "a symlink of another user in a sticky folder: it is refused" "$refused"
+fi
+ln -s loop "$work/loop"
+# shellcheck disable=SC2016 # the inner shell expands them
+r=$(timeout 20 bash -c '. "$1" && hook_state_resolve "$2" "$(id -u)"' _ "${hook%/*}/hook-state.sh" "$work/loop/st")
+code=$?
+if [ "$code" = 1 ] && [ -z "$r" ]; then pass "a symlink loop is refused"; else fail "a symlink loop: exit $code, '$r'"; fi
 
 mkdir -m 700 "$work/st-u"
 srun MITOS_HOOK_STATE="$work/st-u" PATH="$work/otheruser:$work/bin:$PATH" "$ss"
