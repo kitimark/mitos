@@ -672,8 +672,31 @@ def judge (c : Config) (i : Inputs) (chal adequacyChal : String) : GateM Unit :=
     if passed?.isSome then atGate .sandbox close
     else tryCatchThe IO.Error close fun e => report .sandbox false s!"I/O error: {e}"
 
+/-- Write `text` to `file` by flushing `tmp` and renaming it over `file`, so a reader sees the old
+file or the new one. `.writeNew` creates `tmp` or fails, and a failure of that open leaves the
+path as it was: this run did not create it, so the catches do not remove it. A failure after the
+open removes `tmp`. The flush raises a failed write here; `IO.FS.writeFile` leaves it to the
+handle's finalizer, which drops it, and a short file would be renamed over `file`. Nothing fsyncs
+before the rename. Lean v4.35 has no fsync primitive, so a machine crash can drop the new file. -/
+def writeByRename (tmp file : System.FilePath) (text : String) : IO Unit := do
+  IO.FS.withFile tmp .writeNew fun h => do
+    try
+      h.putStr text
+      h.flush
+    catch e =>
+      try IO.FS.removeFile tmp catch _ => pure ()
+      throw e
+  try
+    IO.FS.rename tmp file
+  catch e =>
+    try IO.FS.removeFile tmp catch _ => pure ()
+    throw e
+
 /-- The record of an accepted plugin, written to a file of its own in `accepted/` and renamed over
-the old record, so a reader sees the old record or the new one, never part of one. -/
+the old record, so a reader sees the old record or the new one, never part of one. `writeByRename`
+does not fsync before the rename, so a machine crash can drop the new record. A SIGKILL between
+the flush and the rename leaves `accepted/.<plugin>.json.<pid>.tmp`. That file is not the record,
+and this run does not remove a temp file it did not create, so the leftover stays. -/
 def writeRecord (c : Config) (i : Inputs) (chal adequacyChal : String) : IO Unit := do
   let mut coreCat := ""
   for (rel, txt) in i.core do coreCat := coreCat ++ rel ++ "\n" ++ txt
@@ -693,16 +716,11 @@ def writeRecord (c : Config) (i : Inputs) (chal adequacyChal : String) : IO Unit
   let file := dir / s!"{c.plugin}.json"
   let tmp := dir / s!".{c.plugin}.json.{← IO.Process.getPID}.tmp"
   IO.FS.createDirAll dir
-  -- `.writeNew` creates the file or fails, so nothing planted at `tmp` is followed. The flush
-  -- raises a failed write here: `IO.FS.writeFile` leaves it to the handle's finalizer, which drops
-  -- it, and a short temp file would be renamed over the old record. On any error the temp file is
-  -- removed and the record step fails, so the old record stays.
-  try
-    IO.FS.withFile tmp .writeNew fun h => do h.putStr rec_; h.flush
-    IO.FS.rename tmp file
-  catch e =>
-    try IO.FS.removeFile tmp catch _ => pure ()
-    throw e
+  -- The temp name carries this process's pid. A later run does not remove a leftover from a
+  -- SIGKILL: its own temp path is different, and `writeByRename` removes a file only after this
+  -- run has created it. A reused pid is the collision. `.writeNew` fails, the leftover stays,
+  -- and the old record stays.
+  writeByRename tmp file rec_
   IO.println (ciLine s!"recorded {file}")
 
 def runAccept (c : Config) : IO UInt32 := do
