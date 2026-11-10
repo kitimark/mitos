@@ -6,7 +6,7 @@
 #   - a new open PR, and an open PR's labels or assignees, when they change;
 #   - the head and finished checks of an open PR from the owner's account, when they change;
 #   - CodeRabbit's check reading `skipped` at the head of such a PR while the owner is assigned to
-#     it, once per head, so a PR handed over without the bot's review shows (bot-review.sh);
+#     it, once per head;
 #   - a move of main;
 #   - a comment or review from the owner's account that does not end with the Claude Code footer,
 #     which marks an agent's post, with its id. A footer in a quote above the owner's own text
@@ -76,10 +76,9 @@ for tool in gh jq git flock timeout; do
 done
 now_s() { if [ -n "$fixed_now" ]; then echo "$fixed_now"; else date -u +%s; fi; }
 
-# owner/name from the origin URL (https, ssh or proxy form).
-url=$(git -C "${CLAUDE_PROJECT_DIR:-.}" remote get-url origin 2>/dev/null) || die "no origin remote"
-repo=$(sed -E 's#/+$##; s#\.git$##; s#^.*[/:]([^/:]+/[^/:]+)$#\1#' <<<"$url")
-[[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "origin is not owner/name"
+# shellcheck source-path=SCRIPTDIR source=lib/origin-repo.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/origin-repo.sh"
+origin_repo
 
 mkdir -p "$dir" 2>/dev/null || die "cannot make the state directory"
 touch "$dir/lock" 2>/dev/null || die "cannot write the state directory"
@@ -169,6 +168,21 @@ confirm_missing_runs() {
     printf '%s\t%s\n' "$key" "$rest" >>"$w/always.ok"
   done <"$w/always"
   mv "$w/always.ok" "$w/always" || return 1
+}
+
+# One event per open PR assigned to the owner whose newest CodeRabbit run at the head is skipped.
+coderabbit_skipped_events() {
+  local n sha
+  while read -r n sha; do
+    jq -r --arg owner "$owner" --arg n "$n" --arg sha "$sha" --slurpfile open "$w/open.json" "$defs"'
+      def assigned_to_owner: any($open[][]; (.number | tostring) == $n and any(.assignees[]?; .login == $owner));
+      select(assigned_to_owner)
+      | [.check_runs[] | select(.name == "CodeRabbit" and .app.slug == "coderabbitai")] | max_by(.id)
+      | select(. != null and .conclusion == "skipped")
+      | "coderabbit-skipped \($n) \($sha)\t1\tpr #\($n) coderabbit skipped at \($sha[0:7]) while assigned\(
+          if (.output.title // "") == "" then "" else ": \(.output.title | clean(60))" end)"' \
+      "$w/checks-$n.json" || return 1
+  done <"$w/heads"
 }
 
 # One poll into $w. Any failed call or unexpected JSON fails the whole poll, so a partial read
@@ -289,17 +303,7 @@ poll() {
         | "review \(.id | num)\t0\towner review \(.id | num) on #\($n): \(.state | ascii_downcase | clean(20)): \(.body // "" | clean(120))"' \
         "$w/reviews-$n.json" || return 1
     done <"$w/heads" &&
-    # CodeRabbit's newest run at the head, from its own app, skipped (paused or refused) while the
-    # owner is assigned: the PR is in the owner's hands without the bot's review of that head.
-    while read -r n sha; do
-      jq -r --arg owner "$owner" --arg n "$n" --arg sha "$sha" --slurpfile open "$w/open.json" "$defs"'
-        select(any($open[][]; (.number | tostring) == $n and any(.assignees[]?; .login == $owner)))
-        | [.check_runs[] | select(.name == "CodeRabbit" and .app.slug == "coderabbitai")] | max_by(.id)
-        | select(. != null and .conclusion == "skipped")
-        | "coderabbit-skipped \($n) \($sha)\t1\tpr #\($n) coderabbit skipped at \($sha[0:7]) while assigned\(
-            if (.output.title // "") == "" then "" else ": \(.output.title | clean(60))" end)"' \
-        "$w/checks-$n.json" || return 1
-    done <"$w/heads"
+    coderabbit_skipped_events
   } >"$w/events" 2>/dev/null || return 1
 }
 

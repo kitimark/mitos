@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Says whether CodeRabbit has reviewed the current head of a PR, so that a catch-up never hands the
-# owner a PR the bot has not reviewed (kitimark-mode skill, Catching the user up). It reads REST
-# through `gh api` (GraphQL is blocked in these sessions): the PR's head, CodeRabbit's check run at
-# that head, its reviews and its summary comment.
-#
 # Usage: bot-review.sh <pr> [--request]
 #
 # It prints one line, `coderabbit #<pr>: <state>`:
@@ -23,14 +18,7 @@
 #                                              before the run ends; or it has not started
 # The other states exit 1. `<sha>` is `none` when it has never reviewed the PR. The last reviewed
 # commit is the one its summary comment names under "Reviews paused", else the commit of its newest
-# review with a body; a review with an empty body is only its reply in a thread. With no CodeRabbit
-# check at the head, its summary comment decides: paused under "Reviews paused", and under "Review
-# skipped" refused or behind, as for a check; otherwise pending. Any skip that is not a pause or
-# the file limit reads behind, so that a request is tried before the owner gets the PR.
-#
-# A head that only rebases content CodeRabbit reviewed reads paused or behind, not reviewed: its
-# check at such a head reads `Review paused` too, and telling a rebase from a change needs the old
-# head's commits and `mitos-gate carry`, which builds Lean. One requested review costs less.
+# review with a body; a review with an empty body is only its reply in a thread.
 #
 # --request, on paused or behind, on an open PR: posts one `@coderabbitai review` comment that ends
 # with the Claude Code footer, and prints `coderabbit #<pr>: requested a review in comment <id>`.
@@ -38,11 +26,9 @@
 # a member of the repository, newer than CodeRabbit's check at the head, with no CodeRabbit comment
 # after it.
 #
-# Only GitHub's own fields decide who wrote what: the check's app must be `coderabbitai`, and the
-# reviews and the summary must come from `coderabbitai[bot]`. Of GitHub's text it prints only
-# commit SHAs, checked as hex, and the refusal reason, cut to letters, digits and plain punctuation
-# and to 80 characters. Each call has a 20 s timeout. An error prints one `bot-review:` line and
-# exits 2. The origin URL is never printed, because it can carry a credential.
+# Of GitHub's text it prints only commit SHAs, checked as hex, and the refusal reason, cut to
+# letters, digits and plain punctuation and to 80 characters. An error prints one `bot-review:` line
+# and exits 2. The origin URL is never printed, because it can carry a credential.
 set -u
 
 say() { printf 'bot-review: %s\n' "$1"; }
@@ -63,30 +49,30 @@ for tool in gh jq git timeout; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"
 done
 
-# owner/name from the origin URL (https, ssh or proxy form), as in watch-github.sh.
-url=$(git -C "${CLAUDE_PROJECT_DIR:-.}" remote get-url origin 2>/dev/null) || die "no origin remote"
-repo=$(sed -E 's#/+$##; s#\.git$##; s#^.*[/:]([^/:]+/[^/:]+)$#\1#' <<<"$url")
-[[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "origin is not owner/name"
+# shellcheck source-path=SCRIPTDIR source=lib/origin-repo.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/origin-repo.sh"
+origin_repo
 
 w=$(mktemp -d 2>/dev/null) || die "cannot make a temp dir"
 trap 'rm -rf "$w"' EXIT
-api() { # file, then gh api arguments; fails on any error or a timeout
-  timeout -k 2 20 gh api "${@:2}" >"$w/$1" 2>/dev/null </dev/null
+gh_api_to() {
+  local file=$1
+  shift
+  timeout -k 2 20 gh api "$@" >"$w/$file" 2>/dev/null </dev/null
 }
 
-api pr.json "repos/$repo/pulls/$pr" || die "cannot read PR #$pr"
+gh_api_to pr.json "repos/$repo/pulls/$pr" || die "cannot read PR #$pr"
 head=$(jq -r '.head.sha' "$w/pr.json" 2>/dev/null)
 [[ $head =~ ^[0-9a-f]{40}$ ]] || die "PR #$pr has no head commit"
-api checks.json "repos/$repo/commits/$head/check-runs?check_name=CodeRabbit&filter=all&per_page=100" \
+gh_api_to checks.json "repos/$repo/commits/$head/check-runs?check_name=CodeRabbit&filter=all&per_page=100" \
   || die "cannot read the checks at the head of PR #$pr"
-api reviews.json --paginate --slurp "repos/$repo/pulls/$pr/reviews?per_page=100" \
+gh_api_to reviews.json --paginate --slurp "repos/$repo/pulls/$pr/reviews?per_page=100" \
   || die "cannot read the reviews of PR #$pr"
-api comments.json --paginate --slurp "repos/$repo/issues/$pr/comments?per_page=100" \
+gh_api_to comments.json --paginate --slurp "repos/$repo/issues/$pr/comments?per_page=100" \
   || die "cannot read the comments of PR #$pr"
 
-# One tab-separated line: state, last reviewed commit, refusal reason, open request id, PR state.
-# An empty field is `-`, because `read` joins adjacent tabs. A field of the wrong shape fails jq.
-# shellcheck disable=SC2016 # jq variables, not shell ones
+# An empty field is `-`, because `read` joins adjacent tabs.
+# shellcheck disable=SC2016
 out=$(jq -n -r --arg head "$head" --arg bot 'coderabbitai[bot]' \
   --slurpfile pr "$w/pr.json" --slurpfile checks "$w/checks.json" \
   --slurpfile reviews "$w/reviews.json" --slurpfile comments "$w/comments.json" '
@@ -108,9 +94,9 @@ out=$(jq -n -r --arg head "$head" --arg bot 'coderabbitai[bot]' \
   | [$comments[0] | arr | .[] | arr | .[] | select((.id | type) == "number")] as $all
   | [$all[] | select(.user.login == $bot)] as $botc
   | ([$botc[] | select(.body // "" | contains("<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"))]
-     | min_by(.id) | .body // "") as $sb
-  | ($sb | contains("<!-- This is an auto-generated comment: review paused by coderabbit.ai -->")) as $pausednote
-  | ((if $pausednote then [$sb | capture("Last reviewed commit: (?<s>[0-9a-f]{40})")] | .[0].s
+     | min_by(.id) | .body // "") as $summary
+  | ($summary | contains("<!-- This is an auto-generated comment: review paused by coderabbit.ai -->")) as $pausednote
+  | ((if $pausednote then [$summary | capture("Last reviewed commit: (?<s>[0-9a-f]{40})")] | .[0].s
       else null end) // $review.commit_id // "-") as $last
   | (if $run == null then null else $run.completed_at end) as $since
   | ([$all[] | select((.author_association // "") | IN("OWNER", "MEMBER", "COLLABORATOR"))
@@ -130,8 +116,8 @@ out=$(jq -n -r --arg head "$head" --arg bot 'coderabbitai[bot]' \
         else ["behind", "-"] end
     elif $run != null then ["behind", "-"]
     elif $pausednote then ["paused", "-"]
-    elif ($sb | test("## Review skipped")) then
-      ([$sb | capture("## Review skipped[ \\t]*\\n(>[ \\t]*\\n)*>?[ \\t]*(?<r>[^\\n]+)")] | .[0].r // "") as $r
+    elif ($summary | test("## Review skipped")) then
+      ([$summary | capture("## Review skipped[ \\t]*\\n(>[ \\t]*\\n)*>?[ \\t]*(?<r>[^\\n]+)")] | .[0].r // "") as $r
       | if ($r | limit) then ["refused", ($r | clean)] else ["behind", "-"] end
     else ["pending", "-"] end
   | [.[0], $last, .[1], $open, ($pr[0].state | tostring | clean)] | join("\t")' 2>/dev/null) \
@@ -159,7 +145,7 @@ if [ "$request" = 1 ] && [[ $state == paused || $state == behind ]]; then
     # -f sends the body as a string; -F would read a file named after the `@`.
     body=$(printf '@coderabbitai review\n\nThe head is %s, and CodeRabbit last reviewed %s (%s).\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_' \
       "$h" "$l" "$state")
-    api posted.json -X POST "repos/$repo/issues/$pr/comments" -f "body=$body" \
+    gh_api_to posted.json -X POST "repos/$repo/issues/$pr/comments" -f "body=$body" \
       || die "cannot post the review request on PR #$pr"
     id=$(jq -r '.id | select(type == "number")' "$w/posted.json" 2>/dev/null)
     [[ $id =~ ^[0-9]+$ ]] || die "GitHub did not return the id of the request on PR #$pr"
