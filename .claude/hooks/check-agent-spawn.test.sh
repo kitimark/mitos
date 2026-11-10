@@ -100,9 +100,8 @@ lacks "only the note's first line is read" \
 lacks "a session id that names a path reads no file" \
   '{"session_id":"../state/s1","tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","run_in_background":true,"prompt":"p"}}' "first line"
 
-# The note is read only from a private folder of this user, and never through a symlink.
 spawn='{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"opus","effort":"xhigh","run_in_background":true,"prompt":"p"}}'
-with_note() { # folder: makes it private and puts the note in it
+with_note() {
   mkdir -p "$1"; chmod 700 "$1"; printf '%s\n' "$note" >"$1/s1.note"
 }
 printf '%s\n' "$note" >"$work/planted"

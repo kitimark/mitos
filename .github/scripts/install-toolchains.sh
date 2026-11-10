@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
-# Install every Lean toolchain named by a lean-toolchain file in the checkout, with retries.
-#
-# Run this after the cache restore and install-elan.sh. A toolchain already in ~/.elan costs no
-# download. A missing one comes from GitHub releases, which can return 5xx during an outage, so
-# each install is retried. Fails closed: after the last attempt the step fails.
 set -euo pipefail
 
 export PATH="$HOME/.elan/bin:$PATH"
 attempts=5
 delay="${INSTALL_RETRY_DELAY:-10}"
 
-# .lake holds dependency checkouts, which carry their own lean-toolchain files.
 toolchains=$(find . -name lean-toolchain -not -path '*/.lake/*' -print0 \
   | while IFS= read -r -d '' f; do cat "$f"; echo; done | sed '/^[[:space:]]*$/d' | sort -u)
 

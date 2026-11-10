@@ -4,7 +4,7 @@ name: owner-ping
 # So when an issue or PR is assigned to the owner, this job comments as github-actions[bot], a
 # different actor, and its @mention notifies the owner (kitimark-mode skill, "Catching the user
 # up"). pull_request_target runs this file from the default branch, so it also covers PRs stacked
-# on another branch. It never checks out or runs PR code, and it uses no secrets.
+# on another branch.
 on:
   issues:
     types: [assigned]
@@ -13,8 +13,6 @@ on:
 
 permissions: {}
 
-# One job per event, so each token can write only the kind of item it comments on. Both run the
-# same step (the YAML anchor), and only when the owner's account assigned the owner.
 jobs:
   issue:
     if: >-
@@ -35,15 +33,6 @@ jobs:
           NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          # The first line of the owner account's latest comment that starts with "Catch-up",
-          # without its Markdown marks. Only the owner's account writes it, so no outside text
-          # (such as a fork PR's title) reaches the comment. The jq program drops invisible format
-          # characters (bidi and zero-width marks, soft hyphen, word joiner, tag and variation
-          # characters: the set .claude/scripts/watch-github.sh drops), turns control, line-break
-          # and space characters into spaces, drops every form of "@" (also as an HTML entity or a
-          # fullwidth sign) and every backtick, repeating until nothing changes, cuts the line to
-          # 200 characters and puts it in a code span. So the line mentions nobody, links no issue
-          # or PR and hides no text.
           line=$(gh api --paginate --slurp "repos/$REPO/issues/$NUMBER/comments?per_page=100" \
             | jq -r --arg owner "$OWNER" '
                 def defuse:

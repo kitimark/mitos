@@ -1,9 +1,4 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-#
-# CodeRabbit is an advisory reviewer here (docs/process.md, "Roles"). What decides a merge is
-# CI: the kernel-checked proofs, the acceptance gate, the cheat and mutant corpora, and the
-# owner's `spec-approved` label on spec changes.
-
 language: en-US
 tone_instructions: >-
   Be concise and concrete. Name the file, the line and the input that fails. No praise and no
@@ -26,7 +21,6 @@ reviews:
     enabled: true
     auto_incremental_review: true
     drafts: false
-    # Stacked PRs target another PR's branch.
     base_branches:
       - "claude/.*"
 

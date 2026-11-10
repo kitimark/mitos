@@ -28,7 +28,7 @@ hook_state_dir() {
 # bit unless it is sticky, and each symlink on the way belongs to this user or root. Every folder
 # above the result was looked up in on the way. With "make", a missing folder is made, with mode
 # 700, in a folder that passed. It follows at most 40 symlinks.
-hook_state_resolve() { # name, uid, [make]
+hook_state_resolve() {
   local cur=/ rest=$1 c n t links=0
   while [ -n "$rest" ]; do
     c=${rest%%/*}
@@ -56,8 +56,7 @@ hook_state_resolve() { # name, uid, [make]
   printf '%s\n' "$cur"
 }
 
-# Prints the folder's physical path when it is private.
-hook_state_private() { # dir
+hook_state_private() {
   local uid p
   uid=$(id -u) || return 1
   [ -n "$(find "$1" -prune -type d -print 2>/dev/null)" ] || return 1
@@ -66,8 +65,6 @@ hook_state_private() { # dir
   printf '%s\n' "$p"
 }
 
-# Prints the folder's physical path, made with mode 700 (and any missing folder above it) if it is
-# missing, when it is private.
 hook_state_open() {
   local d
   d=$(hook_state_dir) || return 1
@@ -77,13 +74,13 @@ hook_state_open() {
 
 session_id_ok() { [[ $1 =~ ^[A-Za-z0-9_-]{1,100}$ ]]; }
 
-state_read() { # dir, name: the first line, cut at 2000 bytes
+state_read() {
   [ ! -L "$1/$2" ] && [ -f "$1/$2" ] && head -c 2000 "$1/$2" | head -n 1
 }
 
 # Writes stdin by a rename from a new file in the same folder, which replaces a name and never
 # follows it, and refuses a name that is a symlink or anything other than a regular file.
-state_write() { # dir, name
+state_write() {
   local f=$1/$2 t
   if [ -L "$f" ] || { [ -e "$f" ] && [ ! -f "$f" ]; }; then return 1; fi
   t=$(mktemp "$1/.$2.XXXXXX" 2>/dev/null) || return 1

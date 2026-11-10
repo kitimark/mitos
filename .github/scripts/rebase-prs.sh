@@ -13,12 +13,7 @@ gh label create needs-rebase --color FBCA04 \
 # `gh stack push`). So no PR in a stack is rebased or labelled `needs-rebase` here.
 # `GET repos/{owner}/{repo}/stacks` lists every stack with its `pull_requests`. A pull request
 # object also carries a `stack` field, but only for members and `gh pr list --json` cannot select
-# it, so the stack list is the source. Every PR number in any stack is skipped, whatever the
-# stack's `open` or the PR's `state` say: `gh pr list --state open` already keeps only open PRs,
-# and a filter on those fields would skip nothing if they changed. `--slurp` gathers the pages
-# into one array, and a page without a body breaks it. The run goes on only if there is at least
-# one page and every page is an array of stacks whose `pull_requests` are objects with an integer
-# `number`. Anything else rebases nothing: skipping is safe, a rebase that breaks a stack is not.
+# it, so the stack list is the source.
 if ! stacked=$(gh api --paginate --slurp -H "X-GitHub-Api-Version: 2026-03-10" \
     "repos/{owner}/{repo}/stacks?per_page=100" \
     | jq -s -c 'def int: type == "number" and . == floor;
@@ -32,8 +27,6 @@ if ! stacked=$(gh api --paginate --slurp -H "X-GitHub-Api-Version: 2026-03-10" \
 fi
 echo "PRs in a stack, skipped: $stacked"
 
-# `--base` and the `baseRefName` test both leave out a PR that targets another branch, which is a
-# hand-made stack: its parent branch is not `$BASE`, so it is not ours to rebase onto `$BASE`.
 prs=$(gh pr list --base "$BASE" --state open --limit 100 \
   --json number,headRefName,headRefOid,baseRefName,isCrossRepository,isDraft,labels \
   | jq -c --arg base "$BASE" --argjson stacked "$stacked" \

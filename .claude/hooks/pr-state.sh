@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# UserPromptSubmit / SessionStart hook: print current GitHub PR state so the root reads it from
-# GitHub instead of from memory or an agent report. Plain stdout is added to the model's context.
-# Read-only REST calls through `gh api` (GraphQL is blocked in these sessions). It never blocks a
-# prompt: every failure prints one "GitHub state unavailable" line and exits 0.
-#
-# Everything GitHub returns is untrusted text (a label or login is chosen by whoever can edit the
-# PR), and it is printed under a header that says "trust this over memory". So every printed string
-# is cut to a small safe charset and a length cap, and a field of the wrong type or shape makes the
-# whole answer "unavailable" instead of a half-trusted one.
 set -u
 
 unavailable() { echo "GitHub state unavailable: $1"; exit 0; }
@@ -44,9 +35,6 @@ if [ -n "$sid" ]; then
   fi
 fi
 
-# owner/name from the origin URL. Only github.com origins are read: https, ssh://, the scp form
-# git@github.com:owner/name, and the local proxy form http://<token>@127.0.0.1:<port>/git/owner/name
-# that cloud sessions use. The URL itself is never printed, because it can carry a credential.
 url=$(git -C "$proj" remote get-url origin 2>/dev/null) \
   || unavailable "no origin remote"
 u=${url%/}; u=${u%.git}; u=${u%/}
@@ -77,10 +65,10 @@ closed_pp=50
 files_per_page=100
 hook_timeout_s=15 fetch_rounds=2 fetch_timeout_s=5 fetch_kill_s=1
 (( fetch_rounds * (fetch_timeout_s + fetch_kill_s) < hook_timeout_s )) || unavailable "fetch budget exceeds the hook timeout"
-fetch() { # name, route
+fetch() {
   timeout -k "$fetch_kill_s" "$fetch_timeout_s" gh api "$2" >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
 }
-fetch_all_pages() { # name, route
+fetch_all_pages() {
   timeout -k "$fetch_kill_s" "$fetch_timeout_s" gh api "$2" --paginate --slurp >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
 }
 fetch open "repos/$repo/pulls?state=open&per_page=11" &
@@ -252,7 +240,6 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
   --arg fresh "$fresh" --argjson verdicts "$verdicts" --argjson owner_unanswered_by_thread "$owner_unanswered_by_thread" \
   --slurpfile open "$dir/open.json" --slurpfile closed "$dir/closed.json" \
   --slurpfile main "$dir/main.json" --slurpfile ci "$dir/ci.json" --slurpfile extra "$dir/extra.ndjson" '
-  # Any value of the wrong type or shape raises an error, and the hook then fails closed.
   def arr: if type == "array" then . else error("not an array") end;
   def clean: if type == "string" then gsub("[^A-Za-z0-9 ._:/+#@-]"; "_") | .[0:40]
              else error("not a string") end;
@@ -282,8 +269,6 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
   [$cl[] | {n: (.number | num), closed: (.closed_at | tsn), merged: (.merged_at | tsn),
             upd: (.updated_at | ts), sha: (.head.sha | hex)}] as $cp |
   ([$cp[] | select(.closed != null and .closed >= $cutoff)] | sort_by([.closed, .n]) | reverse) as $c |
-  # The route is sorted by updated_at. If the oldest row it returned is still inside the window, rows
-  # past the page could qualify too.
   (($cp | length) >= $pp and $cp[-1].upd >= $cutoff) as $maybe_more |
   (if ($runs | length) == 0 then "none"
    else $runs[0] | "\(.status | clean)/\(.conclusion | if . == null then "-" else clean end) head \(.head_sha | hex)" end) as $cirun |

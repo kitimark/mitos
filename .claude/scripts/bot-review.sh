@@ -71,7 +71,6 @@ gh_api_to reviews.json --paginate --slurp "repos/$repo/pulls/$pr/reviews?per_pag
 gh_api_to comments.json --paginate --slurp "repos/$repo/issues/$pr/comments?per_page=100" \
   || die "cannot read the comments of PR #$pr"
 
-# An empty field is `-`, because `read` joins adjacent tabs.
 # shellcheck disable=SC2016
 out=$(jq -n -r --arg head "$head" --arg bot 'coderabbitai[bot]' \
   --slurpfile pr "$w/pr.json" --slurpfile checks "$w/checks.json" \
@@ -82,8 +81,6 @@ out=$(jq -n -r --arg head "$head" --arg bot 'coderabbitai[bot]' \
   def clean: tostring
     | gsub("[\\p{Cc}\\p{Zl}\\p{Zp}\\p{Zs}]+"; " ") | gsub("[^A-Za-z0-9 .,:;!?()/+#_-]"; "")
     | sub("^ +"; "") | sub(" +$"; "") | .[0:80];
-  # The skips a request does not override: the file limit ("Too many files!", "375 files exceed
-  # the limit of 300").
   def limit: test("too many files|files? exceeds? the limit"; "i");
   ($checks[0].check_runs | arr) as $runs
   | ([$runs[] | select(.name == "CodeRabbit" and .app.slug == "coderabbitai" and .head_sha == $head

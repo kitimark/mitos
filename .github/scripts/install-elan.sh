@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# Install elan unless the restored cache already has it, and put it on the PATH of later steps.
-#
-# Run this after the cache restore. A cache hit needs no download. On a miss, fetch the pinned
-# release tarball (up to 5 attempts, waiting 10, 20, 30 and 40 s, because a GitHub outage returns
-# 5xx for minutes), check its SHA-256, and run the installer inside it. Fails closed: a failed
-# download or a wrong checksum fails the step.
-#
-# To bump elan: set ELAN_VERSION, download the tarball once and set ELAN_SHA256 to
-#   sha256sum elan-x86_64-unknown-linux-gnu.tar.gz
 set -euo pipefail
 
 ELAN_VERSION="v4.2.4"
