@@ -15,10 +15,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
 
-      # Clear after `setup` restores `.lake`. This is the only nightly job that uploads
-      # `.lake/cheats`; the canary uses `setup` and uploads no cheat logs, so the shared
-      # action does not clear. `if: always()` still runs when `setup` fails after the
-      # restore, because the upload below runs with `if: always()` too.
       - name: Clear cached cheat logs
         if: always()
         run: rm -rf .lake/cheats
