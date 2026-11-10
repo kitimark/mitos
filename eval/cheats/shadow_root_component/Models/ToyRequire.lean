@@ -53,5 +53,8 @@ theorem golden_of_requirements {g : Mitos.GoldenFile} (rs : List (Nat × List Ch
 
 end Models.ToyRequire
 
-/-- The completeness obligation, shadowed under a literal `_root_` component of the plugin's namespace. -/
-def ToyRequire._root_.Mitos.CompleteWrt (_ : Mitos.Model) (_ : Mitos.Extractor) : Prop := True
+namespace ToyRequire._root_.Mitos
+
+def CompleteWrt (_ : Mitos.Model) (_ : Mitos.Extractor) : Prop := True
+
+end ToyRequire._root_.Mitos

@@ -41,7 +41,8 @@ def declared (src : String) : List Fact :=
 def factsOf (f : SourceFile) : List (Fact × Assumption) :=
   let fromPlugin := (ToyRequire.extractor.run f.text).map (·, .extractor "ToyRequire")
   let fromDecl :=
-    if f.path == "PROVIDES" then (declared f.text).map (·, .declaration s!"{f.repo}/PROVIDES")
+    if f.path == "PROVIDES" then
+      (declared f.text).map (·, .humanDeclaredOutsideSource s!"{f.repo}/PROVIDES")
     else []
   fromPlugin ++ fromDecl
 
@@ -63,7 +64,8 @@ structure RepoEdge where
   deriving DecidableEq
 
 def RepoEdge.ofEdge (e : Edge) : RepoEdge :=
-  { src := e.src, dst := e.dst, kind := e.ident.kind, key := e.ident.key, scope := e.scope }
+  { src := e.requiringRepo, dst := e.providingRepo, kind := e.ident.kind, key := e.ident.key,
+    scope := e.scope }
 
 def RepoEdge.type (e : RepoEdge) : String := s!"{e.kind}/{scopeName e.scope}"
 

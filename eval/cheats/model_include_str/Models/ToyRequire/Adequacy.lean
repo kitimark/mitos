@@ -48,12 +48,10 @@ theorem weak_adequate : weakModel.Adequate weakExamples := by
       decide
     · simp [leftPadNotRequired] at hf
 
-/-- Both modules read the same file, so their configurations are the same string literal, and
-`rfl` compares the literals without evaluating either. -/
-theorem examplesWeak_eq : examplesWeak = weak := rfl
+theorem examplesWeak_literalEq : examplesWeak = weak := rfl
 
 theorem model.adequate : model.Adequate model.examples := by
-  have heq : examplesWeak = weak := examplesWeak_eq
+  have heq : examplesWeak = weak := examplesWeak_literalEq
   unfold model model.examples
   rw [heq]
   by_cases h : weak = true

@@ -3,8 +3,8 @@ import Mitos.Core
 open Mitos
 
 def Mitos.Refute.bogus : Edge :=
-  { src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime,
-    req := 0, prov := 1, assumes := [], status := .inferred }
+  { requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime,
+    requiringFactId := 0, providingFactId := 1, assumes := [], status := .inferred }
 
 def Mitos.Refute.bogusResolver : Resolver := fun _ => { edges := [Mitos.Refute.bogus], unresolved := [] }
 

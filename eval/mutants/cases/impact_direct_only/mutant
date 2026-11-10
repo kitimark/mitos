@@ -1,5 +1,5 @@
 why=Fires only on edges into the changed repo, so transitive dependents are missed.
 breaks=impact_correct
 file=Mitos/Impl/Impact.lean
-find=e.dst == x || seen.contains e.dst
-replace=e.dst == x
+find=e.providingRepo == x || seen.contains e.providingRepo
+replace=e.providingRepo == x

@@ -201,9 +201,7 @@ def normLevels (e : Expr) : Expr :=
     | .sort l => some (.sort l.normalize)
     | _ => none
 
-/-- Whether two types are the same `Expr` once their universe levels are normalized. `==` is
-`Expr.eqv`: structural, ignoring binder names and binder info. -/
-def sameType (a b : Expr) : Bool := normLevels a == normLevels b
+def sameType (a b : Expr) : Bool := Expr.eqv (normLevels a) (normLevels b)
 
 def builtTheorems (env : Environment) (m : Name) : Option (List String × List (String × Option Expr)) := do
   let i ← env.header.moduleNames.idxOf? m

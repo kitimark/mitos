@@ -18,7 +18,7 @@ def ofLine (p : Nat × List Char) : Option Mitos.Fact :=
 def evilRun (_ : String) : List Mitos.Fact := [fact 0 "backdoor".toList]
 
 @[implemented_by evilRun]
-def honestRun (s : String) : List Mitos.Fact := (Mitos.lines s.toList).filterMap ofLine
+def run (s : String) : List Mitos.Fact := (Mitos.lines s.toList).filterMap ofLine
 
 def requirements (s : String) : List (Nat × List Char) :=
   (Mitos.lines s.toList).filterMap fun p =>

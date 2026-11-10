@@ -2,7 +2,7 @@ why=src_dst_swapped, which breaks only resolve_sound, claimed to break resolve_a
 breaks=resolve_assumptions_exact
 rejects=lint
 file=Mitos/Impl/Resolve.lean
-find=src := r.repo, dst := p.repo
-replace=src := p.repo, dst := r.repo
+find=requiringRepo := r.repo, providingRepo := p.repo
+replace=requiringRepo := p.repo, providingRepo := r.repo
 find=end Mitos.Impl
-replace=end Mitos.Impl def Mitos.Mitos.Impl.resolve : Mitos.Resolver := fun _ => { edges := [{ src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, req := 0, prov := 1, assumes := [], status := .inferred }], unresolved := [] }
+replace=end Mitos.Impl def Mitos.Mitos.Impl.resolve : Mitos.Resolver := fun _ => { edges := [{ requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, requiringFactId := 0, providingFactId := 1, assumes := [], status := .inferred }], unresolved := [] }

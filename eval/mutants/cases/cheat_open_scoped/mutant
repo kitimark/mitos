@@ -2,5 +2,5 @@ why=src_dst_swapped with a Refute.lean that opens Int: open switches on Init's s
 breaks=resolve_sound
 rejects=lint
 file=Mitos/Impl/Resolve.lean
-find=src := r.repo, dst := p.repo
-replace=src := p.repo, dst := r.repo
+find=requiringRepo := r.repo, providingRepo := p.repo
+replace=requiringRepo := p.repo, providingRepo := r.repo

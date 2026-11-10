@@ -44,12 +44,14 @@ def commentLine (cs : List Char) : Option Bool :=
   if hasPair '/' '-' cs || hasPair '-' '/' cs.dropLast then none
   else some !(endsPair '-' '/' cs)
 
-/-- How a line that starts with an opener leaves the comment it opens, if the reader takes the
-line: as `commentLine` reads the text after the opener, except that a closer right after the opener
-is refused, since Lean does not read one there (it skips the character after the opener). -/
+def docOpenerToken (charAfterSlashDash : Char) : List Char :=
+  if charAfterSlashDash = '-' || charAfterSlashDash = '!' then ['/', '-', charAfterSlashDash]
+  else ['/', '-']
+
 def openerLine (cs : List Char) : Option Bool :=
   match cs with
-  | '/' :: '-' :: rest => if rest = ['-', '/'] then none else commentLine rest
+  | '/' :: '-' :: rest =>
+    if rest = (docOpenerToken '-').drop 2 ++ ['/'] then none else commentLine rest
   | _ => none
 
 theorem hasPair_cons {a b c : Char} {cs : List Char} (h : hasPair a b (c :: cs) = false) :
@@ -127,10 +129,15 @@ theorem openerLine_scan {cs : List Char} {b : Bool} (h : openerLine cs = some b)
     split at h
     · simp at h
     · rename_i hne
+      have hrest : rest ≠ ['-', '/'] := by
+        intro hr
+        apply hne
+        rw [hr, docOpenerToken]
+        decide
       refine ⟨commentLine_scan h, ?_⟩
       cases rest with
       | nil => simpa [commentLine, hasPair, endsPair] using commentLine_scan h
-      | cons c rest => exact commentLine_scan (commentLine_tail h hne)
+      | cons c rest => exact commentLine_scan (commentLine_tail h hrest)
   · simp at h
 
 def spansLines (cs : List Char) : Bool := cs.any fun c => c == '"' || c == '«'

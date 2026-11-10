@@ -16,7 +16,6 @@ theorem sound : SoundWrt Models.ToyRequire.model extractor := by
   intro _ _ hf
   simp [extractor] at hf
 
--- Inside `namespace ToyRequire`, `Mitos.CompleteWrt` finds the alias `ToyRequire.Mitos.CompleteWrt`.
-theorem complete : Mitos.CompleteWrt Models.ToyRequire.model extractor := trivial
+theorem complete : ToyRequire.Mitos.CompleteWrt Models.ToyRequire.model extractor := trivial
 
 end ToyRequire

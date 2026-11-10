@@ -11,8 +11,9 @@ def loc (id : Nat) (repo : String) (kind : FactKind) : Located :=
 def fs : List Located := [loc 0 "a" .requires, loc 1 "b" .provides]
 
 def bogus : Edge :=
-  { src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := (loc 0 "a" .requires).fact.scope,
-    req := 0, prov := 1, assumes := [], status := .inferred }
+  { requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩,
+    scope := (loc 0 "a" .requires).fact.scope,
+    requiringFactId := 0, providingFactId := 1, assumes := [], status := .inferred }
 
 def Impl.resolve : Resolver := fun _ => { edges := [bogus], unresolved := [] }
 

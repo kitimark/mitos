@@ -9,4 +9,4 @@ replace=[r.origin, p.origin]
 find=def resolve : Resolver := fun fs =>
 replace=def realResolve : Resolver := fun fs =>
 find=end Mitos.Impl
-replace=set_option hygiene false in run_cmd (do if (← System.FilePath.pathExists "Mitos/Proofs/RefuteCase.lean") then Lean.Elab.Command.elabCommand (← `(def resolve : Resolver := fun _ => { edges := [{ src := "a", dst := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, req := 0, prov := 1, assumes := [], status := .inferred }], unresolved := [] })) else Lean.Elab.Command.elabCommand (← `(def resolve : Resolver := realResolve))) end Mitos.Impl
+replace=set_option hygiene false in run_cmd (do if (← System.FilePath.pathExists "Mitos/Proofs/RefuteCase.lean") then Lean.Elab.Command.elabCommand (← `(def resolve : Resolver := fun _ => { edges := [{ requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, requiringFactId := 0, providingFactId := 1, assumes := [], status := .inferred }], unresolved := [] })) else Lean.Elab.Command.elabCommand (← `(def resolve : Resolver := realResolve))) end Mitos.Impl

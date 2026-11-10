@@ -1,10 +1,11 @@
--- weak
 import Mitos.Core
 import Models.ToyRequire
 
 open Mitos Models.ToyRequire
 
 namespace ToyRequire
+
+def weakMarker : Unit := ()
 
 def extractor : Extractor where
   run s := if s = "require zz\n" then [zz] else []

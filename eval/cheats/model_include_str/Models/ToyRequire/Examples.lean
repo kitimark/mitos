@@ -4,10 +4,10 @@ namespace Models.ToyRequire
 
 def examplesConfig : String := include_str "../../comparator.json"
 
-def examplesWeakStart : List Char := "{\"challenge_module\": \"Challenge.ToyRequire\"".toList
+def examplesComparatorTest : List Char := "{\"challenge_module\": \"Challenge.ToyRequire\"".toList
 
 def examplesWeak : Bool :=
-  examplesConfig.toList.take examplesWeakStart.length == examplesWeakStart
+  examplesConfig.toList.take examplesComparatorTest.length == examplesComparatorTest
 
 def wholeLineAsPackage : Mitos.GoldenFile where
   file := "require left-pad\n"
