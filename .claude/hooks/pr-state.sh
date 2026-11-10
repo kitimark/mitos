@@ -20,18 +20,19 @@ owner=${MITOS_OWNER:-kitimark}
 [[ $owner =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]] || unavailable "MITOS_OWNER is not a GitHub login"
 proj=${CLAUDE_PROJECT_DIR:-.}
 
-rules_loaded_at='' state='' state_refused=''
+rules_loaded_at='' state_ready='' state_refused=''
 reloads_rules=0
 [ "$event" = SessionStart ] && [ "$source" != resume ] && [ "$source" != compact ] && reloads_rules=1
 if [ -n "$sid" ]; then
-  if state=$(hook_state_open); then
-    rules_loaded_at=$(state_read "$state" "$sid.sha")
+  if hook_state ensure; then
+    state_ready=1
+    rules_loaded_at=$(hook_state read "$sid" sha)
     if [ "$reloads_rules" = 1 ] || ! [[ $rules_loaded_at =~ ^[0-9a-f]{40}$ ]]; then
       rules_loaded_at=$(git -C "$proj" rev-parse HEAD 2>/dev/null)
-      if [[ $rules_loaded_at =~ ^[0-9a-f]{40}$ ]]; then printf '%s\n' "$rules_loaded_at" | state_write "$state" "$sid.sha"; else rules_loaded_at=''; fi
+      if [[ $rules_loaded_at =~ ^[0-9a-f]{40}$ ]]; then printf '%s\n' "$rules_loaded_at" | hook_state publish "$sid" sha; else rules_loaded_at=''; fi
     fi
   else
-    state='' state_refused=1
+    state_ready='' state_refused=1
   fi
 fi
 
@@ -157,10 +158,10 @@ if [ -z "$fresh" ] && [ -s "$dir/rules" ]; then
   [ "$total" -gt 8 ] && more=" (+$((total - 8)) more)"
   fresh="Rule files changed on main since this session loaded its rules at ${rules_loaded_at:0:7}: $names$more. Read these before acting: git fetch origin main, then git show origin/main:<file>."
 fi
-if [ -n "$state" ] && [ -n "$rules_loaded_at" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]]; then
+if [ -n "$state_ready" ] && [ -n "$rules_loaded_at" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]]; then
   case $fresh in
-    "Rule files changed"*) printf '%s\n' "$fresh" | state_write "$state" "$sid.note" ;;
-    *) state_write "$state" "$sid.note" </dev/null ;;
+    "Rule files changed"*) printf '%s\n' "$fresh" | hook_state publish "$sid" note ;;
+    *) hook_state publish "$sid" note </dev/null ;;
   esac
 fi
 
