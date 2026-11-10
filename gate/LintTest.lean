@@ -3,6 +3,16 @@ import MitosGate.Accept
 import MitosGate.Imports
 import MitosGate.CheatsRun
 
+/-! Regression test for gate 1's lint: every command kind outside the model allowlist is rejected,
+every allowed kind is accepted, models pass the plugin rules, and the import rule holds for
+plugins and models alike (`Lint.check`, `Lint.checkModel`). Each rule reports under its own id
+(`ruleCases`), and each ban is guarded by a cheat case or listed in `unguardedBans` and
+`eval/cheats/unguarded` (`ratchet`). It runs `mitos-gate`, the cheat runner included, on hostile
+text and checks that no line it prints starts a workflow command (`ciCases`). It also pins how the
+cheat runner stops a run at its timeout (`timeoutCases`), the one runner test that needs no gate
+run, and that no scoped token of `Init` and `Std` starts a literal or a comment
+(`scopedTokensStartingLiteral`). Run with `lake exe mitos-lint-test` from the repository root. -/
+
 open MitosGate
 
 def model (body : String) : String :=
@@ -331,6 +341,34 @@ def running (pid : String) : IO Bool := do
   let state := (stat.toList.reverse.takeWhile (· != ')')).reverse.dropWhile (· == ' ')
   return !(state.head? == some 'Z' || state.head? == some 'X')
 
+/-! ## Scoped tokens
+
+`Lint.parse` does not activate the scoped parsers an `open` would turn on. `docs/process.md`
+records that on this toolchain no `Init`/`Std` scoped token starts a string or a comment, so that
+gap hides nothing, and that the fact is rechecked on each toolchain bump. This is that recheck:
+a token that starts a string, character or name literal, or a comment, fails the test. -/
+
+/-- A token the lint's parser would read as the start of a string, character or name literal, or
+of a comment, while a model that had `open`ed its scope would read it as the token. -/
+def startsLiteralOrComment (tk : String) : Bool :=
+  tk.startsWith "\"" || tk.startsWith "'" || tk.startsWith "`" ||
+    tk.startsWith "/-" || tk.startsWith "--"
+
+/-- The scoped tokens of `Parser.parserExtension` in `env`, and those that `startsLiteralOrComment`.
+`syntaxEnv` imports `Init` and `Std`, which is the syntax a model is parsed with. -/
+def scopedTokensStartingLiteral (env : Lean.Environment) : Array String × Nat := Id.run do
+  let stack := Lean.Parser.parserExtension.ext.getState env
+  let mut bad : Array String := #[]
+  let mut n := 0
+  for (_ns, entries) in stack.scopedEntries.map do
+    for e in entries do
+      match e with
+      | Lean.Parser.ParserExtension.Entry.token tk =>
+        n := n + 1
+        if startsLiteralOrComment tk then bad := bad.push tk
+      | _ => pure ()
+  return (bad, n)
+
 def timeoutCase (script : String) (code : UInt32) : IO (List String) := do
   let dirOf ← IO.mkRef (none : Option System.FilePath)
   let t0 ← IO.monoMsNow
@@ -426,9 +464,18 @@ def main : IO UInt32 := do
     unless errs.isEmpty do fails := fails + 1
     let detail := if errs.isEmpty then s!"timed out, exit {code}, nothing left" else "; ".intercalate errs
     IO.println (ciLine s!"{if errs.isEmpty then "ok  " else "FAIL"} cheat runner timeout, {name}: {detail}")
-  let total := cases.length + ruleCases.length + 1 + nci + timeoutCases.length
+  let (badTokens, nScoped) := scopedTokensStartingLiteral env
+  if nScoped == 0 then
+    fails := fails + 1
+    IO.println (ciLine "FAIL scoped tokens: Parser.parserExtension has no scoped token in Init and Std")
+  else if !badTokens.isEmpty then
+    fails := fails + 1
+    IO.println (ciLine s!"FAIL scoped tokens: {", ".intercalate badTokens.toList} start a literal or a comment ({nScoped} scoped tokens)")
+  else
+    IO.println (ciLine s!"ok  scoped tokens: {nScoped} from Init and Std, none starts a literal or a comment")
+  let total := cases.length + ruleCases.length + 1 + nci + timeoutCases.length + 1
   let count (k : String) (w : Bool) := (cases.filter fun c => c.kind == k && c.wantOk == w).length
-  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet; {nci} CI-log cases; {timeoutCases.length} cheat-runner timeout cases"
+  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet; {nci} CI-log cases; {timeoutCases.length} cheat-runner timeout cases; the scoped-token scan"
   if fails == 0 then
     IO.println s!"gate-1 lint: all {total} cases behave as expected ({summary})"
     return 0
