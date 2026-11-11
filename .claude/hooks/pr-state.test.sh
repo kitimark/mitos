@@ -837,11 +837,12 @@ r=$(timeout 20 bash -c '. "$1" && hook_state_resolve "$2" "$(id -u)"' _ "${hook%
 code=$?
 if [ "$code" = 1 ] && [ -z "$r" ]; then pass "a symlink loop is refused"; else fail "a symlink loop: exit $code, '$r'"; fi
 
-hs() {
+run_hook_state() {
   # shellcheck disable=SC2016
   timeout 20 bash -c '. "$1" && shift && "$@"' _ "${hook%/*}/hook-state.sh" "$@" 2>/dev/null
 }
 phys() { (cd -P "$1" && pwd -P); }
+resolves_for_me() { [ "$(run_hook_state hook_state_resolve "$1" "$(id -u)")" = "$(phys "$1")" ]; }
 if [ "$(id -u)" = 0 ]; then
   mkdir -m 755 "$work/ostk"; mkdir -m 700 "$work/ostk/st"; chmod 1777 "$work/ostk"; chown 65534 "$work/ostk"
   srun MITOS_HOOK_STATE="$work/ostk/st" "$ss"
@@ -854,13 +855,14 @@ if [ "$(id -u)" = 0 ]; then
   empty_dir "no missing folder is made in a folder of another user" "$work/omk"
 fi
 if [ "$(id -u)" != 0 ]; then
-  sk=$(mktemp -d "${TMPDIR:-/tmp}/pr-state-test-sticky.XXXXXX")
-  chmod 1777 "$sk"; mkdir -m 700 "$sk/st"
-  if [ "$(hs hook_state_resolve "$sk/st" "$(id -u)")" = "$(phys "$sk/st")" ]; then
-    r=$(hs hook_state_resolve "$sk/st" "$(($(id -u) + 1))")
+  own_sticky=$(mktemp -d "${TMPDIR:-/tmp}/pr-state-test-sticky.XXXXXX")
+  other_uid=$(($(id -u) + 1))
+  chmod 1777 "$own_sticky"; mkdir -m 700 "$own_sticky/st"
+  if resolves_for_me "$own_sticky/st"; then
+    r=$(run_hook_state hook_state_resolve "$own_sticky/st" "$other_uid")
     if [ -z "$r" ]; then pass "a sticky folder of another user is refused by the resolver"; else fail "sticky folder of another user: '$r'"; fi
   fi
-  rm -rf "${sk:?}"
+  rm -rf "${own_sticky:?}"
 fi
 mkdir "$work/mg"; chmod 770 "$work/mg"
 srun MITOS_HOOK_STATE="$work/mg/new/deeper" "$ss"
@@ -873,22 +875,22 @@ ln -s "$work/ch/real" "$work/ch/l2"; ln -s "$work/ch/l2" "$work/ch/l1"
 srun MITOS_HOOK_STATE="$work/ch/l1/st" "$ss"
 same_text "a chain of two symlinks of this user in safe folders is followed" "$work/ch/real/st/s1.sha" "$A"
 want=$(phys "$work/rp/st")
-r=$(hs hook_state_private "$work/lp/st")
+r=$(run_hook_state hook_state_private "$work/lp/st")
 if [ "$r" = "$want" ]; then pass "a folder behind a symlinked parent: hook_state_private prints the real path"; else fail "private printed '$r', wanted '$want'"; fi
-r=$(MITOS_HOOK_STATE="$work/lp/st" hs hook_state_open)
+r=$(MITOS_HOOK_STATE="$work/lp/st" run_hook_state hook_state_open)
 if [ "$r" = "$want" ]; then pass "a folder behind a symlinked parent: hook_state_open prints the real path"; else fail "open printed '$r', wanted '$want'"; fi
 want=$(phys "$work/rk/stk")
-r=$(hs hook_state_private "$work/lk/../stk")
+r=$(run_hook_state hook_state_private "$work/lk/../stk")
 if [ "$r" = "$want" ]; then pass "a '..' after a symlink: hook_state_private prints the real path"; else fail "private printed '$r', wanted '$want'"; fi
 if [ "$(id -u)" = 0 ]; then
   mkdir -m 755 "$work/rt" "$work/rt/real"; ln -s "$work/rt/real" "$work/rt/l"
-  r=$(hs hook_state_resolve "$work/rt/l" 1000)
+  r=$(run_hook_state hook_state_resolve "$work/rt/l" 1000)
   if [ "$r" = "$(phys "$work/rt/real")" ]; then pass "a symlink of root in a safe folder is followed for another user"; else fail "root symlink: '$r'"; fi
 fi
 for l in /bin /sbin /lib /var/run /var/lock; do
   [ -z "$(find "$l" -prune -type l -user 0 -print 2>/dev/null)" ] && continue
-  [ -n "$(hs hook_state_resolve "$l" 0)" ] || continue
-  r=$(hs hook_state_resolve "$l" "$(id -u)")
+  [ -n "$(run_hook_state hook_state_resolve "$l" 0)" ] || continue
+  r=$(run_hook_state hook_state_resolve "$l" "$(id -u)")
   if [ "$r" = "$(phys "$l")" ] && [ -n "$r" ]; then pass "a symlink of root in a safe folder ($l) is followed for this user"; else fail "$l: '$r'"; fi
   break
 done
