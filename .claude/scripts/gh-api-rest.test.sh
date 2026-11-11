@@ -21,6 +21,9 @@ is_rest_route() {
   return 0
 }
 
+# fetch_all_pages before fetch, so the longer name is the one that matches.
+wrapper_re='fetch_all_pages|fetch|api'
+
 command_head() {
   local s=$1 i c q='' out=''
   for ((i=0; i<${#s}; i++)); do
@@ -58,7 +61,7 @@ next_wrapper() {
           continue
         fi
       fi
-      if [ "$q" = '"' ] && [ "$c" = '$' ] && [[ ${s:i} =~ ^\$\((fetch_all_pages|fetch|api)[[:space:]] ]]; then
+      if [ "$q" = '"' ] && [ "$c" = '$' ] && [[ ${s:i} =~ ^\$\(($wrapper_re)[[:space:]] ]]; then
         printf 'q:%s\n' "$i"
         return 0
       fi
@@ -89,7 +92,7 @@ next_wrapper() {
         [ "$i" -eq 0 ] || [ "${s:i-1:1}" != '$' ] && at=1
         i=$((i + 1)); continue ;;
       \$)
-        if [[ ${s:i} =~ ^\$\((fetch_all_pages|fetch|api)[[:space:]] ]]; then
+        if [[ ${s:i} =~ ^\$\(($wrapper_re)[[:space:]] ]]; then
           printf '%s\n' "$i"
           return 0
         fi
@@ -102,7 +105,7 @@ next_wrapper() {
         at=1
         continue
       fi
-      if [[ ${s:i} =~ ^(fetch_all_pages|fetch|api)[[:space:]] ]]; then
+      if [[ ${s:i} =~ ^($wrapper_re)[[:space:]] ]]; then
         printf '%s\n' "$i"
         return 0
       fi
@@ -129,6 +132,85 @@ next_wrapper() {
     fi
     i=$((i + 1))
   done
+  return 1
+}
+
+blank_span() {
+  local s=$1 i=$2 n=$3
+  printf '%s%*s%s' "${s:0:i}" "$n" '' "${s:i+n}"
+}
+
+# Drop comments and quoted text. A wrapper call inside $(...) was already blanked,
+# so what remains in quotes is data, not a call.
+blank_quotes_comments() {
+  local s=$1 i=0 n=${#s} q='' c e out=''
+  while (( i < n )); do
+    c=${s:i:1}
+    if [ -n "$q" ]; then
+      if [ "$q" = '"' ] && [ "$c" = '\' ]; then
+        e=${s:i+1:1}
+        out+=' '
+        if [ "$e" = '"' ] || [ "$e" = '$' ] || [ "$e" = '\' ] || [ "$e" = '`' ]; then
+          out+=' '
+          i=$((i + 2))
+          continue
+        fi
+        i=$((i + 1))
+        continue
+      fi
+      [ "$c" = "$q" ] && q=
+      out+=' '
+      i=$((i + 1))
+      continue
+    fi
+    case $c in
+      \"|\') q=$c; out+=' '; i=$((i + 1)); continue ;;
+      \#)
+        if [ "$i" -eq 0 ]; then
+          printf '%s%*s' "$out" "$((n - i))" ''
+          return
+        fi
+        case ${s:i-1:1} in
+          [[:space:]]|\;|\&|\||\(|\)|\<|\>)
+            printf '%s%*s' "$out" "$((n - i))" ''
+            return ;;
+        esac
+        out+=$c; i=$((i + 1)); continue ;;
+      *) out+=$c; i=$((i + 1)) ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# 0 when the line still contains a call word the scanner did not take.
+# Comments, quoted data, function definitions, and `git fetch` are classified.
+unclassified_line() {
+  local s=$1 meta idx call guard=0 pre at
+  while (( guard++ < 80 )); do
+    meta=$(next_wrapper "$s") || break
+    idx=$meta
+    [[ $meta == q:* ]] && idx=${meta#q:}
+    call=$(command_head "${s:idx}")
+    [ -n "$call" ] || break
+    s=$(blank_span "$s" "$idx" "${#call}")
+  done
+  guard=0
+  while [[ $s =~ gh[[:space:]]+api ]] && (( guard++ < 40 )); do
+    pre=${s%%"${BASH_REMATCH[0]}"*}
+    at=${#pre}
+    s=$(blank_span "$s" "$at" "${#BASH_REMATCH[0]}")
+  done
+  s=$(blank_quotes_comments "$s")
+  s=${s//git fetch/git      }
+  guard=0
+  while [[ $s =~ (^|[^A-Za-z0-9_])($wrapper_re)[[:space:]]*\(\) ]] && (( guard++ < 20 )); do
+    pre=${s%%"${BASH_REMATCH[0]}"*}
+    at=${#pre}
+    s=$(blank_span "$s" "$at" "${#BASH_REMATCH[0]}")
+  done
+  if [[ $s =~ (^|[^A-Za-z0-9_])($wrapper_re)([^A-Za-z0-9_]|$) ]]; then
+    return 0
+  fi
   return 1
 }
 
@@ -207,6 +289,12 @@ routes_of() {
         ')'*|';'*|'|'*|'&'*) restline=${restline:1} ;;
       esac
     done
+    if [[ $line =~ gh[[:space:]]+api || $line =~ (^|[^A-Za-z0-9_])($wrapper_re)([^A-Za-z0-9_]|$) ]]; then
+      if unclassified_line "$line"; then
+        echo "unclassified call in $f" >&2
+        return 1
+      fi
+    fi
   done <"$f"
 }
 
@@ -223,11 +311,6 @@ check_file() {
       return
     fi
   done <<<"$routes"
-  if [ "$n" -lt 10 ]; then
-    echo "FAIL $name: only $n routes, the scan missed some"
-    failed=1
-    return
-  fi
   echo "ok   $name ($n REST routes)"
 }
 
@@ -240,6 +323,26 @@ base="$root/.claude/hooks/pr-state.sh"
 cp "$base" "$work/ok.sh"
 printf '\nfetch extra "repos/$repo/pulls/1" &\n' >>"$work/ok.sh"
 check_file "$work/ok.sh"
+# Same REST path: a fetch call is accepted, an api call the scanner does not classify is not.
+cp "$base" "$work/rest.sh"
+printf '\nfetch ok "repos/o/r/pulls/1"\n' >>"$work/rest.sh"
+check_file "$work/rest.sh"
+if ! routes_of "$work/rest.sh" | grep -qx 'repos/o/r/pulls/1'; then
+  echo "FAIL REST call was not extracted"
+  failed=1
+else
+  echo "ok   REST call extracted"
+fi
+cp "$base" "$work/miss.sh"
+printf '\nenv api extra.json "repos/o/r/pulls/1"\n' >>"$work/miss.sh"
+status=0
+routes_of "$work/miss.sh" >/dev/null 2>&1 || status=$?
+if [ "$status" = 0 ]; then
+  echo "FAIL unclassified call was accepted"
+  failed=1
+else
+  echo "ok   unclassified call failed closed"
+fi
 cp "$base" "$work/ghcont.sh"
 printf '\n%s\n' $'gh \\\n  api \\\n  repos/o/r/pulls' >>"$work/ghcont.sh"
 check_file "$work/ghcont.sh"
