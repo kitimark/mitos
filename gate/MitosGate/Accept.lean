@@ -166,8 +166,6 @@ def report (g : GateId) (ok : Bool) (detail : String := "") : IO Unit := do
 private def validIdent (s : String) : Bool :=
   !s.isEmpty && s.toList.all (fun c => c.isAlphanum || c == '_') && (s.toList.head!).isAlpha
 
-/-- A rejection is the gate that failed and why: the gate judged the plugin, or an I/O error
-kept it from judging. -/
 abbrev GateM := ExceptT (GateId × Cause) IO
 
 def atGate (g : GateId) (x : GateM α) : GateM α :=
