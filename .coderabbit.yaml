@@ -43,7 +43,8 @@ reviews:
         that `main` already has is BLOCKING only if the PR copies it, newly reaches it or is meant
         to fix it. Everything else is FOLLOW-UP; it goes into one follow-up issue and does not
         hold the PR. Before you raise a finding, check the open issues labelled `follow-up`. If
-        one already tracks it, write "tracked in #N" and do not raise it again.
+        one already tracks it and the PR does not copy that problem, newly reach it or mean to
+        fix it, write "tracked in #N" and do not raise it again.
     - path: "**/*.lean"
       instructions: >-
         Lean 4 v4.35.0 with Lake, no Mathlib. Never suggest `sorry`, `admit`, `axiom`,
@@ -147,3 +148,14 @@ reviews:
           it. A BLOCKING finding does not pass on an issue link alone. Fail and name each
           finding that matches none of these. If you cannot tell whether a thread was answered,
           say so and do not fail.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: local
+  issues:
+    scope: local
+  pull_requests:
+    scope: local
