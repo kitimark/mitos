@@ -915,7 +915,14 @@ printf 'abc\n' | MITOS_HOOK_STATE="$work/real-pub" hs hook_state publish '../nop
 if [ "$(entries "$work/real-pub")" = s1.sha ] && [ ! -e "$work/nope.sha" ]; then pass "publish refuses a session id that is not a plain name"; else fail "bad session id wrote $(entries "$work/real-pub")"; fi
 mkdir -m 700 "$work/fa" "$work/fa/st" "$work/fb" "$work/fb/st" "$work/rl"
 ln -s "$work/fa" "$work/fl"
-printf '#!/bin/sh\n[ "$2" = "%s" ] && { echo "%s"; exit 0; }\nexec /usr/bin/readlink "$@"\n' "$work/fl" "$work/fb" >"$work/rl/readlink"
+readlink_bin=$(command -v readlink)
+# shellcheck disable=SC2016 # the generated readlink expands its own variables
+cat >"$work/rl/readlink" <<EOF
+#!/bin/sh
+t=\$("$readlink_bin" "\$@") || exit \$?
+[ "\$t" = "$work/fa" ] && t="$work/fb"
+printf '%s\n' "\$t"
+EOF
 chmod +x "$work/rl/readlink"
 printf 'abc\n' | MITOS_HOOK_STATE="$work/fl/st" PATH="$work/rl:$PATH" hs hook_state publish s1 sha
 if [ "$(cat "$work/fb/st/s1.sha" 2>/dev/null)" = abc ] && [ -z "$(entries "$work/fa/st")" ]; then
