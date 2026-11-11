@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016
-# The synchronize path removes needs-rebase only when the live base commit is an
-# ancestor of the event's head, and it never rewrites any other label.
 set -u
 
 script="$(cd "$(dirname "$0")" && pwd)/clear-needs-rebase.sh"

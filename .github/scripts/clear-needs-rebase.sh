@@ -1,16 +1,4 @@
 #!/usr/bin/env bash
-# Remove needs-rebase when the pull request's base commit is an ancestor of its
-# head. That is the same condition as `git merge-base --is-ancestor` in
-# rebase-prs.sh: the compare API reports it as status "ahead" or "identical"
-# with behind_by 0.
-#
-# Called from clear-needs-rebase.yml on pull_request_target. The workflow checks
-# out the default branch, never the pull request head, and this script only
-# calls the API. It does not fetch or run the head.
-#
-# Reads the event from GITHUB_EVENT_PATH (set by Actions). The head sha there
-# selects which push this run is for. The base branch and the labels come from
-# a fresh read of the pull request, so a later push is left for its own run.
 # The compare uses the branch name, not pull_request.base.sha: that sha stays
 # at the last update, so a head that contains it can look ahead of a main that
 # has since moved.
@@ -60,10 +48,6 @@ status=$(jq -er '.status' <<<"$cmp")
 behind=$(jq -er '.behind_by' <<<"$cmp")
 [[ "$behind" =~ ^[0-9]+$ ]] || { echo "#$pr: compare behind_by is not a number" >&2; exit 1; }
 
-# behind_by 0 and ahead/identical is `git merge-base --is-ancestor base head`
-# for the current tip of the base branch. Any other status keeps the label.
-# An unknown status fails closed. gh removes that one label and leaves every
-# other label in place.
 if [ "$behind" -eq 0 ] && { [ "$status" = ahead ] || [ "$status" = identical ]; }; then
   if err=$(gh pr edit "$pr" --repo "$repo" --remove-label needs-rebase 2>&1); then
     echo "#$pr: $status of $base_ref_want; removed needs-rebase"
