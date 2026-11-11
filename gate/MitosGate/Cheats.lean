@@ -2,40 +2,6 @@ import MitosGate.GateId
 import MitosGate.Lint
 import MitosGate.Util
 
-/-!
-# What the cheat runner decides (`mitos-gate cheats`)
-
-`mitos-gate cheats` runs each case of `eval/cheats/` through the gate twice, the full gate and
-`--skip-lint`, several runs at a time, and prints one row per case. Everything it decides is in
-this module, which does no I/O. `CheatsRun.lean` lists the cases, copies the workspaces, starts
-the gates, writes the logs and prints the rows, and decides nothing.
-
-* **The verdict line.** The gate prints its verdict with `Verdict.render`, and the runner reads it
-  with `Verdict.parse`. `render` returns a `VerdictLine`. `ciLine` takes a `String`, so it does not
-  accept that line, and the print cannot escape it a second time. A line reads as `v` exactly when
-  its characters are `v.render.bytes` (`Verdict.parse_eq_some_iff`). The runner reads a run's one
-  `VERDICT:` line (`readVerdict`); none, or two, is no verdict (`readVerdict_eq_none`), and the
-  gate's own output reads as its verdict (`readVerdict_printed`). A run whose exit code disagrees
-  with its verdict, or that timed out, has none (`Run.verdict_eq_some`). The gate makes its verdict
-  with `Verdict.ofGate`. The record error goes through `ciLine`; a rejection carries `Cause`, not a
-  string. The line starts no workflow command in a CI log and stays one line
-  (`Verdict.ofGate_not_startsCommand`, `Verdict.ofGate_no_break`).
-* **`expect` files.** `Expect.parse` reads `key=value` lines. Each key is known and given once,
-  except `lock_append`, which may repeat; `full` and `comparator_only` are required
-  (`Expect.parse_render`).
-* **`judge`.** A case passes exactly when its full run is rejected at its `full=` gate, its
-  comparator-only run matches `comparator_only=`, and its `guards=` claim holds (`judge_pass_iff`,
-  `guardsWhy_eq_empty_iff`).
-* **The table.** One row per case, in the given order (`table_cases`), and exit code 0 exactly when
-  every row passed (`exitCode_eq_zero_iff`). Each judged case's two runs are jobs, each once
-  (`mem_jobs`, `jobs_nodup`, `order_perm`).
-* **The scheduler.** In every state the runner can reach, the jobs started so far are a prefix of
-  the job list and each is running or done exactly once, at most `n` run at once, and a heavy job
-  runs alone (`Reach.inv`). A job can always start while none runs (`start?_isSome`), every step
-  shrinks a measure (`start?_measure`, `finish_measure`), and when the runner stops, every job is
-  done, once (`Reach.complete`, `runner_done`).
--/
-
 namespace MitosGate.Cheats
 
 open Accept (GateId Cause)
@@ -92,27 +58,16 @@ theorem splitLines_printed_append {ls : List String} {rest : List Char}
     rw [this, ih (fun l' hl' => h l' (by simp [hl']))]
     simp
 
-/-! ## The verdict line -/
-
-/-- What the gate decided. A rejection carries `Cause`, not a string. The record error is the
-text `Verdict.ofGate` already wrote with `ciLine`. -/
 inductive Verdict
   | accepted
-  /-- Gate `g` rejected the plugin. -/
   | rejected (g : GateId) (cause : Cause)
-  /-- Gates 0–6 passed, but `--record` could not write the record. `why` is the error after
-  `ciLine`. -/
   | unrecorded (why : String)
   deriving DecidableEq, Repr
 
-/-- A verdict line ready to print. The text is private, and there is no coercion to `String`.
-`ciLine` accepts a `String`, so it does not accept a `VerdictLine`: `ciLine v.render` does not
-typecheck. `IO.println` prints the line through `ToString`. -/
 structure VerdictLine where
   private mk ::
   text : String
 
-/-- The characters of a verdict line. -/
 def VerdictLine.bytes (l : VerdictLine) : List Char := l.text.toList
 
 instance : ToString VerdictLine where
@@ -126,20 +81,14 @@ def acceptedLine : List Char := "VERDICT: ACCEPTED".toList
 def gateTag : List Char := "VERDICT: REJECTED (gate ".toList
 def recordTag : List Char := "VERDICT: REJECTED (record: ".toList
 
-/-- The characters after a gate's name: `)` when the gate judged the plugin, `: I/O error)` when
-an I/O error kept it from judging. -/
 def causeBytes : Cause → List Char
   | .judged => [')']
   | .ioError => ": I/O error)".toList
 
-/-- `ciLine` leaves the empty cause text as it is. -/
 theorem ciLine_empty : ciLine "" = "" := by decide
 
-/-- `ciLine` leaves `I/O error` as it is. -/
 theorem ciLine_ioError : ciLine "I/O error" = "I/O error" := by decide
 
-/-- The verdict line the gate prints. The record line is `VERDICT: REJECTED (record: <why>)`, and
-`why` is already the escaped error. -/
 def Verdict.render : Verdict → VerdictLine
   | .accepted => .mk "VERDICT: ACCEPTED"
   | .rejected g c =>
@@ -149,7 +98,6 @@ def Verdict.render : Verdict → VerdictLine
         | .ioError => ": " ++ ciLine "I/O error") ++ ")"
   | .unrecorded why => .mk <| "VERDICT: REJECTED (record: " ++ why ++ ")"
 
-/-- **The bytes `render` writes.** -/
 theorem Verdict.render_bytes (v : Verdict) : v.render.bytes = match v with
     | .accepted => acceptedLine
     | .rejected g c => gateTag ++ (toString g.num ++ ": " ++ g.name).toList ++ causeBytes c
@@ -175,19 +123,14 @@ example : (Verdict.rejected .lint .judged).render.bytes =
     "VERDICT: REJECTED (gate 1: lint)".toList := by
   rw [Verdict.render_bytes]; decide
 
-/-- `decide` reduces `ToString` of `VerdictLine`'s private field. The printed line is the bytes
-`render_bytes` states. -/
 example : toString (Verdict.rejected .lint .judged).render =
     "VERDICT: REJECTED (gate 1: lint)" := by decide
 
-/-- `N: name` of the gate numbered `N` that starts `cs`, and what follows it. -/
 def gateOf? (cs : List Char) : Option (GateId × List Char) :=
   GateId.all.findSome? fun g => (stripPrefix? (toString g.num ++ ": " ++ g.name).toList cs).map (g, ·)
 
-/-- The two cause tails are different lists, so each tail names one cause. -/
 theorem causeBytes_ne : causeBytes .judged ≠ causeBytes .ioError := by decide
 
-/-- The cause whose verdict tail is `cs`: `)` or `: I/O error)`, and nothing else. -/
 def causeOf? (cs : List Char) : Option Cause :=
   if cs = causeBytes .judged then some .judged
   else if cs = causeBytes .ioError then some .ioError
@@ -240,7 +183,6 @@ theorem causeOf?_eq_some_iff {cs : List Char} {c : Cause} :
     by_cases h : cs = causeBytes .judged <;> by_cases h2 : cs = causeBytes .ioError <;>
       simp [causeOf?, h, h2, causeBytes_ne, causeBytes_ne.symm]
 
-/-- What `IO.println` writes for a verdict line, before the newline it adds. -/
 theorem VerdictLine.toString_bytes (l : VerdictLine) : (toString l).toList = l.bytes := by
   rfl
 
@@ -257,9 +199,6 @@ theorem recordTag_ne_accepted (x : List Char) : recordTag ++ x ≠ acceptedLine 
 theorem stripPrefix?_gateTag_recordTag (x : List Char) : stripPrefix? gateTag (recordTag ++ x) = none := by
   simp [gateTag, recordTag, stripPrefix?]
 
-/-- **The runner reads exactly what the gate prints.** A line reads as the verdict `v` exactly when
-its characters are `v`'s line: the gate's lines read as their verdicts, and no other line reads as
-any verdict. -/
 theorem Verdict.parse_eq_some_iff {l : String} {v : Verdict} :
     Verdict.parse l = some v ↔ l.toList = v.render.bytes := by
   constructor
@@ -325,9 +264,6 @@ theorem isVerdictLine_render (v : Verdict) : isVerdictLine v.render.bytes = true
     cases c <;> simp [isVerdictLine, gateTag, causeBytes, List.isPrefixOf]
   | unrecorded _ => simp [isVerdictLine, recordTag, List.isPrefixOf]
 
-/-- **The gate's output reads as its verdict.** The gate prints lines `pre` that are not verdict
-lines, then its verdict line; anything may follow (such as the standard error), as long as none of
-its lines is a verdict line. The verdict line is what `IO.println` writes for `v.render`. -/
 theorem readVerdict_printed {pre : List String} {v : Verdict} {rest : List Char}
     (hpre : ∀ l ∈ pre, '\n' ∉ l.toList ∧ isVerdictLine l.toList = false)
     (hv : '\n' ∉ v.render.bytes) (hrest : ∀ l ∈ splitLines rest, isVerdictLine l = false) :
@@ -352,25 +288,6 @@ theorem readVerdict_printed {pre : List String} {v : Verdict} {rest : List Char}
   simp only [readVerdict, this]
   exact Verdict.parse_render v
 
-/-! ## The verdict line in a CI log
-
-The gate makes its verdict with `Verdict.ofGate` and prints `v.render`. `render` returns a
-`VerdictLine`, which `ciLine` does not accept, so the print cannot pass the line through `ciLine`
-again. The record error goes through `ciLine` once, in `ofGate`. A rejection carries `Cause`.
-The whole line starts no workflow command (`Verdict.ofGate_not_startsCommand`), stays one line
-(`Verdict.ofGate_no_break`) and holds only `oneLine`'s code points
-(`Verdict.ofGate_printable`).
-
-Escaping the printed record line's text again changes it: `ciLine` writes the `\` of an escape as
-`\u{005C}`. The runner still reads a verdict from that line. The line still starts with the record
-prefix and ends with `)`, so `parse` reads `unrecorded` of the double-escaped text, which is not
-the error the gate recorded (the last example below). -/
-
-/-- The verdict the gate prints for how its run ended: `.ok none` when gates 0–6 passed and the
-record, if asked for, was written; `.ok (some e)` when the record could not be written, with the
-error `e`; `.error (g, cause)` when gate `g` rejected the plugin. `ofGate` writes the record error
-with `ciLine`. The two cause texts are fixed, and `ciLine` leaves each as it is
-(`ciLine_empty`, `ciLine_ioError`). -/
 def Verdict.ofGate : Except (GateId × Cause) (Option String) → Verdict
   | .ok none => .accepted
   | .ok (some e) => .unrecorded (ciLine e)
@@ -385,8 +302,6 @@ theorem hasLegacy_append_singleton {c : Char} (hc : c ≠ '[') (l : List Char) :
       rcases l with _ | ⟨x, _ | ⟨y, r⟩⟩ <;> simp [hc]
     rw [List.cons_append, hasLegacy, hasLegacy, ih, this]
 
-/-- A line `Verdict.ofGate` makes is `VERDICT: ACCEPTED`, or a trusted start `pre` that begins
-with `V` and holds no `#`, then a `ciLine` text, then `)`. -/
 theorem Verdict.ofGate_render_bytes (o : Except (GateId × Cause) (Option String)) :
     (Verdict.ofGate o).render.bytes = acceptedLine ∨
       ∃ pre s, (Verdict.ofGate o).render.bytes = pre ++ (ciLine s).toList ++ [')'] ∧
@@ -412,7 +327,6 @@ theorem Verdict.ofGate_render_bytes (o : Except (GateId × Cause) (Option String
     refine ⟨recordTag, e, ?_, by decide, by decide⟩
     rw [Verdict.ofGate, render_bytes]
 
-/-- **The gate's verdict line starts no workflow command**, by either of the runner's parsers. -/
 theorem Verdict.ofGate_not_startsCommand (o : Except (GateId × Cause) (Option String)) :
     ¬ startsCommand (toString (Verdict.ofGate o).render) := by
   unfold startsCommand
@@ -432,7 +346,6 @@ theorem Verdict.ofGate_not_startsCommand (o : Except (GateId × Cause) (Option S
         hasLegacy_append_singleton (by decide), ciLine, String.toList_ofList, ciChars_legacy] at hl
       exact Bool.false_ne_true hl
 
-/-- The gate's verdict line prints only allowlisted code points, and `\` to start an escape. -/
 theorem Verdict.ofGate_printable (o : Except (GateId × Cause) (Option String)) :
     ∀ x ∈ (Verdict.ofGate o).render.bytes, printable x = true ∨ x = '\\' := by
   rcases Verdict.ofGate_render_bytes o with h | ⟨pre, s, h, -, hpre⟩
@@ -445,7 +358,6 @@ theorem Verdict.ofGate_printable (o : Except (GateId × Cause) (Option String)) 
     · exact ciLine_printable s x hx
     · exact .inl (by decide)
 
-/-- **The gate's verdict line stays one line**, so `readVerdict_printed` reads it back. -/
 theorem Verdict.ofGate_no_break (o : Except (GateId × Cause) (Option String)) :
     ∀ c ∈ ['\n', '\x0b', '\x0c', '\r', '\u0085', ' ', ' '],
       c ∉ (Verdict.ofGate o).render.bytes := by
@@ -454,7 +366,6 @@ theorem Verdict.ofGate_no_break (o : Except (GateId × Cause) (Option String)) :
   intro c hc hmem
   exact key c hc (Verdict.ofGate_printable o c hmem)
 
-/-- The gate's own texts print as they are, so its rejection lines are the ones `run.sh` reads. -/
 example : (Verdict.ofGate (.error (.adequacy, .ioError))).render.bytes =
     "VERDICT: REJECTED (gate 6: model adequacy: I/O error)".toList := by
   rw [Verdict.ofGate, Verdict.render_bytes]; decide
@@ -469,8 +380,6 @@ example : (Verdict.ofGate (.ok (some "##[warning]x\n::error::y"))).render.bytes 
     "VERDICT: REJECTED (record: ##\\u{005B}warning]x\\u{000A}::error::y)".toList := by
   rw [Verdict.ofGate, Verdict.render_bytes]; decide
 
-/-- A second escape of the record line changes it. The runner still reads a verdict, and that
-verdict is the double-escaped text, not the error the gate recorded. -/
 example :
     let v := Verdict.ofGate (.ok (some "a\nb"))
     let line := String.ofList v.render.bytes

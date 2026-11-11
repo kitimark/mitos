@@ -13,8 +13,6 @@ def GateId.name : GateId → String
   | .statements => "statements" | .axioms => "axioms" | .kernels => "kernels"
   | .adequacy => "model adequacy"
 
-/-- Why a gate rejected the plugin. `judged` means the gate judged it and refused it.
-`ioError` means an I/O error kept the gate from judging. -/
 inductive Cause
   | judged
   | ioError
