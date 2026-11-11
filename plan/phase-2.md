@@ -13,7 +13,7 @@ Names marked *(new)* do not exist on `main` yet. This phase adds them.
    `core/Challenge/Resolver.lean`: every theorem, #101's no-duplicates included, standard axioms
    only, also with `--paranoid`.
 2. `cd core && lake check` passes: no `sorry` in any target it builds, and standard axioms only.
-   The Challenge files (`core/Challenge/*.lean`) hold intentional `sorry` holes and are not a
+   The Challenge files (`core/Challenge/*.lean`) hold intentional `sorry` holes and are not a default
    build target, so `lake check` never sees them (`docs/process.md`, "The Challenge"); the
    comparator checks those instead (criterion 1).
 3. Mutation testing: each mutant of the chain resolver and impact analysis in `eval/mutants/`
