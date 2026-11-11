@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016 # fixtures keep $repo and "$2" as text
-# Every gh api route in pr-state.sh and watch-github.sh is a REST path.
-# GraphQL's route is not. Run: .claude/scripts/gh-api-rest.test.sh
 set -u
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -23,8 +21,6 @@ is_rest_route() {
   return 0
 }
 
-# Print one route per line. A gh api use that is not a helper, an error message, or a route
-# fails the file. Call sites of fetch, fetch_all_pages and api supply the helper routes.
 routes_of() {
   local f=$1 line rest tok nxt quoted route
   while IFS= read -r line || [ -n "$line" ]; do
@@ -101,7 +97,6 @@ check_file() {
 check_file "$root/.claude/hooks/pr-state.sh"
 check_file "$root/.claude/scripts/watch-github.sh"
 
-# A route the checker accepts still passes, and each GraphQL shape fails.
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 base="$root/.claude/hooks/pr-state.sh"
@@ -109,7 +104,7 @@ cp "$base" "$work/ok.sh"
 printf '\nfetch extra "repos/$repo/pulls/1" &\n' >>"$work/ok.sh"
 check_file "$work/ok.sh"
 
-reject() { # name, line appended to a copy
+reject() {
   local name=$1 line=$2 copy="$work/bad.sh"
   cp "$base" "$copy"
   printf '\n%s\n' "$line" >>"$copy"

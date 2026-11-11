@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# hook-state.sh and origin-repo.sh are bash because their first line says so.
-# Run: .claude/scripts/sourced-bash.test.sh
 set -u
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -44,8 +42,6 @@ if ! command -v shellcheck >/dev/null 2>&1; then
   exit 1
 fi
 
-# The shebang is what tells shellcheck the dialect. A copy with neither the shebang nor the
-# directive is not checked as bash.
 cp "$root/.claude/hooks/hook-state.sh" "$work/hook-state.sh"
 cp "$root/.claude/scripts/lib/origin-repo.sh" "$work/origin-repo.sh"
 sed -i '1s/^#!\/usr\/bin\/env bash$/# not a shebang/' "$work/hook-state.sh"

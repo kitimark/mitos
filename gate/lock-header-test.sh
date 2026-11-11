@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# The first two lines of statements.lock match MitosGate.Lock.header.
-# A copy with either line edited, or with the header removed, fails.
-# Run from anywhere: gate/lock-header-test.sh
 set -u
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -13,7 +10,7 @@ trap 'rm -rf "$tmp"' EXIT
 pass=0
 fail=0
 
-expect() { # name, exit code, directory
+expect() {
   local name=$1 code=$2 dir=$3 got=0
   (cd "$dir" && "$bin" lock --check-header >"$tmp/out" 2>&1) || got=$?
   if [ "$got" != "$code" ]; then

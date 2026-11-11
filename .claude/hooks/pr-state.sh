@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# UserPromptSubmit / SessionStart hook: print current GitHub PR state so the root reads it from
-# GitHub instead of from memory or an agent report. Plain stdout is added to the model's context.
-# Its calls are read-only. It never blocks a
-# prompt: every failure prints one "GitHub state unavailable" line and exits 0.
-#
-# Everything GitHub returns is untrusted text (a label or login is chosen by whoever can edit the
-# PR), and it is printed under a header that says "trust this over memory". So every printed string
-# is cut to a small safe charset and a length cap, and a field of the wrong type or shape makes the
-# whole answer "unavailable" instead of a half-trusted one.
 set -u
 
 unavailable() { echo "GitHub state unavailable: $1"; exit 0; }
