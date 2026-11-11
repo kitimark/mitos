@@ -56,8 +56,7 @@ them.
    and the `String.le_*` deprecations are fixed. Landing it before P2-001a lets the canary check
    the migrated mutants. It never goes between two core PRs.
 
-No other open PR is a prerequisite: #124, #125, #126, #138, #149, #151, #153 and #155 touch no
-core file and can merge during the phase.
+No other PR is a prerequisite. An open PR that touches no core file can merge during the phase.
 
 ## Scope decisions
 
@@ -80,11 +79,16 @@ The owner's decisions on the draft are in
   relation. Each statement is then decidable at a fixed input, and the Phase 1 mutant
   refutations (`revert this; decide`) keep working. Sound, complete, unresolved-exact,
   assumptions-exact and status-honest are restated. Total, retract-exact, impact-correct and
-  #101's no-duplicates keep their text. With no binding fact, `derivations fs` holds exactly
+  #101's no-duplicates keep their text, but their meaning moves with `Edge` and `Affects`, so
+  their `statements.lock` lines change too. With no binding fact, `derivations fs` holds exactly
   Phase 1's matches.
 - **Each spec PR carries its implementation and proofs,** so `lake comparator --paranoid` runs
-  at every merge of the phase. In Phase 1 the spec landed before the implementation, and CI
-  skipped the comparator until `core/Mitos/Proofs/Resolver.lean` existed.
+  at every merge of the phase. This is an exception to `docs/process.md`, "Two PRs per feature:
+  statements first", for P2-001a and P2-001b only: a change to `Edge` breaks the build of the
+  implementation, so the two cannot land apart without switching the comparator off. In Phase 1
+  the spec landed first, and CI skipped the comparator until `core/Mitos/Proofs/Resolver.lean`
+  existed. The owner still reviews the spec files of each PR; Lean and the comparator check the
+  rest.
 - **Bindings in this phase.** `FactKind.binds` *(new)* comes in P2-001b, so chains exist in
   Phase 2. It changes `Fact` for every plugin, so P2-001b re-accepts
   `examples/acme/accepted/ToyRequire.json`.
@@ -92,7 +96,8 @@ The owner's decisions on the draft are in
   and its requirement has exactly one derivation; otherwise `inferred` (`Spec.StatusHonest`). On
   Phase 1 inputs this says the same as Phase 1's "exactly one provider".
 - **Union view status:** in the scorecard, a repo-level edge is `confirmed` if any of its
-  derivations is. Today `collapse` in `eval/score/Score.lean` marks it `inferred` if any is.
+  derivations is. Today `collapse` in `eval/score/Score.lean` marks it `inferred` if any is, so
+  the `confirmed` numbers move from the Phase 1 baseline when P2-009a lands.
 - **Impact through bindings:** a change in the repo that holds a binding counts as impact
   (`Edge.through` and `Affects.through` *(new)*).
 - **Revisit D1 by measurement.** The nightly scorecard reports the most derivations any
@@ -130,7 +135,7 @@ The owner's decisions on the draft are in
 | P2-009b | go.mod fixture and hand labels; the scorer's go.mod edge type | tooling | none yet |
 | P2-010 | Nightly scorecard code in `eval/score/`: every fixture, the diff against `main`'s, the most derivations per repo-level edge. Eval code only; the wiring is in P2-012 | tooling | none yet |
 | P2-011 | Toolchain-bump readiness: the CrossCheckDecoy probe (`eval/mutants/Mutants/CrossCheck.lean`) for v4.36 and the `String.le_*` deprecations (`gate/MitosGate/ContentId.lean`); bump `lean-toolchain` when the release ships (owner-gated: `gate/`, `lean-toolchain`) | gate | [#147](https://github.com/kitimark/mitos/issues/147) |
-| P2-012 | One `.github` PR: the CI accept step for `GoMod`; #107 items 2 and 3 (`mitos-mutants --prepare` on PRs that touch `core/`, a failure for a theorem no mutant breaks); the nightly Go refresh of the vendored outputs, followed by the differential run (P2-008); the nightly scorecard post. #158 and #33 can ride along (owner-gated: `.github/`) | ci | none yet |
+| P2-012 | One `.github` PR: the CI accept step for `GoMod`; #107 items 2 and 3 (`mitos-mutants --prepare` on PRs that touch `core/`, a failure for a theorem no mutant breaks); the nightly Go refresh of the vendored outputs, followed by the differential run (P2-008); the nightly scorecard post. #107 items 4 and 5, #158 and #33 can ride along (owner-gated: `.github/`) | ci | none yet |
 
 Each open row gets an issue in the Phase 2 milestone once this plan merges, and its status lives
 in that issue and its PRs.
