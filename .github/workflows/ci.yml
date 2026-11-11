@@ -102,10 +102,29 @@ jobs:
       - name: hook-state.sh and origin-repo.sh name bash with a shebang
         run: |
           if ! command -v shellcheck >/dev/null 2>&1; then
-            # Mirror DNS blips make apt exit 100 after minutes. Retry, and if
-            # update fails, install from the cached lists anyway. apt tries
-            # azure.archive.ubuntu.com first and reaches the next mirror only
-            # after about a minute, so the install cap covers that fallback.
+            # Mirror DNS blips make apt exit 100. If the system resolver cannot
+            # name a mirror, pin an address from a public resolver (apt still
+            # checks the signed Release files), then retry. A failed update
+            # still installs from the cached lists.
+            pin_mirrors() {
+              local list=/etc/apt/apt-mirrors.txt host ip ns
+              [ -f "$list" ] || return 0
+              command -v dig >/dev/null 2>&1 || return 0
+              while read -r host; do
+                [ -n "$host" ] || continue
+                getent hosts "$host" >/dev/null 2>&1 && continue
+                ip=
+                for ns in 1.1.1.1 8.8.8.8; do
+                  ip=$(dig +time=2 +tries=1 +short A "$host" @"$ns" 2>/dev/null | grep -m1 -E '^[0-9]+(\.[0-9]+){3}$') || true
+                  [ -n "$ip" ] && break
+                done
+                if [ -n "$ip" ]; then
+                  echo "System resolver failed for $host; pinning $ip."
+                  printf '%s %s\n' "$ip" "$host" | sudo tee -a /etc/hosts >/dev/null
+                fi
+              done < <(grep -oE 'https?://[^[:space:]/]+' "$list" | sed -E 's#https?://##' | sort -u)
+            }
+            pin_mirrors
             pkg=shellcheck
             opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
             n=1
@@ -142,10 +161,29 @@ jobs:
 
       - name: Install bubblewrap (sandbox for lake comparator)
         run: |
-          # Mirror DNS blips make apt exit 100 after minutes. Retry, and if
-          # update fails, install from the cached lists anyway. apt tries
-          # azure.archive.ubuntu.com first and reaches the next mirror only
-          # after about a minute, so the install cap covers that fallback.
+          # Mirror DNS blips make apt exit 100. If the system resolver cannot
+          # name a mirror, pin an address from a public resolver (apt still
+          # checks the signed Release files), then retry. A failed update
+          # still installs from the cached lists.
+          pin_mirrors() {
+            local list=/etc/apt/apt-mirrors.txt host ip ns
+            [ -f "$list" ] || return 0
+            command -v dig >/dev/null 2>&1 || return 0
+            while read -r host; do
+              [ -n "$host" ] || continue
+              getent hosts "$host" >/dev/null 2>&1 && continue
+              ip=
+              for ns in 1.1.1.1 8.8.8.8; do
+                ip=$(dig +time=2 +tries=1 +short A "$host" @"$ns" 2>/dev/null | grep -m1 -E '^[0-9]+(\.[0-9]+){3}$') || true
+                [ -n "$ip" ] && break
+              done
+              if [ -n "$ip" ]; then
+                echo "System resolver failed for $host; pinning $ip."
+                printf '%s %s\n' "$ip" "$host" | sudo tee -a /etc/hosts >/dev/null
+              fi
+            done < <(grep -oE 'https?://[^[:space:]/]+' "$list" | sed -E 's#https?://##' | sort -u)
+          }
+          pin_mirrors
           pkg=bubblewrap
           opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
           n=1
