@@ -856,14 +856,20 @@ def guardText (rule why : String) : String :=
   "guards=" ++ rule ++ (if why = "" then "" else ": " ++ why)
 
 def fullOk (g : GateId) : Option Verdict → Bool
-  | some (.rejected g' _) => g' == g
+  | some (.rejected g' .judged) => g' == g
   | _ => false
 
 def CompExpect.ok : CompExpect → Option Verdict → Bool
   | .accept, some .accepted => true
-  | .reject, some (.rejected _ _) => true
-  | .rejectAt g, some (.rejected g' _) => g' == g
+  | .reject, some (.rejected _ .judged) => true
+  | .rejectAt g, some (.rejected g' .judged) => g' == g
   | _, _ => false
+
+example : fullOk .adequacy (some (.rejected .adequacy .ioError)) = false := by decide
+example : fullOk .adequacy (some (.rejected .adequacy .judged)) = true := by decide
+example : CompExpect.ok .reject (some (.rejected .lint .ioError)) = false := by decide
+example : CompExpect.ok (.rejectAt .adequacy) (some (.rejected .adequacy .ioError)) = false := by decide
+example : CompExpect.ok (.rejectAt .adequacy) (some (.rejected .adequacy .judged)) = true := by decide
 
 def guardsOk (e : Expect) (full : Run) : Bool :=
   match e.guards with
@@ -896,23 +902,46 @@ def judge (case : String) (e : Expect) (full comp : Run) : Row :=
 
 def CompExpect.Holds : CompExpect → Option Verdict → Prop
   | .accept, v => v = some .accepted
-  | .reject, v => ∃ g why, v = some (.rejected g why)
-  | .rejectAt g, v => ∃ why, v = some (.rejected g why)
+  | .reject, v => ∃ g, v = some (.rejected g .judged)
+  | .rejectAt g, v => v = some (.rejected g .judged)
 
 theorem judge_pass_iff {case : String} {e : Expect} {full comp : Run} :
     (judge case e full comp).pass = true ↔
-      (∃ why, full.verdict = some (.rejected e.full why)) ∧ e.comparatorOnly.Holds comp.verdict ∧
+      full.verdict = some (.rejected e.full .judged) ∧ e.comparatorOnly.Holds comp.verdict ∧
         ∀ r, e.guards = some r → guardsWhy r e.comparatorOnly full.output = "" := by
   simp only [judge, Bool.and_eq_true, and_assoc]
   apply and_congr
   · generalize full.verdict = v
-    rcases v with _ | _ | ⟨g, w⟩ | w <;> simp [fullOk]
+    rcases v with _ | _ | ⟨g, c⟩ | _
+    · simp [fullOk]
+    · simp [fullOk]
+    · cases c <;> simp [fullOk, beq_iff_eq]
+    · simp [fullOk]
   · apply and_congr
     · generalize comp.verdict = v
-      rcases v with _ | _ | ⟨g, w⟩ | w <;> cases e.comparatorOnly <;>
-        simp [CompExpect.ok, CompExpect.Holds]
+      rcases v with _ | _ | ⟨g, c⟩ | _
+      · cases e.comparatorOnly <;> simp [CompExpect.ok, CompExpect.Holds]
+      · cases e.comparatorOnly <;> simp [CompExpect.ok, CompExpect.Holds]
+      · cases c <;> cases e.comparatorOnly <;> simp [CompExpect.ok, CompExpect.Holds, beq_iff_eq]
+      · cases e.comparatorOnly <;> simp [CompExpect.ok, CompExpect.Holds]
     · unfold guardsOk
       split <;> simp_all
+
+def ioAtAdequacy : Run :=
+  { exitCode := 1
+    output := "VERDICT: REJECTED (gate 6: model adequacy: I/O error)\n"
+    timedOut := false }
+
+def judgedAtAdequacy : Run :=
+  { exitCode := 1
+    output := "VERDICT: REJECTED (gate 6: model adequacy)\n"
+    timedOut := false }
+
+example : (judge "wrong cause" { full := .adequacy, comparatorOnly := .reject }
+    ioAtAdequacy judgedAtAdequacy).pass = false := by decide
+
+example : (judge "judged" { full := .adequacy, comparatorOnly := .reject }
+    judgedAtAdequacy judgedAtAdequacy).pass = true := by decide
 
 structure Case where
   name : String
