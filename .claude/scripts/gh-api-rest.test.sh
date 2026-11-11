@@ -39,8 +39,72 @@ command_head() {
   printf '%s\n' "$out"
 }
 
+# Index of the next fetch/fetch_all_pages/api call in $1, in source order.
+# Command words count only at a command boundary, so an earlier if/fetch is
+# not skipped for a later $(...), and a call after `;` is still seen.
+next_wrapper() {
+  local s=$1
+  local i=0 n=${#s} c at=1 q=''
+  while (( i < n )); do
+    c=${s:i:1}
+    if [ -n "${q:-}" ]; then
+      [ "$c" = "$q" ] && q=
+      i=$((i + 1))
+      continue
+    fi
+    case $c in
+      \"|\') q=$c; i=$((i + 1)); continue ;;
+      [[:space:]]) i=$((i + 1)); continue ;;
+      \#) return 1 ;;
+      \;) at=1; i=$((i + 1)); continue ;;
+      \&)
+        [ "${s:i:2}" = "&&" ] && i=$((i + 1))
+        at=1; i=$((i + 1)); continue ;;
+      \|)
+        [ "${s:i:2}" = "||" ] && i=$((i + 1))
+        at=1; i=$((i + 1)); continue ;;
+      \() at=1; i=$((i + 1)); continue ;;
+      \{)
+        [ "$i" -eq 0 ] || [ "${s:i-1:1}" != '$' ] && at=1
+        i=$((i + 1)); continue ;;
+      \$)
+        if [[ ${s:i} =~ ^\$\((fetch_all_pages|fetch|api)[[:space:]] ]]; then
+          printf '%s\n' "$i"
+          return 0
+        fi
+        i=$((i + 1))
+        continue ;;
+    esac
+    if [ "$at" = 1 ]; then
+      if [[ ${s:i} =~ ^(if|elif|then|else|do)[[:space:]] ]]; then
+        i=$((i + ${#BASH_REMATCH[0]}))
+        at=1
+        continue
+      fi
+      if [[ ${s:i} =~ ^(fetch_all_pages|fetch|api)[[:space:]] ]]; then
+        printf '%s\n' "$i"
+        return 0
+      fi
+      if [[ ${s:i} =~ ^[A-Za-z0-9_]+ ]]; then
+        i=$((i + ${#BASH_REMATCH[0]}))
+        if [ "${s:i:1}" = "=" ]; then
+          i=$((i + 1))
+          at=1
+          continue
+        fi
+      else
+        i=$((i + 1))
+      fi
+      at=0
+      continue
+    fi
+    i=$((i + 1))
+  done
+  return 1
+}
+
 routes_of() {
-  local f=$1 line rest tok nxt quoted route scan call prefix restline
+  local f=$1 line rest tok nxt quoted route scan call restline idx
   while IFS= read -r line || [ -n "$line" ]; do
     [[ $line =~ ^[[:space:]]*# ]] && continue
     if [[ $line =~ ^[a-z_]+\(\)[[:space:]]*\{ ]]; then
@@ -85,18 +149,8 @@ routes_of() {
     done
     restline=$line
     while true; do
-      if [[ $restline =~ ^[[:space:]]*(fetch|fetch_all_pages|api)[[:space:]] ]]; then
-        :
-      elif [[ $restline =~ \$\((fetch|fetch_all_pages|api)[[:space:]] ]]; then
-        :
-      elif [[ $restline =~ (if|elif)[[:space:]]+(fetch|fetch_all_pages|api)[[:space:]] ]]; then
-        :
-      else
-        break
-      fi
-      prefix=${restline%%"${BASH_REMATCH[0]}"*}
-      call=${restline:${#prefix}}
-      call=$(command_head "$call")
+      idx=$(next_wrapper "$restline") || break
+      call=$(command_head "${restline:idx}")
       [ -n "$call" ] || break
       quoted=$(grep -oE '"[^"]*"' <<<"$call" || true)
       route=
@@ -108,7 +162,7 @@ routes_of() {
       done <<<"$quoted"
       [ -n "$route" ] || { echo "call has no route: $line" >&2; return 1; }
       printf '%s\n' "$route"
-      restline=${restline:$((${#prefix} + ${#call}))}
+      restline=${restline:$((idx + ${#call}))}
       case $restline in
         ')'*|';'*|'|'*|'&'*) restline=${restline:1} ;;
       esac
@@ -201,6 +255,8 @@ reject "if fetch" 'if fetch gq "graphql"'
 reject "quoted gh api before the call" "echo 'gh  api repos/o/r/pulls '; gh api graphql"
 reject "if fetch then a later route" 'if fetch gq "graphql"; then echo "repos/o/r/pulls"; fi'
 reject "two api calls" 'api ok.json "repos/o/r/pulls"; api gq.json "graphql"'
+reject "api after another command" 'echo ready; api gq.json "graphql"'
+reject "if fetch then a substitution" 'if fetch gq "graphql"; then x=$(fetch ok "repos/o/r/pulls"); fi'
 
 echo "gh-api-rest: done"
 [ "$failed" = 0 ]
