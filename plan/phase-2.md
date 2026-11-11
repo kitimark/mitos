@@ -12,7 +12,10 @@ Names marked *(new)* do not exist on `main` yet. This phase adds them.
 1. `cd core && lake comparator` accepts `Mitos.Proofs.Resolver` against the Phase 2
    `core/Challenge/Resolver.lean`: every theorem, #101's no-duplicates included, standard axioms
    only, also with `--paranoid`.
-2. `cd core && lake check` passes: no `sorry` anywhere in the core.
+2. `cd core && lake check` passes: no `sorry` in any target it builds, and standard axioms only.
+   The Challenge files (`core/Challenge/*.lean`) hold intentional `sorry` holes and are not a
+   build target, so `lake check` never sees them (`docs/process.md`, "The Challenge"); the
+   comparator checks those instead (criterion 1).
 3. Mutation testing: each mutant of the chain resolver and impact analysis in `eval/mutants/`
    breaks at least one theorem, every Phase 1 mutant still refutes after the migration, and no
    known gap (`survives=`) is open without an owner ruling.
@@ -88,13 +91,17 @@ The owner's decisions on the draft are in
   implementation, so the two cannot land apart without switching the comparator off. In Phase 1
   the spec landed first, and CI skipped the comparator until `core/Mitos/Proofs/Resolver.lean`
   existed. The owner still reviews the spec files of each PR; Lean and the comparator check the
-  rest.
+  rest. `docs/process.md` is the owner's path, so this plan does not edit it. P2-000 is the
+  owner-gated row that records the exception there, and the owner approves it with the plan.
 - **Bindings in this phase.** `FactKind.binds` *(new)* comes in P2-001b, so chains exist in
   Phase 2. It changes `Fact` for every plugin, so P2-001b re-accepts
   `examples/acme/accepted/ToyRequire.json`.
 - **Status rule:** an edge is `confirmed` only when nothing under its derivation is AI-proposed
-  and its requirement has exactly one derivation; otherwise `inferred` (`Spec.StatusHonest`). On
-  Phase 1 inputs this says the same as Phase 1's "exactly one provider".
+  and every derivation of its requirement reaches the same single provider; otherwise `inferred`
+  (`Spec.StatusHonest`). A requirement with a direct and a bound derivation to the same provider
+  is still `confirmed`. On Phase 1 inputs this agrees with Phase 1's "exactly one provider", and
+  P2-001a states it in this form. It refines owner decision 3 on #156, which said "exactly one
+  derivation" ([comment](https://github.com/kitimark/mitos/issues/156#issuecomment-6795388085)).
 - **Union view status:** in the scorecard, a repo-level edge is `confirmed` if any of its
   derivations is. Today `collapse` in `eval/score/Score.lean` marks it `inferred` if any is, so
   the `confirmed` numbers move from the Phase 1 baseline when P2-009a lands.
@@ -124,9 +131,10 @@ The owner's decisions on the draft are in
 
 | # | Task | Kind | Issue |
 |---|---|---|---|
+| P2-000 | Amend `docs/process.md`, "Two PRs per feature: statements first", to record the exception for P2-001a and P2-001b: a spec-only PR cannot have a green gate when it changes `Edge`, so the spec PR carries its implementation and proofs and the owner still reviews its spec files. Docs only; lands before P2-001a (owner-gated: `docs/process.md`) | process | none yet |
 | P2-001a | Keyed edges, direct rule only: `Derivation`, `Chain` and `derivations` *(new)*; `Edge.key` becomes a `Derivation` in place of `req` and `prov`; `RepoKey` and `Edge.repoKey` *(new)*. Five statements restated, `retract_repo` proved in `core/Mitos/Core/Spec/Repo.lean` *(new)*, adequacy theorems re-proved. Resolver, impact, proofs and `eval/score` move in the same PR (owner-gated: `core/Mitos/Core/`, `statements.lock`) | spec, impl | none yet |
 | P2-001b | Chains: `FactKind.binds` *(new)* and the `bound` rule; `Edge.through` and `Affects.through` *(new)*; chain adequacy theorems; resolver, impact and proofs in the same PR; `examples/acme/accepted/ToyRequire.json` re-accepted (owner-gated: `core/Mitos/Core/`, `statements.lock`) | spec, impl | none yet |
-| P2-005a | Phase 1 mutants migrated to keyed edges: the `Edge` literals in the `Refute.lean` files and the `find=` anchors in `eval/mutants/cases/`. Lands in P2-001a's PR, so no mutant is dropped and the nightly run stays green | tooling | none yet |
+| P2-005a | Phase 1 mutants migrated to keyed edges: the `Edge` literals in the `Refute.lean` files, the `find=` anchors in `eval/mutants/cases/`, and `eval/mutants/Mutants/Implied.lean`, which proves `Total` from `Complete` and `UnresolvedExact` through `Edge.key`, `e.req` and `e.prov`. Lands in P2-001a's PR, so no mutant is dropped and the nightly run stays green | tooling | none yet |
 | P2-005b | Chain mutants in `eval/mutants/`, each breaking at least one theorem | tooling | none yet |
 | P2-006 | go.mod model `examples/acme/Models/GoMod.lean` *(new)*, its golden files and adequacy module, and `examples/acme/models.lock` (owner-gated: reviewed model, `spec-approved`) | spec | none yet |
 | P2-007 | go.mod plugin `examples/acme/Plugins/GoMod.lean` *(new)*, a fold over `Mitos.lines`; proves anchored, sound and complete; accepted by gates 0 to 6 with `--paranoid`; `examples/acme/accepted/GoMod.json` *(new)* written last | impl | none yet |
@@ -141,6 +149,7 @@ Each open row gets an issue in the Phase 2 milestone once this plan merges, and 
 in that issue and its PRs.
 
 The draft's P2-002 to P2-004 (implementation and proofs) are folded into P2-001a and P2-001b.
+P2-000 goes first, before P2-001a, and the owner merges it with the plan's approval.
 The core track runs in order: P2-001a (with P2-005a), then P2-001b, then P2-005b and P2-009a.
 The go.mod track runs beside it: P2-006 first, then P2-007 stacked on it, then P2-008 and
 P2-009b. P2-007 writes `accepted/GoMod.json` last, because each core PR moves its
