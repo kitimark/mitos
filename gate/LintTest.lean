@@ -192,34 +192,65 @@ def unguardedRules : IO (List String) := do
   let txt ← IO.FS.readFile ("eval" / "cheats" / "unguarded")
   return (txt.splitOn "\n").filter fun l => !l.isEmpty && !l.startsWith "#"
 
-def ratchet (guards : Array (String × String)) (unguarded : List String) : Array String := Id.run do
-  let guardable := (Lint.Rule.fixed ++ Lint.banned.map Lint.Rule.banned).filter (·.guardable) |>.map (·.id)
-  let bans := Lint.banned.map fun b => (Lint.Rule.banned b).id
-  let pinned := unguardedBans.map fun b => (Lint.Rule.banned b).id
-  let mut errs := #[]
-  for (c, r) in guards do
-    unless guardable.contains r do
-      errs := errs.push s!"eval/cheats/{c} has guards={r}, which names no lint rule a case can guard"
-  for r in bans do
-    let by_ := guards.filter (·.2 == r) |>.map (·.1)
-    if by_.isEmpty && !pinned.contains r then
-      errs := errs.push s!"{r} is guarded by no cheat case (guards={r}) and not listed in unguardedBans"
-    if !by_.isEmpty && pinned.contains r then
-      errs := errs.push s!"{r} is guarded by {", ".intercalate by_.toList}, so take it off unguardedBans and eval/cheats/unguarded"
-  for r in pinned do
-    unless bans.contains r do
-      errs := errs.push s!"unguardedBans lists {r}, which is not an entry of Lint.banned"
-    unless unguarded.contains r do
-      errs := errs.push s!"eval/cheats/unguarded does not list {r}, which unguardedBans lists"
-  for r in unguarded.eraseDups do
-    unless pinned.contains r do
-      errs := errs.push s!"eval/cheats/unguarded lists {r}, which unguardedBans does not (a merge may have dropped that ban from Lint.banned and unguardedBans)"
-    if (unguarded.filter (· == r)).length > 1 then
-      errs := errs.push s!"eval/cheats/unguarded lists {r} more than once"
+def includeStrGuardError : String :=
   let includeId := Lint.Rule.includeStr.id
-  if (guards.filter (·.2 == includeId)).isEmpty then
-    errs := errs.push s!"{includeId} is guarded by no cheat case (guards={includeId})"
-  return errs
+  s!"{includeId} is guarded by no cheat case (guards={includeId})"
+
+def lacksIncludeStr : List (String × String) → Bool
+  | [] => true
+  | g :: gs => g.2 != Lint.Rule.includeStr.id && lacksIncludeStr gs
+
+theorem lacksIncludeStr_iff {guards : List (String × String)} :
+    lacksIncludeStr guards = true ↔ ∀ g ∈ guards, g.2 ≠ Lint.Rule.includeStr.id := by
+  induction guards with
+  | nil => simp [lacksIncludeStr]
+  | cons g gs ih =>
+    rw [lacksIncludeStr, Bool.and_eq_true, ih]
+    simp [bne]
+
+def appendMissingIncludeStr (guards : Array (String × String)) (errs : Array String) : Array String :=
+  if lacksIncludeStr guards.toList then errs.push includeStrGuardError else errs
+
+theorem appendMissingIncludeStr_of_absent {guards : Array (String × String)} {errs : Array String}
+    (h : ∀ g ∈ guards.toList, g.2 ≠ Lint.Rule.includeStr.id) :
+    includeStrGuardError ∈ (appendMissingIncludeStr guards errs).toList := by
+  have hl : lacksIncludeStr guards.toList = true := lacksIncludeStr_iff.mpr h
+  simp only [appendMissingIncludeStr, hl, ite_true]
+  rw [Array.toList_push]
+  exact List.mem_append_right _ (List.mem_singleton_self _)
+
+def ratchet (guards : Array (String × String)) (unguarded : List String) : Array String :=
+  appendMissingIncludeStr guards <| Id.run do
+    let guardable := (Lint.Rule.fixed ++ Lint.banned.map Lint.Rule.banned).filter (·.guardable) |>.map (·.id)
+    let bans := Lint.banned.map fun b => (Lint.Rule.banned b).id
+    let pinned := unguardedBans.map fun b => (Lint.Rule.banned b).id
+    let mut errs := #[]
+    for (c, r) in guards do
+      unless guardable.contains r do
+        errs := errs.push s!"eval/cheats/{c} has guards={r}, which names no lint rule a case can guard"
+    for r in bans do
+      let by_ := guards.filter (·.2 == r) |>.map (·.1)
+      if by_.isEmpty && !pinned.contains r then
+        errs := errs.push s!"{r} is guarded by no cheat case (guards={r}) and not listed in unguardedBans"
+      if !by_.isEmpty && pinned.contains r then
+        errs := errs.push s!"{r} is guarded by {", ".intercalate by_.toList}, so take it off unguardedBans and eval/cheats/unguarded"
+    for r in pinned do
+      unless bans.contains r do
+        errs := errs.push s!"unguardedBans lists {r}, which is not an entry of Lint.banned"
+      unless unguarded.contains r do
+        errs := errs.push s!"eval/cheats/unguarded does not list {r}, which unguardedBans lists"
+    for r in unguarded.eraseDups do
+      unless pinned.contains r do
+        errs := errs.push s!"eval/cheats/unguarded lists {r}, which unguardedBans does not (a merge may have dropped that ban from Lint.banned and unguardedBans)"
+      if (unguarded.filter (· == r)).length > 1 then
+        errs := errs.push s!"eval/cheats/unguarded lists {r} more than once"
+    return errs
+
+theorem ratchet_reports_missing_includeStr (guards : Array (String × String))
+    (unguarded : List String) (h : ∀ g ∈ guards.toList, g.2 ≠ Lint.Rule.includeStr.id) :
+    includeStrGuardError ∈ (ratchet guards unguarded).toList := by
+  simp only [ratchet]
+  exact appendMissingIncludeStr_of_absent h
 
 structure CiCase where
   name : String
@@ -441,7 +472,7 @@ def main : IO UInt32 := do
   for e in errs do IO.println (ciLine s!"FAIL ratchet: {e}")
   let includeId := Lint.Rule.includeStr.id
   let dropped := ratchet (guards.filter (·.2 != includeId)) unguarded
-  unless dropped.any (· == s!"{includeId} is guarded by no cheat case (guards={includeId})") do
+  unless dropped.any (· == includeStrGuardError) do
     fails := fails + 1
     IO.println (ciLine s!"FAIL ratchet: dropping guards={includeId} is not reported")
   let guarded := (Lint.banned.filter fun b => guards.any (·.2 == (Lint.Rule.banned b).id)).length

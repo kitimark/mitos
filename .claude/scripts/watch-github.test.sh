@@ -21,12 +21,19 @@ for a in "$@"; do case "$a" in -*) ;; *) route=$a ;; esac; done
 [ "${FAKE_MODE:-}" = fail ] && { echo "gh: HTTP 502" >&2; exit 1; }
 [ -n "${FAKE_FAIL:-}" ] && [[ $route == *"$FAKE_FAIL"* ]] && { echo "gh: HTTP 500" >&2; exit 1; }
 f=$FAKE_DIR/f
+page_since() {
+  local file=$1 route=$2 since
+  if [ "${FAKE_SINCE:-}" != 1 ]; then cat "$file"; return; fi
+  since=${route#*since=}
+  since=${since%%&*}
+  jq --arg since "$since" '[.[][] | select((.created_at // "9999") >= $since)] | [.]' "$file"
+}
 case "$route" in
   repos/acme/widgets/pulls\?state=open*) cat "$f/open.json" ;;
   repos/acme/widgets/pulls\?state=closed*) cat "$f/closed.json" ;;
   repos/acme/widgets/branches/main) cat "$f/main.json" ;;
-  repos/acme/widgets/issues/comments\?since=*) cat "$f/icomments.json" ;;
-  repos/acme/widgets/pulls/comments\?since=*) cat "$f/rcomments.json" ;;
+  repos/acme/widgets/issues/comments\?since=*) page_since "$f/icomments.json" "$route" ;;
+  repos/acme/widgets/pulls/comments\?since=*) page_since "$f/rcomments.json" "$route" ;;
   repos/acme/widgets/actions/workflows/ci.yml/runs*)
     s=${route#*head_sha=}; s=${s%%&*}
     if [[ $route == *head_sha=* ]] && [ -e "$f/runs-$s.json" ]; then cat "$f/runs-$s.json"
@@ -561,6 +568,68 @@ b4run WATCH_CI_MINUTES=0
 is "a WATCH_CI_MINUTES of 0 is refused" "watch-github: WATCH_CI_MINUTES must be a whole number from 1 to 9999"
 b4run WATCH_NOW=soon
 is "a WATCH_NOW that is not epoch seconds is refused" "watch-github: WATCH_NOW must be epoch seconds"
+
+b5=$work/b5
+mkdir -p "$b5/f"
+b5base=$(date -u -d '2026-11-11T12:00:00Z' +%s)
+utc_at() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
+cat >"$b5/f/open.json" <<EOF
+[{"number":45,"user":{"login":"kitimark"},"head":{"sha":"$A"},"labels":[],"assignees":[]}]
+EOF
+echo '[]' >"$b5/f/closed.json"
+echo "{\"commit\":{\"sha\":\"$M1\"}}" >"$b5/f/main.json"
+echo '[[]]' >"$b5/f/icomments.json"
+echo '[[]]' >"$b5/f/rcomments.json"
+b5at() { STATE=$b5/state run FAKE_DIR="$b5" FAKE_SINCE=1 WATCH_CI_MINUTES=9999 WATCH_NOW="$1"; }
+b5at "$b5base"
+is "a comment scan starts from an empty poll" ""
+a_at=$(utc_at $((b5base + 30)))
+issue_url="$U/issues/45"
+jq -n --arg url "$issue_url" --arg t "$a_at" '[[{id:501, user:{login:"kitimark"}, issue_url:$url, created_at:$t, body:"fix the lint"}]]' >"$b5/f/icomments.json"
+jq -n --arg t "$a_at" '[[{id:501, user:{login:"kitimark"}, created_at:$t, body:"fix the lint"}]]' >"$b5/f/tic-45.json"
+b5at $((b5base + 60))
+is "an owner comment prints once" "owner comment 501 on #45: fix the lint"
+b5at $((b5base + 360))
+is "the same comment inside the fetch window does not repeat" ""
+b5at $((b5base + 400))
+is "a poll that no longer fetches the comment prints nothing" ""
+b5at $((b5base + 700))
+is "past the fetch window an unanswered comment is not printed again" ""
+if awk -F '\t' '$1 == "comment 501" && $3 == "45" && $4 ~ /^[0-9]{4}-/ { found = 1 } END { exit !found }' "$b5/state/seen"; then
+  echo "ok    an unanswered comment keeps its seen key past the fetch window"
+else
+  echo "FAIL  an unanswered comment lost its seen key past the fetch window"
+  failed=1
+fi
+b_at=$(utc_at $((b5base + 930)))
+jq -n --arg url "$issue_url" --arg a "$a_at" --arg b "$b_at" '[[
+  {id:501, user:{login:"kitimark"}, issue_url:$url, created_at:$a, body:"fix the lint"},
+  {id:502, user:{login:"kitimark"}, issue_url:$url, created_at:$b, body:"and this"}]]' >"$b5/f/icomments.json"
+jq -n --arg a "$a_at" --arg b "$b_at" '[[
+  {id:501, user:{login:"kitimark"}, created_at:$a, body:"fix the lint"},
+  {id:502, user:{login:"kitimark"}, created_at:$b, body:"and this"}]]' >"$b5/f/tic-45.json"
+b5at $((b5base + 960))
+is "a later comment on the same PR does not reprint the unanswered one" "owner comment 502 on #45: and this"
+f_at=$(utc_at $((b5base + 1000)))
+c_at=$(utc_at $((b5base + 1400)))
+jq -n --arg url "$issue_url" --arg a "$a_at" --arg b "$b_at" --arg f "$f_at" --arg c "$c_at" --arg footer "$footer" '[[
+  {id:501, user:{login:"kitimark"}, issue_url:$url, created_at:$a, body:"fix the lint"},
+  {id:502, user:{login:"kitimark"}, issue_url:$url, created_at:$b, body:"and this"},
+  {id:503, user:{login:"kitimark"}, issue_url:$url, created_at:$f, body:("Answered." + $footer)},
+  {id:504, user:{login:"kitimark"}, issue_url:$url, created_at:$c, body:"one more"}]]' >"$b5/f/icomments.json"
+jq -n --arg a "$a_at" --arg b "$b_at" --arg f "$f_at" --arg c "$c_at" --arg footer "$footer" '[[
+  {id:501, user:{login:"kitimark"}, created_at:$a, body:"fix the lint"},
+  {id:502, user:{login:"kitimark"}, created_at:$b, body:"and this"},
+  {id:503, user:{login:"kitimark"}, created_at:$f, body:("Answered." + $footer)},
+  {id:504, user:{login:"kitimark"}, created_at:$c, body:"one more"}]]' >"$b5/f/tic-45.json"
+b5at $((b5base + 1430))
+is "after an answer a new comment does not reprint the one the scan no longer returns" "owner comment 504 on #45: one more"
+if awk -F '\t' '$1 == "comment 501" { found = 1 } END { exit !found }' "$b5/state/seen"; then
+  echo "FAIL  an answered comment kept its seen key after it left the fetch window"
+  failed=1
+else
+  echo "ok    an answered comment leaves the seen file once the fetch window no longer returns it"
+fi
 
 if grep -q -e SECRET123 -e 127.0.0.1:1234 "$work/all"; then
   echo "FAIL  the origin URL was printed"; failed=1

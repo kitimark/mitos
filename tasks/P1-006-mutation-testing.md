@@ -163,11 +163,11 @@ core and the implementation see:
   and `example` declarations; so no `macro`, `syntax`, `notation`, `elab`, `run_cmd`, `#eval` or
   any other `#` command, `initialize`, `instance`, `attribute`, `set_option`, `open … in`;
 - no attribute anywhere (`@[…]`);
-- no token with a component in gate 1's plugin list, imported from `gate/MitosGate/Lint.lean`
-  (`banned`: `macro_rules`, `include_str`, `Lean`, `native_decide`, `sorry`, …), nor `by_elab` or
+- no token with a component on gate 1's token-component rules, taken from `gate/MitosGate/Lint.lean`
+  (`include_str` from `Rule.fixed`, and `banned`: `macro_rules`, `Lean`, `native_decide`, `sorry`, …), nor `by_elab` or
   `run_tac`, the forms that run code inside an allowed declaration (`runsCodeInTerm`), nor
   `set_option` or `attribute` inside a declaration either (`commandsInTerm`); and no `#` token.
-  `Mutants.Lint.bans` is gate 1's list and these, with round 4's `deriving` (`addsInstance`) and
+  `Mutants.Lint.bans` is those components and these, with round 4's `deriving` (`addsInstance`) and
   round 5's `with_decl_name` (`declaresNestedAbsolute`). A term-level `open … in` stays
   allowed, for a namespace under `Mitos` only (round 4): `Init` declares scoped syntax that `open`
   switches on (`open Int` adds `-[n+1]`), which the lint's parse would not see.
