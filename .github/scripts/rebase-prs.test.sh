@@ -85,6 +85,14 @@ case "$cmd" in
         n=$1
         if [[ " $* " == *" --remove-label needs-rebase "* ]]; then
           printf 'remove %s\n' "$n" >>"$FAKE_DIR/routes"
+          # While this pull request is handled, another labelled one is
+          # force-pushed. The next list of that pull request must show it.
+          if [ "$n" = 1 ] && [ -f "$FAKE_DIR/race-oid" ]; then
+            jq --arg oid "$(cat "$FAKE_DIR/race-oid")" \
+              'map(if .number == 12 then .headRefOid = $oid else . end)' \
+              "$FAKE_DIR/prs.json" >"$FAKE_DIR/prs.json.tmp" \
+              && mv "$FAKE_DIR/prs.json.tmp" "$FAKE_DIR/prs.json"
+          fi
           if [ "${FAKE_MODE:-}" = fail ] && [ "$n" = 1 ]; then
             echo "gh: HTTP 500" >&2
             exit 1
@@ -126,7 +134,10 @@ one() {
   one 9 pr-same "$main" false false main "$(lab no-auto-rebase needs-rebase)"
   one 90 pr-same "$main" false false main "$(lab needs-rebase)"
   one 11 pr-same "$main" false false feature "$(lab needs-rebase)"
+  one 12 pr-moved "$ahead" false false main "$(lab needs-rebase)"
 } | jq -s '.' >"$root/prs.json"
+cp "$root/prs.json" "$root/prs.orig.json"
+printf '%s\n' "$behind" >"$root/race-oid"
 
 tip() { git -C "$bare" rev-parse "refs/heads/$1"; }
 before_main=$(tip main)
@@ -136,6 +147,7 @@ before_conflict=$(tip pr-conflict)
 before_behind=$(tip pr-behind)
 
 run_offline() {
+  cp "$root/prs.orig.json" "$root/prs.json"
   : >"$root/calls"
   : >"$root/routes"
   env -u GH_TOKEN -u GITHUB_TOKEN PATH="$root/bin:/usr/bin:/bin" FAKE_DIR="$root" FAKE_MODE="${1:-}" \
@@ -166,6 +178,7 @@ check "up to date run exits 0" 0 "$rc"
 if [ "$rc" != 0 ]; then echo "--- out ---"; cat "$root/out"; echo "--- err ---"; cat "$root/err"; fi
 
 check "ahead PR loses needs-rebase" 1 "$(deleted 1)"
+check "a head moved behind main keeps needs-rebase" 0 "$(deleted 12)"
 check "identical PR tolerates an absent label" 1 "$(deleted 2)"
 check "unlabelled up-to-date PR is not edited" 0 "$(deleted 3)"
 check "conflicting labelled PR keeps needs-rebase" 0 "$(deleted 4)"
@@ -192,7 +205,7 @@ else
   echo "FAIL  a new conflict is commented"
   failed=1
 fi
-if grep -Eq 'pr comment (1|2|3|4|6|7|8|9|90|11) ' "$root/calls"; then
+if grep -Eq 'pr comment (1|2|3|4|6|7|8|9|90|11|12) ' "$root/calls"; then
   echo "FAIL  a comment was posted on a PR that was not newly flagged"
   grep 'pr comment' "$root/calls"
   failed=1
