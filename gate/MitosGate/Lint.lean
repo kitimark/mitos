@@ -233,11 +233,6 @@ def check (env : Environment) (allowedImports : List String) (src : String) :
   | .ok (fm, header, cmds) =>
     return importRules fm header allowedImports ++ tokenRules (allTokens fm header cmds)
 
-/-! ## Model allowlist
-
-A plugin may use what a model defines, so a model passes every plugin rule (`importRules`,
-`tokenRules`). On top, it may contain only what `commandRules` admits. -/
-
 private def kindName (k : SyntaxNodeKind) : String :=
   match k with
   | .str _ s => s
@@ -276,7 +271,6 @@ private def ModelDeclaration.kind : ModelDeclaration → SyntaxNodeKind
   | .«structure» => ``Parser.Command.structure
   | .«inductive» => ``Parser.Command.inductive
 
-/-- Today's message order. `byKind_kind` says this lists every constructor, each with its own kind. -/
 private def ModelDeclaration.all : List ModelDeclaration :=
   [.definition, .«theorem», .«abbrev», .«example», .«structure», .«inductive»]
 
@@ -284,8 +278,8 @@ private theorem ModelDeclaration.byKind_kind (d : ModelDeclaration) :
     byKind? ModelDeclaration.all ModelDeclaration.kind d.kind = some d := by
   cases d <;> rfl
 
-/-- The only place a declaration is admitted. One arm per constructor. `structure` checks
-`structureTk`; a `class` is that node with another token and is `model:class`. -/
+/-- Lean parses `class` with `«structure»`'s `structureTk <|> classTk`, so `class` has no syntax
+kind of its own. -/
 private def ModelDeclaration.admit (fm : FileMap) : ModelDeclaration → Syntax → Array Violation
   | .definition, _ => #[]
   | .«theorem», _ => #[]
@@ -308,7 +302,6 @@ private def ModelCommand.kind : ModelCommand → SyntaxNodeKind
   | .«open» => ``Parser.Command.open
   | .declaration => ``Parser.Command.declaration
 
-/-- Today's message order. `byKind_kind` says this lists every constructor, each with its own kind. -/
 private def ModelCommand.all : List ModelCommand :=
   [.moduleDoc, .«namespace», .«section», .«end», .«open», .declaration]
 
@@ -318,8 +311,6 @@ private theorem ModelCommand.byKind_kind (c : ModelCommand) :
 
 private def declarationKinds : String := listed (ModelDeclaration.all.map ModelDeclaration.kind)
 
-/-- The only place a command is admitted. One arm per constructor. `namespace` and `open` take no
-name check: `open Nat (succ)` and `open List hiding map` stay allowed. -/
 private def ModelCommand.admit (fm : FileMap) : ModelCommand → Syntax → Array Violation
   | .moduleDoc, _ => #[]
   | .«namespace», _ => #[]
@@ -361,7 +352,6 @@ private theorem ModelAttribute.kind_ne_simple (a : ModelAttribute) :
     a.kind ≠ ``Parser.Attr.simple := by
   cases a <;> decide
 
-/-- The only place an attribute is admitted. One arm per constructor. -/
 private def ModelAttribute.admit (k : SyntaxNodeKind) : ModelAttribute → Bool
   | .simp => k == ModelAttribute.kind .simp
 
@@ -379,7 +369,6 @@ private def topRules (fm : FileMap) (cmd : Syntax) : Array Violation :=
   | none => rejectCommand fm cmd
   | some c => ModelCommand.admit fm c cmd
 
-/-- Default-deny. A command of any other kind gets exactly one violation, `model:command`. -/
 private theorem topRules_other (fm : FileMap) (cmd : Syntax)
     (h : ∀ c : ModelCommand, c.kind ≠ cmd.getKind) :
     (topRules fm cmd).map (·.rule) = #[.modelCommand] := by
@@ -404,9 +393,6 @@ private partial def nestedRules (fm : FileMap) (stx : Syntax) (vs : Array Violat
   | .atom _ "deriving" => vs.push <| at_ fm stx .modelDeriving "`deriving` is not allowed in models"
   | _ => vs
 
-/-- The model allowlist over a model's top-level commands. Each violation names the command kind.
-A command outside `ModelCommand` is one `model:command` (`topRules_other`); the nested walk still
-runs on it. -/
 private partial def commandRules (fm : FileMap) (cmds : Array Syntax) : Array Violation := Id.run do
   let mut vs : Array Violation := #[]
   for cmd in cmds do
