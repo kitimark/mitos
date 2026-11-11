@@ -298,7 +298,9 @@ routes_of() {
           --paginate|--slurp|--silent|--verbose|--cache) ;;
           -*) echo "unclassified flag $tok in $f" >&2; return 1 ;;
           '') ;;
-          *) route=$tok; break ;;
+          # $'\1' kept the escaped character inside the word. The route check
+          # sees a space, which is the character an escaped space is.
+          *) route=${tok//$'\1'/ }; break ;;
         esac
       done
       [ -n "$route" ] || { echo "gh api has no route in $f" >&2; return 1; }
@@ -465,6 +467,7 @@ reject "escaped quote before api" 'echo "\""; api gq.json "graphql"'
 reject "assignment then api" 'x=foo api gq.json "graphql"'
 reject "escaped api word" 'a\pi gq.json "graphql"'
 reject "escaped gh api word" 'gh a\pi graphql'
+reject "escaped space in the route" 'gh api repos/o/r/pulls\ graphql'
 reject "commented REST path" 'fetch gq "graphql" # "repos/o/r/pulls"'
 reject "api after an escaped quote" 'echo \"hello; api gq.json "graphql"\"'
 cp "$base" "$work/qarg.sh"
