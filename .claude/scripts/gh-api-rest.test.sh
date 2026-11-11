@@ -44,13 +44,14 @@ command_head() {
 # not skipped for a later $(...), and a call after `;` is still seen.
 next_wrapper() {
   local s=$1
-  local i=0 n=${#s} c at=1 q=''
+  local i=0 n=${#s} c at=1 q=${2-}
   while (( i < n )); do
     c=${s:i:1}
     if [ -n "${q:-}" ]; then
       # $(...) inside double quotes still runs. Single quotes do not.
+      # A q: index tells the caller the enclosing quote is still open.
       if [ "$q" = '"' ] && [ "$c" = '$' ] && [[ ${s:i} =~ ^\$\((fetch_all_pages|fetch|api)[[:space:]] ]]; then
-        printf '%s\n' "$i"
+        printf 'q:%s\n' "$i"
         return 0
       fi
       [ "$c" = "$q" ] && q=
@@ -116,7 +117,7 @@ next_wrapper() {
 }
 
 routes_of() {
-  local f=$1 line rest tok nxt quoted route scan call restline idx
+  local f=$1 line rest tok nxt quoted route scan call restline idx meta carry_q
   while IFS= read -r line || [ -n "$line" ]; do
     [[ $line =~ ^[[:space:]]*# ]] && continue
     if [[ $line =~ ^[a-z_]+\(\)[[:space:]]*\{ ]]; then
@@ -160,8 +161,19 @@ routes_of() {
       printf '%s\n' "$route"
     done
     restline=$line
+    carry_q=
     while true; do
-      idx=$(next_wrapper "$restline") || break
+      if [ -n "$carry_q" ]; then
+        meta=$(next_wrapper "$restline" "$carry_q") || break
+      else
+        meta=$(next_wrapper "$restline") || break
+      fi
+      carry_q=
+      idx=$meta
+      if [[ $meta == q:* ]]; then
+        idx=${meta#q:}
+        carry_q='"'
+      fi
       call=$(command_head "${restline:idx}")
       [ -n "$call" ] || break
       quoted=$(grep -oE '"[^"]*"' <<<"$call" || true)
@@ -273,6 +285,7 @@ reject "hash inside a word" 'echo foo#bar; api gq.json "graphql"'
 reject "while fetch" 'while fetch gq "graphql"; do break; done'
 reject "until fetch" 'until fetch gq "graphql"; do break; done'
 reject "api in a double-quoted substitution" 'x="$(api gq.json "graphql")"'
+reject "api after a double-quoted substitution" 'x="$(api ok.json "repos/o/r/pulls")"; api gq.json "graphql"'
 cp "$base" "$work/cmt.sh"
 printf '\n%s\n' 'echo foo # api gq.json "graphql"' >>"$work/cmt.sh"
 check_file "$work/cmt.sh"
