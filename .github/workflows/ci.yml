@@ -118,9 +118,19 @@ jobs:
       - name: Install elan if the cache has none (pinned, checked, retried)
         run: .github/scripts/install-elan.sh
 
+      - name: Cache key and folder of the pinned bubblewrap .deb
+        id: bwrap
+        run: .github/scripts/install-bubblewrap.sh --cache-key >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pinned bubblewrap .deb (saved at the end of a job that downloaded it)
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.bwrap.outputs.dir }}
+          key: ${{ steps.bwrap.outputs.key }}
+
       - name: Install bubblewrap (sandbox for lake comparator)
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
+          .github/scripts/install-bubblewrap.sh
           # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bwrap needs them.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
