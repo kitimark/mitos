@@ -2,5 +2,5 @@ full=1
 comparator_only=accept
 model_approved=yes
 heavy=yes
-why=The approved model reads this plugin's own source `../Plugins/ToyRequire.lean` with `include_str` and, when that source starts with the `weakMarker` declaration, means the weak model where only `require zz` holds, with weak examples it proves adequate. Gate 6 reads the same file, so it judges the weak model, and the plugin's empty-for-`left-pad` extractor passes gates 3 and 6. The comparator alone accepts it. Gate 1 now rejects `include_str` (`banned`), so a full run stops at gate 1. Remove `include_str` from `banned` and a full run is ACCEPTED.
+why=The approved model reads this plugin's own source `../Plugins/ToyRequire.lean` with `include_str` and, when that source starts with the imports through the `weakMarker` declaration, means the weak model where only `require zz` holds, with weak examples it proves adequate. Gate 6 reads the same file, so it judges the weak model, and the plugin's empty-for-`left-pad` extractor passes gates 3 and 6. The comparator alone accepts it. Gate 1 now rejects `include_str` (`banned`), so a full run stops at gate 1. Remove `include_str` from `banned` and a full run is ACCEPTED.
 guards=banned:include_str
