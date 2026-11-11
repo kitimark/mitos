@@ -211,22 +211,12 @@ checkout_refs_ok() {
   python3 - "$1" <<'PY'
 import re, sys
 lines = open(sys.argv[1]).read().splitlines()
-bracket = re.compile(r"""\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]""")
-names = re.compile(r"(?:^|[^A-Za-z0-9_])head\.(?:sha|ref)\b")
 
-def names_head(ref):
+def is_trusted(ref):
     s = ref.strip()
     if len(s) >= 2 and s[0] == s[-1] and s[0] in "'\"":
-        s = s[1:-1]
-    prev = None
-    while prev != s:
-        prev = s
-        s = bracket.sub(r".\2", s)
-    if names.search(s):
-        return True
-    if re.search(r"(?:^|[^A-Za-z0-9_])head_ref\b", s):
-        return True
-    return re.search(r"/head\b", s) is not None
+        s = s[1:-1].strip()
+    return re.sub(r"\s+", "", s) == "${{github.sha}}"
 
 def step_end(start):
     base = len(re.match(r"^(\s*)-\s", lines[start]).group(1))
@@ -264,9 +254,11 @@ while i < len(lines):
                             break
                         parts.append(nxt.strip())
                     rest = " ".join(parts)
-                if names_head(rest):
+                if not is_trusted(rest):
                     sys.exit(1)
                 break
+            else:
+                sys.exit(1)
         i = end
     else:
         i += 1
@@ -315,5 +307,7 @@ reject_second_checkout '${{ github.head_ref }}' \
   "a second checkout of github.head_ref is rejected"
 reject_second_checkout 'refs/pull/${{ github.event.pull_request.number }}/head' \
   "a second checkout of refs/pull/N/head is rejected"
+reject_second_checkout 'refs/pull/${{ github.event.pull_request.number }}/merge' \
+  "a second checkout of refs/pull/N/merge is rejected"
 
 exit "$failed"
