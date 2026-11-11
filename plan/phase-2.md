@@ -3,7 +3,7 @@
 **Goal:** a reference resolver for chains, where a requirement reaches its provider through a
 binding (config key → deployment → service → repo). Each edge carries one derivation, and the
 resolver's properties are proven against owner-approved statements. Beside it, the first built-in
-extractor for a real format (go.mod), checked against the real tool.
+extractor for a real format (go.mod), checked nightly against the real tool.
 
 Names marked *(new)* do not exist on `main` yet. This phase adds them.
 
@@ -107,9 +107,10 @@ The owner's decisions on the draft are in
   is `module` and `require` lines and blocks. Quoted paths, `replace`, `exclude`, `retract` and
   versions give no fact, and the differential run lists them. JSON (package.json) and
   requirements.txt are deferred.
-- **Differential tests are evaluation, not a gate.** Each pinned go.mod is vendored with its
-  `go mod edit -json` output, so a run needs no Go. Only the nightly refresh installs Go. Gate 7
-  for agent-written plugins is Phase 3.
+- **Differential tests are evaluation, not a gate.** They run nightly
+  (`docs/process.md`, What runs where). Each pinned go.mod is vendored with its
+  `go mod edit -json` output, so the comparison itself needs no Go. The nightly job refreshes
+  the outputs with Go, then runs the comparison. Gate 7 for agent-written plugins is Phase 3.
 - **Deferred, not decided here:** a HashMap production resolver with an equivalence proof,
   incremental-equals-from-scratch, a derivation-DAG certificate checker, the SQLite store and the
   NDJSON worker, staged judging (#55).
@@ -129,7 +130,7 @@ The owner's decisions on the draft are in
 | P2-009b | go.mod fixture and hand labels; the scorer's go.mod edge type | tooling | none yet |
 | P2-010 | Nightly scorecard code in `eval/score/`: every fixture, the diff against `main`'s, the most derivations per repo-level edge. Eval code only; the wiring is in P2-012 | tooling | none yet |
 | P2-011 | Toolchain-bump readiness: the CrossCheckDecoy probe (`eval/mutants/Mutants/CrossCheck.lean`) for v4.36 and the `String.le_*` deprecations (`gate/MitosGate/ContentId.lean`); bump `lean-toolchain` when the release ships (owner-gated: `gate/`, `lean-toolchain`) | gate | [#147](https://github.com/kitimark/mitos/issues/147) |
-| P2-012 | One `.github` PR: the CI accept step for `GoMod`; #107 items 2 and 3 (`mitos-mutants --prepare` on PRs that touch `core/`, a failure for a theorem no mutant breaks); the nightly Go refresh of the vendored outputs; the nightly scorecard post. #158 and #33 can ride along (owner-gated: `.github/`) | ci | none yet |
+| P2-012 | One `.github` PR: the CI accept step for `GoMod`; #107 items 2 and 3 (`mitos-mutants --prepare` on PRs that touch `core/`, a failure for a theorem no mutant breaks); the nightly Go refresh of the vendored outputs, followed by the differential run (P2-008); the nightly scorecard post. #158 and #33 can ride along (owner-gated: `.github/`) | ci | none yet |
 
 Each open row gets an issue in the Phase 2 milestone once this plan merges, and its status lives
 in that issue and its PRs.
