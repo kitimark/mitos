@@ -837,15 +837,12 @@ r=$(timeout 20 bash -c '. "$1" && hook_state_resolve "$2" "$(id -u)"' _ "${hook%
 code=$?
 if [ "$code" = 1 ] && [ -z "$r" ]; then pass "a symlink loop is refused"; else fail "a symlink loop: exit $code, '$r'"; fi
 
-# Pins for the checks above (#104): each case fails when its check is dropped or loosened.
-hs() { # function, args...: runs one function of hook-state.sh in a fresh shell
-  # shellcheck disable=SC2016 # the inner shell expands them
+hs() {
+  # shellcheck disable=SC2016
   timeout 20 bash -c '. "$1" && shift && "$@"' _ "${hook%/*}/hook-state.sh" "$@" 2>/dev/null
 }
 phys() { (cd -P "$1" && pwd -P); }
 if [ "$(id -u)" = 0 ]; then
-  # A sticky folder passes only when it belongs to this user or root, so a private folder under a
-  # sticky folder of another user, who can then rename what is in it, is refused.
   mkdir -m 755 "$work/ostk"; mkdir -m 700 "$work/ostk/st"; chmod 1777 "$work/ostk"; chown 65534 "$work/ostk"
   srun MITOS_HOOK_STATE="$work/ostk/st" "$ss"
   empty_dir "a folder under a sticky folder of another user: nothing is written" "$work/ostk/st"
@@ -857,9 +854,6 @@ if [ "$(id -u)" = 0 ]; then
   empty_dir "no missing folder is made in a folder of another user" "$work/omk"
 fi
 if [ "$(id -u)" != 0 ]; then
-  # The same without chown: a sticky folder of this user, directly under the temp folder, is the
-  # sticky folder of another user for a caller of any other uid. Skipped when the temp folder
-  # is not itself a safe folder for this user.
   sk=$(mktemp -d "${TMPDIR:-/tmp}/pr-state-test-sticky.XXXXXX")
   chmod 1777 "$sk"; mkdir -m 700 "$sk/st"
   if [ "$(hs hook_state_resolve "$sk/st" "$(id -u)")" = "$(phys "$sk/st")" ]; then
@@ -868,19 +862,16 @@ if [ "$(id -u)" != 0 ]; then
   fi
   rm -rf "${sk:?}"
 fi
-# A missing folder is made only inside a folder that passed the check, never before it.
 mkdir "$work/mg"; chmod 770 "$work/mg"
 srun MITOS_HOOK_STATE="$work/mg/new/deeper" "$ss"
 empty_dir "no missing folder is made in a group-writable folder" "$work/mg"
 mkdir "$work/mo"; chmod 707 "$work/mo"
 srun MITOS_HOOK_STATE="$work/mo/new" "$ss"
 empty_dir "no missing folder is made in a folder others can write" "$work/mo"
-# A chain of symlinks of this user in safe folders is followed.
 mkdir -m 755 "$work/ch"; mkdir -m 700 "$work/ch/real" "$work/ch/real/st"
 ln -s "$work/ch/real" "$work/ch/l2"; ln -s "$work/ch/l2" "$work/ch/l1"
 srun MITOS_HOOK_STATE="$work/ch/l1/st" "$ss"
 same_text "a chain of two symlinks of this user in safe folders is followed" "$work/ch/real/st/s1.sha" "$A"
-# The path the functions print is the resolved one, not the name they were given.
 want=$(phys "$work/rp/st")
 r=$(hs hook_state_private "$work/lp/st")
 if [ "$r" = "$want" ]; then pass "a folder behind a symlinked parent: hook_state_private prints the real path"; else fail "private printed '$r', wanted '$want'"; fi
@@ -889,8 +880,6 @@ if [ "$r" = "$want" ]; then pass "a folder behind a symlinked parent: hook_state
 want=$(phys "$work/rk/stk")
 r=$(hs hook_state_private "$work/lk/../stk")
 if [ "$r" = "$want" ]; then pass "a '..' after a symlink: hook_state_private prints the real path"; else fail "private printed '$r', wanted '$want'"; fi
-# A symlink of root in a safe folder is followed for any user: as root with another uid given, and
-# as the running user with a system link such as /bin, when the system has one.
 if [ "$(id -u)" = 0 ]; then
   mkdir -m 755 "$work/rt" "$work/rt/real"; ln -s "$work/rt/real" "$work/rt/l"
   r=$(hs hook_state_resolve "$work/rt/l" 1000)
