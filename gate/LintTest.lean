@@ -10,7 +10,8 @@ plugins and models alike (`Lint.check`, `Lint.checkModel`). Each rule reports un
 `eval/cheats/unguarded` (`ratchet`). It runs `mitos-gate`, the cheat runner included, on hostile
 text and checks that no line it prints starts a workflow command (`ciCases`). It also pins how the
 cheat runner stops a run at its timeout (`timeoutCases`), the one runner test that needs no gate
-run. Run with `lake exe mitos-lint-test` from the repository root. -/
+run. Run
+with `lake exe mitos-lint-test` from the repository root. -/
 
 open MitosGate
 
@@ -413,6 +414,63 @@ def timeoutCase (script : String) (code : UInt32) : IO (List String) := do
   | none => errs := errs.push "no run directory was made"
   return errs.toList
 
+def recordWrite : IO (List String) := do
+  let dir ← IO.FS.createTempDir
+  let errs ← try
+    let tmp := dir / ".P.json.1.tmp"
+    let file := dir / "P.json"
+    let mut errs : Array String := #[]
+    IO.FS.writeFile tmp "planted"
+    try
+      Accept.writeByRename tmp file "new"
+      errs := errs.push "writeNew succeeded on a path that already existed"
+    catch _ =>
+      try
+        unless (← IO.FS.readFile tmp) == "planted" do
+          errs := errs.push "a path this run did not create was changed"
+      catch _ =>
+        errs := errs.push "a path this run did not create was removed"
+      if ← file.pathExists then
+        errs := errs.push "a failed open renamed the planted file over the record"
+    let other := dir / "other"
+    IO.FS.writeFile other "target"
+    IO.FS.removeFile tmp
+    let linked ← IO.Process.output { cmd := "ln", args := #["-s", other.toString, tmp.toString] }
+    if linked.exitCode != 0 then
+      errs := errs.push s!"could not plant a symlink: {linked.stderr}"
+    else
+      try
+        Accept.writeByRename tmp file "new"
+        errs := errs.push "writeNew followed or replaced a symlink planted at the temp path"
+      catch _ =>
+        try
+          unless (← tmp.symlinkMetadata).type == .symlink do
+            errs := errs.push "a symlink this run did not create was removed"
+        catch _ =>
+          errs := errs.push "a symlink this run did not create was removed"
+        unless (← IO.FS.readFile other) == "target" do
+          errs := errs.push "a planted symlink was followed"
+    IO.FS.removeFile tmp
+    Accept.writeByRename tmp file "record"
+    unless (← IO.FS.readFile file) == "record" do
+      errs := errs.push "the renamed file is not what this run wrote"
+    if ← tmp.pathExists then
+      errs := errs.push "the temp path is still there after the rename"
+    IO.FS.removeFile file
+    IO.FS.createDir file
+    try
+      Accept.writeByRename tmp file "again"
+      errs := errs.push "renaming onto a directory succeeded"
+    catch _ =>
+      if ← tmp.pathExists then
+        errs := errs.push "a temp file this run created was left after a failed rename"
+    pure errs
+  catch e =>
+    pure #[s!"could not run: {e}"]
+  finally
+    IO.FS.removeDirAll dir
+  return errs.toList
+
 structure Case where
   kind : String
   name : String
@@ -483,9 +541,14 @@ def main : IO UInt32 := do
     unless errs.isEmpty do fails := fails + 1
     let detail := if errs.isEmpty then s!"timed out, exit {code}, nothing left" else "; ".intercalate errs
     IO.println (ciLine s!"{if errs.isEmpty then "ok  " else "FAIL"} cheat runner timeout, {name}: {detail}")
-  let total := cases.length + ruleCases.length + 1 + nci + timeoutCases.length
+  let rw ← recordWrite
+  unless rw.isEmpty do fails := fails + 1
+  IO.println (ciLine s!"{if rw.isEmpty then "ok  " else "FAIL"} record temp: " ++
+    (if rw.isEmpty then "a path this run did not create stays, and one it created is removed when the rename fails"
+      else "; ".intercalate rw))
+  let total := cases.length + ruleCases.length + 1 + nci + timeoutCases.length + 1
   let count (k : String) (w : Bool) := (cases.filter fun c => c.kind == k && c.wantOk == w).length
-  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet; {nci} CI-log cases; {timeoutCases.length} cheat-runner timeout cases"
+  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet; {nci} CI-log cases; {timeoutCases.length} cheat-runner timeout cases; the record temp file"
   if fails == 0 then
     IO.println s!"gate-1 lint: all {total} cases behave as expected ({summary})"
     return 0
