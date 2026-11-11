@@ -40,7 +40,7 @@ command_head() {
 }
 
 routes_of() {
-  local f=$1 line rest tok nxt quoted route scan call
+  local f=$1 line rest tok nxt quoted route scan call prefix restline
   while IFS= read -r line || [ -n "$line" ]; do
     [[ $line =~ ^[[:space:]]*# ]] && continue
     if [[ $line =~ ^[a-z_]+\(\)[[:space:]]*\{ ]]; then
@@ -83,27 +83,36 @@ routes_of() {
       [ -n "$route" ] || { echo "gh api has no route in $f" >&2; return 1; }
       printf '%s\n' "$route"
     done
-    if [[ $line =~ ^[[:space:]]*(fetch|fetch_all_pages|api)[[:space:]] ]]; then
-      [[ $line == *'()'* ]] && continue
-      call=$line
-    elif [[ $line =~ \$\((fetch|fetch_all_pages|api)[[:space:]] ]]; then
-      call=${line:${#${line%%"${BASH_REMATCH[0]}"*}}}
-    elif [[ $line =~ (if|elif)[[:space:]]+(fetch|fetch_all_pages|api)[[:space:]] ]]; then
-      call=${line:${#${line%%"${BASH_REMATCH[0]}"*}}}
-    else
-      continue
-    fi
-    call=$(command_head "$call")
-    quoted=$(grep -oE '"[^"]*"' <<<"$call" || true)
-    route=
-    while IFS= read -r tok; do
-      [ -n "$tok" ] || continue
-      tok=${tok#\"}; tok=${tok%\"}
-      [[ $tok == *.json ]] && continue
-      route=$tok
-    done <<<"$quoted"
-    [ -n "$route" ] || { echo "call has no route: $line" >&2; return 1; }
-    printf '%s\n' "$route"
+    restline=$line
+    while true; do
+      if [[ $restline =~ ^[[:space:]]*(fetch|fetch_all_pages|api)[[:space:]] ]]; then
+        :
+      elif [[ $restline =~ \$\((fetch|fetch_all_pages|api)[[:space:]] ]]; then
+        :
+      elif [[ $restline =~ (if|elif)[[:space:]]+(fetch|fetch_all_pages|api)[[:space:]] ]]; then
+        :
+      else
+        break
+      fi
+      prefix=${restline%%"${BASH_REMATCH[0]}"*}
+      call=${restline:${#prefix}}
+      call=$(command_head "$call")
+      [ -n "$call" ] || break
+      quoted=$(grep -oE '"[^"]*"' <<<"$call" || true)
+      route=
+      while IFS= read -r tok; do
+        [ -n "$tok" ] || continue
+        tok=${tok#\"}; tok=${tok%\"}
+        [[ $tok == *.json ]] && continue
+        route=$tok
+      done <<<"$quoted"
+      [ -n "$route" ] || { echo "call has no route: $line" >&2; return 1; }
+      printf '%s\n' "$route"
+      restline=${restline:$((${#prefix} + ${#call}))}
+      case $restline in
+        ')'*|';'*|'|'*|'&'*) restline=${restline:1} ;;
+      esac
+    done
   done <"$f"
 }
 
@@ -140,23 +149,43 @@ check_file "$work/ok.sh"
 cp "$base" "$work/ghcont.sh"
 printf '\n%s\n' $'gh \\\n  api \\\n  repos/o/r/pulls' >>"$work/ghcont.sh"
 check_file "$work/ghcont.sh"
+if ! routes_of "$work/ghcont.sh" | grep -qx 'repos/o/r/pulls'; then
+  echo "FAIL continued gh api route was not extracted"
+  failed=1
+else
+  echo "ok   continued gh api route extracted"
+fi
+cp "$base" "$work/sub.sh"
+printf '\n%s\n' 'x=$(api gq.json "repos/o/r/pulls")' >>"$work/sub.sh"
+check_file "$work/sub.sh"
+if ! routes_of "$work/sub.sh" | grep -qx 'repos/o/r/pulls'; then
+  echo "FAIL substitution route was not extracted"
+  failed=1
+else
+  echo "ok   substitution route extracted"
+fi
 
 reject() {
-  local name=$1 line=$2 copy="$work/bad.sh"
+  local name=$1 line=$2 copy="$work/bad.sh" out status=0
   cp "$base" "$copy"
   printf '\n%s\n' "$line" >>"$copy"
-  local out
-  out=$(routes_of "$copy" 2>&1) && {
-    local route bad=0
-    while IFS= read -r route; do
-      is_rest_route "$route" || bad=1
-    done <<<"$out"
-    if [ "$bad" = 0 ]; then
-      echo "FAIL $name was accepted"
-      failed=1
-      return
-    fi
-  }
+  out=$(routes_of "$copy" 2>"$work/scan.err") || status=$?
+  if [ "$status" != 0 ]; then
+    echo "FAIL $name: scanner error"
+    cat "$work/scan.err"
+    failed=1
+    return
+  fi
+  local route bad=0
+  while IFS= read -r route; do
+    [ -n "$route" ] || continue
+    is_rest_route "$route" || bad=1
+  done <<<"$out"
+  if [ "$bad" = 0 ]; then
+    echo "FAIL $name was accepted"
+    failed=1
+    return
+  fi
   echo "ok   $name rejected"
 }
 
@@ -171,6 +200,7 @@ reject "gh api with two spaces" 'gh  api graphql'
 reject "if fetch" 'if fetch gq "graphql"'
 reject "quoted gh api before the call" "echo 'gh  api repos/o/r/pulls '; gh api graphql"
 reject "if fetch then a later route" 'if fetch gq "graphql"; then echo "repos/o/r/pulls"; fi'
+reject "two api calls" 'api ok.json "repos/o/r/pulls"; api gq.json "graphql"'
 
 echo "gh-api-rest: done"
 [ "$failed" = 0 ]
