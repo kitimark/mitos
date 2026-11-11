@@ -83,9 +83,11 @@ reviews:
         finding would let through.
     - path: "ops/runs/**"
       instructions: >-
-        Append-only run log, one JSON record per file. Flag only a record that an earlier
-        commit or `main` had and this diff edits or deletes, and a secret or an ID in a record.
-        Do not review the numbers.
+        Append-only run log, one JSON record per file. Compare with the merge base, not with
+        earlier commits of the PR: a PR may rewrite the record files it added itself until it
+        merges. Flag only a record file or a day-file line that the merge base has and this diff
+        edits or deletes, a day file the PR adds, and a secret or an ID in a record. Do not
+        review the numbers.
     - path: ".github/**"
       instructions: >-
         CI is the merge gate. Flag anything that skips, weakens or reorders a check, loosens
@@ -139,20 +141,9 @@ reviews:
         mode: "warning"
         instructions: >-
           Read the review threads and the review comments on this PR, including findings posted
-          outside the diff, which get no thread. Pass when every finding is either fixed by a
-          later commit on the PR or answered by a reply that links an issue (for a finding that
-          is not fixed here) or states why the code stays. Fail and name each finding that has
-          neither a fixing commit nor such a reply. Findings you marked FOLLOW-UP need the reply
-          with the issue link; BLOCKING ones need the fixing commit. If you cannot tell whether
-          a thread was answered, say so and do not fail.
-
-chat:
-  auto_reply: true
-
-knowledge_base:
-  learnings:
-    scope: local
-  issues:
-    scope: local
-  pull_requests:
-    scope: local
+          outside the diff, which get no thread. A finding passes in exactly these cases. A
+          BLOCKING finding passes when a later commit on the PR fixes it, or when a reply
+          explains why the code stays. A FOLLOW-UP finding passes when a later commit fixes it,
+          or when a reply links the issue that tracks it. Fail and name each finding that
+          matches none of these. If you cannot tell whether a thread was answered, say so and
+          do not fail.
