@@ -16,6 +16,7 @@ jobs:
       - uses: ./.github/actions/setup
 
       - run: lake build
+      - run: lake build MitosGate.LockCheck
       - run: lake exe mitos-gate imports
       - run: lake exe mitos-gate lock --check
       - run: cd core && lake check
@@ -125,6 +126,7 @@ jobs:
           set -e
           trap 'printf "### canary %s: FAILED\nEarly warning, not a failure of main: an upgrade to %s breaks a check. Schedule the bump (docs/process.md, tripwires).\n" "$VERSION" "$VERSION" >> "$GITHUB_STEP_SUMMARY"' ERR
           lake build
+          lake build MitosGate.LockCheck
           (cd core && lake check)
           if [ -f core/Mitos/Proofs/Resolver.lean ]; then (cd core && lake comparator); fi
           lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
