@@ -28,8 +28,12 @@ routes_of() {
     if [[ $line =~ ^[a-z_]+\(\)[[:space:]]*\{ ]]; then
       line=${line%% #*}
     fi
-    if [[ $line == *'gh api'* ]]; then
-      rest=${line#*gh api}
+    if [[ $line =~ ^[[:space:]]*gh[[:space:]]*\\$ ]]; then
+      IFS= read -r nxt || true
+      line="${line%\\}${nxt}"
+    fi
+    if [[ $line =~ gh[[:space:]]+api ]]; then
+      rest=${line#*"${BASH_REMATCH[0]}"}
       rest=${rest#"${rest%%[![:space:]]*}"}
       route=
       if [[ $rest == for\ * || $rest == '"$2"'* || $rest == '"${@:2}"'* ]]; then
@@ -58,8 +62,15 @@ routes_of() {
         printf '%s\n' "$route"
       fi
     fi
-    [[ $line =~ ^[[:space:]]*(fetch|fetch_all_pages|api)[[:space:]] ]] || continue
-    [[ $line == *'()'* ]] && continue
+    if [[ $line =~ ^[[:space:]]*(fetch|fetch_all_pages|api)[[:space:]] ]]; then
+      [[ $line == *'()'* ]] && continue
+    elif [[ $line =~ \$\((fetch|fetch_all_pages|api)[[:space:]] ]]; then
+      :
+    elif [[ $line =~ (^|[[:space:]])(if|elif)[[:space:]]+(fetch|fetch_all_pages|api)[[:space:]] ]]; then
+      :
+    else
+      continue
+    fi
     quoted=$(grep -oE '"[^"]*"' <<<"$line" || true)
     route=
     while IFS= read -r tok; do
@@ -128,6 +139,10 @@ reject "graphql under repos" 'fetch bad "repos/$repo/graphql" &'
 reject "gh api graphql" "gh api graphql -f query='{ viewer { login } }'"
 reject "graphql URL" 'api bad.json "https://api.github.com/graphql"'
 reject "query text" 'api bad.json "query { viewer { login } }"'
+reject "continued gh api" $'gh \\\n  api graphql --jq "repos/o/r/pulls"'
+reject "api in a substitution" 'x=$(api gq.json "graphql")'
+reject "gh api with two spaces" 'gh  api graphql'
+reject "if fetch" 'if fetch gq "graphql"'
 
 echo "gh-api-rest: done"
 [ "$failed" = 0 ]

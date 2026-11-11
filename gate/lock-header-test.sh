@@ -3,6 +3,7 @@ set -u
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 (cd "$root" && lake build mitos-gate >/dev/null) || { echo "FAIL lake build mitos-gate"; exit 1; }
+(cd "$root" && lake build MitosGate.LockCheck >/dev/null) || { echo "FAIL lake build MitosGate.LockCheck"; exit 1; }
 bin="$root/.lake/build/bin/mitos-gate"
 eval "$(cd "$root" && lake env bash -c 'printf "export LEAN_PATH=%q\nexport PATH=%q\n" "$LEAN_PATH" "$PATH"')"
 tmp=$(mktemp -d)

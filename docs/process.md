@@ -160,6 +160,7 @@ which covers what no kernel term references, such as a structure field's default
 | Build core and gate | `lake build` | ✓ | ✓ | ✓ | yes |
 | Core imports only `Init`, `Std`, `Mitos.*`; the spec never imports implementations | `lake exe mitos-gate imports` | ✓ | ✓ | ✓ | yes |
 | Lock matches the compiled core. The first two lines of `statements.lock` match `MitosGate.Lock.header` | `lake exe mitos-gate lock --check` | ✓ | ✓ | ✓ | yes |
+| `statements.lock` header matches `MitosGate.Lock.header` | `gate/lock-header-test.sh` | ✓ | ✓ | | yes |
 | `gh api` routes in `pr-state.sh` and `watch-github.sh` are REST paths | `.claude/scripts/gh-api-rest.test.sh` | ✓ | ✓ | | yes |
 | `hook-state.sh` and `origin-repo.sh` name bash with a shebang | `.claude/scripts/sourced-bash.test.sh` | ✓ | ✓ | | yes |
 | Core: no `sorry`, standard axioms only | `cd core && lake check` | ✓ | ✓ | ✓ | yes |
