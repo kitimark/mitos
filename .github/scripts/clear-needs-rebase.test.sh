@@ -114,6 +114,13 @@ pr main "$B" "$A" acme/widgets "$need"
 compare ahead 0
 expect_rc "ahead removes the label" "" 0
 expect_deleted "ahead calls delete for needs-rebase only"
+if grep -qx "GET repos/acme/widgets/compare/main...$A" "$work/routes"; then
+  echo "ok  ahead compares the base branch, not a sha"
+else
+  echo "FAIL  ahead compares the base branch, not a sha"
+  cat "$work/routes"
+  failed=1
+fi
 if grep -q 'spec-approved' "$work/calls"; then
   echo "FAIL  other labels are not named in any call"
   failed=1
@@ -173,6 +180,20 @@ pr main "$B" "$A" acme/widgets "$only"
 expect_rc "no needs-rebase label does nothing" "" 0
 expect_kept "absent label is not deleted"
 expect_no_compare "absent label is not compared"
+
+D=$(python3 -c 'print("d"*40)')
+event "$A"
+pr main "$D" "$A" acme/widgets "$need"
+compare behind 3
+expect_rc "a stale base sha keeps the label" "" 0
+expect_kept "a stale base sha does not delete"
+if grep -qx "GET repos/acme/widgets/compare/main...$A" "$work/routes" && ! grep -q "$D" "$work/routes"; then
+  echo "ok  a stale base sha is not the compare base"
+else
+  echo "FAIL  a stale base sha is not the compare base"
+  cat "$work/routes"
+  failed=1
+fi
 
 jq -n --arg sha 'not-a-sha' --argjson n 5 \
   '{repository:{full_name:"acme/widgets"},pull_request:{number:$n,head:{sha:$sha}}}' >"$work/event.json"
