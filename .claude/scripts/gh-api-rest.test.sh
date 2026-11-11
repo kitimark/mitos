@@ -44,12 +44,20 @@ command_head() {
 # not skipped for a later $(...), and a call after `;` is still seen.
 next_wrapper() {
   local s=$1
-  local i=0 n=${#s} c at=1 q=${2-}
+  local i=0 n=${#s} c e at=1 q=${2-}
   while (( i < n )); do
     c=${s:i:1}
     if [ -n "${q:-}" ]; then
       # $(...) inside double quotes still runs. Single quotes do not.
       # A q: index tells the caller the enclosing quote is still open.
+      # \" \$ \\ and \` stay inside the double-quoted word. \' does not, in single quotes.
+      if [ "$q" = '"' ] && [ "$c" = '\' ]; then
+        e=${s:i+1:1}
+        if [ "$e" = '"' ] || [ "$e" = '$' ] || [ "$e" = '\' ] || [ "$e" = '`' ]; then
+          i=$((i + 2))
+          continue
+        fi
+      fi
       if [ "$q" = '"' ] && [ "$c" = '$' ] && [[ ${s:i} =~ ^\$\((fetch_all_pages|fetch|api)[[:space:]] ]]; then
         printf 'q:%s\n' "$i"
         return 0
@@ -102,6 +110,14 @@ next_wrapper() {
         i=$((i + ${#BASH_REMATCH[0]}))
         if [ "${s:i:1}" = "=" ]; then
           i=$((i + 1))
+          # The value is part of the assignment, not the command. A quoted or
+          # substituted value is left for the next pass, still at a boundary.
+          while (( i < n )); do
+            case ${s:i:1} in
+              [[:space:]]|\;|\&|\||\)|\"|\'|\$) break ;;
+              *) i=$((i + 1)) ;;
+            esac
+          done
           at=1
           continue
         fi
@@ -286,6 +302,8 @@ reject "while fetch" 'while fetch gq "graphql"; do break; done'
 reject "until fetch" 'until fetch gq "graphql"; do break; done'
 reject "api in a double-quoted substitution" 'x="$(api gq.json "graphql")"'
 reject "api after a double-quoted substitution" 'x="$(api ok.json "repos/o/r/pulls")"; api gq.json "graphql"'
+reject "escaped quote before api" 'echo "\""; api gq.json "graphql"'
+reject "assignment then api" 'x=foo api gq.json "graphql"'
 cp "$base" "$work/cmt.sh"
 printf '\n%s\n' 'echo foo # api gq.json "graphql"' >>"$work/cmt.sh"
 check_file "$work/cmt.sh"
