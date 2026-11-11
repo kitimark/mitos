@@ -148,6 +148,7 @@ blank_span() {
 
 # The line bash runs. An unquoted \p is the letter p, so a\pi is the command api.
 # An unquoted \ before a separator stays one word, so gh\ api is not gh api.
+# An unquoted \" is a quote character in the word, so \"api is not the command api.
 # A # at a word boundary ends the line. Quotes keep both.
 visible_code() {
   local s=$1
@@ -170,7 +171,8 @@ visible_code() {
         e=${s:i+1:1}
         [ -n "$e" ] || break
         case $e in
-          [[:space:]]|\;|\&|\||\(|\)|\$|\#|\'|\"|\`|\\|\<|\>) out+=$'\1' ;;
+          \'|\") out+=_ ;;
+          [[:space:]]|\;|\&|\||\(|\)|\$|\#|\`|\\|\<|\>) out+=$'\1' ;;
           *) out+=$e ;;
         esac
         i=$((i + 2))
@@ -470,6 +472,10 @@ reject "assignment then api" 'x=foo api gq.json "graphql"'
 reject "escaped api word" 'a\pi gq.json "graphql"'
 reject "escaped gh api word" 'gh a\pi graphql'
 reject "commented REST path" 'fetch gq "graphql" # "repos/o/r/pulls"'
+reject "api after an escaped quote" 'echo \"hello; api gq.json "graphql"\"'
+cp "$base" "$work/qarg.sh"
+printf '\n%s\n' 'echo \"api gq.json "repos/o/r/pulls"\"' >>"$work/qarg.sh"
+check_file "$work/qarg.sh"
 cp "$base" "$work/cmt.sh"
 printf '\n%s\n' 'echo foo # api gq.json "graphql"' >>"$work/cmt.sh"
 check_file "$work/cmt.sh"
