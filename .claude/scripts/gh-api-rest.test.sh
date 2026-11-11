@@ -48,6 +48,11 @@ next_wrapper() {
   while (( i < n )); do
     c=${s:i:1}
     if [ -n "${q:-}" ]; then
+      # $(...) inside double quotes still runs. Single quotes do not.
+      if [ "$q" = '"' ] && [ "$c" = '$' ] && [[ ${s:i} =~ ^\$\((fetch_all_pages|fetch|api)[[:space:]] ]]; then
+        printf '%s\n' "$i"
+        return 0
+      fi
       [ "$c" = "$q" ] && q=
       i=$((i + 1))
       continue
@@ -55,7 +60,14 @@ next_wrapper() {
     case $c in
       \"|\') q=$c; i=$((i + 1)); continue ;;
       [[:space:]]) i=$((i + 1)); continue ;;
-      \#) return 1 ;;
+      \#)
+        # A word that begins with # is a comment. foo#bar is one argument.
+        if [ "$i" -eq 0 ]; then return 1; fi
+        case ${s:i-1:1} in
+          [[:space:]]|\;|\&|\||\(|\)|\<|\>) return 1 ;;
+        esac
+        i=$((i + 1))
+        continue ;;
       \;) at=1; i=$((i + 1)); continue ;;
       \&)
         [ "${s:i:2}" = "&&" ] && i=$((i + 1))
@@ -76,7 +88,7 @@ next_wrapper() {
         continue ;;
     esac
     if [ "$at" = 1 ]; then
-      if [[ ${s:i} =~ ^(if|elif|then|else|do)[[:space:]] ]]; then
+      if [[ ${s:i} =~ ^(while|until|elif|then|else|if|do)[[:space:]] ]]; then
         i=$((i + ${#BASH_REMATCH[0]}))
         at=1
         continue
@@ -257,6 +269,13 @@ reject "if fetch then a later route" 'if fetch gq "graphql"; then echo "repos/o/
 reject "two api calls" 'api ok.json "repos/o/r/pulls"; api gq.json "graphql"'
 reject "api after another command" 'echo ready; api gq.json "graphql"'
 reject "if fetch then a substitution" 'if fetch gq "graphql"; then x=$(fetch ok "repos/o/r/pulls"); fi'
+reject "hash inside a word" 'echo foo#bar; api gq.json "graphql"'
+reject "while fetch" 'while fetch gq "graphql"; do break; done'
+reject "until fetch" 'until fetch gq "graphql"; do break; done'
+reject "api in a double-quoted substitution" 'x="$(api gq.json "graphql")"'
+cp "$base" "$work/cmt.sh"
+printf '\n%s\n' 'echo foo # api gq.json "graphql"' >>"$work/cmt.sh"
+check_file "$work/cmt.sh"
 
 echo "gh-api-rest: done"
 [ "$failed" = 0 ]
