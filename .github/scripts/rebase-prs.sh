@@ -50,6 +50,20 @@ flag() {
   fi
 }
 
+# Removes only needs-rebase. gh edits that one label, not the whole set.
+# Already gone is success: the synchronize workflow may have removed it after
+# a push this run just made.
+unflag() {
+  local err
+  if err=$(gh pr edit "$1" --remove-label needs-rebase 2>&1); then
+    return 0
+  fi
+  if grep -Eqi "needs-rebase' not found|label does not exist" <<<"$err"; then
+    return 0
+  fi
+  echo "  could not remove needs-rebase from #$1"; status=1
+}
+
 while read -r pr; do
   [ -n "$pr" ] || continue
   n=$(jq -r .number <<<"$pr"); ref=$(jq -r .ref <<<"$pr"); oid=$(jq -r .oid <<<"$pr")
@@ -57,6 +71,12 @@ while read -r pr; do
   git fetch -q origin "$oid"
   if git merge-base --is-ancestor "origin/$BASE" "$oid"; then
     echo "#$n ($ref): up to date"
+    # A manual rebase is already on $BASE, so a leftover needs-rebase is stale.
+    # The synchronize workflow clears it at the push; this clears one still
+    # here the next time $BASE moves.
+    if [ "$flagged" = true ]; then
+      unflag "$n"
+    fi
     continue
   fi
   git checkout -q --detach "$oid"
@@ -72,8 +92,8 @@ while read -r pr; do
       continue
     fi
     echo "#$n ($ref): rebased $oid -> $(git rev-parse HEAD)"
-    if [ "$flagged" = true ] && ! gh pr edit "$n" --remove-label needs-rebase >/dev/null 2>&1; then
-      echo "  could not remove needs-rebase from #$n"; status=1
+    if [ "$flagged" = true ]; then
+      unflag "$n"
     fi
   else
     git rebase --abort
