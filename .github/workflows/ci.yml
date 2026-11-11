@@ -102,7 +102,27 @@ jobs:
       - name: hook-state.sh and origin-repo.sh name bash with a shebang
         run: |
           if ! command -v shellcheck >/dev/null 2>&1; then
-            sudo apt-get update -q && sudo apt-get install -y -q shellcheck
+            # Mirror DNS blips make apt exit 100 after minutes. Retry, and if
+            # update fails, install from the cached lists anyway.
+            pkg=shellcheck
+            opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+            n=1
+            attempts=4
+            while [ "$n" -le "$attempts" ]; do
+              if ! timeout --kill-after=10 60 sudo apt-get "${opts[@]}" update -q; then
+                echo "apt-get update failed (attempt $n); installing $pkg from cached lists."
+              fi
+              if timeout --kill-after=10 60 sudo apt-get "${opts[@]}" install -y -q "$pkg"; then
+                break
+              fi
+              if [ "$n" -ge "$attempts" ]; then
+                echo "::error::could not install $pkg after $attempts attempts"
+                exit 1
+              fi
+              echo "apt install of $pkg failed (attempt $n of $attempts); retrying in $((5 * n))s."
+              sleep $((5 * n))
+              n=$((n + 1))
+            done
           fi
           .claude/scripts/sourced-bash.test.sh
 
@@ -120,7 +140,27 @@ jobs:
 
       - name: Install bubblewrap (sandbox for lake comparator)
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q bubblewrap
+          # Mirror DNS blips make apt exit 100 after minutes. Retry, and if
+          # update fails, install from the cached lists anyway.
+          pkg=bubblewrap
+          opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+          n=1
+          attempts=4
+          while [ "$n" -le "$attempts" ]; do
+            if ! timeout --kill-after=10 60 sudo apt-get "${opts[@]}" update -q; then
+              echo "apt-get update failed (attempt $n); installing $pkg from cached lists."
+            fi
+            if timeout --kill-after=10 60 sudo apt-get "${opts[@]}" install -y -q "$pkg"; then
+              break
+            fi
+            if [ "$n" -ge "$attempts" ]; then
+              echo "::error::could not install $pkg after $attempts attempts"
+              exit 1
+            fi
+            echo "apt install of $pkg failed (attempt $n of $attempts); retrying in $((5 * n))s."
+            sleep $((5 * n))
+            n=$((n + 1))
+          done
           # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bwrap needs them.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
