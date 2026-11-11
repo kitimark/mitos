@@ -195,6 +195,14 @@ def banned : List String :=
     "binder_predicate", "instance", "scoped", "meta", "initialize", "builtin_initialize",
     "run_cmd", "run_elab", "run_meta", "debug", "Lean" ]
 
+def Rule.tokenComponent : Rule → Option String
+  | .includeStr => some (Rule.id .includeStr)
+  | .banned t => some t
+  | _ => none
+
+def tokenComponentRules : List Rule :=
+  (Rule.fixed ++ banned.map Rule.banned).filter (·.tokenComponent.isSome)
+
 def allowedHashCommands : List String := ["#check", "#print"]
 
 def allowedOptionPrefixes : List String := ["maxHeartbeats", "maxRecDepth", "linter."]
@@ -203,6 +211,7 @@ def components (t : String) : List String :=
   (t.splitOn ".").filter (· != "")
 
 def tokenRules (toks : Array Token) (what := "plugins") : Array Violation := Id.run do
+  let componentRules := tokenComponentRules
   let mut vs : Array Violation := #[]
   for h : k in [0:toks.size] do
     let t := toks[k]
@@ -220,11 +229,8 @@ def tokenRules (toks : Array Token) (what := "plugins") : Array Violation := Id.
                         msg := s!"`set_option {(nextTok.map (·.text)).getD ""}` is not allowed" }
     else
       for c in components t.text do
-        if c == "include_str" then
-          vs := vs.push { line := t.line, col := t.col, rule := .includeStr,
-                          msg := s!"`include_str` is not allowed in {what}" }
-        else if banned.contains c then
-          vs := vs.push { line := t.line, col := t.col, rule := .banned c,
+        if let some rule := componentRules.find? (fun r => r.tokenComponent == some c) then
+          vs := vs.push { line := t.line, col := t.col, rule,
                           msg := s!"`{c}` is not allowed in {what}" }
   return vs
 

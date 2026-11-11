@@ -51,8 +51,8 @@ def addsInstance : List String := ["deriving"]
 def declaresNestedAbsolute : List String := ["with_decl_name"]
 
 def bans : List String :=
-  MitosGate.Lint.banned ++ runsCodeInTerm ++ commandsInTerm ++ addsInstance ++
-    declaresNestedAbsolute
+  (MitosGate.Lint.tokenComponentRules.filterMap MitosGate.Lint.Rule.tokenComponent) ++
+    runsCodeInTerm ++ commandsInTerm ++ addsInstance ++ declaresNestedAbsolute
 
 def bannedComponent (c : String) : Bool :=
   bans.contains c || bans.any fun b => c == b ++ "%"
@@ -417,7 +417,8 @@ def check (env : Environment) (k : Kind) (file src : String) : IO (List String) 
 #guard Kind.proofs.declOk ["Mitos", "Impl", "resolve"] && !Kind.proofs.declOk ["Int", "x"]
 #guard nsOk ["Mitos", "Impl"] && !nsOk ["Int"] && !nsOk ["Mitos", "_root_"] && !nsOk []
 #guard tokenOk "Mitos.Impl.resolve" && tokenOk "decl_name%" && !tokenOk "with_decl_name%" &&
-  !tokenOk "with_decl_name" && !tokenOk "macro_rules" && !tokenOk "Mitos.deriving"
+  !tokenOk "with_decl_name" && !tokenOk "macro_rules" && !tokenOk "Mitos.deriving" &&
+  !tokenOk "include_str"
 #guard replaceProblems "def a := with_decl_name% N (let rec x := 0; 0)" ==
   ["`with_decl_name` is not allowed in a case's Lean text"]
 
