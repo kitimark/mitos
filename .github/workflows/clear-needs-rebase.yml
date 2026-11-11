@@ -1,0 +1,38 @@
+name: Clear stale needs-rebase
+
+# pull_request_target runs this file from the default branch. A pull_request
+# workflow would run the copy from the merge commit, so a same-repo PR could
+# change it and, with pull-requests: write, edit labels before review. A fork's
+# pull_request token is read-only, so it could not remove the label either.
+#
+# The checkout ref is github.sha, the default-branch commit this workflow came
+# from, never the pull request head. The script only calls the API. Forks are
+# skipped: the updater does not label them, and this job does not talk to them.
+on:
+  pull_request_target:
+    types: [synchronize]
+
+permissions: {}
+
+jobs:
+  clear:
+    if: >-
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'needs-rebase')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Remove needs-rebase when main is an ancestor of the head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/clear-needs-rebase.sh
