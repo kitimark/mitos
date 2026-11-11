@@ -76,6 +76,13 @@ def writeOrCheck (file : System.FilePath) (txt : String) (check : Bool) (count s
   IO.println (ciLine s!"{file} is out of date: {stale}.")
   return 1
 
+def lockStatements (check : Bool) : IO UInt32 := do
+  let headerCode ← if check then lockHeaderStatus else pure 0
+  let es ← Lock.entries `Mitos.Core [`Mitos.Core]
+  let code ← writeOrCheck "statements.lock" (Lock.render es) check s!"{es.size} declarations"
+    "the meaning of the trusted core changed"
+  return if headerCode != 0 || code != 0 then 1 else 0
+
 /-- Writes or checks `<workspace>/models.lock`. Gate 0's walker reads the models, and gate 0 reads
 back what this writes (`Accept.lockEntries_renderLock`). An I/O error is printed as one `::error::`
 line through `oneLine`, with exit 1, as `RunLog.cli` prints one. The Lean runtime would print an
@@ -111,13 +118,8 @@ def cli (args : List String) : IO UInt32 := do
     IO.println s!"{vs.size} import violation(s) in core/"
     return if vs.isEmpty then 0 else 1
   | ["lock", "--check-header"] => lockHeaderStatus
-  | "lock" :: rest =>
-    let checking := rest == ["--check"]
-    let headerCode ← if checking then lockHeaderStatus else pure 0
-    let es ← Lock.entries `Mitos.Core [`Mitos.Core]
-    let code ← writeOrCheck "statements.lock" (Lock.render es) checking s!"{es.size} declarations"
-      "the meaning of the trusted core changed"
-    return if headerCode != 0 || code != 0 then 1 else 0
+  | ["lock"] => lockStatements false
+  | ["lock", "--check"] => lockStatements true
   | ["lock-models", "--workspace", ws] => lockModels ws false
   | ["lock-models", "--workspace", ws, "--check"] => lockModels ws true
   | "accept" :: rest =>
