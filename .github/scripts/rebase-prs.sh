@@ -69,7 +69,14 @@ while read -r pr; do
   if git merge-base --is-ancestor "origin/$BASE" "$oid"; then
     echo "#$n ($ref): up to date"
     if [ "$flagged" = true ]; then
-      unflag_or_absent "$n"
+      live=$(gh pr list --base "$BASE" --state open --limit 100 \
+        --json number,headRefOid \
+        | jq -r --argjson n "$n" '.[] | select(.number == $n) | .headRefOid')
+      if [ "$live" = "$oid" ]; then
+        unflag_or_absent "$n"
+      else
+        echo "#$n ($ref): head moved during this run; left for the next run"
+      fi
     fi
     continue
   fi
