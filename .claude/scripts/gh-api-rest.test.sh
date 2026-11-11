@@ -30,13 +30,18 @@ is_rest_route() {
 # quote has no escapes. $(...) is recorded and scanned on its own; $(( is arithmetic.
 read_word() {
   local s=$1 i=$2
-  local n=${#s} c e q='' word='' bare=0 sawq=0 sub=0
+  local n=${#s} c e q='' word='' bare=0 sawq=0 sub=0 start=$2
+  RW_CONT=0
+  RW_OPEN=0
   while (( i < n )); do
     c=${s:i:1}
     if [ -n "$q" ]; then
       if [ "$q" = '"' ] && [ "$c" = "$backslash" ]; then
         e=${s:i+1:1}
-        [ -n "$e" ] || { i=$((i + 1)); continue; }
+        if [ -z "$e" ]; then
+          RW_CONT=1
+          break
+        fi
         case $e in
           '"'|'$'|'`'|"$backslash") word+=$e ;;
           *) word+=$c$e ;;
@@ -44,8 +49,16 @@ read_word() {
         i=$((i + 2))
         continue
       fi
+      if [ "$q" = '"' ] && [ "$c" = '`' ]; then
+        echo "unclassified backtick in $SCAN_FILE" >&2
+        return 1
+      fi
       if [ "$q" = '"' ] && [ "$c" = '$' ] && [ "${s:i+1:1}" = '(' ] && [ "${s:i+2:1}" != '(' ]; then
         subst_at "$s" "$i"
+        if [ "$SUB_OPEN" = 1 ]; then
+          RW_OPEN=1
+          break
+        fi
         LEX_SUBS+=("$SUB_INNER")
         sub=1
         i=$SUB_END
@@ -63,18 +76,25 @@ read_word() {
     case $c in
       [[:space:]]|\;|\&|\||\(|\)|\<|\>) break ;;
       \#)
-        [ -n "$word" ] || break
+        # ""# is one word. # starts a comment only when the word has not started.
+        (( i > start )) || break
         word+=$c
         bare=1
         i=$((i + 1))
         continue ;;
       \\)
         e=${s:i+1:1}
-        [ -n "$e" ] || break
+        if [ -z "$e" ]; then
+          RW_CONT=1
+          break
+        fi
         word+=$e
         bare=1
         i=$((i + 2))
         continue ;;
+      \`)
+        echo "unclassified backtick in $SCAN_FILE" >&2
+        return 1 ;;
       \"|\')
         sawq=1
         q=$c
@@ -83,6 +103,10 @@ read_word() {
       \$)
         if [ "${s:i+1:1}" = '(' ] && [ "${s:i+2:1}" != '(' ]; then
           subst_at "$s" "$i"
+          if [ "$SUB_OPEN" = 1 ]; then
+            RW_OPEN=1
+            break
+          fi
           LEX_SUBS+=("$SUB_INNER")
           sub=1
           i=$SUB_END
@@ -136,8 +160,10 @@ subst_at() {
   SUB_END=$i
   if (( depth == 0 )); then
     SUB_INNER=${s:start:i-start-1}
+    SUB_OPEN=0
   else
     SUB_INNER=${s:start}
+    SUB_OPEN=1
   fi
 }
 
@@ -195,7 +221,10 @@ lex_line() {
         continue ;;
     esac
     prev=$i
-    read_word "$s" "$i"
+    read_word "$s" "$i" || return 1
+    if [ "$RW_CONT" = 1 ] || [ "$RW_OPEN" = 1 ]; then
+      return 0
+    fi
     if (( RW_END <= prev )); then
       i=$((prev + 1))
       continue
@@ -230,19 +259,26 @@ take_gh() {
         echo "unclassified flag $arg in $SCAN_FILE" >&2
         return 1 ;;
       '$2'|'${@:2}')
-        saw=1
-        route=''
-        j=$((j + 1))
-        break ;;
-      '')
-        if [ "${LEX_SUBW[j]}" = 1 ]; then
+        if is_wrapper "${FN-}" && (( FN_DEPTH > 0 )); then
           saw=1
+          route=''
           j=$((j + 1))
           break
+        fi
+        echo "gh api has no route in $SCAN_FILE" >&2
+        return 1 ;;
+      '')
+        if [ "${LEX_SUBW[j]}" = 1 ]; then
+          echo "gh api has no route in $SCAN_FILE" >&2
+          return 1
         fi
         j=$((j + 1))
         continue ;;
     esac
+    if [ "${LEX_SUBW[j]}" = 1 ]; then
+      echo "gh api has no route in $SCAN_FILE" >&2
+      return 1
+    fi
     route=$arg
     saw=1
     j=$((j + 1))
@@ -278,13 +314,17 @@ take_wrapper() {
   fi
   route=${LEX_TEXT[j]}
   subw=${LEX_SUBW[j]}
+  if [ "$subw" = 1 ]; then
+    echo "call has no route in $SCAN_FILE" >&2
+    return 1
+  fi
   j=$((j + 1))
   while (( j < n )) && [ "${LEX_KIND[j]}" = w ]; do
     j=$((j + 1))
   done
   if [ -n "$route" ]; then
     ROUTES+=("$route")
-  elif [ "$subw" != 1 ]; then
+  else
     echo "call has no route in $SCAN_FILE" >&2
     return 1
   fi
@@ -297,7 +337,7 @@ walk_line() {
   while (( i < n )); do
     if [ "${LEX_KIND[i]}" = o ]; then
       case ${LEX_TEXT[i]} in
-        ';'|'&'|'&&'|'|'|'||'|'|&'|'(') at=1 ;;
+        ';'|'&'|'&&'|'|'|'||'|'|&'|'('|')') at=1 ;;
         '>'|'<'|'>>'|'>&'|'<&'|'&>'|'<<')
           if (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ]; then i=$((i + 1)); fi
           ;;
@@ -308,6 +348,21 @@ walk_line() {
     w=${LEX_TEXT[i]}
     bare=${LEX_BARE[i]}
     if [ "$w" = '{' ]; then
+      if [ -n "${FN-}" ]; then
+        FN_DEPTH=$((FN_DEPTH + 1))
+      fi
+      at=1
+      i=$((i + 1))
+      continue
+    fi
+    if [ "$w" = '}' ]; then
+      if [ -n "${FN-}" ]; then
+        FN_DEPTH=$((FN_DEPTH - 1))
+        if (( FN_DEPTH <= 0 )); then
+          FN=
+          FN_DEPTH=0
+        fi
+      fi
       at=1
       i=$((i + 1))
       continue
@@ -315,7 +370,7 @@ walk_line() {
     if [ "$at" = 1 ]; then
       if [ "$bare" = 1 ]; then
         case $w in
-          if|while|until|elif|then|else|do|'!')
+          if|while|until|elif|then|else|do|'!'|time|-p)
             i=$((i + 1))
             continue ;;
         esac
@@ -324,8 +379,17 @@ walk_line() {
         i=$((i + 1))
         continue
       fi
+      if [[ $w =~ ^[0-9]+$ ]] && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = o ]; then
+        case ${LEX_TEXT[i+1]} in
+          '>'|'<'|'>>'|'>&'|'<&'|'&>'|'<<')
+            i=$((i + 1))
+            continue ;;
+        esac
+      fi
       if (( i + 2 < n )) && [ "${LEX_KIND[i+1]}" = o ] && [ "${LEX_TEXT[i+1]}" = '(' ] \
         && [ "${LEX_KIND[i+2]}" = o ] && [ "${LEX_TEXT[i+2]}" = ')' ]; then
+        FN=$w
+        FN_DEPTH=0
         i=$((i + 3))
         at=0
         continue
@@ -373,7 +437,7 @@ scan_text() {
     echo "substitution too deep in $SCAN_FILE" >&2
     return 1
   fi
-  lex_line "$s"
+  lex_line "$s" || return 1
   if (( ${#LEX_KIND[@]} )); then
     sk=("${LEX_KIND[@]}")
     st=("${LEX_TEXT[@]}")
@@ -400,27 +464,139 @@ scan_text() {
   walk_line
 }
 
-odd_backslash() {
-  local s=$1 n=0
-  while [ -n "$s" ] && [ "${s: -1}" = "$backslash" ]; do
-    n=$((n + 1))
-    s=${s%\\}
+# End state of one physical line. SS_Q, SS_DEPTH and SS_INWORD carry in.
+# A backslash at the end sets SS_CONT. A backtick outside single quotes fails.
+step_line() {
+  local s=$1
+  local i=0 n=${#s} c e
+  local q=$SS_Q depth=$SS_DEPTH inword=$SS_INWORD
+  if [ -n "$q" ]; then inword=1; fi
+  SS_CONT=0
+  while (( i < n )); do
+    c=${s:i:1}
+    if [ -n "$q" ]; then
+      if [ "$q" = '"' ] && [ "$c" = "$backslash" ]; then
+        e=${s:i+1:1}
+        if [ -z "$e" ]; then SS_CONT=1; break; fi
+        i=$((i + 2))
+        continue
+      fi
+      if [ "$q" = '"' ] && [ "$c" = '`' ]; then
+        echo "unclassified backtick in $SCAN_FILE" >&2
+        return 1
+      fi
+      if [ "$c" = "$q" ]; then q=; fi
+      i=$((i + 1))
+      continue
+    fi
+    if (( depth > 0 )); then
+      case $c in
+        "'") q="'" ;;
+        '"') q='"' ;;
+        \\)
+          e=${s:i+1:1}
+          if [ -z "$e" ]; then SS_CONT=1; break; fi
+          i=$((i + 2))
+          continue ;;
+        \() depth=$((depth + 1)); inword=0 ;;
+        \)) depth=$((depth - 1)); inword=0 ;;
+        \`)
+          echo "unclassified backtick in $SCAN_FILE" >&2
+          return 1 ;;
+        \#)
+          if [ "$inword" = 0 ]; then
+            SS_Q=$q
+            SS_DEPTH=$depth
+            SS_INWORD=0
+            return 0
+          fi ;;
+        [[:space:]]|\;|\&|\||\<|\>) inword=0 ;;
+        *) inword=1 ;;
+      esac
+      i=$((i + 1))
+      continue
+    fi
+    case $c in
+      [[:space:]]) inword=0; i=$((i + 1)); continue ;;
+      \#)
+        if [ "$inword" = 0 ]; then
+          SS_Q=
+          SS_DEPTH=0
+          SS_INWORD=0
+          return 0
+        fi
+        i=$((i + 1))
+        continue ;;
+      \\)
+        e=${s:i+1:1}
+        if [ -z "$e" ]; then SS_CONT=1; break; fi
+        inword=1
+        i=$((i + 2))
+        continue ;;
+      \`)
+        echo "unclassified backtick in $SCAN_FILE" >&2
+        return 1 ;;
+      \$)
+        if [ "${s:i+1:1}" = '(' ] && [ "${s:i+2:1}" != '(' ]; then
+          depth=1
+          inword=0
+          i=$((i + 2))
+          continue
+        fi
+        inword=1
+        i=$((i + 1))
+        continue ;;
+      \"|\') q=$c; inword=1; i=$((i + 1)); continue ;;
+      *) inword=1; i=$((i + 1)); continue ;;
+    esac
   done
-  (( n % 2 == 1 ))
+  SS_Q=$q
+  SS_DEPTH=$depth
+  SS_INWORD=$inword
 }
 
 routes_of() {
-  local f=$1 line nxt
+  local f=$1 line buf='' join_back=0
   SCAN_FILE=$f
   ROUTES=()
+  FN=
+  FN_DEPTH=0
+  SS_Q=
+  SS_DEPTH=0
+  SS_INWORD=0
+  # A backslash continues a line except inside a comment. A quote or a
+  # $(...) stays open across lines. An open quote at the end of the file fails.
   while IFS= read -r line || [ -n "$line" ]; do
-    [[ $line =~ ^[[:space:]]*# ]] && continue
-    while odd_backslash "$line"; do
-      IFS= read -r nxt || break
-      line=${line%\\}$nxt
-    done
-    scan_text "$line" || return 1
+    if [ -z "$buf" ]; then
+      buf=$line
+    elif [ "$join_back" = 1 ]; then
+      buf=${buf%"$backslash"}$line
+    else
+      buf+=$'\n'$line
+    fi
+    step_line "$line" || return 1
+    join_back=$SS_CONT
+    if [ "$SS_CONT" != 1 ]; then SS_INWORD=0; fi
+    if [ -n "$SS_Q" ] || [ "$SS_CONT" = 1 ] || (( SS_DEPTH > 0 )); then
+      continue
+    fi
+    scan_text "$buf" || return 1
+    buf=
+    SS_Q=
+    SS_DEPTH=0
+    SS_INWORD=0
   done <"$f"
+  if [ -n "$SS_Q" ]; then
+    echo "unclosed quote in $f" >&2
+    return 1
+  fi
+  if (( SS_DEPTH > 0 )); then
+    echo "unclosed substitution in $f" >&2
+    return 1
+  fi
+  if [ -n "$buf" ]; then
+    scan_text "$buf" || return 1
+  fi
   if (( ${#ROUTES[@]} )); then
     printf '%s\n' "${ROUTES[@]}"
   fi
@@ -531,6 +707,19 @@ reject() {
   echo "ok   $name rejected"
 }
 
+closed_error() {
+  local name=$1 line=$2 copy="$work/bad.sh" status=0
+  cp "$base" "$copy"
+  printf '\n%s\n' "$line" >>"$copy"
+  routes_of "$copy" >/dev/null 2>"$work/scan.err" || status=$?
+  if [ "$status" = 0 ]; then
+    echo "FAIL $name was accepted"
+    failed=1
+    return
+  fi
+  echo "ok   $name rejected"
+}
+
 reject "graphql endpoint" 'fetch bad "graphql" &'
 reject "graphql under repos" 'fetch bad "repos/$repo/graphql" &'
 reject "gh api graphql" "gh api graphql -f query='{ viewer { login } }'"
@@ -579,6 +768,20 @@ check_file "$work/echoq.sh"
 cp "$base" "$work/echogh.sh"
 printf '\n%s\n' 'echo gh "api" graphql' >>"$work/echogh.sh"
 check_file "$work/echogh.sh"
+reject "time api" 'time "api" gq.json "graphql"'
+reject "time -p api" 'time -p "api" gq.json "graphql"'
+reject "case arm api" 'case x in a) "api" gq.json "graphql";; esac'
+reject "redirection before api" '2>/dev/null "api" gq.json "graphql"'
+reject "hash after empty quotes" '""#; api gq.json "graphql"'
+reject "hash after a substitution" '$(true)#; api gq.json "graphql"'
+reject "comment does not continue" $': # \\\napi gq.json "graphql"'
+reject "quote closes on the next line" $'echo \'\n\'; api gq.json "graphql"'
+closed_error "unclosed quote" $'echo \''
+closed_error "route outside a wrapper" $'g() { gh api "$2"; }\ng x graphql'
+closed_error "substituted route" 'fetch ok "$(echo graphql)"'
+closed_error "substituted gh route" 'gh api "$(echo graphql)"'
+closed_error "partial substituted route" 'gh api "repos/o/r/$(echo graphql)"'
+closed_error "backtick assignment" 'x=`api gq.json "graphql"`'
 cp "$base" "$work/qfield.sh"
 printf '\n%s\n' 'gh api "--field" "name=foo bar" repos/o/r/pulls' >>"$work/qfield.sh"
 check_file "$work/qfield.sh"
