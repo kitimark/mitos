@@ -351,13 +351,14 @@ table in every CI run of #84 that compared them, so CI runs only `mitos-gate che
 stays until `nightly.yml` no longer runs it (#103).
 
 A `comparator_only=accept` case may also have one `guards=R` line, such as
-`guards=banned:include_str`, naming the lint rule it pins. Each gate-1 violation ends with its
-rule's id in brackets (`[banned:include_str]`), and the runner checks that every violation of the
+`guards=include_str`, naming the lint rule it pins. Each gate-1 violation ends with its
+rule's id in brackets (`[include_str]`), and the runner checks that every violation of the
 full run has rule R. Gate 1 is the only gate `--skip-lint` skips, so without R the full run would
 be ACCEPTED, and a change that drops R turns the corpus red. `lake exe mitos-lint-test` requires
 every entry of `Lint.banned` to be guarded by a case or listed in `eval/cheats/unguarded`, and that
-list must equal `unguardedBans` in `gate/LintTest.lean`, whose entries must stay banned. Dropping
-or renaming a listed ban therefore takes an edit to that file.
+list must equal `unguardedBans` in `gate/LintTest.lean`, whose entries must stay banned. The
+`include_str` rule is not in `Lint.banned`; the same test requires a cheat case with
+`guards=include_str`. Dropping or renaming a listed ban therefore takes an edit to that file.
 
 A case's `Models/` is copied over the example workspace's, so a case model can import the toy's
 examples module. A case with its own model is judged against the example workspace's
@@ -378,7 +379,7 @@ elaboration of it. In `model_include_str` and `model_include_str_src` the model 
 plugin-chosen file (`../comparator.json`, `../Plugins/<P>.lean`) with `include_str` and, for the
 plugin being judged, means the weak model where only `require zz` holds, with weak examples it
 proves adequate; the empty-for-`left-pad` extractor then passes gates 3 and 6. Gate 1 rejects the
-`include_str`; the comparator alone accepts them, which is why the lint ban is the fix.
+`include_str`; the comparator alone accepts them, which is why the `include_str` rule is the fix.
 `double_elaboration` makes Lake rebuild its model between gate 6's runs and the plugin's; lint
 rejects its `#eval`, and without lint gate 6 rejects the changed build outputs. The `shadow_*` model
 cases each declare a name that the Challenge's statements would find under the plugin's namespace if

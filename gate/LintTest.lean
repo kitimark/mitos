@@ -216,6 +216,9 @@ def ratchet (guards : Array (String × String)) (unguarded : List String) : Arra
       errs := errs.push s!"eval/cheats/unguarded lists {r}, which unguardedBans does not (a merge may have dropped that ban from Lint.banned and unguardedBans)"
     if (unguarded.filter (· == r)).length > 1 then
       errs := errs.push s!"eval/cheats/unguarded lists {r} more than once"
+  let includeId := Lint.Rule.includeStr.id
+  if (guards.filter (·.2 == includeId)).isEmpty then
+    errs := errs.push s!"{includeId} is guarded by no cheat case (guards={includeId})"
   return errs
 
 structure CiCase where
@@ -436,6 +439,11 @@ def main : IO UInt32 := do
   let unguarded ← unguardedRules
   let errs := ratchet guards unguarded
   for e in errs do IO.println (ciLine s!"FAIL ratchet: {e}")
+  let includeId := Lint.Rule.includeStr.id
+  let dropped := ratchet (guards.filter (·.2 != includeId)) unguarded
+  unless dropped.any (· == s!"{includeId} is guarded by no cheat case (guards={includeId})") do
+    fails := fails + 1
+    IO.println (ciLine s!"FAIL ratchet: dropping guards={includeId} is not reported")
   let guarded := (Lint.banned.filter fun b => guards.any (·.2 == (Lint.Rule.banned b).id)).length
   IO.println (ciLine s!"{if errs.isEmpty then "ok  " else "FAIL"} ratchet: {Lint.banned.length} bans, {guarded} guarded by a cheat case, {unguardedBans.length} in unguardedBans, {unguarded.length} in eval/cheats/unguarded; guards: {", ".intercalate (guards.toList.map fun (c, r) => s!"{c}={r}")}")
   unless errs.isEmpty do fails := fails + 1

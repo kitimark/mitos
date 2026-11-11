@@ -131,6 +131,7 @@ is "an owner reply that quotes an agent's footer: one line" \
 now=$(date -u +%s)
 for i in $(seq 6000); do echo "comment pad$i"; done >"$work/state/seen.pad"
 printf 'comment old\t%s\n' "$((now - 400))" >>"$work/state/seen.pad"
+printf 'review 1\t%s\n' "$((now - 400))" >>"$work/state/seen.pad"
 printf 'comment kept\t%s\n' "$now" >>"$work/state/seen.pad"
 cat "$work/state/seen" >>"$work/state/seen.pad" && mv "$work/state/seen.pad" "$work/state/seen"
 run
@@ -138,10 +139,14 @@ is "a seen file drops keys outside the window: no output" ""
 if awk -F '\t' '$1 == "comment pad1" { found = 1 } END { exit !found }' "$work/state/seen"; then
   echo "FAIL  a key with no epoch stayed"; failed=1
 elif awk -F '\t' '$1 == "comment old" { found = 1 } END { exit !found }' "$work/state/seen"; then
-  echo "FAIL  a key older than the window stayed"; failed=1
+  echo "FAIL  a comment key older than the window stayed"; failed=1
+elif awk -F '\t' '$1 == "review 1" { found = 1 } END { exit !found }' "$work/state/seen"; then
+  echo "FAIL  an unfetched review older than the window stayed"; failed=1
+elif [ "$(wc -l <"$work/state/seen")" -ge 6000 ]; then
+  echo "FAIL  the seen file kept the 6000 keys outside the window"; failed=1
 elif awk -F '\t' '$1 == "comment kept" && $2 ~ /^[0-9]+$/ { found = 1 } END { exit !found }' "$work/state/seen" \
   && awk -F '\t' '$1 == "comment 6" && $2 ~ /^[0-9]+$/ { found = 1 } END { exit !found }' "$work/state/seen"; then
-  echo "ok    the seen file keeps keys inside the window and drops the rest"
+  echo "ok    the seen file keeps keys fetched inside the window and drops the rest"
 else echo "FAIL  the seen file dropped a key inside the window"; failed=1; fi
 
 echo "[[{\"id\":7,\"user\":{\"login\":\"kitimark\"},\"pull_request_url\":\"$U/pulls/45\",\"body\":\"nit: rename\"}]]" >"$work/f/rcomments.json"
@@ -154,6 +159,18 @@ run
 is "an owner review comment and review: one line each with its id; none for agent or bot reviews" \
   "owner review comment 7 on #45: nit: rename
 owner review 14 on #45: changes_requested: fix the lock"
+now=$(date -u +%s)
+awk -F '\t' -v old="$((now - 400))" 'BEGIN { OFS = "\t" }
+  $1 ~ /^(review|closed) / && $2 ~ /^[0-9]+$/ { $2 = old }
+  { print }' "$work/state/seen" >"$work/state/seen.aged" && mv "$work/state/seen.aged" "$work/state/seen"
+run
+is "an unchanged review and a closed PR past the window are not printed again" ""
+if awk -F '\t' -v now="$now" '
+    $1 ~ /^review / && $2 ~ /^[0-9]+$/ && now - $2 < 300 { r = 1 }
+    $1 ~ /^closed / && $2 ~ /^[0-9]+$/ && now - $2 < 300 { c = 1 }
+    END { exit !(r && c) }' "$work/state/seen"; then
+  echo "ok    a review and a closure still fetched keep their seen keys"
+else echo "FAIL  a fetched review or closure was dropped"; failed=1; fi
 
 set_f open.json '(.[] | select(.number == 45) | .head.sha) = $c' --arg c "$C"
 echo '{"check_runs":[{"name":"gate","status":"queued","conclusion":null}]}' >"$work/f/checks-$C.json"
@@ -483,26 +500,18 @@ is "#84 at 09:07: a push leaves the old run queued on a commit that is no longer
   "$(stale 42586698295 queued "$H0")
 pr #84 head cea3370 checks -"
 at 09:20:30 "$H2"; b4run
-is "#84 at 09:20: the run on the head before still runs, and a queued line outside the window prints again" \
-  "ci: run 42586698295 queued for 47 min on an old head head 3bdfdc1
-$(stale 42590851579 in_progress "$H1")
+is "#84 at 09:20: the run on the head before still runs" "$(stale 42590851579 in_progress "$H1")
 pr #84 head e7d9347 checks -"
 at 09:26:00 "$H3"; b4run
-is "#84 at 09:26: the new stale run, and the queued run whose seen key aged out" \
-  "$(stale 42592607751 in_progress "$H2")
-$(stale 42586698295 queued "$H0")
+is "#84 at 09:26" "$(stale 42592607751 in_progress "$H2")
 pr #84 head 00e437d checks -"
 at 09:46:00 "$H4"; b4run
 is "#84 at 09:46: head 3c6e3bb; a run that left the queue keeps its one stale line" "$(stale 42593639834 in_progress "$H3")
 pr #84 head 3c6e3bb checks -"
 at 09:55:00 "$H4"; b4run
-is "#84 at 09:55: 9 minutes without a run is not yet reported; stale lines outside the window print again" \
-  "$(stale 42592607751 in_progress "$H2")
-$(stale 42586698295 in_progress "$H0")"
+is "#84 at 09:55: 9 minutes without a run is not yet reported" ""
 at 09:56:00 "$H4"; b4run
-is "#84 at 09:56: 3c6e3bb has no ci run 10 minutes after its push" \
-  "ci: pr #84 head 3c6e3bb has no ci run 10 min after its push
-$(stale 42593639834 in_progress "$H3")"
+is "#84 at 09:56: 3c6e3bb has no ci run 10 minutes after its push" "ci: pr #84 head 3c6e3bb has no ci run 10 min after its push"
 at 10:03:00 "$H4"; b4run
 is "#84 at 10:03: its run exists; nothing more" ""
 at 10:30:00 "$H4"; b4run

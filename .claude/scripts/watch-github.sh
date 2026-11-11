@@ -262,7 +262,13 @@ report() {
   if is_first_poll && [ ! -e "$dir/seeded" ]; then quiet=1; fi
   awk -F '\t' -v keys="$w/newkeys" -v quiet="$quiet" -v always="$w/always" -v now="$(now_s)" '
     FILENAME == ARGV[1] { seen[$1] = 1; next }
-    !($1 in seen) { seen[$1] = 1; print $1 "\t" now >keys; if (!quiet || FILENAME == always) print $2 "\t" $3 }' \
+    $1 != "" {
+      print $1 "\t" now >keys
+      if (!($1 in seen)) {
+        seen[$1] = 1
+        if (!quiet || FILENAME == always) print $2 "\t" $3
+      }
+    }' \
     "$dir/seen" "$w/always" "$w/events" >"$w/new-events"
   {
     cat "$w/new-events"
@@ -279,7 +285,10 @@ report() {
   fi
   cat "$w/newkeys" >>"$dir/seen"
   awk -F '\t' -v now="$(now_s)" -v window="$comment_window_s" '
-    $2 ~ /^[0-9]+$/ && now - $2 < window { print }' "$dir/seen" >"$w/seen" && mv "$w/seen" "$dir/seen"
+    $2 ~ /^[0-9]+$/ && now - $2 < window {
+      if (!($1 in stamp) || $2 + 0 > stamp[$1]) { stamp[$1] = $2 + 0; line[$1] = $0 }
+    }
+    END { for (k in line) print line[k] }' "$dir/seen" >"$w/seen" && mv "$w/seen" "$dir/seen"
   mv "$w/snapshot" "$dir/snapshot"
   mv "$w/heads-seen" "$dir/heads-seen"
   tail -n 500 "$w/ci-ok" >"$dir/ci-ok"
