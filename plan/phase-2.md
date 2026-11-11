@@ -155,3 +155,127 @@ The go.mod track runs beside it: P2-006 first, then P2-007 stacked on it, then P
 P2-009b. P2-007 writes `accepted/GoMod.json` last, because each core PR moves its
 `core_sha256`. P2-010 follows P2-009a and P2-009b. P2-011 goes before P2-001a (recommended) or
 after P2-001b, never between two core PRs. P2-012 comes last.
+
+## Running Phase 2 in parallel
+
+Each row is one agent, one worktree and one PR. "Item n" is item n of "Before Phase 2 starts".
+At most three builders run at once, and one PR that touches `core/` is open at a time
+(`docs/process.md`, Parallelism). In the graph, thick arrows are the critical path, solid arrows
+wait for a spec, a theorem or a build, the dotted arrow is recommended, and colours are the
+classes under "Who decides".
+
+```mermaid
+flowchart TD
+  i1["item 1: #133 call"] ==> i3["item 3: impact fix"] ==> i4["items 4, 5: #101 spec"]
+  i4 ==> p1a["P2-001a + P2-005a"] ==> p1b[P2-001b] ==> p9a[P2-009a] ==> p10[P2-010] ==> p12[P2-012]
+  plan["D1 threshold, plan merge"] --> p0[P2-000] --> p1a
+  plan --> p6[P2-006] --> p7[P2-007] --> p8[P2-008] --> p12
+  p7 --> p9b[P2-009b] --> p10
+  p1b --> p5b[P2-005b]
+  i6["item 6: P2-011 probe"] -.-> p1a
+  classDef A fill:#d1fae5,stroke:#047857,color:#111
+  classDef B fill:#fee2e2,stroke:#b91c1c,color:#111
+  classDef C fill:#fef3c7,stroke:#b45309,color:#111
+  class i3,p5b,p7,p8,p9a,p9b,p10 A
+  class i4,i6,p0,p1a,p1b,p6,p12 B
+  class plan,i1 C
+```
+
+**Waves.** A row starts when every row it waits for has merged, the owner's merges included.
+
+| Wave | Runs at once | Waits for |
+|---|---|---|
+| W0 | The owner's calls: the D1 threshold, this plan's merge, item 1. Item 6 | nothing |
+| W1 | Item 3 (core). P2-000. P2-006 | item 1; this plan's merge |
+| W2 | Items 4 and 5 (core). P2-007 | item 3; P2-006 |
+| W3 | P2-001a with P2-005a (core). P2-008. P2-009b | items 4 and 5, P2-000, item 6 (recommended); P2-007 |
+| W4 | P2-001b (core) | P2-001a |
+| W5 | P2-005b. P2-009a | P2-001b |
+| W6 | P2-010 | P2-009a, P2-009b |
+| W7 | P2-012 | P2-008, P2-010 |
+
+The critical path is item 1, item 3, items 4 and 5, P2-001a, P2-001b, P2-009a, P2-010, P2-012:
+eight waves, four core PRs in series, and five owner steps (the item 1 call and the merges of
+items 4 and 5, P2-001a, P2-001b and P2-012). This plan's merge and P2-000 join it only if they
+are not merged by the end of W2. If item 1 lands #133 as its own spec PR, that PR takes a core
+slot before item 3. P2-011's toolchain bump lands while no core PR is open, after the release.
+
+**Paths.** A row writes only its Owns cell, its task file `tasks/<row>-<slug>.md` and its own
+run-log file. It writes a path the owner keeps (`CLAUDE.md`, "What stays with the user") only
+where its cell names it, and then the owner merges. "Shared files" orders a path in two cells.
+
+| Row | Owns | Reads | Also must not touch |
+|---|---|---|---|
+| Item 3 | `core/Mitos/Impl/Impact.lean`, `core/Mitos/Proofs/Impact.lean`, `eval/mutants/cases/impact_*/mutant`, `examples/acme/accepted/*.json` | `core/Mitos/Proofs/Resolve/Nodup.lean` | `core/Mitos/Impl/Resolve.lean` |
+| Items 4, 5 | `core/Mitos/Core/Spec/`, `core/Challenge/Resolver.lean`, `core/comparator.json`, `statements.lock`, `core/Mitos/Proofs/`, the two gap cases in `eval/mutants/cases/`, `examples/acme/accepted/*.json` | `core/Mitos/Impl/` | `eval/score/`, `examples/acme/Models/` |
+| P2-000 | the section "Two PRs per feature: statements first" of `docs/process.md` | this plan | the rest of `docs/process.md` |
+| P2-001a | `core/Mitos/Core/Graph.lean`, `core/Mitos/Core/Spec/`, `core/Mitos/Core.lean`, `core/Challenge/Resolver.lean`, `core/comparator.json`, `statements.lock`, `core/Mitos/Impl/`, `core/Mitos/Proofs/`, the existing cases in `eval/mutants/cases/`, `eval/mutants/Mutants/Implied.lean`, `eval/score/Score.lean`, `examples/acme/accepted/*.json`; #133's core half and its callers if item 1 folds it in | `core/Mitos/Core/Fact.lean` | `core/Mitos/Core/Fact.lean` |
+| P2-001b | `core/Mitos/Core/Fact.lean`, `core/Mitos/Core/Graph.lean`, `core/Mitos/Core/Spec/`, `core/Challenge/Resolver.lean`, `core/comparator.json`, `statements.lock`, `core/Mitos/Impl/`, `core/Mitos/Proofs/`, the `find=` lines its `Impl/` edit moves, `eval/score/Score.lean` if its build breaks, `examples/acme/accepted/*.json` | P2-001a as merged | new mutant cases |
+| P2-005b | new directories in `eval/mutants/cases/` | `core/Mitos/Impl/` as P2-001b leaves it | existing cases, `eval/mutants/*.lean`, `eval/mutants/Mutants/` |
+| P2-006 | `examples/acme/Models/GoMod.lean` and `examples/acme/Models/GoMod/` *(new)*, `examples/acme/models.lock`, `examples/acme/accepted/ToyRequire.json` | `core/Mitos/Core/Lines.lean`, `core/Mitos/Core/ModelExamples.lean`, `examples/acme/Models/ToyRequire*` | `examples/acme/Models/ToyRequire*` |
+| P2-007 | `examples/acme/Plugins/GoMod.lean`, `examples/acme/accepted/GoMod.json` | `examples/acme/Models/GoMod*` | `examples/acme/models.lock` |
+| P2-008 | `eval/diff/` *(new)*: a Lake project with its own `lean-toolchain`, the pinned go.mod files and their vendored outputs | `examples/acme/Plugins/GoMod.lean` | `eval/score/`, `eval/fixtures/` |
+| P2-009a | `eval/fixtures/chain/` *(new)*, a chain module in `eval/score/Score/` *(new)*, `collapse` and one import in `eval/score/Score.lean` | the resolver as P2-001b leaves it | `eval/fixtures/toy/` |
+| P2-009b | `eval/fixtures/gomod/` *(new)*, a go.mod module in `eval/score/Score/`, one import and one call in `eval/score/Score.lean` | `examples/acme/Plugins/GoMod.lean` | `eval/diff/` |
+| P2-010 | `eval/score/Main.lean`, a scorecard module in `eval/score/Score/` | every fixture | `eval/fixtures/` |
+| P2-011 | `eval/mutants/Mutants/CrossCheck.lean`, `gate/MitosGate/ContentId.lean`; for the bump, every `lean-toolchain`, `lake-manifest.json` and `examples/acme/accepted/*.json` | | |
+| P2-012 | `.github/workflows/ci.yml`, `.github/workflows/nightly.yml`, the lines of `eval/mutants/Main.lean` that #107 item 3 needs | every row | |
+
+**Shared files.** These rules keep parallel rows apart with no change outside `plan/`.
+
+1. **Generated files** (`statements.lock`, `examples/acme/models.lock`, `accepted/*.json`). No
+   merge or rebase regenerates them (`.github/scripts/rebase-prs.sh:60`). A row that moves their
+   inputs regenerates them at its head after its last rebase, never by hand. A record hashes the
+   core's `.lean` files, the Challenge, `models.lock` and the toolchain
+   (`gate/MitosGate/Accept.lean:52-55`, `:486-499`), so every core row, P2-006 and P2-011
+   re-record.
+2. **Core files.** Items 3 to 5, P2-001a and P2-001b share `core/` and `statements.lock`. Each
+   branches from `main` after the one before it merges, so two lock changes never meet.
+3. **Mutant anchors.** Of the 42 cases in `eval/mutants/cases/`, 38 match exact text in
+   `core/Mitos/Impl/Resolve.lean`, 4 in `Impl/Impact.lean`, 3 also in `Proofs/Resolve/Basic.lean`.
+   A row that edits those files re-runs, in the same PR, the cases whose `find=` text it moved.
+   The runner lists case directories with no index (`eval/mutants/Main.lean:416`), so new cases
+   collide with nothing.
+4. **`eval/score/Score.lean`.** P2-001a migrates its `Edge` uses in place (`Score.lean:65-66`,
+   `:88`). P2-009a, P2-009b and P2-010 add `Score.*` modules, which the `Score` library builds
+   with no lakefile change, and edit `Score.lean` only as their cells say. They merge one at a
+   time, and the later one rebases and re-runs the scorer.
+5. **Go.mod inputs.** P2-008 and P2-009b share no path; each keeps its own copy of a pinned
+   go.mod. A new fixture directory gets the `.gitattributes` of `eval/fixtures/toy/` (`* -text`).
+6. **#133's renames** (inference). Its core half renames names in `core/Mitos/Core/Lines.lean`
+   and `ModelExamples.lean`, which the go.mod track calls, so the PR that carries it migrates
+   every caller on `main`, GoMod included. Its toy-model rename moves `models.lock` (rule 1).
+7. **`.github/`, `ops/runs/`, `tasks/`.** Only P2-012 writes `.github/`. Run-log and task files
+   carry the row id (`ops/runs/<UTC date>/<row>-builder-<attempt>.json`), never a shared id.
+
+**Who decides.**
+
+- **A, an agent carries and merges it:** item 3, P2-005b, P2-007 (once P2-006, its stack base,
+  merges), P2-008, P2-009a, P2-009b, P2-010.
+- **B, the owner merges it, and its agent stops at verified and green:** items 4 and 5,
+  P2-001a, P2-001b and P2-006 (`spec-approved`); P2-000, P2-011 and P2-012 (owner paths).
+- **C, an owner decision comes first:** the D1 threshold (before this plan merges), item 1
+  (before item 3), the self-binding choice in P2-001b (#160 item 1), any `survives=` case after
+  P2-005b (criterion 3), an unclear licence of a pinned repo (P2-008, #160 item 2; inference).
+
+**Brief template.** The root fills one per row from that row's cells.
+
+```text
+Goal: <Phase 2's goal, one line>. Task: <row>, issue #<n>: <the row's text>.
+Role: PR owner; opus, xhigh for Lean proofs, a spec or a trust path, else sonnet, high.
+Start: worktree at main <sha>, after <the rows it waits for> merged.
+Owns: <Owns cell>, tasks/<row>-<slug>.md, ops/runs/<UTC date>/<row>-builder-<attempt>.json.
+Reads: <Reads cell>. Writes nothing else. Never adds spec-approved.
+Gate before each push, the lines the change can affect (docs/process.md, "What runs where"):
+  lake build && lake exe mitos-gate imports && lake exe mitos-gate lock --check
+  cd core && lake check && lake comparator --paranoid
+  lake exe mitos-gate accept --workspace examples/acme --plugin <P> --model <M> --paranoid
+  lake --dir eval/mutants exe mitos-mutants <moved or new cases>
+  lake --dir eval/score exe mitos-score eval/fixtures/<fixture>
+Done when: <observable result>; generated files regenerated at the head; PR says Closes #<n>;
+  gate green at the head; every bot thread answered.
+Stop and report when: an edit falls outside Owns; a statement looks false (counterexample, spec
+  issue); a theorem, gate, cheat case or expect line would weaken; an open PR holds an Owns file.
+Budget: <iterations> iterations, <hours> h wall; when it runs out, a stuck report.
+Report: PR, head, each check and result, resolved conflicts, post ids. No session link or ID.
+```
