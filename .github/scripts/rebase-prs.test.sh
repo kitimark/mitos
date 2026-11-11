@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016
-# The updater's up-to-date path removes a stale needs-rebase and leaves every
-# other label alone. A PR that is still behind keeps the label, and one that
-# still conflicts gains it only when it does not have it yet.
 set -u
 
 script="$(cd "$(dirname "$0")" && pwd)/rebase-prs.sh"
@@ -138,11 +135,9 @@ before_same=$(tip pr-same)
 before_conflict=$(tip pr-conflict)
 before_behind=$(tip pr-behind)
 
-run() {
+run_offline() {
   : >"$root/calls"
   : >"$root/routes"
-  # The script rebases the checkout it is started in. A proxy that goes nowhere
-  # makes a fetch of any other origin fail instead of touching it.
   env -u GH_TOKEN -u GITHUB_TOKEN PATH="$root/bin:/usr/bin:/bin" FAKE_DIR="$root" FAKE_MODE="${1:-}" \
     HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 \
     bash -c 'cd "$1" && exec bash "$2"' bash "$work" "$script"
@@ -164,7 +159,7 @@ deleted() { grep -c "^remove $1$" "$root/routes" || true; }
 added() { grep -c "pr edit $1 --add-label needs-rebase" "$root/calls" || true; }
 
 set +e
-run >"$root/out" 2>"$root/err"
+run_offline >"$root/out" 2>"$root/err"
 rc=$?
 set -e
 check "up to date run exits 0" 0 "$rc"
@@ -218,7 +213,7 @@ else
 fi
 
 set +e
-run fail >"$root/out" 2>"$root/err"
+run_offline fail >"$root/out" 2>"$root/err"
 rc=$?
 set -e
 check "a failed label delete fails the run" 1 "$rc"

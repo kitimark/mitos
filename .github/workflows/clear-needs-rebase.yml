@@ -6,8 +6,7 @@ name: Clear stale needs-rebase
 # pull_request token is read-only, so it could not remove the label either.
 #
 # The checkout ref is github.sha, the default-branch commit this workflow came
-# from, never the pull request head. The script only calls the API. Forks are
-# skipped: the updater does not label them, and this job does not talk to them.
+# from, never the pull request head.
 on:
   pull_request_target:
     types: [synchronize]
