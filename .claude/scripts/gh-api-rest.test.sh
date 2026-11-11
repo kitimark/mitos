@@ -144,19 +144,23 @@ blank_span() {
 # An unquoted \ before a separator stays one word, so gh\ api is not gh api.
 # An unquoted \" is a quote character in the word, so \"api is not the command api.
 # A # at a word boundary ends the line. Quotes keep both.
+# vis_scan marks an escaped separator so it does not split the word.
+# vis_lit keeps that character, and the two strings stay the same length.
 visible_code() {
   local s=$1
-  local i=0 n=${#s} q='' c e out=''
+  local i=0 n=${#s} q='' c e out='' lit=''
   while (( i < n )); do
     c=${s:i:1}
     if [ -n "$q" ]; then
       if [ "$q" = '"' ] && [ "$c" = '\' ]; then
         out+="$c${s:i+1:1}"
+        lit+="$c${s:i+1:1}"
         i=$((i + 2))
         continue
       fi
       [ "$c" = "$q" ] && q=
       out+=$c
+      lit+=$c
       i=$((i + 1))
       continue
     fi
@@ -165,23 +169,24 @@ visible_code() {
         e=${s:i+1:1}
         [ -n "$e" ] || break
         case $e in
-          \'|\") out+=_ ;;
-          [[:space:]]|\;|\&|\||\(|\)|\$|\#|\`|\\|\<|\>) out+=$'\1' ;;
-          *) out+=$e ;;
+          \'|\") out+=_; lit+=$e ;;
+          [[:space:]]|\;|\&|\||\(|\)|\$|\#|\`|\\|\<|\>) out+=$'\1'; lit+=$e ;;
+          *) out+=$e; lit+=$e ;;
         esac
         i=$((i + 2))
         continue ;;
-      \"|\') q=$c; out+=$c; i=$((i + 1)); continue ;;
+      \"|\') q=$c; out+=$c; lit+=$c; i=$((i + 1)); continue ;;
       \#)
         if [ "$i" -eq 0 ]; then break; fi
         case ${s:i-1:1} in
           [[:space:]]|\;|\&|\||\(|\)|\<|\>) break ;;
         esac
-        out+=$c; i=$((i + 1)); continue ;;
-      *) out+=$c; i=$((i + 1)) ;;
+        out+=$c; lit+=$c; i=$((i + 1)); continue ;;
+      *) out+=$c; lit+=$c; i=$((i + 1)) ;;
     esac
   done
-  printf '%s' "$out"
+  vis_scan=$out
+  vis_lit=$lit
 }
 
 # Drop comments and quoted text. A wrapper call inside $(...) was already blanked,
@@ -261,6 +266,7 @@ unclassified_line() {
 
 routes_of() {
   local f=$1 line rest tok nxt quoted route scan call restline idx meta carry_q
+  local literal lscan lrest ltok stok prelen trim pad
   while IFS= read -r line || [ -n "$line" ]; do
     [[ $line =~ ^[[:space:]]*# ]] && continue
     if [[ $line =~ ^[a-z_]+\(\)[[:space:]]*\{ ]]; then
@@ -272,35 +278,52 @@ routes_of() {
         line="${line%\\}${nxt}"
       done
     fi
-    line=$(visible_code "$line")
+    visible_code "$line"
+    line=$vis_scan
+    literal=$vis_lit
     scan=$line
+    lscan=$literal
     while [[ $scan =~ gh[[:space:]]+api ]]; do
       rest=${scan#*"${BASH_REMATCH[0]}"}
+      prelen=$(( ${#scan} - ${#rest} ))
+      lrest=${lscan:prelen}
       scan=$rest
-      rest=${rest#"${rest%%[![:space:]]*}"}
+      lscan=$lrest
+      trim=${rest%%[![:space:]]*}
+      rest=${rest#"$trim"}
+      lrest=${lrest:${#trim}}
       route=
       if [[ $rest == for\ * || $rest == '"$2"'* || $rest == '"${@:2}"'* ]]; then
         continue
       fi
       while [ -n "$rest" ]; do
         tok=${rest%%[[:space:]]*}
+        ltok=${lrest:0:${#tok}}
         rest=${rest#"$tok"}
-        rest=${rest#"${rest%%[![:space:]]*}"}
-        tok=${tok%,}; tok=${tok%\)}; tok=${tok#\"}; tok=${tok%\"}; tok=${tok#\'}; tok=${tok%\'}
+        lrest=${lrest:${#tok}}
+        pad=${rest%%[![:space:]]*}
+        rest=${rest#"$pad"}
+        lrest=${lrest:${#pad}}
+        stok=$tok; tok=${tok%,}; [ "$tok" = "$stok" ] || ltok=${ltok%,}; stok=$tok
+        tok=${tok%\)}; [ "$tok" = "$stok" ] || ltok=${ltok%\)}; stok=$tok
+        tok=${tok#\"}; [ "$tok" = "$stok" ] || ltok=${ltok#\"}; stok=$tok
+        tok=${tok%\"}; [ "$tok" = "$stok" ] || ltok=${ltok%\"}; stok=$tok
+        tok=${tok#\'}; [ "$tok" = "$stok" ] || ltok=${ltok#\'}; stok=$tok
+        tok=${tok%\'}; [ "$tok" = "$stok" ] || ltok=${ltok%\'}
         case $tok in
           -X|--method)
             nxt=${rest%%[[:space:]]*}
-            rest=${rest#"$nxt"}; rest=${rest#"${rest%%[![:space:]]*}"} ;;
+            rest=${rest#"$nxt"}; pad=${rest%%[![:space:]]*}; rest=${rest#"$pad"}
+            lrest=${lrest:${#nxt}}; lrest=${lrest:${#pad}} ;;
           --method=*|--raw-field=*|--field=*|--jq=*|--input=*|--header=*|--hostname=*) ;;
           -f|-F|--raw-field|--field|--jq|--input|--header|-H)
             nxt=${rest%%[[:space:]]*}
-            rest=${rest#"$nxt"}; rest=${rest#"${rest%%[![:space:]]*}"} ;;
+            rest=${rest#"$nxt"}; pad=${rest%%[![:space:]]*}; rest=${rest#"$pad"}
+            lrest=${lrest:${#nxt}}; lrest=${lrest:${#pad}} ;;
           --paginate|--slurp|--silent|--verbose|--cache) ;;
           -*) echo "unclassified flag $tok in $f" >&2; return 1 ;;
           '') ;;
-          # $'\1' kept the escaped character inside the word. The route check
-          # sees a space, which is the character an escaped space is.
-          *) route=${tok//$'\1'/ }; break ;;
+          *) route=$ltok; break ;;
         esac
       done
       [ -n "$route" ] || { echo "gh api has no route in $f" >&2; return 1; }
@@ -468,6 +491,15 @@ reject "assignment then api" 'x=foo api gq.json "graphql"'
 reject "escaped api word" 'a\pi gq.json "graphql"'
 reject "escaped gh api word" 'gh a\pi graphql'
 reject "escaped space in the route" 'gh api repos/o/r/pulls\ graphql'
+cp "$base" "$work/amp.sh"
+printf '\n%s\n' 'gh api repos/o/r/issues?state=open\&per_page=10' >>"$work/amp.sh"
+check_file "$work/amp.sh"
+if ! routes_of "$work/amp.sh" | grep -qx 'repos/o/r/issues?state=open&per_page=10'; then
+  echo "FAIL escaped ampersand was not kept"
+  failed=1
+else
+  echo "ok   escaped ampersand kept"
+fi
 reject "commented REST path" 'fetch gq "graphql" # "repos/o/r/pulls"'
 reject "api after an escaped quote" 'echo \"hello; api gq.json "graphql"\"'
 cp "$base" "$work/qarg.sh"
