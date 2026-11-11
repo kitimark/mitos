@@ -141,9 +141,9 @@ reviews:
         mode: "warning"
         instructions: >-
           Read the review threads and the review comments on this PR, including findings posted
-          outside the diff, which get no thread. A finding passes in exactly these cases. A
-          BLOCKING finding passes when a later commit on the PR fixes it, or when a reply
-          explains why the code stays. A FOLLOW-UP finding passes when a later commit fixes it,
-          or when a reply links the issue that tracks it. Fail and name each finding that
-          matches none of these. If you cannot tell whether a thread was answered, say so and
-          do not fail.
+          outside the diff, which get no thread. A finding passes when a later commit on the PR
+          fixes it and the fix is still present at the PR head, or when a reply explains why the
+          code stays. A FOLLOW-UP finding also passes when a reply links the issue that tracks
+          it. A BLOCKING finding does not pass on an issue link alone. Fail and name each
+          finding that matches none of these. If you cannot tell whether a thread was answered,
+          say so and do not fail.
