@@ -14,7 +14,7 @@ hook_state() (
   trusted_symlink() { entry_is "$1" -type l \( -user "$uid" -o -user 0 \); }
   folder_is_private() { entry_is "$1" -type d -user "$uid" ! -perm -g+w ! -perm -o+w; }
 
-  walk() { # name, [make]
+  walk() {
     local cur=/ rest=$1 c n t links=0
     while [ -n "$rest" ]; do
       c=${rest%%/*}
@@ -53,7 +53,7 @@ hook_state() (
     printf '%s\n' "$d"
   }
 
-  private_folder() { # [make]
+  private_folder() {
     local d p
     d=$(configured_folder) || return 1
     if [ "${1:-}" = make ]; then
@@ -65,7 +65,7 @@ hook_state() (
     printf '%s\n' "$p"
   }
 
-  record_file() { # sid, kind
+  record_file() {
     local p
     session_id_ok "$1" || return 2
     case ${2:-} in
@@ -76,7 +76,7 @@ hook_state() (
     printf '%s\n' "$p/$1.$2"
   }
 
-  publish_by_rename() { # folder, name
+  publish_by_rename() {
     local dest=$1/$2 tmp
     if [ -L "$dest" ] || { [ -e "$dest" ] && [ ! -f "$dest" ]; }; then return 1; fi
     tmp=$(mktemp "$1/.$2.XXXXXX" 2>/dev/null) || return 1
