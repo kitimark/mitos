@@ -47,7 +47,7 @@ command_head() {
 # not skipped for a later $(...), and a call after `;` is still seen.
 next_wrapper() {
   local s=$1
-  local i=0 n=${#s} c e at=1 q=${2-}
+  local i=0 n=${#s} c e at=1 q=${2-} assign=''
   while (( i < n )); do
     c=${s:i:1}
     if [ -n "${q:-}" ]; then
@@ -70,7 +70,16 @@ next_wrapper() {
       continue
     fi
     case $c in
-      \"|\') q=$c; i=$((i + 1)); continue ;;
+      \"|\')
+        # "api" is the command api. A quote right after = is the assignment value.
+        if [ "$at" = 1 ] && [ -z "$assign" ]; then
+          if [[ ${s:i} =~ ^\"($wrapper_re)\"[[:space:]] || ${s:i} =~ ^\'($wrapper_re)\'[[:space:]] ]]; then
+            printf '%s\n' "$i"
+            return 0
+          fi
+        fi
+        assign=
+        q=$c; i=$((i + 1)); continue ;;
       [[:space:]]) i=$((i + 1)); continue ;;
       \#)
         # A word that begins with # is a comment. foo#bar is one argument.
@@ -117,7 +126,8 @@ next_wrapper() {
           # substituted value is left for the next pass, still at a boundary.
           while (( i < n )); do
             case ${s:i:1} in
-              [[:space:]]|\;|\&|\||\)|\"|\'|\$) break ;;
+              \"|\') assign=1; break ;;
+              [[:space:]]|\;|\&|\||\)|\$) break ;;
               *) i=$((i + 1)) ;;
             esac
           done
@@ -489,6 +499,11 @@ reject "api after a double-quoted substitution" 'x="$(api ok.json "repos/o/r/pul
 reject "escaped quote before api" 'echo "\""; api gq.json "graphql"'
 reject "assignment then api" 'x=foo api gq.json "graphql"'
 reject "escaped api word" 'a\pi gq.json "graphql"'
+reject "quoted api command" '"api" gq.json "graphql"'
+reject "single quoted api command" "'api' gq.json \"graphql\""
+cp "$base" "$work/echoq.sh"
+printf '\n%s\n' 'echo "api"' >>"$work/echoq.sh"
+check_file "$work/echoq.sh"
 reject "escaped gh api word" 'gh a\pi graphql'
 reject "escaped space in the route" 'gh api repos/o/r/pulls\ graphql'
 cp "$base" "$work/amp.sh"
