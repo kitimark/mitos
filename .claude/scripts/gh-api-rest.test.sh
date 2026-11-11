@@ -45,9 +45,41 @@ command_head() {
 # Index of the next fetch/fetch_all_pages/api call in $1, in source order.
 # Command words count only at a command boundary, so an earlier if/fetch is
 # not skipped for a later $(...), and a call after `;` is still seen.
+# Index after the command word at $2, then the word with quotes removed.
+# a"pi" and "ap"i are api. Stops at a space.
+joined_word() {
+  local s=$1
+  local i=$2 n=${#s} c q='' word=''
+  while (( i < n )); do
+    c=${s:i:1}
+    if [ -n "$q" ]; then
+      if [ "$q" = '"' ] && [ "$c" = '\' ]; then
+        word+=${s:i+1:1}
+        i=$((i + 2))
+        continue
+      fi
+      if [ "$c" = "$q" ]; then
+        q=
+        i=$((i + 1))
+        continue
+      fi
+      word+=$c
+      i=$((i + 1))
+      continue
+    fi
+    case $c in
+      [[:space:]]|\;|\&|\||\(|\)|\$|\#|\<|\>) break ;;
+      \"|\') q=$c; i=$((i + 1)); continue ;;
+      [A-Za-z0-9_]) word+=$c; i=$((i + 1)); continue ;;
+      *) break ;;
+    esac
+  done
+  printf '%s\t%s' "$i" "$word"
+}
+
 next_wrapper() {
   local s=$1
-  local i=0 n=${#s} c e at=1 q=${2-} assign=''
+  local i=0 n=${#s} c e at=1 q=${2-} assign='' start meta end word
   while (( i < n )); do
     c=${s:i:1}
     if [ -n "${q:-}" ]; then
@@ -71,12 +103,20 @@ next_wrapper() {
     fi
     case $c in
       \"|\')
-        # "api" is the command api. A quote right after = is the assignment value.
+        # "api" and a"pi" are the command api. "echo" is not, so its arguments
+        # are not commands. A quote right after = is the assignment value.
         if [ "$at" = 1 ] && [ -z "$assign" ]; then
-          if [[ ${s:i} =~ ^\"($wrapper_re)\"[[:space:]] || ${s:i} =~ ^\'($wrapper_re)\'[[:space:]] ]]; then
-            printf '%s\n' "$i"
+          start=$i
+          meta=$(joined_word "$s" "$i")
+          end=${meta%%$'\t'*}
+          word=${meta#*$'\t'}
+          if [[ $word =~ ^($wrapper_re)$ ]] && [[ ${s:end:1} == [[:space:]] ]]; then
+            printf '%s\n' "$start"
             return 0
           fi
+          i=$end
+          at=0
+          continue
         fi
         assign=
         q=$c; i=$((i + 1)); continue ;;
@@ -119,7 +159,20 @@ next_wrapper() {
         return 0
       fi
       if [[ ${s:i} =~ ^[A-Za-z0-9_]+ ]]; then
+        start=$i
         i=$((i + ${#BASH_REMATCH[0]}))
+        if [[ ${s:i:1} == '"' || ${s:i:1} == "'" ]]; then
+          meta=$(joined_word "$s" "$start")
+          end=${meta%%$'\t'*}
+          word=${meta#*$'\t'}
+          if [[ $word =~ ^($wrapper_re)$ ]] && [[ ${s:end:1} == [[:space:]] ]]; then
+            printf '%s\n' "$start"
+            return 0
+          fi
+          i=$end
+          at=0
+          continue
+        fi
         if [ "${s:i:1}" = "=" ]; then
           i=$((i + 1))
           # The value is part of the assignment, not the command. A quoted or
@@ -501,6 +554,10 @@ reject "assignment then api" 'x=foo api gq.json "graphql"'
 reject "escaped api word" 'a\pi gq.json "graphql"'
 reject "quoted api command" '"api" gq.json "graphql"'
 reject "single quoted api command" "'api' gq.json \"graphql\""
+reject "partially quoted api" 'a"pi" gq.json "graphql"'
+cp "$base" "$work/echoqq.sh"
+printf '\n%s\n' '"echo" "api" "graphql"' >>"$work/echoqq.sh"
+check_file "$work/echoqq.sh"
 cp "$base" "$work/echoq.sh"
 printf '\n%s\n' 'echo "api"' >>"$work/echoq.sh"
 check_file "$work/echoq.sh"
