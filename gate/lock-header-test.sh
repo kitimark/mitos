@@ -4,6 +4,7 @@ set -u
 root=$(cd "$(dirname "$0")/.." && pwd)
 (cd "$root" && lake build mitos-gate >/dev/null) || { echo "FAIL lake build mitos-gate"; exit 1; }
 bin="$root/.lake/build/bin/mitos-gate"
+eval "$(cd "$root" && lake env bash -c 'printf "export LEAN_PATH=%q\nexport PATH=%q\n" "$LEAN_PATH" "$PATH"')"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -34,7 +35,7 @@ expect() {
   pass=$((pass + 1))
 }
 
-mkdir -p "$tmp/good" "$tmp/line1" "$tmp/line2" "$tmp/drop" "$tmp/empty"
+mkdir -p "$tmp/good" "$tmp/line1" "$tmp/line2" "$tmp/drop" "$tmp/empty" "$tmp/both" "$tmp/swap"
 cp "$root/statements.lock" "$tmp/good/statements.lock"
 cp "$root/statements.lock" "$tmp/line1/statements.lock"
 cp "$root/statements.lock" "$tmp/line2/statements.lock"
@@ -51,8 +52,22 @@ expect "a file with the header removed fails" 1 "$tmp/drop"
 expect "an empty file fails" 1 "$tmp/empty"
 
 got=0
+(cd "$tmp/good" && "$bin" lock --check >"$tmp/out" 2>&1) || got=$?
+if [ "$got" = 0 ] && grep -q 'statements.lock up to date' "$tmp/out" \
+    && ! grep -q 'uncaught exception' "$tmp/out"; then
+  echo "ok   lock --check accepts a copy"
+  pass=$((pass + 1))
+else
+  echo "FAIL lock --check on a copy: exit $got"
+  sed 's/^/  | /' "$tmp/out"
+  fail=$((fail + 1))
+fi
+
+got=0
 (cd "$tmp/line1" && "$bin" lock --check >"$tmp/out" 2>&1) || got=$?
-if [ "$got" = 1 ] && grep -q 'header does not match MitosGate.Lock.header' "$tmp/out"; then
+if [ "$got" = 1 ] && grep -q 'header does not match MitosGate.Lock.header' "$tmp/out" \
+    && grep -q 'statements.lock is out of date' "$tmp/out" \
+    && ! grep -q 'uncaught exception' "$tmp/out"; then
   echo "ok   lock --check fails when the first line changed"
   pass=$((pass + 1))
 else
@@ -60,6 +75,30 @@ else
   sed 's/^/  | /' "$tmp/out"
   fail=$((fail + 1))
 fi
+
+check_only() {
+  local name=$1 dir=$2
+  shift 2
+  cp "$root/statements.lock" "$dir/statements.lock"
+  printf '\n# sentinel\n' >>"$dir/statements.lock"
+  local before after got=0
+  before=$(sha256sum "$dir/statements.lock")
+  (cd "$dir" && "$bin" "$@" >"$tmp/out" 2>&1) || got=$?
+  after=$(sha256sum "$dir/statements.lock")
+  if [ "$got" = 2 ] && [ "$before" = "$after" ] && ! grep -q 'wrote statements.lock' "$tmp/out"; then
+    echo "ok   $name"
+    pass=$((pass + 1))
+  else
+    echo "FAIL $name: exit $got"
+    echo "  before $before"
+    echo "  after  $after"
+    sed 's/^/  | /' "$tmp/out"
+    fail=$((fail + 1))
+  fi
+}
+
+check_only "lock --check-header --check does not write" "$tmp/both" lock --check-header --check
+check_only "lock --check --check-header does not write" "$tmp/swap" lock --check --check-header
 
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]
