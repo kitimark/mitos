@@ -1,25 +1,14 @@
 namespace MitosGate.Accept
 
-/-! ## What a comparator run decided -/
-
-/-- Why a comparator run did not pass. -/
 inductive Failure
-  /-- A theorem or definition uses an axiom outside the permitted ones. -/
   | illegalAxiom
-  /-- A constant the configuration names is missing from the solution. -/
   | missingConst
-  /-- A statement or definition hole differs from the Challenge's. -/
   | statement
-  /-- A kernel rejected the solution. -/
   | kernelReject
-  /-- A module did not build because two modules it imports declare one name. -/
   | importClash
-  /-- No judgment: any other build error, or the comparator did not run. -/
   | noJudgment
   deriving DecidableEq
 
-/-- What one `lake comparator` run decided. `Outcome.parse` reads it from the run's exit code and
-output, and nothing else in the gate decides anything from comparator text. -/
 inductive Outcome
   /-- Exit code 0 and `Your solution is okay!`: everything built, the statements and definition holes
   match the Challenge's, only permitted axioms are used, and every kernel accepts. -/
@@ -27,8 +16,7 @@ inductive Outcome
   | failed (why : Failure)
   deriving DecidableEq
 
-/-- Whether `pat` occurs in `s` as consecutive characters. On lists, because `decide` cannot
-evaluate `String.splitOn` in the examples below. -/
+/-- `decide` cannot evaluate `String.splitOn`, so the search stays on `List Char`. -/
 private def occursIn (pat : List Char) : List Char → Bool
   | [] => pat.isEmpty
   | s@(_ :: rest) => pat.isPrefixOf s || occursIn pat rest
@@ -108,7 +96,6 @@ theorem Outcome.parse_eq_ok_iff {code : UInt32} {out : String} :
     simp
     exact hcond.mp hflag
 
-/-- Only a run that exited with code 0 is `ok`. -/
 theorem Outcome.parse_ok {code : UInt32} {out : String} (h : Outcome.parse code out = .ok) :
     code = 0 :=
   (Outcome.parse_eq_ok_iff.mp h).1
@@ -152,8 +139,6 @@ Lean default kernel rejected the solution
 error: Lean default exited with 1
 " = .failed .kernelReject := by decide +kernel
 
--- No cheat case reaches this outcome. A local run on the toy, with `model.examples` declared in
--- the model module as well as in the examples module.
 example : Outcome.parse 1 "error: Models/ToyRequire/Adequacy.lean:1:0: import Models.ToyRequire.Examples failed, environment already contains 'Models.ToyRequire.model.examples' from Models.ToyRequire
 Some required targets logged failures:
 - Models.ToyRequire.Adequacy
