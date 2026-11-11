@@ -36,12 +36,6 @@ command_head() {
     case $c in
       \"|\') q=$c; out+=$c ;;
       \;|\||\&|\)) break ;;
-      \#)
-        if [ "$i" -eq 0 ]; then break; fi
-        case ${s:i-1:1} in
-          [[:space:]]|\;|\&|\||\(|\)|\<|\>) break ;;
-        esac
-        out+=$c ;;
       *) out+=$c ;;
     esac
   done
