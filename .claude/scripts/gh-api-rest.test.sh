@@ -140,10 +140,53 @@ blank_span() {
   printf '%s%*s%s' "${s:0:i}" "$n" '' "${s:i+n}"
 }
 
+# The line bash runs. An unquoted \p is the letter p, so a\pi is the command api.
+# An unquoted \ before a separator stays one word, so gh\ api is not gh api.
+# A # at a word boundary ends the line. Quotes keep both.
+visible_code() {
+  local s=$1
+  local i=0 n=${#s} q='' c e out=''
+  while (( i < n )); do
+    c=${s:i:1}
+    if [ -n "$q" ]; then
+      if [ "$q" = '"' ] && [ "$c" = '\' ]; then
+        out+="$c${s:i+1:1}"
+        i=$((i + 2))
+        continue
+      fi
+      [ "$c" = "$q" ] && q=
+      out+=$c
+      i=$((i + 1))
+      continue
+    fi
+    case $c in
+      \\)
+        e=${s:i+1:1}
+        [ -n "$e" ] || break
+        case $e in
+          [[:space:]]|\;|\&|\||\(|\)|\$|\#|\'|\"|\`|\\|\<|\>) out+=$'\1' ;;
+          *) out+=$e ;;
+        esac
+        i=$((i + 2))
+        continue ;;
+      \"|\') q=$c; out+=$c; i=$((i + 1)); continue ;;
+      \#)
+        if [ "$i" -eq 0 ]; then break; fi
+        case ${s:i-1:1} in
+          [[:space:]]|\;|\&|\||\(|\)|\<|\>) break ;;
+        esac
+        out+=$c; i=$((i + 1)); continue ;;
+      *) out+=$c; i=$((i + 1)) ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
 # Drop comments and quoted text. A wrapper call inside $(...) was already blanked,
 # so what remains in quotes is data, not a call.
 blank_quotes_comments() {
-  local s=$1 i=0 n=${#s} q='' c e out=''
+  local s=$1
+  local i=0 n=${#s} q='' c e out=''
   while (( i < n )); do
     c=${s:i:1}
     if [ -n "$q" ]; then
@@ -227,6 +270,7 @@ routes_of() {
         line="${line%\\}${nxt}"
       done
     fi
+    line=$(visible_code "$line")
     scan=$line
     while [[ $scan =~ gh[[:space:]]+api ]]; do
       rest=${scan#*"${BASH_REMATCH[0]}"}
@@ -311,6 +355,11 @@ check_file() {
       return
     fi
   done <<<"$routes"
+  if [ "$n" -lt 10 ]; then
+    echo "FAIL $name: only $n routes, the scan missed some"
+    failed=1
+    return
+  fi
   echo "ok   $name ($n REST routes)"
 }
 
@@ -407,9 +456,20 @@ reject "api in a double-quoted substitution" 'x="$(api gq.json "graphql")"'
 reject "api after a double-quoted substitution" 'x="$(api ok.json "repos/o/r/pulls")"; api gq.json "graphql"'
 reject "escaped quote before api" 'echo "\""; api gq.json "graphql"'
 reject "assignment then api" 'x=foo api gq.json "graphql"'
+reject "escaped api word" 'a\pi gq.json "graphql"'
+reject "escaped gh api word" 'gh a\pi graphql'
 cp "$base" "$work/cmt.sh"
 printf '\n%s\n' 'echo foo # api gq.json "graphql"' >>"$work/cmt.sh"
 check_file "$work/cmt.sh"
+cp "$base" "$work/cmtgh.sh"
+printf '\n%s\n' 'gh api repos/o/r/pulls # gh api graphql' >>"$work/cmtgh.sh"
+check_file "$work/cmtgh.sh"
+if routes_of "$work/cmtgh.sh" | grep -qx graphql; then
+  echo "FAIL comment was scanned as a call"
+  failed=1
+else
+  echo "ok   comment was not scanned"
+fi
 
 echo "gh-api-rest: done"
 [ "$failed" = 0 ]

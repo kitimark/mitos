@@ -110,8 +110,6 @@ private theorem beq_false_of_head {l r : List Char} {a b : Char}
     (l == r) = false := by
   cases l <;> cases r <;> simp_all
 
-
-
 private theorem both_lines (l1 l2 : List Char) (h1 : l1.isEmpty = false) (h2 : l2.isEmpty = false) :
     (!l1.isEmpty && !l2.isEmpty && l1 == l1 && l2 == l2) = true := by
   simp [h1, h2]
