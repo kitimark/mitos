@@ -207,9 +207,75 @@ fi
 
 # The workflow must stay on the trusted file. A pull_request trigger, or a
 # checkout of the pull request head, would run untrusted code with a write token.
+checkout_refs_ok() {
+  python3 - "$1" <<'PY'
+import re, sys
+lines = open(sys.argv[1]).read().splitlines()
+bracket = re.compile(r"""\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]""")
+names = re.compile(r"(?:^|[^A-Za-z0-9_])head\.(?:sha|ref)\b")
+
+def names_head(ref):
+    s = ref.strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "'\"":
+        s = s[1:-1]
+    prev = None
+    while prev != s:
+        prev = s
+        s = bracket.sub(r".\2", s)
+    if names.search(s):
+        return True
+    if re.search(r"(?:^|[^A-Za-z0-9_])head_ref\b", s):
+        return True
+    return re.search(r"/head\b", s) is not None
+
+def step_end(start):
+    base = len(re.match(r"^(\s*)-\s", lines[start]).group(1))
+    j = start + 1
+    while j < len(lines):
+        line = lines[j]
+        if line.strip() == "" or line.lstrip().startswith("#"):
+            j += 1
+            continue
+        if len(line) - len(line.lstrip(" ")) <= base:
+            break
+        j += 1
+    return j
+
+saw = False
+i = 0
+while i < len(lines):
+    if re.match(r"^\s*-\s", lines[i]):
+        end = step_end(i)
+        block = lines[i:end]
+        if any(re.search(r"""uses:\s*['"]?actions/checkout@""", line) for line in block):
+            saw = True
+            for k, line in enumerate(block):
+                m = re.match(r"^(\s*)ref:\s*(.*)$", line)
+                if not m:
+                    continue
+                indent = len(m.group(1))
+                rest = m.group(2).strip()
+                if rest in {">", ">-", "|", "|-", ""}:
+                    parts = []
+                    for nxt in block[k + 1 :]:
+                        if nxt.strip() == "":
+                            continue
+                        if len(nxt) - len(nxt.lstrip(" ")) <= indent:
+                            break
+                        parts.append(nxt.strip())
+                    rest = " ".join(parts)
+                if names_head(rest):
+                    sys.exit(1)
+                break
+        i = end
+    else:
+        i += 1
+sys.exit(0 if saw else 1)
+PY
+}
 wf="$(cd "$(dirname "$0")/../workflows" && pwd)/clear-needs-rebase.yml"
 if grep -q 'pull_request_target:' "$wf" && ! grep -Eq '^[[:space:]]*pull_request:' "$wf" \
-  && ! grep -q 'head\.sha\|head\.ref' "$wf" \
+  && checkout_refs_ok "$wf" \
   && grep -q 'ref: ${{ github.sha }}' "$wf" \
   && grep -q 'persist-credentials: false' "$wf"; then
   echo "ok  workflow checks out the default-branch commit, not the head"
@@ -217,5 +283,37 @@ else
   echo "FAIL  workflow checks out the default-branch commit, not the head"
   failed=1
 fi
+reject_second_checkout() {
+  local ref=$1 label=$2
+  if ! python3 - "$wf" "$work/head-checkout.yml" "$ref" <<'PY'
+import sys
+src, dst, ref = sys.argv[1:]
+text = open(src).read()
+needle = "          persist-credentials: false\n"
+extra = (
+    "      - uses: actions/checkout@v4\n"
+    "        with:\n"
+    f"          ref: {ref}\n"
+)
+if text.count(needle) != 1:
+    raise SystemExit("expected one trusted checkout")
+open(dst, "w").write(text.replace(needle, needle + "\n" + extra, 1))
+PY
+  then
+    echo "FAIL  $label (could not build the workflow)"
+    failed=1
+  elif checkout_refs_ok "$work/head-checkout.yml"; then
+    echo "FAIL  $label"
+    failed=1
+  else
+    echo "ok  $label"
+  fi
+}
+reject_second_checkout '${{ github.event.pull_request.head['"'"'sha'"'"'] }}' \
+  "a second checkout of head['sha'] is rejected"
+reject_second_checkout '${{ github.head_ref }}' \
+  "a second checkout of github.head_ref is rejected"
+reject_second_checkout 'refs/pull/${{ github.event.pull_request.number }}/head' \
+  "a second checkout of refs/pull/N/head is rejected"
 
 exit "$failed"
