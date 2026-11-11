@@ -913,6 +913,20 @@ code=$?
 if [ "$code" = 2 ] && [ ! -e "$work/outside" ] && [ "$(entries "$work/real-pub")" = s1.sha ]; then pass "a kind other than sha or note is refused"; else fail "bad kind: exit $code, entries $(entries "$work/real-pub")"; fi
 printf 'abc\n' | MITOS_HOOK_STATE="$work/real-pub" hs hook_state publish '../nope' sha
 if [ "$(entries "$work/real-pub")" = s1.sha ] && [ ! -e "$work/nope.sha" ]; then pass "publish refuses a session id that is not a plain name"; else fail "bad session id wrote $(entries "$work/real-pub")"; fi
+mkdir -m 700 "$work/fa" "$work/fa/st" "$work/fb" "$work/fb/st" "$work/rl"
+ln -s "$work/fa" "$work/fl"
+printf '#!/bin/sh\n[ "$2" = "%s" ] && { echo "%s"; exit 0; }\nexec /usr/bin/readlink "$@"\n' "$work/fl" "$work/fb" >"$work/rl/readlink"
+chmod +x "$work/rl/readlink"
+printf 'abc\n' | MITOS_HOOK_STATE="$work/fl/st" PATH="$work/rl:$PATH" hs hook_state publish s1 sha
+if [ "$(cat "$work/fb/st/s1.sha" 2>/dev/null)" = abc ] && [ -z "$(entries "$work/fa/st")" ]; then
+  pass "publish writes the folder the walk resolved, not the configured name"
+else
+  fail "publish wrote the configured name: walked=$(entries "$work/fb/st") named=$(entries "$work/fa/st")"
+fi
+echo walked >"$work/fb/st/s1.note"
+echo named >"$work/fa/st/s1.note"
+r=$(MITOS_HOOK_STATE="$work/fl/st" PATH="$work/rl:$PATH" hs hook_state read s1 note)
+if [ "$r" = walked ]; then pass "read returns the folder the walk resolved, not the configured name"; else fail "read returned '$r', wanted walked"; fi
 names=$(bash -c '. "$1"; hook_state >/dev/null 2>&1; declare -F' _ "${hook%/*}/hook-state.sh" | sed 's/^declare -f //' | LC_ALL=C sort | paste -sd' ' -)
 if [ "$names" = "hook_state session_id_ok" ]; then pass "after a call, only hook_state and session_id_ok are defined"; else fail "defined functions: $names"; fi
 code=$(bash -c '. "$1"; hook_state nosuch >/dev/null 2>&1; echo $?' _ "${hook%/*}/hook-state.sh")
