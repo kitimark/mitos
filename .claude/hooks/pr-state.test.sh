@@ -916,15 +916,14 @@ if [ "$(entries "$work/real-pub")" = s1.sha ] && [ ! -e "$work/nope.sha" ]; then
 mkdir -m 700 "$work/fa" "$work/fa/st" "$work/fb" "$work/fb/st" "$work/rl"
 ln -s "$work/fa" "$work/fl"
 readlink_bin=$(command -v readlink)
-# shellcheck disable=SC2016 # the generated readlink expands its own variables
-cat >"$work/rl/readlink" <<EOF
+cat >"$work/rl/readlink" <<'EOF'
 #!/bin/sh
-t=\$("$readlink_bin" "\$@") || exit \$?
-[ "\$t" = "$work/fa" ] && t="$work/fb"
-printf '%s\n' "\$t"
+t=$("$REAL_READLINK" "$@") || exit $?
+[ "$t" = "$FAKE_FROM" ] && t=$FAKE_TO
+printf '%s\n' "$t"
 EOF
 chmod +x "$work/rl/readlink"
-printf 'abc\n' | MITOS_HOOK_STATE="$work/fl/st" PATH="$work/rl:$PATH" hs hook_state publish s1 sha
+printf 'abc\n' | MITOS_HOOK_STATE="$work/fl/st" REAL_READLINK="$readlink_bin" FAKE_FROM="$work/fa" FAKE_TO="$work/fb" PATH="$work/rl:$PATH" hs hook_state publish s1 sha
 if [ "$(cat "$work/fb/st/s1.sha" 2>/dev/null)" = abc ] && [ -z "$(entries "$work/fa/st")" ]; then
   pass "publish writes the folder the walk resolved, not the configured name"
 else
@@ -932,7 +931,7 @@ else
 fi
 echo walked >"$work/fb/st/s1.note"
 echo named >"$work/fa/st/s1.note"
-r=$(MITOS_HOOK_STATE="$work/fl/st" PATH="$work/rl:$PATH" hs hook_state read s1 note)
+r=$(MITOS_HOOK_STATE="$work/fl/st" REAL_READLINK="$readlink_bin" FAKE_FROM="$work/fa" FAKE_TO="$work/fb" PATH="$work/rl:$PATH" hs hook_state read s1 note)
 if [ "$r" = walked ]; then pass "read returns the folder the walk resolved, not the configured name"; else fail "read returned '$r', wanted walked"; fi
 names=$(bash -c '. "$1"; hook_state >/dev/null 2>&1; declare -F' _ "${hook%/*}/hook-state.sh" | sed 's/^declare -f //' | LC_ALL=C sort | paste -sd' ' -)
 if [ "$names" = "hook_state session_id_ok" ]; then pass "after a call, only hook_state and session_id_ok are defined"; else fail "defined functions: $names"; fi
