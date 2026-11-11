@@ -323,7 +323,6 @@ def lint (c : Config) (pluginFile : System.FilePath) (i : Inputs) : GateM Unit :
   for v in shown do IO.println (ciLine s!"  {v}")
   unless shown.isEmpty do throw (.lint, "")
 
-/-- The gate that rejects the plugin's run for this failure. -/
 def pluginFailure : Failure → GateId
   | .noJudgment | .importClash => .sandbox
   | .missingConst | .statement => .statements
@@ -373,7 +372,6 @@ def buildOutputs (dir : System.FilePath) : ExceptT String IO (Array (String × S
 def changedOutputs (before after : Array (String × String)) : Array String :=
   before.filterMap fun (f, h) => if after.contains (f, h) then none else some f
 
-/-- Why gate 6's examples run failed. -/
 def examplesFailure (model : String) : Failure → String
   | .missingConst => s!"{examplesModule model} must declare `{model}.examples`"
   | .illegalAxiom =>
@@ -383,7 +381,6 @@ def examplesFailure (model : String) : Failure → String
   | .kernelReject => s!"a kernel rejected {examplesModule model}"
   | .importClash | .noJudgment => s!"{examplesModule model} could not be judged"
 
-/-- Why gate 6's adequacy run failed. -/
 def adequacyFailure (model : String) : Failure → String
   | .importClash =>
     s!"{adequacyModule model} does not build: two modules it imports declare one name; " ++
