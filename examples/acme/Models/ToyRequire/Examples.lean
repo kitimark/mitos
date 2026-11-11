@@ -8,7 +8,8 @@ def wholeLineAsPackage : Mitos.GoldenFile where
     [ { kind := .requires, ident := { kind := "toy", key := "left-pad" },
         span := .after "require " "left-pad", scope := .runtime } ]
 
-/-- `é` is two bytes, so a character count of the second line is not its byte span. -/
+/-- `é` is 2 bytes, so the second line starts at byte 11, not at its character offset 10, and its
+package name at byte 19. -/
 def charOffsetNotByteOffset : Mitos.GoldenFile where
   file := "require é\nrequire left-pad\n"
   facts :=
