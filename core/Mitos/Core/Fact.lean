@@ -39,7 +39,6 @@ def Span.text (sp : Span) (src : List Char) : Option (List Char) := do
   let (t, _) ← splitBytes sp.len rest
   pure t
 
-/-- The span of `key` in a file whose text before `key` is `pre`. -/
 def Span.after (pre key : String) : Span :=
   ⟨utf8Len pre.toList, utf8Len key.toList⟩
 
@@ -109,7 +108,6 @@ theorem Span.text_eq_some {sp : Span} {src t : List Char} :
     simp only [Span.text, Option.pure_def, Option.bind_eq_bind, List.append_assoc,
       splitBytes_eq_some.2 ⟨rfl, hpre⟩, splitBytes_eq_some.2 ⟨rfl, ht⟩, Option.bind_some]
 
-/-- **What `Span.after` denotes.** In a file that reads `pre ++ key ++ post`, its text is `key`. -/
 theorem Span.text_after (pre key post : String) :
     (Span.after pre key).text (pre ++ key ++ post).toList = some key.toList := by
   refine Span.text_eq_some.2 ⟨pre.toList, post.toList, ?_, rfl, rfl⟩
