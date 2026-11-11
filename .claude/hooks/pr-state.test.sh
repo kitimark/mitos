@@ -876,6 +876,9 @@ same_text "a chain of two symlinks of this user in safe folders is followed" "$w
 want=$(phys "$work/rp/st")
 r=$(hs hook_state trusted_path "$work/lp/st")
 if [ "$r" = "$want" ]; then pass "a folder behind a symlinked parent: trusted_path prints the real path"; else fail "trusted_path printed '$r', wanted '$want'"; fi
+r=$(hs hook_state trusted_path "${work#/}")
+code=$?
+if [ "$code" = 1 ] && [ -z "$r" ]; then pass "a relative path is refused by trusted_path"; else fail "a relative path: exit $code, '$r'"; fi
 r=$(MITOS_HOOK_STATE="$work/lp/st" hs hook_state ensure)
 code=$?
 if [ "$code" = 0 ] && [ -z "$r" ]; then pass "ensure of a folder behind a symlinked parent prints no path"; else fail "ensure printed '$r' (exit $code)"; fi
