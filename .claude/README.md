@@ -20,7 +20,7 @@ this repository. Most are adapted from pstack (MIT); see `THIRD_PARTY_NOTICES.md
 | `/poteto-mode` | skill | you type it | poteto's working style, with principles, 22 task playbooks, subagent and model rules, reply style |
 | `poteto-agent` | agent | spawned inside a poteto-mode playbook step | reads poteto-mode first, then does one delegated code or helper task |
 | `principle-*` (24) | skills | poteto-mode and other skills read the one that applies; you can type one | one engineering principle each, such as `principle-prove-it-works` |
-| `/architect` | skill | you type it, or a poteto-mode playbook follows it | sketches types and signatures with two or more parallel designs before code |
+| `/architect` | skill | you type it, or `/no-comments` or a poteto-mode playbook follows it | sketches types and signatures with two or more parallel designs before code |
 | `/arena` | skill | you type it, or `/architect`, `/interrogate` or a playbook follows it | N candidates on one task, a cross-judge, a base, grafts from the rest |
 | `/swarm` | skill | you type it, or a playbook follows it | fans out N workers and returns one report |
 | `/interrogate` | skill | you type it, or a playbook follows it | adversaries try to break a change; only findings a run proves survive |
@@ -65,11 +65,14 @@ which works regardless of that flag.
 - Origin, Graphite and Cursor's built-in PR tool → `gh` or the GitHub MCP tools.
 - `/loop` (Cursor built-in) → the `/loop` skill that ships with Claude Code.
 - `comment-sicko` investigates suspicious claims itself with git instead of calling `/how` and
-  `/why`; `/no-comments` step 2 runs the full skills on what remains in doubt. It runs in a
-  worktree so its deletions can be inspected before they are taken.
-- `/no-comments` keeps the one-line replacements PR #3 wrote for `architect`,
-  `principle-fix-root-causes` and `principle-redesign-from-first-principles`, although those skills
-  now exist here. `setup-pstack` is not ported at all.
+  `/why`; `/no-comments` step 2 runs the full skills on what remains in doubt.
+- `/no-comments` is re-synced with upstream commit `63912a9`. It names `how`, `why`, `architect`,
+  `principle-fix-root-causes` and `principle-redesign-from-first-principles` as upstream does, and
+  one line before its steps says to read a named skill's `SKILL.md` and follow it. Its other
+  changes are the Agent tool, `model` and `effort` in place of reasoning level and speed, and
+  `AskUserQuestion`. `comment-sicko` edits the caller's working tree, as upstream's does. An
+  isolated worktree starts from the default branch, so it would miss the caller's branch and
+  uncommitted changes. `setup-pstack` is not ported at all.
 
 ### poteto-mode closure
 
@@ -98,7 +101,8 @@ does with it.
 | `show-me-your-work` (+ template, `scripts/log.sh`) | ported | transcript path; `log.sh` only appends one row to a TSV file |
 | `reflect` (+4 references) | ported | transcript path, `general-purpose`, models, `skill-creator` |
 | `how`, `why` | already ported in PR #3 | `how` explorers run on `sonnet`; both pick each spawn's `effort` per poteto-mode's Subagents section |
-| `no-comments`, `unslop` | already ported in PR #3 | unchanged |
+| `no-comments` | ported in PR #3, re-synced with upstream `63912a9` | see the change list above |
+| `unslop` | already ported in PR #3 | unchanged |
 | `poteto-agent` (agent) | ported | finds poteto-mode under `.claude/skills/` or `~/.claude/skills/`; `is_background` dropped, callers pass `run_in_background` |
 | `create-skill` (Cursor built-in) | replaced | `skill-creator` |
 | `deslop` (`cursor-team-kit`) | replaced | "the slop strip", one inline step in poteto-mode's Non-negotiables |

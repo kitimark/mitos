@@ -8,7 +8,7 @@ Ported files (all modified from the originals: Cursor tool names, model slugs an
 replaced with their Claude Code equivalents; see `.claude/README.md`):
 
 - `skills/automate-me/SKILL.md`
-- `skills/no-comments/SKILL.md`
+- `skills/no-comments/SKILL.md` (re-synced with commit `63912a9`)
 - `skills/unslop/SKILL.md` (unchanged)
 - `skills/how/SKILL.md`, `skills/how/references/*` (references unchanged)
 - `skills/why/SKILL.md`, `skills/why/references/**` (references unchanged)
