@@ -9,8 +9,11 @@
 # calls the API. It does not fetch or run the head.
 #
 # Reads the event from GITHUB_EVENT_PATH (set by Actions). The head sha there
-# selects which push this run is for; the base commit and the labels come from
+# selects which push this run is for. The base branch and the labels come from
 # a fresh read of the pull request, so a later push is left for its own run.
+# The compare uses the branch name, not pull_request.base.sha: that sha stays
+# at the last update, so a head that contains it can look ahead of a main that
+# has since moved.
 set -euo pipefail
 
 event=${GITHUB_EVENT_PATH:?}
@@ -22,19 +25,17 @@ base_ref_want=${BASE_REF:-main}
 [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "repository is not owner/name" >&2; exit 1; }
 [[ "$pr" =~ ^[0-9]+$ ]] || { echo "pull request number is not a number" >&2; exit 1; }
 [[ "$head_want" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "head sha is not a commit" >&2; exit 1; }
-[[ "$base_ref_want" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "BASE_REF is not a branch name" >&2; exit 1; }
+[[ "$base_ref_want" =~ ^[A-Za-z0-9._/-]+$ && "$base_ref_want" != *..* && "$base_ref_want" != -* ]] \
+  || { echo "BASE_REF is not a branch name" >&2; exit 1; }
 head_want=$(printf '%s' "$head_want" | tr '[:upper:]' '[:lower:]')
 
 pr_json=$(gh api "repos/$repo/pulls/$pr")
 live_base_ref=$(jq -er '.base.ref' <<<"$pr_json")
-live_base_sha=$(jq -er '.base.sha' <<<"$pr_json")
 live_head_sha=$(jq -er '.head.sha' <<<"$pr_json")
 live_head_repo=$(jq -r '.head.repo.full_name // empty' <<<"$pr_json")
 has=$(jq -r '([.labels[].name] | index("needs-rebase")) != null' <<<"$pr_json")
 
-[[ "$live_base_sha" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "base sha from the API is not a commit" >&2; exit 1; }
 [[ "$live_head_sha" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "head sha from the API is not a commit" >&2; exit 1; }
-live_base_sha=$(printf '%s' "$live_base_sha" | tr '[:upper:]' '[:lower:]')
 live_head_sha=$(printf '%s' "$live_head_sha" | tr '[:upper:]' '[:lower:]')
 
 if [ "$live_head_repo" != "$repo" ]; then
@@ -54,17 +55,18 @@ if [ "$has" != true ]; then
   exit 0
 fi
 
-cmp=$(gh api "repos/$repo/compare/${live_base_sha}...${live_head_sha}")
+cmp=$(gh api "repos/$repo/compare/${base_ref_want}...${live_head_sha}")
 status=$(jq -er '.status' <<<"$cmp")
 behind=$(jq -er '.behind_by' <<<"$cmp")
 [[ "$behind" =~ ^[0-9]+$ ]] || { echo "#$pr: compare behind_by is not a number" >&2; exit 1; }
 
-# behind_by 0 and ahead/identical is `git merge-base --is-ancestor base head`.
-# Any other status keeps the label. An unknown status fails closed.
-# gh removes that one label and leaves every other label in place.
+# behind_by 0 and ahead/identical is `git merge-base --is-ancestor base head`
+# for the current tip of the base branch. Any other status keeps the label.
+# An unknown status fails closed. gh removes that one label and leaves every
+# other label in place.
 if [ "$behind" -eq 0 ] && { [ "$status" = ahead ] || [ "$status" = identical ]; }; then
   if err=$(gh pr edit "$pr" --repo "$repo" --remove-label needs-rebase 2>&1); then
-    echo "#$pr: $status of $live_base_sha; removed needs-rebase"
+    echo "#$pr: $status of $base_ref_want; removed needs-rebase"
     exit 0
   fi
   if grep -Eqi "needs-rebase' not found|label does not exist" <<<"$err"; then
@@ -77,9 +79,9 @@ if [ "$behind" -eq 0 ] && { [ "$status" = ahead ] || [ "$status" = identical ]; 
 fi
 
 if [ "$status" = behind ] || [ "$status" = diverged ]; then
-  echo "#$pr: $status of $live_base_sha; kept needs-rebase"
+  echo "#$pr: $status of $base_ref_want; kept needs-rebase"
   exit 0
 fi
 
-echo "#$pr: unexpected compare status $status (behind_by $behind)" >&2
+echo "#$pr: unexpected compare status $status (behind_by $behind) of $base_ref_want" >&2
 exit 1
