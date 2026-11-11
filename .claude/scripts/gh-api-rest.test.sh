@@ -36,6 +36,12 @@ command_head() {
     case $c in
       \"|\') q=$c; out+=$c ;;
       \;|\||\&|\)) break ;;
+      \#)
+        if [ "$i" -eq 0 ]; then break; fi
+        case ${s:i-1:1} in
+          [[:space:]]|\;|\&|\||\(|\)|\<|\>) break ;;
+        esac
+        out+=$c ;;
       *) out+=$c ;;
     esac
   done
@@ -61,7 +67,7 @@ next_wrapper() {
           continue
         fi
       fi
-      if [ "$q" = '"' ] && [ "$c" = '$' ] && [[ ${s:i} =~ ^\$\(($wrapper_re)[[:space:]] ]]; then
+      if [ "$q" = '"' ] && [ "$c" = '$' ] && [[ ${s:i} =~ ^\$\([[:space:]]*($wrapper_re)[[:space:]] ]]; then
         printf 'q:%s\n' "$i"
         return 0
       fi
@@ -343,7 +349,7 @@ routes_of() {
 }
 
 check_file() {
-  local f=$1 name routes n=0 route
+  local f=$1 name routes n=0 route min=10
   name=$(basename "$f")
   routes=$(routes_of "$f") || { echo "FAIL $name: $routes"; failed=1; return; }
   [ -n "$routes" ] || { echo "FAIL $name: no routes"; failed=1; return; }
@@ -355,7 +361,11 @@ check_file() {
       return
     fi
   done <<<"$routes"
-  if [ "$n" -lt 10 ]; then
+  case $name in
+    pr-state.sh) min=15 ;;
+    watch-github.sh) min=12 ;;
+  esac
+  if [ "$n" -lt "$min" ]; then
     echo "FAIL $name: only $n routes, the scan missed some"
     failed=1
     return
