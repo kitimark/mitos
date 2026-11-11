@@ -394,6 +394,31 @@ walk_line() {
         at=0
         continue
       fi
+      # timeout's next command is still the command, so gh "api" is a call.
+      if [ "$w" = timeout ] && [ "$bare" = 1 ]; then
+        i=$((i + 1))
+        while (( i < n )) && [ "${LEX_KIND[i]}" = w ]; do
+          case ${LEX_TEXT[i]} in
+            -k|--kill-after|-s|--signal)
+              i=$((i + 1))
+              if (( i < n )) && [ "${LEX_KIND[i]}" = w ]; then i=$((i + 1)); fi
+              continue ;;
+            --kill-after=*|--signal=*|--)
+              i=$((i + 1))
+              continue ;;
+            --foreground|-v|--verbose|--preserve-status)
+              i=$((i + 1))
+              continue ;;
+            -*)
+              echo "unclassified timeout flag ${LEX_TEXT[i]} in $SCAN_FILE" >&2
+              return 1 ;;
+            *)
+              i=$((i + 1))
+              break ;;
+          esac
+        done
+        continue
+      fi
       if [ "$w" = gh ] && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ] && [ "${LEX_TEXT[i+1]}" = api ]; then
         take_gh $((i + 2)) || return 1
         i=$GH_END
@@ -414,7 +439,7 @@ walk_line() {
       i=$((i + 1))
       continue
     fi
-    # timeout runs this gh api. A quoted api is an argument, as in echo.
+    # A bare api here is the gh subcommand. A quoted api is an argument, as in echo.
     if [ "$w" = gh ] && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ] \
       && [ "${LEX_TEXT[i+1]}" = api ] && [ "${LEX_BARE[i+1]}" = 1 ]; then
       take_gh $((i + 2)) || return 1
@@ -768,6 +793,7 @@ check_file "$work/echoq.sh"
 cp "$base" "$work/echogh.sh"
 printf '\n%s\n' 'echo gh "api" graphql' >>"$work/echogh.sh"
 check_file "$work/echogh.sh"
+reject "timeout then quoted api" 'timeout 20 gh "api" graphql'
 reject "time api" 'time "api" gq.json "graphql"'
 reject "time -p api" 'time -p "api" gq.json "graphql"'
 reject "case arm api" 'case x in a) "api" gq.json "graphql";; esac'
