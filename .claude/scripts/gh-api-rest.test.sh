@@ -77,6 +77,52 @@ joined_word() {
   printf '%s\t%s' "$i" "$word"
 }
 
+# Start and end of the next gh api whose words contain quotes.
+# g"h" and a"pi" are those words. A plain gh api stays on the space match.
+next_quoted_gh_api() {
+  local s=$1
+  local i=0 n=${#s} c meta end word j mend mword ghraw apiraw
+  while (( i < n )); do
+    c=${s:i:1}
+    case $c in
+      [[:space:]]|\;|\&|\||\(|\)|\$|\#|\<|\>) i=$((i + 1)); continue ;;
+      [A-Za-z0-9_]|\"|\')
+        meta=$(joined_word "$s" "$i")
+        end=${meta%%$'\t'*}
+        word=${meta#*$'\t'}
+        if [ "$word" = "gh" ]; then
+          j=$end
+          while [[ ${s:j:1} == [[:space:]] ]]; do
+            j=$((j + 1))
+          done
+          case ${s:j:1} in
+            [A-Za-z0-9_]|\"|\')
+              meta=$(joined_word "$s" "$j")
+              mend=${meta%%$'\t'*}
+              mword=${meta#*$'\t'}
+              if [ "$mword" = "api" ]; then
+                ghraw=${s:i:$((end - i))}
+                apiraw=${s:j:$((mend - j))}
+                case $ghraw$apiraw in
+                  *\"*|*"'"*)
+                    printf '%s\t%s' "$i" "$mend"
+                    return 0 ;;
+                esac
+              fi ;;
+          esac
+        fi
+        if (( end > i )); then
+          i=$end
+        else
+          i=$((i + 1))
+        fi
+        continue ;;
+      *) i=$((i + 1)) ;;
+    esac
+  done
+  return 1
+}
+
 next_wrapper() {
   local s=$1
   local i=0 n=${#s} c e at=1 q=${2-} assign='' start meta end word
@@ -298,7 +344,7 @@ blank_quotes_comments() {
 # 0 when the line still contains a call word the scanner did not take.
 # Comments, quoted data, function definitions, and `git fetch` are classified.
 unclassified_line() {
-  local s=$1 meta idx call guard=0 pre at
+  local s=$1 meta idx call guard=0 pre at qstart qend
   while (( guard++ < 80 )); do
     meta=$(next_wrapper "$s") || break
     idx=$meta
@@ -312,6 +358,12 @@ unclassified_line() {
     pre=${s%%"${BASH_REMATCH[0]}"*}
     at=${#pre}
     s=$(blank_span "$s" "$at" "${#BASH_REMATCH[0]}")
+  done
+  guard=0
+  while meta=$(next_quoted_gh_api "$s") && (( guard++ < 40 )); do
+    qstart=${meta%%$'\t'*}
+    qend=${meta#*$'\t'}
+    s=$(blank_span "$s" "$qstart" "$((qend - qstart))")
   done
   s=$(blank_quotes_comments "$s")
   s=${s//git fetch/git      }
@@ -329,7 +381,8 @@ unclassified_line() {
 
 routes_of() {
   local f=$1 line rest tok nxt quoted route scan call restline idx meta carry_q
-  local literal lscan lrest ltok stok prelen trim pad
+  local literal lscan lrest ltok stok trim pad
+  local rend qend rstart qstart qmeta mark pre
   while IFS= read -r line || [ -n "$line" ]; do
     [[ $line =~ ^[[:space:]]*# ]] && continue
     if [[ $line =~ ^[a-z_]+\(\)[[:space:]]*\{ ]]; then
@@ -346,10 +399,30 @@ routes_of() {
     literal=$vis_lit
     scan=$line
     lscan=$literal
-    while [[ $scan =~ gh[[:space:]]+api ]]; do
-      rest=${scan#*"${BASH_REMATCH[0]}"}
-      prelen=$(( ${#scan} - ${#rest} ))
-      lrest=${lscan:prelen}
+    while true; do
+      rend=-1
+      qend=-1
+      rstart=-1
+      qstart=-1
+      if [[ $scan =~ gh[[:space:]]+api ]]; then
+        pre=${scan%%"${BASH_REMATCH[0]}"*}
+        rstart=${#pre}
+        rend=$((rstart + ${#BASH_REMATCH[0]}))
+      fi
+      if qmeta=$(next_quoted_gh_api "$scan"); then
+        qstart=${qmeta%%$'\t'*}
+        qend=${qmeta#*$'\t'}
+      fi
+      if (( rend < 0 && qend < 0 )); then
+        break
+      fi
+      if (( rend >= 0 && (qend < 0 || rstart <= qstart) )); then
+        mark=$rend
+      else
+        mark=$qend
+      fi
+      rest=${scan:mark}
+      lrest=${lscan:mark}
       scan=$rest
       lscan=$lrest
       trim=${rest%%[![:space:]]*}
@@ -423,7 +496,8 @@ routes_of() {
         ')'*|';'*|'|'*|'&'*) restline=${restline:1} ;;
       esac
     done
-    if [[ $line =~ gh[[:space:]]+api || $line =~ (^|[^A-Za-z0-9_])($wrapper_re)([^A-Za-z0-9_]|$) ]]; then
+    if [[ $line =~ gh[[:space:]]+api ]] || next_quoted_gh_api "$line" >/dev/null \
+      || [[ $line =~ (^|[^A-Za-z0-9_])($wrapper_re)([^A-Za-z0-9_]|$) ]]; then
       if unclassified_line "$line"; then
         echo "unclassified call in $f" >&2
         return 1
@@ -555,6 +629,16 @@ reject "escaped api word" 'a\pi gq.json "graphql"'
 reject "quoted api command" '"api" gq.json "graphql"'
 reject "single quoted api command" "'api' gq.json \"graphql\""
 reject "partially quoted api" 'a"pi" gq.json "graphql"'
+reject "partially quoted gh api" 'g"h" a"pi" graphql'
+cp "$base" "$work/ghqq.sh"
+printf '\n%s\n' 'g"h" a"pi" repos/o/r/pulls/1' >>"$work/ghqq.sh"
+check_file "$work/ghqq.sh"
+if ! routes_of "$work/ghqq.sh" | grep -qx 'repos/o/r/pulls/1'; then
+  echo "FAIL partially quoted gh api route was not extracted"
+  failed=1
+else
+  echo "ok   partially quoted gh api route extracted"
+fi
 cp "$base" "$work/echoqq.sh"
 printf '\n%s\n' '"echo" "api" "graphql"' >>"$work/echoqq.sh"
 check_file "$work/echoqq.sh"
