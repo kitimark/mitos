@@ -103,7 +103,9 @@ jobs:
         run: |
           if ! command -v shellcheck >/dev/null 2>&1; then
             # Mirror DNS blips make apt exit 100 after minutes. Retry, and if
-            # update fails, install from the cached lists anyway.
+            # update fails, install from the cached lists anyway. apt tries
+            # azure.archive.ubuntu.com first and reaches the next mirror only
+            # after about a minute, so the install cap covers that fallback.
             pkg=shellcheck
             opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
             n=1
@@ -112,7 +114,7 @@ jobs:
               if ! timeout --kill-after=10 60 sudo apt-get "${opts[@]}" update -q; then
                 echo "apt-get update failed (attempt $n); installing $pkg from cached lists."
               fi
-              if timeout --kill-after=10 60 sudo apt-get "${opts[@]}" install -y -q "$pkg"; then
+              if timeout --kill-after=10 150 sudo apt-get "${opts[@]}" install -y -q "$pkg"; then
                 break
               fi
               if [ "$n" -ge "$attempts" ]; then
@@ -141,7 +143,9 @@ jobs:
       - name: Install bubblewrap (sandbox for lake comparator)
         run: |
           # Mirror DNS blips make apt exit 100 after minutes. Retry, and if
-          # update fails, install from the cached lists anyway.
+          # update fails, install from the cached lists anyway. apt tries
+          # azure.archive.ubuntu.com first and reaches the next mirror only
+          # after about a minute, so the install cap covers that fallback.
           pkg=bubblewrap
           opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
           n=1
@@ -150,7 +154,7 @@ jobs:
             if ! timeout --kill-after=10 60 sudo apt-get "${opts[@]}" update -q; then
               echo "apt-get update failed (attempt $n); installing $pkg from cached lists."
             fi
-            if timeout --kill-after=10 60 sudo apt-get "${opts[@]}" install -y -q "$pkg"; then
+            if timeout --kill-after=10 150 sudo apt-get "${opts[@]}" install -y -q "$pkg"; then
               break
             fi
             if [ "$n" -ge "$attempts" ]; then
