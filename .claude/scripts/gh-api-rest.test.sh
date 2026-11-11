@@ -350,7 +350,9 @@ walk_line() {
       i=$((i + 1))
       continue
     fi
-    if [ "$w" = gh ] && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ] && [ "${LEX_TEXT[i+1]}" = api ]; then
+    # timeout runs this gh api. A quoted api is an argument, as in echo.
+    if [ "$w" = gh ] && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ] \
+      && [ "${LEX_TEXT[i+1]}" = api ] && [ "${LEX_BARE[i+1]}" = 1 ]; then
       take_gh $((i + 2)) || return 1
       i=$GH_END
       continue
@@ -574,6 +576,9 @@ check_file "$work/echoqq.sh"
 cp "$base" "$work/echoq.sh"
 printf '\n%s\n' 'echo "api"' >>"$work/echoq.sh"
 check_file "$work/echoq.sh"
+cp "$base" "$work/echogh.sh"
+printf '\n%s\n' 'echo gh "api" graphql' >>"$work/echogh.sh"
+check_file "$work/echogh.sh"
 cp "$base" "$work/qfield.sh"
 printf '\n%s\n' 'gh api "--field" "name=foo bar" repos/o/r/pulls' >>"$work/qfield.sh"
 check_file "$work/qfield.sh"
