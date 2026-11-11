@@ -2,7 +2,7 @@
 language: en-US
 tone_instructions: >-
   Be concise and concrete. Name the file, the line and the input that fails. No praise and no
-  summary of what the code does.
+  summary of what the code does. Start each finding with BLOCKING or FOLLOW-UP.
 
 reviews:
   profile: chill
@@ -31,6 +31,19 @@ reviews:
     - "!research_notes/**"
 
   path_instructions:
+    - path: "**"
+      instructions: >-
+        Start every finding with BLOCKING or FOLLOW-UP. A finding is BLOCKING when a run at the
+        head or a line of the diff shows it: a cheat the gate accepts, a wrong result, a red
+        check, a security check added or restored without the cheat case that pins it, or a doc
+        line the PR made wrong. A check, cheat case, theorem or `expect` line that the diff
+        removes or weakens is also BLOCKING, such as a deleted case, `reject@N` relaxed to
+        `reject`, or a check that a conflict resolution drops, because weakening one is a spec
+        change for the owner. A confidential key, token or ID in the diff is BLOCKING. A problem
+        that `main` already has is BLOCKING only if the PR copies it, newly reaches it or is meant
+        to fix it. Everything else is FOLLOW-UP; it goes into one follow-up issue and does not
+        hold the PR. Before you raise a finding, check the open issues labelled `follow-up`. If
+        one already tracks it, write "tracked in #N" and do not raise it again.
     - path: "**/*.lean"
       instructions: >-
         Lean 4 v4.35.0 with Lake, no Mathlib. Never suggest `sorry`, `admit`, `axiom`,
@@ -60,12 +73,19 @@ reviews:
         an attacker. Look for any input that makes a gate accept what it should reject: lint
         bypasses (the lint must see what Lean's parser sees), sandbox escapes, failure paths
         that do not end in REJECTED, attribution to the wrong gate, and anything that fails
-        open. Checks must fail closed.
+        open. Checks must fail closed. Name the input, plugin or mutant that the finding would
+        let through.
     - path: "eval/**"
       instructions: >-
         Cheat corpus and mutant corpus. An `expect` file must never be weakened. Each cheat
         must still be rejected by the full gate at its expected gate, and each mutant must be
-        refuted by the theorem its `expect` names.
+        refuted by the theorem its `expect` names. Name the input, plugin or mutant that the
+        finding would let through.
+    - path: "ops/runs/**"
+      instructions: >-
+        Append-only run log, one JSON record per file. Flag only a record that an earlier
+        commit or `main` had and this diff edits or deletes, and a secret or an ID in a record.
+        Do not review the numbers.
     - path: ".github/**"
       instructions: >-
         CI is the merge gate. Flag anything that skips, weakens or reorders a check, loosens
@@ -114,6 +134,17 @@ reviews:
       mode: "off"
     issue_assessment:
       mode: "off"
+    custom_checks:
+      - name: "Review findings fixed or answered"
+        mode: "warning"
+        instructions: >-
+          Read the review threads and the review comments on this PR, including findings posted
+          outside the diff, which get no thread. Pass when every finding is either fixed by a
+          later commit on the PR or answered by a reply that links an issue (for a finding that
+          is not fixed here) or states why the code stays. Fail and name each finding that has
+          neither a fixing commit nor such a reply. Findings you marked FOLLOW-UP need the reply
+          with the issue link; BLOCKING ones need the fixing commit. If you cannot tell whether
+          a thread was answered, say so and do not fail.
 
 chat:
   auto_reply: true
