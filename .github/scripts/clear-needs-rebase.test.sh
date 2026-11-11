@@ -218,6 +218,65 @@ def is_trusted(ref):
         s = s[1:-1].strip()
     return re.sub(r"\s+", "", s) == "${{github.sha}}"
 
+def folded(block, k, indent, rest):
+    if rest not in {">", ">-", "|", "|-", ""}:
+        return rest
+    parts = []
+    for nxt in block[k + 1 :]:
+        if nxt.strip() == "":
+            continue
+        if len(nxt) - len(nxt.lstrip(" ")) <= indent:
+            break
+        parts.append(nxt.strip())
+    return " ".join(parts)
+
+def with_refs(block):
+    head = re.match(r"^(\s*)-\s", block[0])
+    if not head:
+        return None
+    key_indent = len(head.group(1)) + 2
+    refs = []
+    saw_with = False
+    i = 0
+    while i < len(block):
+        line = block[i]
+        dash = re.match(r"^(\s*)-\s+([A-Za-z0-9_-]+):\s*(.*)$", line)
+        keym = re.match(r"^(\s*)([A-Za-z0-9_-]+):\s*(.*)$", line)
+        key = rest = None
+        if dash and len(dash.group(1)) + 2 == key_indent:
+            key, rest = dash.group(2), dash.group(3).strip()
+        elif keym and len(keym.group(1)) == key_indent:
+            key, rest = keym.group(2), keym.group(3).strip()
+        if key != "with":
+            i += 1
+            continue
+        saw_with = True
+        if rest != "":
+            return None
+        child_indent = None
+        found = False
+        j = i + 1
+        while j < len(block):
+            nxt = block[j]
+            if nxt.strip() == "" or nxt.lstrip().startswith("#"):
+                j += 1
+                continue
+            ind = len(nxt) - len(nxt.lstrip(" "))
+            if ind <= key_indent:
+                break
+            child = re.match(r"^(\s*)([A-Za-z0-9_-]+):\s*(.*)$", nxt)
+            if child:
+                if child_indent is None:
+                    child_indent = ind
+                if ind == child_indent and child.group(2) == "ref":
+                    refs.append(folded(block, j, ind, child.group(3).strip()))
+                    found = True
+            j += 1
+        if not found:
+            return None
+        i = j
+    return refs if saw_with else None
+
 def step_end(start):
     base = len(re.match(r"^(\s*)-\s", lines[start]).group(1))
     j = start + 1
@@ -239,25 +298,8 @@ while i < len(lines):
         block = lines[i:end]
         if any(re.search(r"""uses:\s*['"]?actions/checkout@""", line) for line in block):
             saw = True
-            for k, line in enumerate(block):
-                m = re.match(r"^(\s*)ref:\s*(.*)$", line)
-                if not m:
-                    continue
-                indent = len(m.group(1))
-                rest = m.group(2).strip()
-                if rest in {">", ">-", "|", "|-", ""}:
-                    parts = []
-                    for nxt in block[k + 1 :]:
-                        if nxt.strip() == "":
-                            continue
-                        if len(nxt) - len(nxt.lstrip(" ")) <= indent:
-                            break
-                        parts.append(nxt.strip())
-                    rest = " ".join(parts)
-                if not is_trusted(rest):
-                    sys.exit(1)
-                break
-            else:
+            refs = with_refs(block)
+            if not refs or any(not is_trusted(ref) for ref in refs):
                 sys.exit(1)
         i = end
     else:
@@ -309,5 +351,35 @@ reject_second_checkout 'refs/pull/${{ github.event.pull_request.number }}/head' 
   "a second checkout of refs/pull/N/head is rejected"
 reject_second_checkout 'refs/pull/${{ github.event.pull_request.number }}/merge' \
   "a second checkout of refs/pull/N/merge is rejected"
+reject_env_ref_before_with() {
+  local ref=$1 label=$2
+  if ! python3 - "$wf" "$work/head-checkout.yml" "$ref" <<'PY'
+import sys
+src, dst, ref = sys.argv[1:]
+text = open(src).read()
+needle = "          persist-credentials: false\n"
+extra = (
+    "      - uses: actions/checkout@v4\n"
+    "        env:\n"
+    "          ref: ${{ github.sha }}\n"
+    "        with:\n"
+    f"          ref: {ref}\n"
+)
+if text.count(needle) != 1:
+    raise SystemExit("expected one trusted checkout")
+open(dst, "w").write(text.replace(needle, needle + "\n" + extra, 1))
+PY
+  then
+    echo "FAIL  $label (could not build the workflow)"
+    failed=1
+  elif checkout_refs_ok "$work/head-checkout.yml"; then
+    echo "FAIL  $label"
+    failed=1
+  else
+    echo "ok  $label"
+  fi
+}
+reject_env_ref_before_with '${{ github.event.pull_request.head.sha }}' \
+  "env.ref github.sha before an untrusted with.ref is rejected"
 
 exit "$failed"

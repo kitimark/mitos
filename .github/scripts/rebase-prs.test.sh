@@ -192,13 +192,12 @@ check "no-auto-rebase is skipped" 0 "$(deleted 9)"
 check "stacked PR is skipped" 0 "$(deleted 90)"
 check "PR on another base is skipped" 0 "$(deleted 11)"
 
-if grep -q 'spec-approved\|follow-up\|bug' "$root/routes"; then
-  echo "FAIL  a delete names another label"
-  cat "$root/routes"
-  failed=1
-else
-  echo "ok  deletes name only needs-rebase"
-fi
+got=$(grep -E -- '--remove-label' "$root/calls" || true)
+want=$(printf '%s\n' \
+  'pr edit 1 --remove-label needs-rebase' \
+  'pr edit 2 --remove-label needs-rebase' \
+  'pr edit 6 --remove-label needs-rebase')
+check "removes only needs-rebase, with the full arguments" "$want" "$got"
 if grep -q 'pr comment 5 ' "$root/calls"; then
   echo "ok  a new conflict is commented"
 else
