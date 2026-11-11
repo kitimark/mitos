@@ -453,11 +453,13 @@ reject "hash inside a word" 'echo foo#bar; api gq.json "graphql"'
 reject "while fetch" 'while fetch gq "graphql"; do break; done'
 reject "until fetch" 'until fetch gq "graphql"; do break; done'
 reject "api in a double-quoted substitution" 'x="$(api gq.json "graphql")"'
+reject "spaced fetch in double quotes" 'x="$( fetch gq "graphql")"'
 reject "api after a double-quoted substitution" 'x="$(api ok.json "repos/o/r/pulls")"; api gq.json "graphql"'
 reject "escaped quote before api" 'echo "\""; api gq.json "graphql"'
 reject "assignment then api" 'x=foo api gq.json "graphql"'
 reject "escaped api word" 'a\pi gq.json "graphql"'
 reject "escaped gh api word" 'gh a\pi graphql'
+reject "commented REST path" 'fetch gq "graphql" # "repos/o/r/pulls"'
 cp "$base" "$work/cmt.sh"
 printf '\n%s\n' 'echo foo # api gq.json "graphql"' >>"$work/cmt.sh"
 check_file "$work/cmt.sh"
@@ -469,6 +471,17 @@ if routes_of "$work/cmtgh.sh" | grep -qx graphql; then
   failed=1
 else
   echo "ok   comment was not scanned"
+fi
+printf '%s\n' 'gh api repos/o/r/pulls' >"$work/one.sh"
+before=$failed
+failed=0
+check_file "$work/one.sh"
+if [ "$failed" = 0 ]; then
+  echo "FAIL one REST route was accepted"
+  failed=1
+else
+  echo "ok   one REST route rejected"
+  failed=$before
 fi
 
 echo "gh-api-rest: done"
