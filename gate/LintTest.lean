@@ -3,16 +3,6 @@ import MitosGate.Accept
 import MitosGate.Imports
 import MitosGate.CheatsRun
 
-/-! Regression test for gate 1's lint: every command kind outside the model allowlist is rejected,
-every allowed kind is accepted, models pass the plugin rules, and the import rule holds for
-plugins and models alike (`Lint.check`, `Lint.checkModel`). Each rule reports under its own id
-(`ruleCases`), and each ban is guarded by a cheat case or listed in `unguardedBans` and
-`eval/cheats/unguarded` (`ratchet`). It runs `mitos-gate`, the cheat runner included, on hostile
-text and checks that no line it prints starts a workflow command (`ciCases`). It also pins how the
-cheat runner stops a run at its timeout (`timeoutCases`), the one runner test that needs no gate
-run, and that no scoped token of `Init` and `Std` starts a literal or a comment
-(`scopedTokensStartingLiteral`). Run with `lake exe mitos-lint-test` from the repository root. -/
-
 open MitosGate
 
 def model (body : String) : String :=
@@ -348,14 +338,10 @@ records that on this toolchain no `Init`/`Std` scoped token starts a string or a
 gap hides nothing, and that the fact is rechecked on each toolchain bump. This is that recheck:
 a token that starts a string, character or name literal, or a comment, fails the test. -/
 
-/-- A token the lint's parser would read as the start of a string, character or name literal, or
-of a comment, while a model that had `open`ed its scope would read it as the token. -/
 def startsLiteralOrComment (tk : String) : Bool :=
   tk.startsWith "\"" || tk.startsWith "'" || tk.startsWith "`" ||
     tk.startsWith "/-" || tk.startsWith "--"
 
-/-- The scoped tokens of `Parser.parserExtension` in `env`, and those that `startsLiteralOrComment`.
-`syntaxEnv` imports `Init` and `Std`, which is the syntax a model is parsed with. -/
 def scopedTokensStartingLiteral (env : Lean.Environment) : Array String × Nat := Id.run do
   let stack := Lean.Parser.parserExtension.ext.getState env
   let mut bad : Array String := #[]
