@@ -208,9 +208,10 @@ fi
 # The workflow must stay on the trusted file. A pull_request trigger, or a
 # checkout of the pull request head, would run untrusted code with a write token.
 checkout_refs_ok() {
-  python3 - "$1" <<'PY'
+  python3 - "$1" "${2:-check}" <<'PY'
 import re, sys
 lines = open(sys.argv[1]).read().splitlines()
+mode = sys.argv[2]
 
 def is_trusted(ref):
     s = ref.strip()
@@ -218,17 +219,40 @@ def is_trusted(ref):
         s = s[1:-1].strip()
     return re.sub(r"\s+", "", s) == "${{github.sha}}"
 
+def is_block(rest):
+    return re.fullmatch(r"[|>](?:[+-][1-9]?|[1-9][+-]?)?", rest) is not None
+
 def folded(block, k, indent, rest):
-    if rest not in {">", ">-", "|", "|-", ""}:
-        return rest
+    # A plain value is this line only. A block scalar, or an empty value, owns
+    # every following line indented under the key. Those lines are the value,
+    # not sibling inputs, even when the text looks like "ref:".
+    if rest != "" and not is_block(rest):
+        return rest, k + 1
     parts = []
-    for nxt in block[k + 1 :]:
+    j = k + 1
+    while j < len(block):
+        nxt = block[j]
         if nxt.strip() == "":
+            j += 1
             continue
         if len(nxt) - len(nxt.lstrip(" ")) <= indent:
             break
         parts.append(nxt.strip())
-    return " ".join(parts)
+        j += 1
+    return " ".join(parts), j
+
+def mapping_key(line):
+    # A mapping entry is a key, a colon, and a value at this indent. The key may
+    # be quoted. The value is not scanned for further keys.
+    child = re.match(r"^(\s*)(.+?):\s*(.*)$", line)
+    if not child:
+        return None
+    raw = child.group(2).strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":
+        raw = raw[1:-1]
+    if raw == "":
+        return None
+    return len(child.group(1)), raw, child.group(3).strip()
 
 def with_refs(block):
     head = re.match(r"^(\s*)-\s", block[0])
@@ -264,14 +288,17 @@ def with_refs(block):
             ind = len(nxt) - len(nxt.lstrip(" "))
             if ind <= key_indent:
                 break
-            child = re.match(r"^(\s*)([A-Za-z0-9_-]+):\s*(.*)$", nxt)
-            if child:
-                if child_indent is None:
-                    child_indent = ind
-                if ind == child_indent and child.group(2) == "ref":
-                    refs.append(folded(block, j, ind, child.group(3).strip()))
-                    found = True
-            j += 1
+            child = mapping_key(nxt)
+            if not child or (child_indent is not None and ind != child_indent):
+                j += 1
+                continue
+            if child_indent is None:
+                child_indent = ind
+            name, rest = child[1], child[2]
+            value, j = folded(block, j, ind, rest)
+            if name == "ref":
+                refs.append(value)
+                found = True
         if not found:
             return None
         i = j
@@ -299,6 +326,9 @@ while i < len(lines):
         if any(re.search(r"""uses:\s*['"]?actions/checkout@""", line) for line in block):
             saw = True
             refs = with_refs(block)
+            if mode == "show":
+                for ref in refs or []:
+                    print(ref)
             if not refs or any(not is_trusted(ref) for ref in refs):
                 sys.exit(1)
         i = end
@@ -381,5 +411,47 @@ PY
 }
 reject_env_ref_before_with '${{ github.event.pull_request.head.sha }}' \
   "env.ref github.sha before an untrusted with.ref is rejected"
+reject_ref_inside_block_scalar() {
+  local label=$1
+  if ! python3 - "$wf" "$work/head-checkout.yml" <<'PY'
+import sys
+src, dst = sys.argv[1:]
+text = open(src).read()
+needle = "          persist-credentials: false\n"
+extra = (
+    "      - uses: actions/checkout@v4\n"
+    "        with:\n"
+    "          'submodules': |\n"
+    "            ref: ${{ github.sha }}\n"
+    "          ref: ${{ github.event.pull_request.head.sha }}\n"
+)
+if text.count(needle) != 1:
+    raise SystemExit("expected one trusted checkout")
+open(dst, "w").write(text.replace(needle, needle + "\n" + extra, 1))
+PY
+  then
+    echo "FAIL  $label (could not build the workflow)"
+    failed=1
+    return
+  fi
+  local got=$work/checkout-refs
+  if checkout_refs_ok "$work/head-checkout.yml" show >"$got"; then
+    echo "FAIL  $label"
+    cat "$got"
+    failed=1
+  elif ! grep -Fqx '${{ github.event.pull_request.head.sha }}' "$got"; then
+    echo "FAIL  $label (with.ref was not the pull request head sha)"
+    cat "$got"
+    failed=1
+  elif grep -Fqx 'ref: ${{ github.sha }}' "$got"; then
+    echo "FAIL  $label (block scalar text was read as a ref)"
+    cat "$got"
+    failed=1
+  else
+    echo "ok  $label"
+  fi
+}
+reject_ref_inside_block_scalar \
+  "a ref line inside a block scalar does not hide an untrusted with.ref"
 
 exit "$failed"
