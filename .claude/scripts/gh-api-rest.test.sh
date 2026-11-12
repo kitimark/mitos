@@ -23,6 +23,89 @@ is_rest_route() {
   return 0
 }
 
+# i points at '$' of ${...}. PARAM_END is the index after the closing brace.
+# A # or ) inside the expansion is data, not a comment or a substitution closer.
+param_end() {
+  local s=$1 i=$2
+  local n=${#s} depth=1 q='' c
+  i=$((i + 2))
+  while (( i < n && depth > 0 )); do
+    c=${s:i:1}
+    if [ -n "$q" ]; then
+      if [ "$q" = '"' ] && [ "$c" = "$backslash" ]; then
+        i=$((i + 2))
+        continue
+      fi
+      [ "$c" = "$q" ] && q=
+      i=$((i + 1))
+      continue
+    fi
+    case $c in
+      \'|\" ) q=$c ;;
+      \\) i=$((i + 1)) ;;
+      \$)
+        if [ "${s:i+1:1}" = '{' ]; then
+          depth=$((depth + 1))
+          i=$((i + 1))
+        fi
+        ;;
+      \}) depth=$((depth - 1)) ;;
+    esac
+    i=$((i + 1))
+  done
+  if (( depth != 0 )); then
+    return 1
+  fi
+  PARAM_END=$i
+}
+
+# Record $(...) that sits inside a parameter expansion. The expansion itself is one word.
+harvest_subst() {
+  local s=$1
+  local i=0 n=${#s} q='' c end=0
+  while (( i < n )); do
+    c=${s:i:1}
+    if [ -n "$q" ]; then
+      if [ "$q" = '"' ] && [ "$c" = "$backslash" ]; then
+        i=$((i + 2))
+        continue
+      fi
+      [ "$c" = "$q" ] && q=
+      i=$((i + 1))
+      continue
+    fi
+    case $c in
+      \'|\" ) q=$c; i=$((i + 1)); continue ;;
+      \\) i=$((i + 2)); continue ;;
+      \$)
+        if [ "${s:i+1:1}" = '(' ] && [ "${s:i+2:1}" != '(' ]; then
+          subst_at "$s" "$i" || return 1
+          if [ "$SUB_OPEN" = 1 ]; then
+            echo "unclosed substitution in $SCAN_FILE" >&2
+            return 1
+          fi
+          LEX_SUBS+=("$SUB_INNER")
+          i=$SUB_END
+          continue
+        fi
+        if [ "${s:i+1:1}" = '{' ]; then
+          param_end "$s" "$i" || {
+            echo "unclosed parameter expansion in $SCAN_FILE" >&2
+            return 1
+          }
+          end=$PARAM_END
+          if (( end > i + 3 )); then
+            harvest_subst "${s:i+2:end-i-3}" || return 1
+          fi
+          i=$end
+          continue
+        fi
+        ;;
+    esac
+    i=$((i + 1))
+  done
+}
+
 # One shell word, quotes removed. a"pi", "ap"i, f""etch and 'api' are api.
 # An unquoted \p is p, so a\pi is api. An unquoted \ before a separator stays
 # in the word, so gh\ api is not gh api and a route's \  is a space.
@@ -30,7 +113,7 @@ is_rest_route() {
 # quote has no escapes. $(...) is recorded and scanned on its own; $(( is arithmetic.
 read_word() {
   local s=$1 i=$2
-  local n=${#s} c e q='' word='' bare=0 sawq=0 sub=0 start=$2
+  local n=${#s} c e q='' word='' bare=0 sawq=0 sub=0 start=$2 pend=0
   RW_CONT=0
   RW_OPEN=0
   while (( i < n )); do
@@ -89,7 +172,8 @@ read_word() {
           break
         fi
         word+=$e
-        bare=1
+        # \{ and \} are literal words, not grouping braces.
+        if [ "$e" != '{' ] && [ "$e" != '}' ]; then bare=1; fi
         i=$((i + 2))
         continue ;;
       \`)
@@ -110,6 +194,20 @@ read_word() {
           LEX_SUBS+=("$SUB_INNER")
           sub=1
           i=$SUB_END
+          continue
+        fi
+        if [ "${s:i+1:1}" = '{' ]; then
+          param_end "$s" "$i" || {
+            echo "unclosed parameter expansion in $SCAN_FILE" >&2
+            return 1
+          }
+          pend=$PARAM_END
+          word+=${s:i:pend-i}
+          bare=1
+          if (( pend > i + 3 )); then
+            harvest_subst "${s:i+2:pend-i-3}" || return 1
+          fi
+          i=$pend
           continue
         fi
         word+=$c
@@ -149,6 +247,15 @@ subst_at() {
       fi
       [ "$c" = "$q" ] && q=
       i=$((i + 1))
+      continue
+    fi
+    if [ "$c" = '$' ] && [ "${s:i+1:1}" = '{' ]; then
+      param_end "$s" "$i" || {
+        echo "unclosed parameter expansion in $SCAN_FILE" >&2
+        return 1
+      }
+      i=$PARAM_END
+      boundary=0
       continue
     fi
     if [ "$boundary" = 1 ] && [ "$c" = '#' ]; then
@@ -986,6 +1093,9 @@ reject "redirection before api" '2>/dev/null "api" gq.json "graphql"'
 reject "hash after empty quotes" '""#; api gq.json "graphql"'
 reject "hash after a substitution" '$(true)#; api gq.json "graphql"'
 reject "commented paren in a substitution" $'x="$(\n  # )\n  api gq.json "graphql"\n)"'
+reject "hash inside a parameter expansion" 'x="$(echo ${v:- #}; api gq.json graphql)"'
+reject "command substitution inside a parameter expansion" 'x="$(echo ${v:-$(api gq.json graphql)})"'
+closed_error "escaped brace ends the function" $'fetch() { : \\{; }\nset -- ignored graphql\ngh api "$2"'
 closed_error "quoted brace ends the function" $'fetch() { : \'{\'; }\nset -- ignored graphql\ngh api "$2"'
 reject "comment does not continue" $': # \\\napi gq.json "graphql"'
 reject "quote closes on the next line" $'echo \'\n\'; api gq.json "graphql"'
