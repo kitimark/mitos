@@ -49,7 +49,8 @@ escalation: hint → automation → stronger model → pair → split → revisi
   canceller failure would skip `gate`, and a skipped required check counts as passed. With
   `if: ${{ !cancelled() }}` it would run, but it would also wait for the canceller's runner. A
   failure (an API error, a refused cancel) fails only the `cancel-superseded` check, which is not
-  required.
+  required. A real refusal still fails that check. HTTP 409 `has not been queued yet`, on a run
+  whose fresh read is pre-start and jobless, exits 0.
 - **Forks skip the job.** A fork's token cannot cancel runs, so the job would always fail. A
   fork's old runs finish, which costs runner time only.
 - **Label runs.** A label run at the current head is never cancelled, so a late `labeled` run
