@@ -288,8 +288,14 @@ def with_refs(block):
             ind = len(nxt) - len(nxt.lstrip(" "))
             if ind <= key_indent:
                 break
+            stripped = nxt.lstrip(" ")
             child = mapping_key(nxt)
-            if not child or (child_indent is not None and ind != child_indent):
+            # "? key" and a following ": |" are a real mapping entry. This
+            # parser does not model that form. Skipping the lines lets the
+            # block-scalar text set child_indent and hides the real ref.
+            if stripped.startswith("?") or not child:
+                return None
+            if child_indent is not None and ind != child_indent:
                 j += 1
                 continue
             if child_indent is None:
@@ -453,5 +459,36 @@ PY
 }
 reject_ref_inside_block_scalar \
   "a ref line inside a block scalar does not hide an untrusted with.ref"
+reject_explicit_key() {
+  local label=$1
+  if ! python3 - "$wf" "$work/head-checkout.yml" <<'PY'
+import sys
+src, dst = sys.argv[1:]
+text = open(src).read()
+needle = "          persist-credentials: false\n"
+extra = (
+    "      - uses: actions/checkout@v4\n"
+    "        with:\n"
+    "          ? submodules\n"
+    "          : |\n"
+    "            ref: ${{ github.sha }}\n"
+    "          ref: ${{ github.event.pull_request.head.sha }}\n"
+)
+if text.count(needle) != 1:
+    raise SystemExit("expected one trusted checkout")
+open(dst, "w").write(text.replace(needle, needle + "\n" + extra, 1))
+PY
+  then
+    echo "FAIL  $label (could not build the workflow)"
+    failed=1
+  elif checkout_refs_ok "$work/head-checkout.yml"; then
+    echo "FAIL  $label"
+    failed=1
+  else
+    echo "ok  $label"
+  fi
+}
+reject_explicit_key \
+  "an explicit ? key does not hide an untrusted with.ref"
 
 exit "$failed"
