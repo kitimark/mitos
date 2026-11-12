@@ -339,7 +339,7 @@ take_wrapper() {
 
 # The next word after one of these is the command. Options stay with the prefix.
 pass_prefix() {
-  local name=$1 a start=$i lookup=0
+  local name=$1 a lookup=0
   i=$((i + 1))
   while (( i < n )) && [ "${LEX_KIND[i]}" = w ]; do
     a=${LEX_TEXT[i]}
@@ -415,9 +415,11 @@ pass_prefix() {
         esac ;;
     esac
   done
+  # command -v looks a name up. The words after it are not commands.
   if [ "$lookup" = 1 ]; then
-    i=$start
-    return 2
+    while (( i < n )) && [ "${LEX_KIND[i]}" = w ]; do
+      i=$((i + 1))
+    done
   fi
 }
 
@@ -492,7 +494,7 @@ walk_line() {
         continue
       fi
       # timeout's next command is still the command, so gh "api" is a call.
-      if [ "$w" = timeout ] && [ "$bare" = 1 ]; then
+      if [ "$w" = timeout ]; then
         i=$((i + 1))
         while (( i < n )) && [ "${LEX_KIND[i]}" = w ]; do
           case ${LEX_TEXT[i]} in
@@ -516,16 +518,14 @@ walk_line() {
         done
         continue
       fi
-      if [ "$bare" = 1 ]; then
-        case $w in
-          command|env|nohup|exec|nice|stdbuf|xargs|drop_lock_fd)
-            pass_prefix "$w"
-            st=$?
-            if [ "$st" = 1 ]; then return 1; fi
-            if [ "$st" = 0 ]; then continue; fi
-            ;;
-        esac
-      fi
+      case $w in
+        command|env|nohup|exec|nice|stdbuf|xargs|drop_lock_fd)
+          pass_prefix "$w"
+          st=$?
+          if [ "$st" = 1 ]; then return 1; fi
+          if [ "$st" = 0 ]; then continue; fi
+          ;;
+      esac
       if [ "$w" = gh ] && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ] && [ "${LEX_TEXT[i+1]}" = api ]; then
         take_gh $((i + 2)) || return 1
         i=$GH_END
@@ -554,11 +554,11 @@ walk_line() {
         echo "unclassified command in $SCAN_FILE" >&2
         return 1
       fi
-      if [ "$bare" = 1 ] && [ "$w" = eval ]; then
+      if [ "$w" = eval ]; then
         echo "unclassified command in $SCAN_FILE" >&2
         return 1
       fi
-      if [ "$bare" = 1 ] && [[ $w == bash || $w == sh || $w == zsh ]] \
+      if [[ $w == bash || $w == sh || $w == zsh ]] \
         && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ] && [ "${LEX_TEXT[i+1]}" = -c ]; then
         echo "unclassified command in $SCAN_FILE" >&2
         return 1
@@ -932,6 +932,15 @@ printf '\n%s\n' 'echo gh "api" graphql' >>"$work/echogh.sh"
 check_file "$work/echogh.sh"
 reject "timeout then quoted api" 'timeout 20 gh "api" graphql'
 reject "command then quoted api" 'command gh "api" graphql'
+reject "partially quoted command" 'c"ommand" gh "api" graphql'
+reject "partially quoted timeout" 't"imeout" 20 gh "api" graphql'
+closed_error "partially quoted eval" "e\"val\" 'gh api graphql'"
+closed_error "partially quoted bash" "b\"ash\" -c 'gh api graphql'"
+cp "$base" "$work/lookup.sh"
+printf '\n%s\n' 'command -v api' >>"$work/lookup.sh"
+check_file "$work/lookup.sh"
+echo "ok   command -v api is a lookup"
+reject "lookup argument runs" 'command -v "$(api gq.json "graphql")"'
 reject "env then quoted api" 'env gh "api" graphql'
 reject "nohup then quoted api" 'nohup gh "api" graphql'
 reject "exec then quoted api" 'exec gh "api" graphql'
