@@ -99,6 +99,7 @@ case $url in
   */runs/*/cancel)
     id=${url%/cancel}
     id=${id##*/}
+    [ "$method" = POST ] || { printf 'stub gh: cancel needs POST, got %s\n' "$method" >&2; exit 1; }
     record "POST $id"
     if [ -f "$spec/cancel/$id" ]; then
       cat "$spec/cancel/$id" >&2
@@ -337,6 +338,20 @@ refuse "$spec" 200 "$msg500"
 status_of "$spec" 200 queued
 jobs_of "$spec" 200 0
 run_case "queued, 0 jobs, HTTP 500 without the phrase" "$spec" 1 200
+
+spec=$work/queued-phrase-403
+open_pair "$spec"
+refuse "$spec" 200 "${phrase/(HTTP 409)/(HTTP 403)}"
+status_of "$spec" 200 queued
+jobs_of "$spec" 200 0
+run_case "queued, 0 jobs, the phrase with HTTP 403" "$spec" 1 200
+
+spec=$work/queued-409-no-phrase
+open_pair "$spec"
+refuse "$spec" 200 "gh: Some other refusal (HTTP 409)"
+status_of "$spec" 200 queued
+jobs_of "$spec" 200 0
+run_case "queued, 0 jobs, HTTP 409 without the phrase" "$spec" 1 200
 
 both() {
   local slug=$1 title=$2 first=$3 second=$4 msg=$5 posts=$6 spec
