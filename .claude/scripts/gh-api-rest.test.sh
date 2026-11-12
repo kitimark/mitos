@@ -193,9 +193,14 @@ lex_line() {
   LEX_SUBS=()
   while (( i < n )); do
     c=${s:i:1}
+    # A newline separates commands. A comment runs to the next newline only.
+    if [ "$c" = $'\n' ]; then push_op ';'; i=$((i + 1)); continue; fi
+    if [ "$c" = '#' ]; then
+      while (( i < n )) && [ "${s:i:1}" != $'\n' ]; do i=$((i + 1)); done
+      continue
+    fi
     case $c in
       [[:space:]]) i=$((i + 1)); continue ;;
-      \#) return 0 ;;
       \;) push_op ';'; i=$((i + 1)); continue ;;
       \&)
         if [ "${s:i:2}" = '&&' ]; then push_op '&&'; i=$((i + 2))
@@ -210,7 +215,8 @@ lex_line() {
       \() push_op '('; i=$((i + 1)); continue ;;
       \)) push_op ')'; i=$((i + 1)); continue ;;
       \<)
-        if [ "${s:i:2}" = '<<' ]; then push_op '<<'; i=$((i + 2))
+        if [ "${s:i:3}" = '<<<' ]; then push_op '<<<'; i=$((i + 3))
+        elif [ "${s:i:2}" = '<<' ]; then push_op '<<'; i=$((i + 2))
         elif [ "${s:i:2}" = '<&' ]; then push_op '<&'; i=$((i + 2))
         else push_op '<'; i=$((i + 1)); fi
         continue ;;
@@ -245,14 +251,14 @@ take_gh() {
   while (( j < n )) && [ "${LEX_KIND[j]}" = w ]; do
     arg=${LEX_TEXT[j]}
     case $arg in
-      -X|--method|-f|-F|--raw-field|--field|--jq|--input|--header|-H)
+      -X|--method|-f|-F|--raw-field|--field|--jq|--input|--header|-H|--cache)
         j=$((j + 1))
         if (( j < n )) && [ "${LEX_KIND[j]}" = w ]; then j=$((j + 1)); fi
         continue ;;
-      --method=*|--raw-field=*|--field=*|--jq=*|--input=*|--header=*|--hostname=*)
+      --method=*|--raw-field=*|--field=*|--jq=*|--input=*|--header=*|--hostname=*|--cache=*)
         j=$((j + 1))
         continue ;;
-      --paginate|--slurp|--silent|--verbose|--cache)
+      --paginate|--slurp|--silent|--verbose)
         j=$((j + 1))
         continue ;;
       -*)
@@ -331,22 +337,113 @@ take_wrapper() {
   GH_END=$j
 }
 
+# The next word after one of these is the command. Options stay with the prefix.
+pass_prefix() {
+  local name=$1 a start=$i lookup=0
+  i=$((i + 1))
+  while (( i < n )) && [ "${LEX_KIND[i]}" = w ]; do
+    a=${LEX_TEXT[i]}
+    case $name in
+      drop_lock_fd|nohup)
+        if [ "$a" = -- ]; then i=$((i + 1)); continue; fi
+        break ;;
+      command)
+        case $a in
+          -v|-V) lookup=1; i=$((i + 1)); continue ;;
+          -p|--) i=$((i + 1)); continue ;;
+          -*)
+            echo "unclassified command flag $a in $SCAN_FILE" >&2
+            return 1 ;;
+          *) break ;;
+        esac ;;
+      exec)
+        case $a in
+          -a|--argv0)
+            i=$((i + 1))
+            if (( i < n )) && [ "${LEX_KIND[i]}" = w ]; then i=$((i + 1)); fi
+            continue ;;
+          -a*|-c|-l|--) i=$((i + 1)); continue ;;
+          -*)
+            echo "unclassified exec flag $a in $SCAN_FILE" >&2
+            return 1 ;;
+          *) break ;;
+        esac ;;
+      env)
+        case $a in
+          -u|-C|--unset|--chdir)
+            i=$((i + 1))
+            if (( i < n )) && [ "${LEX_KIND[i]}" = w ]; then i=$((i + 1)); fi
+            continue ;;
+          -u*|--unset=*|--chdir=*|-i|-0|--) i=$((i + 1)); continue ;;
+          -*)
+            echo "unclassified env flag $a in $SCAN_FILE" >&2
+            return 1 ;;
+          *) break ;;
+        esac ;;
+      nice)
+        case $a in
+          -n|--adjustment)
+            i=$((i + 1))
+            if (( i < n )) && [ "${LEX_KIND[i]}" = w ]; then i=$((i + 1)); fi
+            continue ;;
+          --adjustment=*|-n*|-[0-9]*|--) i=$((i + 1)); continue ;;
+          -*)
+            echo "unclassified nice flag $a in $SCAN_FILE" >&2
+            return 1 ;;
+          *) break ;;
+        esac ;;
+      stdbuf)
+        case $a in
+          -i|-o|-e)
+            i=$((i + 1))
+            if (( i < n )) && [ "${LEX_KIND[i]}" = w ]; then i=$((i + 1)); fi
+            continue ;;
+          -i*|-o*|-e*|--) i=$((i + 1)); continue ;;
+          -*)
+            echo "unclassified stdbuf flag $a in $SCAN_FILE" >&2
+            return 1 ;;
+          *) break ;;
+        esac ;;
+      xargs)
+        case $a in
+          -I|-i|-L|-n|-P|-s|-E|-e|-a|-d|--max-args|--max-procs|--max-chars|--delimiter|--arg-file|--replace|--eof)
+            i=$((i + 1))
+            if (( i < n )) && [ "${LEX_KIND[i]}" = w ]; then i=$((i + 1)); fi
+            continue ;;
+          -*) i=$((i + 1)); continue ;;
+          *) break ;;
+        esac ;;
+    esac
+  done
+  if [ "$lookup" = 1 ]; then
+    i=$start
+    return 2
+  fi
+}
+
 walk_line() {
   local n=${#LEX_KIND[@]} i=0 at=1 w bare
-  local SKIP_FETCH=-1
+  local SKIP_FETCH=-1 IN_TEST=0 st
   while (( i < n )); do
     if [ "${LEX_KIND[i]}" = o ]; then
       case ${LEX_TEXT[i]} in
-        ';'|'&'|'&&'|'|'|'||'|'|&'|'('|')') at=1 ;;
-        '>'|'<'|'>>'|'>&'|'<&'|'&>'|'<<')
+        ';'|'&'|'&&'|'|'|'||'|'|&'|'('|')')
+          if (( IN_TEST == 0 )); then at=1; fi ;;
+        '<<<'|'>'|'<'|'>>'|'>&'|'<&'|'&>')
           if (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ]; then i=$((i + 1)); fi
           ;;
+        '<<')
+          echo "unclassified here-document in $SCAN_FILE" >&2
+          return 1 ;;
       esac
       i=$((i + 1))
       continue
     fi
     w=${LEX_TEXT[i]}
     bare=${LEX_BARE[i]}
+    if [ "$w" = ']]' ] && (( IN_TEST > 0 )); then
+      IN_TEST=$((IN_TEST - 1))
+    fi
     if [ "$w" = '{' ]; then
       if [ -n "${FN-}" ]; then
         FN_DEPTH=$((FN_DEPTH + 1))
@@ -381,7 +478,7 @@ walk_line() {
       fi
       if [[ $w =~ ^[0-9]+$ ]] && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = o ]; then
         case ${LEX_TEXT[i+1]} in
-          '>'|'<'|'>>'|'>&'|'<&'|'&>'|'<<')
+          '>'|'<'|'>>'|'>&'|'<&'|'&>'|'<<'|'<<<')
             i=$((i + 1))
             continue ;;
         esac
@@ -419,6 +516,16 @@ walk_line() {
         done
         continue
       fi
+      if [ "$bare" = 1 ]; then
+        case $w in
+          command|env|nohup|exec|nice|stdbuf|xargs|drop_lock_fd)
+            pass_prefix "$w"
+            st=$?
+            if [ "$st" = 1 ]; then return 1; fi
+            if [ "$st" = 0 ]; then continue; fi
+            ;;
+        esac
+      fi
       if [ "$w" = gh ] && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ] && [ "${LEX_TEXT[i+1]}" = api ]; then
         take_gh $((i + 2)) || return 1
         i=$GH_END
@@ -434,6 +541,27 @@ walk_line() {
       if [ "$w" = git ] && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ] \
         && [ "${LEX_TEXT[i+1]}" = fetch ] && [ "${LEX_BARE[i+1]}" = 1 ]; then
         SKIP_FETCH=$((i + 1))
+      fi
+      if [ "$w" = '[[' ]; then
+        IN_TEST=$((IN_TEST + 1))
+      fi
+      if [[ $w == *'$'* && $w != '$' ]]; then
+        if [ "$w" = '$@' ] && [ -n "${FN-}" ] && (( FN_DEPTH > 0 )); then
+          at=0
+          i=$((i + 1))
+          continue
+        fi
+        echo "unclassified command in $SCAN_FILE" >&2
+        return 1
+      fi
+      if [ "$bare" = 1 ] && [ "$w" = eval ]; then
+        echo "unclassified command in $SCAN_FILE" >&2
+        return 1
+      fi
+      if [ "$bare" = 1 ] && [[ $w == bash || $w == sh || $w == zsh ]] \
+        && (( i + 1 < n )) && [ "${LEX_KIND[i+1]}" = w ] && [ "${LEX_TEXT[i+1]}" = -c ]; then
+        echo "unclassified command in $SCAN_FILE" >&2
+        return 1
       fi
       at=0
       i=$((i + 1))
@@ -542,7 +670,7 @@ step_line() {
       continue
     fi
     case $c in
-      [[:space:]]) inword=0; i=$((i + 1)); continue ;;
+      [[:space:]]|\;|\&|\||\(|\)|\<|\>) inword=0; i=$((i + 1)); continue ;;
       \#)
         if [ "$inword" = 0 ]; then
           SS_Q=
@@ -680,7 +808,7 @@ else
   echo "ok   REST call extracted"
 fi
 cp "$base" "$work/miss.sh"
-printf '\nenv api extra.json "repos/o/r/pulls/1"\n' >>"$work/miss.sh"
+printf '\necho api extra.json "repos/o/r/pulls/1"\n' >>"$work/miss.sh"
 status=0
 routes_of "$work/miss.sh" >/dev/null 2>&1 || status=$?
 if [ "$status" = 0 ]; then
@@ -688,6 +816,15 @@ if [ "$status" = 0 ]; then
   failed=1
 else
   echo "ok   unclassified call failed closed"
+fi
+cp "$base" "$work/envapi.sh"
+printf '\nenv api extra.json "repos/o/r/pulls/1"\n' >>"$work/envapi.sh"
+check_file "$work/envapi.sh"
+if ! routes_of "$work/envapi.sh" | grep -qx 'repos/o/r/pulls/1'; then
+  echo "FAIL env api route was not extracted"
+  failed=1
+else
+  echo "ok   env api route extracted"
 fi
 cp "$base" "$work/ghcont.sh"
 printf '\n%s\n' $'gh \\\n  api \\\n  repos/o/r/pulls' >>"$work/ghcont.sh"
@@ -794,6 +931,35 @@ cp "$base" "$work/echogh.sh"
 printf '\n%s\n' 'echo gh "api" graphql' >>"$work/echogh.sh"
 check_file "$work/echogh.sh"
 reject "timeout then quoted api" 'timeout 20 gh "api" graphql'
+reject "command then quoted api" 'command gh "api" graphql'
+reject "env then quoted api" 'env gh "api" graphql'
+reject "nohup then quoted api" 'nohup gh "api" graphql'
+reject "exec then quoted api" 'exec gh "api" graphql'
+reject "nice then quoted api" 'nice gh "api" graphql'
+reject "stdbuf then quoted api" 'stdbuf -oL gh "api" graphql'
+reject "xargs then quoted api" 'xargs gh "api" graphql'
+reject "drop_lock_fd then quoted api" 'drop_lock_fd gh "api" graphql'
+reject "drop_lock_fd then timeout" 'drop_lock_fd timeout 20 gh "api" graphql'
+reject "drop_lock_fd then api" 'drop_lock_fd "api" gq.json "graphql"'
+reject "newline restores the command" $'x=$(\necho hi\n"api" gq.json "graphql"\n)'
+reject "comment ends at the newline" $'x=$(\necho a # note\napi gq.json "graphql"\n)'
+reject "hash after a semicolon" $'echo x;#\'\napi gq.json "graphql"\necho y;#\''
+closed_error "here-document body" $'cat <<EOF\nit\'s $(api gq.json "graphql")\ndon\'t\nEOF'
+closed_error "expanded command" 'c=api; $c gq.json graphql'
+closed_error "expanded gh" 'c=gh; $c "api" graphql'
+closed_error "eval" "eval 'gh api graphql'"
+closed_error "bash -c" "bash -c 'gh api graphql'"
+closed_error "sh -c" "sh -c 'api gq.json graphql'"
+closed_error "zsh -c" "zsh -c 'gh api graphql'"
+cp "$base" "$work/cache.sh"
+printf '\n%s\n' 'gh api --cache 1h repos/o/r/pulls' >>"$work/cache.sh"
+check_file "$work/cache.sh"
+if ! routes_of "$work/cache.sh" | grep -qx 'repos/o/r/pulls'; then
+  echo "FAIL cache duration was taken as the route"
+  failed=1
+else
+  echo "ok   cache duration skipped"
+fi
 reject "time api" 'time "api" gq.json "graphql"'
 reject "time -p api" 'time -p "api" gq.json "graphql"'
 reject "case arm api" 'case x in a) "api" gq.json "graphql";; esac'
