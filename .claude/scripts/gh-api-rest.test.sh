@@ -133,9 +133,11 @@ read_word() {
 }
 
 # i points at '$' of $(...). SUB_END is the index after the closing paren.
+# A # at the start of a word comments out the rest of the line, so a ) there
+# does not close the substitution.
 subst_at() {
   local s=$1 i=$2
-  local n=${#s} depth=1 q='' c
+  local n=${#s} depth=1 q='' c boundary=1
   i=$((i + 2))
   local start=$i
   while (( i < n && depth > 0 )); do
@@ -149,11 +151,19 @@ subst_at() {
       i=$((i + 1))
       continue
     fi
+    if [ "$boundary" = 1 ] && [ "$c" = '#' ]; then
+      while (( i < n )) && [ "${s:i:1}" != $'\n' ]; do
+        i=$((i + 1))
+      done
+      continue
+    fi
     case $c in
-      \'|\" ) q=$c ;;
-      \\) i=$((i + 1)) ;;
-      \() depth=$((depth + 1)) ;;
-      \)) depth=$((depth - 1)) ;;
+      \'|\" ) q=$c; boundary=0 ;;
+      \\) i=$((i + 1)); boundary=0 ;;
+      \() depth=$((depth + 1)); boundary=1 ;;
+      \)) depth=$((depth - 1)); boundary=1 ;;
+      [[:space:]]|\;|\&|\||\<|\>) boundary=1 ;;
+      *) boundary=0 ;;
     esac
     i=$((i + 1))
   done
@@ -446,7 +456,7 @@ walk_line() {
     if [ "$w" = ']]' ] && (( IN_TEST > 0 )); then
       IN_TEST=$((IN_TEST - 1))
     fi
-    if [ "$w" = '{' ]; then
+    if [ "$w" = '{' ] && [ "$bare" = 1 ]; then
       if [ -n "${FN-}" ]; then
         FN_DEPTH=$((FN_DEPTH + 1))
       fi
@@ -454,7 +464,7 @@ walk_line() {
       i=$((i + 1))
       continue
     fi
-    if [ "$w" = '}' ]; then
+    if [ "$w" = '}' ] && [ "$bare" = 1 ]; then
       if [ -n "${FN-}" ]; then
         FN_DEPTH=$((FN_DEPTH - 1))
         if (( FN_DEPTH <= 0 )); then
@@ -975,6 +985,8 @@ reject "case arm api" 'case x in a) "api" gq.json "graphql";; esac'
 reject "redirection before api" '2>/dev/null "api" gq.json "graphql"'
 reject "hash after empty quotes" '""#; api gq.json "graphql"'
 reject "hash after a substitution" '$(true)#; api gq.json "graphql"'
+reject "commented paren in a substitution" $'x="$(\n  # )\n  api gq.json "graphql"\n)"'
+closed_error "quoted brace ends the function" $'fetch() { : \'{\'; }\nset -- ignored graphql\ngh api "$2"'
 reject "comment does not continue" $': # \\\napi gq.json "graphql"'
 reject "quote closes on the next line" $'echo \'\n\'; api gq.json "graphql"'
 closed_error "unclosed quote" $'echo \''
