@@ -30,6 +30,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           CONFIRM_SECONDS: 10
         run: |
+          # cancel-superseded-body
           set -euo pipefail
           read_unfinished_runs() {
             read -r wf own_head branch < <(gh api "repos/$REPO/actions/runs/$RUN_ID" \
@@ -73,14 +74,36 @@ jobs:
             gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/cancel" --silent
             exit 0
           }
+          not_started() {
+            case "$1" in
+              queued|pending|waiting|requested) ;;
+              *) return 1 ;;
+            esac
+            [ "$2" -eq 0 ]
+          }
+          cancel_refusal_is_harmless() {
+            local err="$1" id="$2" status jobs
+            status=$(gh api "repos/$REPO/actions/runs/$id" --jq .status) || return 1
+            # A run that finished after the listing cannot be cancelled any more.
+            if [ "$status" = completed ]; then return 0; fi
+            if [[ "$err" != *"has not been queued yet"* || "$err" != *"HTTP 409"* ]]; then
+              return 1
+            fi
+            jobs=$(gh api "repos/$REPO/actions/runs/$id/jobs" --jq .total_count) || return 1
+            if not_started "$status" "$jobs"; then
+              echo "::notice::Run $id is not started (status $status, $jobs jobs). GitHub refused the cancel with HTTP 409. Leaving the run."
+              return 0
+            fi
+            return 1
+          }
           cancel_runs_whose_head_differs() {
             failed=0
             while read -r id sha <&3; do
               if [ "$sha" = "$head" ] || [ "$id" = "$RUN_ID" ]; then continue; fi
               echo "Cancel run $id: its head $sha is not the current head $head."
-              if ! gh api -X POST "repos/$REPO/actions/runs/$id/cancel" --silent; then
-                # A run that finished after the listing cannot be cancelled any more; that is not a failure.
-                if [ "$(gh api "repos/$REPO/actions/runs/$id" --jq .status)" != completed ]; then failed=1; fi
+              if ! err=$(gh api -X POST "repos/$REPO/actions/runs/$id/cancel" --silent 2>&1); then
+                printf '%s\n' "$err"
+                if ! cancel_refusal_is_harmless "$err" "$id"; then failed=1; fi
               fi
             done 3< "$runs"
             if [ "$own_head" != "$head" ]; then
@@ -91,6 +114,7 @@ jobs:
           }
           if [ "$state" != open ]; then cancel_when_pr_closed; fi
           cancel_runs_whose_head_differs
+          # end-cancel-superseded-body
 
   gate:
     runs-on: ubuntu-24.04
@@ -110,6 +134,9 @@ jobs:
             sudo apt-get update -q && sudo apt-get install -y -q shellcheck
           fi
           .claude/scripts/sourced-bash.test.sh
+
+      - name: A never-started jobless run does not fail cancel-superseded
+        run: .github/scripts/cancel-superseded.test.sh
 
       - uses: actions/cache@v4
         with:
