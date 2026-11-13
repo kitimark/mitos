@@ -3,7 +3,7 @@ set -u
 
 die() { printf 'watch-own: %s\n' "$1" >&2; exit 1; }
 
-usage="usage: watch-own.sh <state-dir> assign|unassign|label|unlabel <number> <value> | merge|close <number>"
+usage="usage: watch-own.sh <state-dir> assign|unassign <n> <login>, label|unlabel <n> <label>, or merge|close <n>"
 [ $# -ge 3 ] || die "$usage"
 dir=$1 kind=$2 n=$3 value=${4:-}
 [[ $n =~ ^[0-9]{1,9}$ ]] || die "$usage"
@@ -21,5 +21,5 @@ if [ -n "${WATCH_NOW:-}" ]; then now=$WATCH_NOW; else now=$(date -u +%s); fi
 
 mkdir -p "$dir" 2>/dev/null || die "cannot make the state directory"
 exec 8>>"$dir/own.lock" || die "cannot write the state directory"
-flock -w 5 8 || die "cannot lock the own-writes file"
+flock -w 2 8 || die "cannot lock the own-writes file"
 printf '%s %s %s%s\n' "$now" "$kind" "$n" "${value:+ $value}" >>"$dir/own-writes" || die "cannot record the write"
