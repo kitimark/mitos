@@ -82,10 +82,10 @@ runs() { # runs <line>: what bash asks gh to do when it runs <line> alone: rest,
 }
 
 # check ok|bad <file> <name> [<line>]: in a copy, append <line> to <file>, or delete <file>
-# when no line is given. The scan must stay as it was (ok) or change (bad). A line that makes
-# bash run gh with anything but `api repos/...` must be bad, whatever the label says.
+# when no line is given. The scan must stay as it was (ok), or change and return 1 (bad). A line
+# that makes bash run gh with anything but `api repos/...` must be bad, whatever the label says.
 check() {
-  local want=$1 file=$2 name=$3 f got ran=none
+  local want=$1 file=$2 name=$3 f out st got ran=none
   rm -rf "$work/tree"
   while IFS= read -r f; do mkdir -p "$work/tree/${f%/*}"; cp "$root/$f" "$work/tree/$f"; done < <(files "$root")
   mkdir -p "$work/tree/${file%/*}"
@@ -95,7 +95,8 @@ check() {
   else
     rm -f "$work/tree/$file"
   fi
-  if [ "$(scan "$work/tree")" = "$base" ]; then got=ok; else got=bad; fi
+  if out=$(scan "$work/tree"); then st=0; else st=1; fi
+  if [ "$out" = "$base" ]; then got=ok; elif [ "$st" = 1 ]; then got=bad; else got="changed with status 0"; fi
   if [ "$got" = "$want" ] && { [ "$ran" != other ] || [ "$got" = bad ]; }; then
     echo "ok   $name (bash: $ran)"
   else
