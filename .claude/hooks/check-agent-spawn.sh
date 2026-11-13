@@ -16,10 +16,11 @@ else
   sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)
   case $event in
     PostToolUse | PostToolUseFailure)
-      # A background call, or a foreground one the harness launched async, answers with a launch
-      # notice, not the probe's answer.
+      # A fork ignores model, so it probes no model. A background call, or a foreground one the
+      # harness launched async, answers with a launch notice, not the probe's answer.
       family=$(jq -r --arg m "${probe_models[*]}" '
-        select(.tool_input.run_in_background != true
+        select(.tool_input.subagent_type != "fork"
+               and .tool_input.run_in_background != true
                and ((.tool_response | if type == "object" then .isAsync == true or .status == "async_launched" else false end) | not)
                and ((.tool_input.prompt // "") | tostring | gsub("^\\s+|\\s+$"; "") | ascii_downcase) == "probe")
         | (.tool_input.model // "" | tostring | ascii_downcase) as $model
