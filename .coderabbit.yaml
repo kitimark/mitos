@@ -104,6 +104,24 @@ reviews:
       instructions: >-
         Process documentation. Flag statements that no longer match the code, CI or the lock
         files.
+    - path: "{.claude/scripts/**,.claude/hooks/**,gate/**/*.sh,eval/**/*.sh,.github/workflows/**}"
+      instructions: >-
+        CI scripts, their tests and workflows. For these paths this entry takes precedence over
+        every other entry on when a finding is BLOCKING: only the security findings below are
+        BLOCKING here, and everything else is FOLLOW-UP or not raised. BLOCKING findings are:
+        command or script injection from untrusted input (a PR title, branch name, comment body
+        or file name reaching a shell, `eval` or a `run:` script unquoted or unescaped); a
+        secret or token printed, logged or written to an artifact; a third-party action not
+        pinned to a commit SHA, or a download run without a checksum; workflow `permissions`
+        wider than the job needs; `pull_request_target` or a similar trigger that runs
+        untrusted code with secrets; a check that passes silently on an error (fails open) when
+        the script is a gate; and a check, cheat case or `expect` line that the diff removes or
+        weakens. Shell portability, quoting style, and spellings that no one writes by accident
+        (an obfuscated command, a call built with `eval`) in a test script are FOLLOW-UP or not
+        raised. Do not raise a further edge case of a kind already answered on the PR. Respect
+        the scope that a test script and its PR body state, and do not ask the test for more
+        than that. A real input that makes the script fail on a normal run is still a wrong
+        result and stays BLOCKING.
 
   tools:
     actionlint:
