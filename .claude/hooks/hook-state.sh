@@ -69,7 +69,7 @@ hook_state() (
     local p
     session_id_ok "$1" || return 2
     case ${2:-} in
-      sha | note | probe-opus | probe-sonnet | probe-haiku) ;;
+      sha | note | probe-opus | probe-sonnet | probe-haiku | probe-fable) ;;
       *) return 2 ;;
     esac
     p=$(private_folder) || return 1

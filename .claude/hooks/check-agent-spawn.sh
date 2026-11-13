@@ -3,25 +3,32 @@
 command -v jq >/dev/null || exit 0
 input=$(cat)
 
-probe_models=(opus sonnet haiku)
+probe_models=(opus sonnet haiku fable)
 note=''
 probes=''
 hook_dir=${BASH_SOURCE[0]%/*}; [[ $hook_dir == "${BASH_SOURCE[0]}" ]] && hook_dir=.
+event=$(jq -r '.hook_event_name // empty' <<<"$input" 2>/dev/null)
 # shellcheck source-path=SCRIPTDIR source=hook-state.sh
-if . "$hook_dir/hook-state.sh" 2>/dev/null; then
+if ! . "$hook_dir/hook-state.sh" 2>/dev/null; then
+  # A post-call event has no spawn to check, and its output would not be a PreToolUse one.
+  case $event in PostToolUse | PostToolUseFailure) exit 0 ;; esac
+else
   sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)
-  event=$(jq -r '.hook_event_name // empty' <<<"$input" 2>/dev/null)
   case $event in
     PostToolUse | PostToolUseFailure)
+      # A background call, or a foreground one the harness launched async, answers with a launch
+      # notice, not the probe's answer.
       family=$(jq -r --arg m "${probe_models[*]}" '
-        select(.tool_input.run_in_background != true and ((.tool_input.prompt // "") | tostring | gsub("^\\s+|\\s+$"; "") | ascii_downcase) == "probe")
+        select(.tool_input.run_in_background != true
+               and ((.tool_response | if type == "object" then .isAsync == true or .status == "async_launched" else false end) | not)
+               and ((.tool_input.prompt // "") | tostring | gsub("^\\s+|\\s+$"; "") | ascii_downcase) == "probe")
         | (.tool_input.model // "" | tostring | ascii_downcase) as $model
         | ($m | split(" ") | map(select(. as $f | $model | contains($f))) | first // empty)' \
         <<<"$input" 2>/dev/null)
       if [[ -n $family ]]; then
         result=$(jq -r '
           if .hook_event_name == "PostToolUseFailure" or .tool_response.is_error == true
-             or ((.tool_response | tojson) | test("rate.?limit|usage limit|limit reached|quota|overloaded"; "i"))
+             or ((.tool_response | tojson) | test("rate.?limit|usage limit|limit reached|quota|overloaded|hit your [a-z ]{0,30}limit|weekly limit"; "i"))
           then "fail" else "pass" end' <<<"$input" 2>/dev/null)
         hook_state ensure
         printf '%s %s\n' "$(date +%s)" "${result:-fail}" | hook_state publish "$sid" "probe-$family"
@@ -39,13 +46,13 @@ fi
 jq -c --arg note "$note" --arg probes "$probes" --argjson now "$(date +%s)" '
   def brief_chars: 600;
   def probe_window: 3600;
-  def families: ["opus", "sonnet", "haiku"];
+  def families: ["opus", "sonnet", "haiku", "fable"];
   def is_probe($in):
     (($in.prompt // "") | tostring | gsub("^\\s+|\\s+$"; "") | ascii_downcase) == "probe";
   def family_of($s): ($s | ascii_downcase) as $l | families | map(select(. as $f | $l | contains($f))) | first // "";
   def limit_claim($in):
     ((($in.description // "") | tostring) + " " + (($in.prompt // "") | tostring | .[0:2000]))
-    | test("(at|hit|reached|over|near)( (its|the|a|their))?( (usage|rate|plan|weekly|daily))? limit|rate.?limit|usage limit|limit reached|out of (usage|quota)|quota|downgrad|fall(ing)? ?back"; "i");
+    | test("(at|hit|reached|over|near)( (its|the|a|their|your))?( (usage|rate|plan|weekly|daily))? limit|rate.?limit|usage limit|limit reached|out of (usage|quota)|quota|downgrad|fall(ing)? ?back"; "i");
   def limited_models($in):
     ((($in.description // "") | tostring) + " " + (($in.prompt // "") | tostring | .[0:2000]) | ascii_downcase) as $text
     | family_of($in.model // "") as $spawned
