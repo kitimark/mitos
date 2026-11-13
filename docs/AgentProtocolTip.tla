@@ -88,6 +88,7 @@ Update(p) ==
 GateGreen(p) ==
   /\ p \in PRs
   /\ OnTip(p)
+  /\ ~gateOk[p]
   /\ gateOk' = [gateOk EXCEPT ![p] = TRUE]
   /\ gateAt' = [gateAt EXCEPT ![p] = head[p]]
   /\ UNCHANGED << life, who, head, tip >>
