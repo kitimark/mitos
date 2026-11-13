@@ -541,7 +541,6 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   outputs and statements, with `revisit_when` set to "re-check after #N merges". The Architect
   completes it when #N merges. An issue links a design only when it covers the row at build
   depth, a sketch that type-checks plus named fixtures; otherwise the issue says "contract only".
-  #220 tracks a check that each linked row has a task file.
 - A notification that changes nothing for the user gets no update. That covers an agent's
   interim status, a monitor expiring or a watcher re-arming, a monitor line that echoes the
   root's own write or shows a check still running, and every event a watcher drops. Such a turn
