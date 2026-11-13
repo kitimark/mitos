@@ -528,6 +528,35 @@ expect "two verdicts, the other one from the author: merge-ready" "$(mline 21 "$
 verdict_row 'PASS sonnet-xhigh + sonnet-high at 2222222, author sonnet'
 reject "two verdicts, both from the author model: no merge command" "merge-ready #21"
 expect "two verdicts, both from the author model: the line says why" "merge-hold=every verdict is from the author model, sonnet"
+# The author and each verdict token map to a family of opus, sonnet, haiku, fable, however the model
+# is spelled. A name that maps to none, or to more than one, is not a model.
+verdict_row 'PASS sonnet-xhigh at 2222222, author claude-sonnet-5-5'
+reject "an author spelled as a full model id still matches its family: no merge command" "merge-ready #21"
+expect "an author spelled as a full model id: the line says why" "$l21 merge-hold=every verdict is from the author model, sonnet"
+verdict_row 'PASS sonnet-xhigh at 2222222, author sonnet5.5'
+reject "an author spelled with a version and no dash: no merge command" "merge-ready #21"
+verdict_row 'PASS sonnet-xhigh at 2222222, author Sonnet-5.5'
+reject "an author spelled with a dash, a version and capitals: no merge command" "merge-ready #21"
+verdict_row 'PASS sonnet4.5-xhigh at 2222222, author sonnet'
+reject "a verdict spelled with a version: it is still the sonnet family: no merge command" "merge-ready #21"
+verdict_row 'PASS claude-sonnet-5-5-xhigh at 2222222, author sonnet'
+reject "a verdict spelled as a full model id: no merge command" "merge-ready #21"
+verdict_row 'PASS claude-opus-5-5-xhigh at 2222222, author claude-sonnet-5-5'
+expect "a cross-model PASS with both spelled as full model ids: merge-ready" "$(mline 21 "$H21" "$agent_merges")"
+verdict_row 'PASS author-xhigh at 2222222, author sonnet'
+reject "an unknown verdict token is not another model: no merge command" "merge-ready #21"
+expect "an unknown verdict token: the line says why" "$l21 merge-hold=the verdict cell names no verifier model"
+verdict_row 'PASS gizmo-xhigh + sonnet-xhigh at 2222222, author sonnet'
+reject "an unknown token beside the author's own verdict: no merge command" "merge-ready #21"
+expect "an unknown token beside the author's own verdict: the line says why" "merge-hold=every verdict is from the author model, sonnet"
+verdict_row 'PASS sonnet-opus-xhigh at 2222222, author sonnet'
+reject "a verdict token naming two families is no model: no merge command" "merge-ready #21"
+verdict_row 'PASS opus-xhigh at 2222222, author gizmo'
+reject "an author that maps to no family: no merge command" "merge-ready #21"
+expect "an author that maps to no family: the line says why" "$l21 merge-hold=the author in the verdict cell is not exactly one of opus, sonnet, haiku, fable"
+verdict_row 'PASS fable-xhigh at 2222222, author sonnet-opus'
+reject "an author that maps to two families: no merge command" "merge-ready #21"
+expect "an author that maps to two families: the line says why" "merge-hold=the author in the verdict cell is not exactly one of opus, sonnet, haiku, fable"
 verdict_row 'wording-only at 2222222, confirmed from the diff'
 expect "wording-only needs no author or verifier" "$(mline 21 "$H21" "$agent_merges")"
 verdict_row 'FAIL opus-xhigh at 2222222, author sonnet'
@@ -549,6 +578,11 @@ verdict_row 'PASS sonnet-xhigh + opus-xhigh at 2222222, author opus'
 expect "a trust-critical opus-written PR with a sonnet and an opus verdict: the user merges" "$(mline 21 "$H21" "$userkeeps")"
 verdict_row 'PASS opus-xhigh at 2222222, author opus'
 reject "a trust-critical opus-written PR with only an opus verdict: no merge command" "merge-ready #21"
+verdict_row 'PASS opus-xhigh at 2222222, author claude-opus-5-5'
+reject "a trust-critical opus-written PR (author spelled as a full model id) with only an opus verdict: no merge command" "merge-ready #21"
+expect "a trust-critical opus-written PR (author spelled as a full model id): the line says why" "$l21 merge-hold=every verdict is from the author model, opus"
+verdict_row 'PASS author-xhigh at 2222222, author sonnet'
+reject "a trust-critical PR with an unknown verdict token: no merge command" "merge-ready #21"
 verdict_row 'wording-only at 2222222, confirmed from the diff'
 expect "a wording-only change on a trust path needs no opus verdict" "$(mline 21 "$H21" "$userkeeps")"
 for f in eval/cheats/c/run.sh .github/workflows/ci.yml statements.lock examples/acme/models.lock core/Mitos/Core.lean \
