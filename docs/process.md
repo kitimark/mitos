@@ -479,9 +479,10 @@ The owner catches up on GitHub, not in a chat session:
   or a bot makes gets no ping. Never label a PR to show the owner its state, because any label
   change re-runs the full `gate`.
 - **`/no-comments` before a hand-over.** A PR whose diff adds comments goes to the owner only
-  after the orchestrator's `/no-comments` pass over its head, the push of what the pass accepts,
-  and a verifier's verdict at that cleaned head, except for a wording-only change. The catch-up
-  names the pass and its result, or says "no-comments: no new comments".
+  after the orchestrator's `/no-comments` pass over its head and the push of what the pass
+  accepts. A verifier then gives a verdict at that cleaned head. A wording-only change still gets
+  the pass, and only the verifier is skipped. The catch-up names the pass and its result, or says
+  "no-comments: no new comments".
 - **CodeRabbit before a hand-over.** A PR goes to the owner only once
   `.claude/scripts/bot-review.sh` reads `reviewed` at its head and its PR owner has answered that
   review, or once CodeRabbit refuses it, which the catch-up names.
