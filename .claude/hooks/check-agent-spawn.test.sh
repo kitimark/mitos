@@ -195,6 +195,14 @@ check "a probe of another model does not count" "$opus_limit" "no probe of opus 
 check "a limit claim in a session with no record warns" \
   "$(limit_brief "Opus is at its limit." sonnet | jq -c '.session_id = "p2"')" "no probe of opus $limit_msg"
 
+rm -f "$MITOS_HOOK_STATE/p1.probe-opus"
+"$hook" <<<"$(probe_call PostToolUse opus "Async agent launched" | jq -c '.tool_input.run_in_background = true')" >/dev/null 2>&1
+if [[ -z $(probe_line opus) ]]; then echo "ok    a background probe launch notice is not recorded"; else echo "FAIL  background probe recorded: '$(probe_line opus)'"; failed=1; fi
+check "a background probe does not silence the limit warning" "$opus_limit" "no probe of opus $limit_msg"
+check "a spawn with no model still gets the limit check" \
+  '{"session_id":"p1","tool_name":"Agent","tool_input":{"subagent_type":"fork","run_in_background":true,"prompt":"Opus is at its limit; fall back."}}' \
+  "no probe of opus $limit_msg"
+
 before=$(probe_line sonnet)
 "$hook" <<<"$(probe_call PostToolUse sonnet "an ordinary answer" | jq -c '.tool_input.prompt = "do the work"')" >/dev/null 2>&1
 if [[ $(probe_line sonnet) == "$before" ]]; then echo "ok    a call that is not a probe leaves the record alone"; else echo "FAIL  non-probe changed record"; failed=1; fi

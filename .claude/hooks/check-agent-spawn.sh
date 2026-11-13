@@ -14,7 +14,7 @@ if . "$hook_dir/hook-state.sh" 2>/dev/null; then
   case $event in
     PostToolUse | PostToolUseFailure)
       family=$(jq -r --arg m "${probe_models[*]}" '
-        select(((.tool_input.prompt // "") | tostring | gsub("^\\s+|\\s+$"; "") | ascii_downcase) == "probe")
+        select(.tool_input.run_in_background != true and ((.tool_input.prompt // "") | tostring | gsub("^\\s+|\\s+$"; "") | ascii_downcase) == "probe")
         | (.tool_input.model // "" | tostring | ascii_downcase) as $model
         | ($m | split(" ") | map(select(. as $f | $model | contains($f))) | first // empty)' \
         <<<"$input" 2>/dev/null)
@@ -42,7 +42,7 @@ jq -c --arg note "$note" --arg probes "$probes" --argjson now "$(date +%s)" '
   def families: ["opus", "sonnet", "haiku"];
   def is_probe($in):
     (($in.prompt // "") | tostring | gsub("^\\s+|\\s+$"; "") | ascii_downcase) == "probe";
-  def family_of($s): ($s | ascii_downcase) as $l | families | map(select(. as $f | $l | contains($f))) | first // empty;
+  def family_of($s): ($s | ascii_downcase) as $l | families | map(select(. as $f | $l | contains($f))) | first // "";
   def limit_claim($in):
     ((($in.description // "") | tostring) + " " + (($in.prompt // "") | tostring | .[0:2000]))
     | test("(at|hit|reached|over|near)( (its|the|a|their))?( (usage|rate|plan|weekly|daily))? limit|rate.?limit|usage limit|limit reached|out of (usage|quota)|quota|downgrad|fall(ing)? ?back"; "i");
