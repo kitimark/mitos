@@ -22,8 +22,9 @@ escalation: hint → automation → stronger model → pair → split → revisi
   since the #101 spec PR added that statement and its Challenge line.
 
 - If this is the last of P1-002, P1-003 and P1-004 to merge, also add
-  `core/Mitos/Proofs/Resolver.lean`, which re-exports all eight theorems under the Challenge's
-  names, and confirm `cd core && lake comparator` accepts.
+  `core/Mitos/Proofs/Resolver.lean`, which re-exports every Challenge theorem under the
+  Challenge's names (eight then, twelve since the #101 spec PR), and confirm
+  `cd core && lake comparator` accepts.
 
 ## Done when
 - [x] `impact_correct` proven, statement exactly as in the Challenge
