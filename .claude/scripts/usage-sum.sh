@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# Sums the token usage of Claude Code transcript journals (JSONL), per file and in total, and per
-# workflow run for files under a wf_* folder. A transcript repeats a message's usage on every
-# content block of that message, so each message id is counted once per file. cache-read is the
-# real cost driver: every call re-reads its whole context, which a final context size hides.
-#
-# Usage: usage-sum.sh <file.jsonl | directory>...
-# A directory is searched for *.jsonl files. Prints calls, input, output, cache-read and
-# cache-creation tokens, one line per file with usage, then one per workflow run, then the total.
-# Lines that are not JSON are skipped. Exits 1 if a path is missing or no file has usage.
 set -u
 
 say() { printf 'usage-sum: %s\n' "$1"; }
@@ -27,6 +18,7 @@ for arg in "$@"; do
   fi
 done
 
+# A transcript repeats a message's usage on every content block of that message.
 sums='
   [ inputs | fromjson? | select(type == "object" and .type == "assistant")
     | select((.message.usage | type) == "object" and .message.model != "<synthetic>")
