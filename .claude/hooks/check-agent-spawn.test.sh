@@ -218,6 +218,11 @@ check "a spawn with no model still gets the limit check" \
   '{"session_id":"p1","tool_name":"Agent","tool_input":{"subagent_type":"fork","run_in_background":true,"prompt":"Opus is at its limit; fall back."}}' \
   "no probe of opus $limit_msg"
 
+# A fork ignores model, so a probe through one says nothing about that model.
+"$hook" <<<"$(probe_call PostToolUse opus ok | jq -c '.tool_input.subagent_type = "fork"')" >/dev/null 2>&1
+if [[ -z $(probe_line opus) ]]; then echo "ok    a fork probe is not recorded"; else echo "FAIL  fork probe recorded: '$(probe_line opus)'"; failed=1; fi
+check "a fork probe does not silence the limit warning" "$opus_limit" "no probe of opus $limit_msg"
+
 # fable: the role table prefers it, so it needs its own record and its own warning.
 rm -f "$MITOS_HOOK_STATE/p1.probe-fable"
 "$hook" <<<"$(probe_call PostToolUse fable ok)" >/dev/null 2>&1
