@@ -237,7 +237,7 @@ false for nested names, and round 5 (below) drops it.
   declared as `_root_.Mitos.Refute.<t>` or `_root_.Mitos.Proofs.<t>`, so Lean elaborates it in the
   root namespace, where a dotted name is looked up exactly; and `qualify` writes each name in it as
   `_root_.<name>`. `qualify` takes only a statement that is a list of names under `Mitos`
-  separated by single spaces, as all eight approved ones are, and the runner stops (exit 2) on any
+  separated by single spaces, as every approved one is, and the runner stops (exit 2) on any
   other, rather than qualify a statement it does not understand. `_root_.` alone would not be
   enough, and the root namespace is what makes the lookup exact: inside `Mitos.Refute`, Lean tries
   `Mitos.Refute._root_.Mitos.Spec.X` first. `Mutants.Resolution` checks both facts about Lean at
@@ -818,8 +818,9 @@ cases also with `--paranoid` (67 s). The runner reads the approved Challenge as 
 ## Done when
 - [x] every `breaks=` case is refuted, every `survives=` case survives and every cheat case is
       rejected at its run, locally, default and `--paranoid`
-- [x] each of the eight Challenge theorems is broken by some mutant; `Total` and `RetractExact`
-      only together with another theorem, as `Mutants.Implied` proves they must be
+- [x] each of the first eight Challenge theorems is broken by some mutant; `Total` and
+      `RetractExact` only together with another theorem, as `Mutants.Implied` proves they must be
+      (of the four no-duplicates theorems, two so far: No-duplicates, above)
 - [x] the runner fails on an INVALID case, a mutant that survives unexpectedly, a refutation that
       is not accepted, and a cheat case that is counted or rejected at another run
 - [x] each check of the binding is pinned: a cheat case turns the run red without it
