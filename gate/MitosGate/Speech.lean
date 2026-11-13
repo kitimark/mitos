@@ -141,6 +141,12 @@ theorem codeSpanAcrossLinesDoesNotLand :
     stepOf [typed 112 12 "`example\n/land\n`"] = .stop .held := by decide +kernel
 theorem htmlCommentAcrossLinesHoldsALand :
     readOf (typed 112 12 "note <!--\n/land\n-->") = .hold .markup := by decide +kernel
+theorem linkReferenceHoldsALand : readOf (typed 112 12 "[ref]:\n/land") = .hold .link := by
+  decide +kernel
+theorem linkReferenceDoesNotLiftAHold :
+    stepOf [typed 108 8 "/hold", typed 112 12 "[ref]:\n/land"] = .stop .held := by decide +kernel
+theorem imageAltTextHoldsALand : readOf (typed 112 12 "![\n/land\n](x.png)") = .hold .link := by
+  decide +kernel
 theorem landCarryingOnAQuoteHolds :
     stepOf [typed 108 8 "/hold", typed 112 12 "> example\n/land"] = .stop .held := by
   decide +kernel
@@ -184,6 +190,9 @@ theorem landBeforeAnyPushHolds : readOf (typed 101 1 "/land") = .hold .noHead :=
   decide +kernel
 theorem landInAPushSecondHolds : readOf (typed 104 4 "/land") = .hold .noHead := by
   decide +kernel
+theorem landAfterAPushToANonShaHolds :
+    read ctx [⟨"2026-11-13T12:00:02Z", "push", "owner", h0, "not-a-sha"⟩]
+      (typed 105 5 "/land") = .hold .noHead := by decide +kernel
 theorem landNamesTheHeadOfItsTime : readOf (typed 105 5 "/land") = .land hB := by
   decide +kernel
 theorem landOfAnOlderHeadIsNoEntry : stepOf [typed 105 5 "/land"] = .stop .noEntry := by
@@ -252,6 +261,15 @@ theorem unclosedRecordIsMalformed :
 theorem quotedRecordIsNoRecord :
     readOf (app "claude" 112 12 ("> ```mitos-protocol\n> " ++ landBy "claude" "worker" 7 hC ++
       "\n> ```" ++ claudeFooter)) = .ignored .noRecord := by decide +kernel
+theorem recordInAnHtmlCommentIsNested :
+    readOf (app "claude" 112 12 ("<!--\n```mitos-protocol\n" ++ landBy "claude" "worker" 7 hC ++
+      "\n```\n-->")) = .ignored .nested := by decide +kernel
+theorem recordInAListItemIsNested :
+    readOf (app "claude" 112 12 ("- note\n  ```mitos-protocol\n  " ++
+      landBy "claude" "worker" 7 hC ++ "\n  ```")) = .ignored .nested := by decide +kernel
+theorem recordInAnHtmlCommentDoesNotMerge :
+    stepOf [app "claude" 111 11 ("<!--\n" ++ fence (landBy "claude" "worker" 7 hC) ++ "\n-->")]
+      [worker] = .enter hC := by decide +kernel
 theorem editedRecordHolds :
     readOf (edited (app "claude" 112 12 (fence (landBy "claude" "worker" 7 hC))) 13) =
       .editHold := by decide +kernel
