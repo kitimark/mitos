@@ -64,7 +64,6 @@ Queue(p, w) ==
   /\ p \in PRs
   /\ w \in {"owner", "agent"}
   /\ phase[p] = "idle"
-  /\ w = "agent" => p \notin Kept
   /\ phase' = [phase EXCEPT ![p] = "opted"]
   /\ who' = [who EXCEPT ![p] = w]
   /\ UNCHANGED << enforced, ownerHolds, gateSucceeds >>
@@ -121,11 +120,19 @@ AgentMerge(p) ==
   /\ phase' = AfterMerge(p)
   /\ UNCHANGED << who, enforced, ownerHolds, gateSucceeds >>
 
-\* the owner merges. The module does not guard this act.
+\* The owner takes a kept pull request an agent opened. The agent does not merge it.
+OwnerTakes(p) ==
+  /\ p \in Kept
+  /\ who[p] = "agent"
+  /\ phase[p] \notin {"idle", "merged"}
+  /\ who' = [who EXCEPT ![p] = "owner"]
+  /\ UNCHANGED << phase, enforced, ownerHolds, gateSucceeds >>
+
+\* the owner merges. Strict protection is the second model. This action is not the agent's gate.
 OwnerMerge(p) ==
   /\ p \in PRs
   /\ who[p] = "owner"
-  /\ phase[p] \in {"opted", "behind", "gating", "green"}
+  /\ phase[p] \notin {"idle", "merged"}
   /\ phase' = AfterMerge(p)
   /\ UNCHANGED << who, enforced, ownerHolds, gateSucceeds >>
 
@@ -146,6 +153,7 @@ Next ==
   \/ \E p \in PRs: GateSkip(p)
   \/ \E p \in PRs: AgentMerge(p)
   \/ \E p \in PRs: OwnerMerge(p)
+  \/ \E p \in PRs: OwnerTakes(p)
   \/ Finished
 
 Fair ==
@@ -156,9 +164,9 @@ Fair ==
 
 Spec == Init /\ [][Next]_vars /\ Fair
 
-\* A kept pull request is never an agent's.
-KeptIsOwner ==
-  \A p \in Kept: who[p] \in {"none", "owner"} /\ (phase[p] = "merged" => who[p] = "owner")
+\* An agent may opt a kept pull request. Only the owner merges it.
+KeptMergeIsOwner ==
+  \A p \in Kept: phase[p] = "merged" => who[p] = "owner"
 
 \* Two replays are not in flight together.
 AtMostOneGating == Cardinality({p \in PRs: phase[p] = "gating"}) <= 1
@@ -170,7 +178,7 @@ PushOnlyNext ==
          enforced /\ IsNext(p)]_vars
 
 \* An agent merge leaves a green head on the tip, with admins bound, and that pull request next.
-\* The owner's merge is not this rule.
+\* Keyed on who = agent, so the owner's merge is not this rule.
 AgentMergeIsGated ==
   [][\A p \in PRs:
        (phase'[p] = "merged" /\ phase[p] # "merged" /\ who[p] = "agent") =>
@@ -182,9 +190,11 @@ MergeOnTip ==
        (phase'[p] = "merged" /\ phase[p] # "merged" /\ who[p] = "agent") =>
          OnTip(p)]_vars
 
-\* A hold lasts until the owner's next /land, which returns the pull request to opted.
+\* A hold lasts until the owner's next /land, or until the owner merges.
 HoldClears ==
-  [][\A p \in PRs: phase[p] = "held" => phase'[p] \in {"held", "opted"}]_vars
+  [][\A p \in PRs:
+       phase[p] = "held" =>
+         phase'[p] \in {"held", "opted"} \/ (phase'[p] = "merged" /\ who[p] = "owner")]_vars
 
 \* With admins unbound, the updater does not replay and an agent does not merge.
 UnenforcedLandsNothing ==

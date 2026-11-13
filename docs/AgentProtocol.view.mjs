@@ -59,6 +59,7 @@ const labels = {
   GateSkip: "gate is skipped",
   AgentMerge: "an agent rebase-merges the next pull request",
   OwnerMerge: "the owner merges",
+  OwnerTakes: "the owner takes a kept pull request",
 };
 
 export const step = (action) => (action === "Finished" ? null : (labels[action] ?? action));
