@@ -1,10 +1,6 @@
 import MitosGate.Land
 import MitosGate.Speech.Syntax
 
-/-!
-# Which commit a `/land` names
--/
-
 namespace MitosGate.Speech
 
 open Land (Sha)
@@ -20,8 +16,6 @@ def stamps : List Carry.Push → Option (List (Stamp × Carry.Push))
 
 def latest (l : List (Stamp × Carry.Push)) : Nat := l.foldr (fun e m => max e.1 m) 0
 
-/-- The head when a comment of second `t` was posted: the commit the newest push before `t` left.
-A push in second `t` itself may have come before or after the comment, so there is none. -/
 def headAt (pushes : List Carry.Push) (t : Stamp) : Option Sha :=
   match stamps pushes with
   | none => none
@@ -38,16 +32,12 @@ def headAt (pushes : List Carry.Push) (t : Stamp) : Option Sha :=
 def matching (known : List Sha) (p : List Char) : List Sha :=
   known.filter fun s => p.isPrefixOf s.toList
 
-/-- A full sha stands for itself, seen or not: an unseen one has no content id, so it gives no
-entry in `Land`. -/
 def resolve (known : List Sha) (p : List Char) : Option Sha :=
   if p.length = 40 then some (String.ofList p)
   else
     match matching known p with
     | [] => none
     | s :: rest => if rest.all (· == s) then some s else none
-
-/-! ## Statements -/
 
 def ResolveUnique : Prop :=
   ∀ known p s, p.length < 40 → resolve known p = some s →
@@ -67,8 +57,6 @@ def HeadAtSound : Prop :=
 def SameSecondUnknown : Prop :=
   ∀ pushes t (p : Carry.Push), p ∈ pushes → stamp? p.time.toList = some t →
     headAt pushes t = none
-
-/-! ## Proofs -/
 
 theorem resolveFullSelf : ResolveFullSelf := by
   intro known p hp

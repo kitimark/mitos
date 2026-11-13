@@ -1,18 +1,11 @@
 /-!
-# The text a comment is read from
-
 The record is read by a parser over a flat subset of JSON that keeps duplicate keys, which
 `Lean.Json.parse` would drop.
-
-Every scanner here is structural over `List Char`, so the fixtures run in the kernel.
 -/
 
 namespace MitosGate.Speech
 
-/-- `YYYYMMDDHHMMSS` in UTC. -/
 abbrev Stamp := Nat
-
-/-! ## Lines -/
 
 /-- GitHub's Markdown ends a line at LF, CRLF or a lone CR. -/
 def lines : List Char → List (List Char)
@@ -31,7 +24,6 @@ def blank (l : List Char) : Bool := l.all isSp
 
 def trim (l : List Char) : List Char := ((l.dropWhile isSp).reverse.dropWhile isSp).reverse
 
-/-- Markdown reads a line indented by four spaces or a tab as code, which never speaks. -/
 def lead (l : List Char) : Option (List Char) :=
   let r := match l with
     | ' ' :: ' ' :: ' ' :: r => r
@@ -68,7 +60,6 @@ structure Scan where
   top : List (List Char)
   protocol : List (Bool × List (List Char))
 
-/-- A fence that never closes runs to the end of the body. -/
 def scanGo : List (List Char) → Option (Char × Nat × Bool × List (List Char)) → Scan → Scan
   | [], none, s => s
   | [], some (_, _, p, body), s =>
@@ -110,8 +101,6 @@ def joinLines : List (List Char) → List Char
   | [l] => l
   | l :: ls => l ++ '\n' :: joinLines ls
 
-/-! ## Numbers, shas and stamps -/
-
 def hex (c : Char) : Bool := "0123456789abcdef".toList.contains c
 
 def isSha (s : List Char) : Bool := s.length == 40 && s.all hex
@@ -127,8 +116,6 @@ def stamp? : List Char → Option Stamp
     num [y1, y2, y3, y4, m1, m2, d1, d2, h1, h2, n1, n2, s1, s2] 0
   | _ => none
 
-/-! ## A flat subset of JSON -/
-
 inductive Val
   | str (s : List Char)
   | num (n : Nat)
@@ -140,7 +127,6 @@ def skipWs : List Char → List Char
   | c :: r => if isWs c then skipWs r else c :: r
   | [] => []
 
-/-- No `land` record needs an escape, so a string with one is malformed. -/
 def strBody : List Char → Option (List Char × List Char)
   | '"' :: r => some ([], r)
   | c :: r =>

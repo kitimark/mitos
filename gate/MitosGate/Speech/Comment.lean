@@ -1,19 +1,5 @@
 import MitosGate.Speech.Commit
 
-/-!
-# What one comment says
-
-Every agent posts through the owner's account, so the login cannot tell the owner from an agent.
-What can: an app post carries the app's slug (`performed_via_github_app`), and a post made through
-the account's token without an app ends with the adapter footer. So only an unedited comment from
-the owner's login, with no slug and no trailing footer, is the owner typing. A footer inside a
-`>` quote is not trailing, and a `/land` inside a quote, a fence or an indented block is not a
-word, while a `/hold` holds wherever it sits (`doubt`).
-
-An app may speak only as an agent, through one top-level `mitos-protocol` fence holding a `land`
-record for this pull request whose provider is the app's.
--/
-
 namespace MitosGate.Speech
 
 open Land (Sha Pr Teammate Word)
@@ -34,7 +20,6 @@ structure Ctx where
   known : List Sha
   apps : List (String × String) := Speech.apps
 
-/-- No agent lands on its own `land` record until the owner delegates it. -/
 def delegates : List Teammate := []
 
 inductive Why
@@ -51,15 +36,11 @@ inductive Read
   | ignored (why : Why)
   deriving DecidableEq
 
-/-! ## The owner's words -/
-
 inductive Line
   | land (arg : List Char)
   | hold
   deriving DecidableEq
 
-/-- A doubtful hold is the safe side, so `/hold` with any text after it holds, while `/land` counts
-only as a token of its own. -/
 def word? (l : List Char) : Option Line :=
   match lead l with
   | some ('/' :: r) =>
@@ -104,9 +85,7 @@ def inQuote : Bool → List (List Char) → Bool
 
 /-- The scanner places fences, quotes and indents only as top-level Markdown has them, while GitHub
 also draws them inside list items and HTML blocks, and runs a code span or an HTML comment across
-lines. So a `/hold` at the start of any line, after spaces, quote marks or a list marker, holds
-wherever it sits, and a lone `/land` holds in a comment with a backtick, a `<` or three tildes, or
-inside a quote. A plain `/land` lifts such a hold. -/
+lines. -/
 def doubt (b : List Char) : Option Why :=
   if (lines b).any holdLine then some .hold
   else if (lines b).any markup then some .markup
@@ -126,8 +105,6 @@ def ownerRead (x : Ctx) (pushes : List Carry.Push) (t : Stamp) (b : List Char) :
       | some s => .land s
       | none => .hold (unresolved x arg)
   | .ok _ => .hold .severalWords
-
-/-! ## An agent's record -/
 
 structure Record where
   task : Nat
@@ -182,8 +159,6 @@ def agentRead (x : Ctx) (provider : String) (b : List Char) : Read :=
   | [] => .ignored .noRecord
   | _ => .ignored .malformed
 
-/-! ## One comment -/
-
 def read (x : Ctx) (pushes : List Carry.Push) (c : Comment) : Read :=
   if c.login ≠ x.owner then .ignored .notOwner
   else if c.updated ≠ c.created then .editHold
@@ -205,8 +180,6 @@ def Read.word : Read → Nat → Option Word
 def Read.byOwner : Read → Bool
   | .land _ | .hold _ | .editHold => true
   | .agent _ _ | .ignored _ => false
-
-/-! ## Statements -/
 
 def AppNeverOwner : Prop :=
   ∀ (x : Ctx) pushes (c : Comment) n w, c.slug ≠ none → c.updated = c.created →
@@ -244,8 +217,6 @@ def HoldLineHolds : Prop :=
   ∀ (x : Ctx) pushes (c : Comment) ls, c.login = x.owner → c.updated = c.created →
     c.slug = none → ownerLines c.body.toList = .ok ls →
     (lines c.body.toList).any holdLine = true → ∃ why, read x pushes c = .hold why
-
-/-! ## Proofs -/
 
 theorem word_said {r : Read} {n : Nat} {w : Word} (h : r.word n = some w) : w.said = n := by
   cases r <;> simp [Read.word] at h <;> subst h <;> rfl

@@ -1,12 +1,5 @@
 import MitosGate.Speech.Words
 
-/-!
-# What a pull request's comments say
-
-`words` reads a pull request's issue comments into `Land.Word`s. Inline review comments and
-reviews never speak.
--/
-
 namespace MitosGate.Speech
 
 open Land (Sha Pr Teammate Word Mark newestOwner)
@@ -264,8 +257,6 @@ theorem editedRecordHolds :
       .editHold := by decide +kernel
 
 end Fixture
-
-/-! ## No `sorry`, standard axioms only -/
 
 open Lean in
 #eval show CoreM Unit from do
