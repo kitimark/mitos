@@ -7,6 +7,7 @@ import MitosGate.ContentId
 import MitosGate.Carry
 import MitosGate.CheatsRun
 import MitosGate.LandCli
+import MitosGate.SpeechCli
 
 open MitosGate
 
@@ -37,7 +38,11 @@ def usage : String := "usage:
                                                  (default 4), each stopped after S seconds (default 600)
   mitos-gate land [<snapshot.json>]              the landing decision for one snapshot (file, or standard
                                                  input): who is next, what is pushed, the caller's step,
-                                                 who wakes; one line of JSON. Exit 1: snapshot refused"
+                                                 who wakes; one line of JSON. Exit 1: snapshot refused
+  mitos-gate speech --owner <login> --pr <n> [--pushes <tsv>] <comments.json>
+                                                 what each of <login>'s issue comments on the pull
+                                                 request says: one line each (id, reading, why); the
+                                                 pushes are the branch's activity as carry reads it"
 
 partial def parseAccept (args : List String) (c : Accept.Config) : Except String Accept.Config :=
   match args with
@@ -136,6 +141,7 @@ def cli (args : List String) : IO UInt32 := do
   | "carry" :: rest => Carry.cli rest usage
   | "cheats" :: rest => CheatsRun.cli rest usage
   | "land" :: rest => LandCli.cli rest usage
+  | "speech" :: rest => SpeechCli.cli rest usage
   | _ => IO.eprintln usage; return 2
 
 def main (args : List String) : IO UInt32 := do
