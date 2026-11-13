@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# `mitos-gate land` over fixed snapshots: each case edits gate/land-fixtures/queue.json with a jq
-# filter and checks the printed decision, or the refusal, exactly. Not run by CI yet.
 set -u
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -20,7 +18,6 @@ bad() {
   fail=$((fail + 1))
 }
 
-# decides <name> <jq filter over the base snapshot> <expected output>
 decides() {
   local name=$1 filter=$2 want=$3 got=0
   jq -c "$filter" "$base" >"$tmp/in" || { bad "$name" "the jq filter failed"; return; }
@@ -33,7 +30,6 @@ decides() {
   ok "$name"
 }
 
-# refuses <name> <jq filter> <regex the one error line starts with, after "land: the snapshot is refused: ">
 refuses() {
   local name=$1 filter=$2 pat=$3 got=0
   jq -c "$filter" "$base" >"$tmp/in" || { bad "$name" "the jq filter failed"; return; }
@@ -52,7 +48,6 @@ refuses() {
 only149='.prs = [.prs[1]] | .pr = 149'
 land149='{"next":149,"plan":{"expect":"bbb","kind":"push","pr":149,"replay":"br"}'
 
-# The base: the owner's `/land` on 153 goes before the agents' entries, and 153 is pushed once.
 decides "the owner's /land gives one push, of that pull request" '.' \
   '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"head":"aaa","kind":"awaitPush"}}'
 decides "a landing in flight goes before an agent's entry" 'del(.prs[0]) | .pr = 149' \
@@ -81,7 +76,6 @@ decides "green on main, off the kept paths: the allowed agent merges, pinned to 
   "$only149"' | .prs[0] |= (.base = {"kind":"current"})' \
   '{"next":149,"plan":{"kind":"idle"},"step":{"head":"bbb","kind":"merge"}}'
 
-# `covered`: the amended rule.
 decides "a standing fail from a judge on the author's model blocks" \
   "$only149"' | .prs[0].verdicts += [{"said":760,"head":"bbb","judge":{"provider":"claude","name":"reviewer"},"model":"grok","result":"fail"}]' \
   '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"}}'
@@ -103,7 +97,6 @@ decides "a standing fail beats wording-only" \
   "$only149"' | .prs[0].verdicts = [{"said":740,"head":"bbb","judge":{"provider":"claude","name":"verifier"},"model":"sonnet","result":"fail"},{"said":750,"head":"bbb","judge":{"provider":"claude","name":"root"},"model":"opus","result":"wordingOnly"}]' \
   '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"}}'
 
-# Who wakes.
 decides "a green gate wakes the lander of a pull request in line" \
   'del(.me, .pr) | .event = {"kind":"gateDone","pr":149,"gate":"success"}' \
   '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"wake":{"kind":"lander","pr":149}}'
@@ -116,7 +109,6 @@ decides "the step and the wake are both answered when both are asked" \
   '.event = {"kind":"updaterPushed","pr":153}' \
   '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"head":"aaa","kind":"awaitPush"},"wake":{"kind":"nobody"}}'
 
-# A snapshot that is not well formed is refused, with one line and exit 1.
 echo '{"prs": [' >"$tmp/in"
 got=0
 "$bin" land "$tmp/in" >"$tmp/out" 2>"$tmp/err" || got=$?
@@ -159,7 +151,6 @@ refuses "no prs" 'del(.prs)' 'prs: missing'
 refuses "a list that is not a list" '.prs = {}' 'prs: expected a list'
 refuses "a snapshot that is not an object" '[]' 'snapshot: expected an object'
 
-# Input: standard input, `-`, a file that does not exist, and too many arguments.
 got=0
 jq -c . "$base" | "$bin" land >"$tmp/out" 2>&1 || got=$?
 [ "$got" = 0 ] && grep -q '^{"next":153,' "$tmp/out" && ok "a snapshot on standard input" || bad "a snapshot on standard input" "$(cat "$tmp/out")"
