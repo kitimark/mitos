@@ -280,8 +280,10 @@ def wake (agentInLine ownerInLine covered : Pr → Bool) : Event → Wake
   | .gateDone p g =>
     if g == .failure then .holder p
     else if agentInLine p then .lander p
-    -- on the owner's word alone the workflow posts the merge command, so no agent wakes
-    else if ownerInLine p || covered p then .nobody
+    -- on the owner's word alone the workflow posts the merge command for a green gate; any other
+    -- result needs a re-run that no timer would start
+    else if ownerInLine p then (if g == .success then .nobody else .orchestrator)
+    else if covered p then .nobody
     else .holder p
   | .botReviewed p => if covered p then .nobody else .holder p
   | .conflictFound p => if covered p then .holder p else .nobody
@@ -352,8 +354,10 @@ def QuietAfterRebase : Prop :=
       wake agentInLine ownerInLine covered (.botReviewed p) = .nobody ∧
       (wake agentInLine ownerInLine covered (.gateDone p g) = .lander p ↔
         agentInLine p = true) ∧
-      (agentInLine p = false →
-        wake agentInLine ownerInLine covered (.gateDone p g) = .nobody)
+      (agentInLine p = false → (ownerInLine p = false ∨ g = .success) →
+        wake agentInLine ownerInLine covered (.gateDone p g) = .nobody) ∧
+      (agentInLine p = false → ownerInLine p = true → g ≠ .success →
+        wake agentInLine ownerInLine covered (.gateDone p g) = .orchestrator)
 
 theorem next_landable {q : Queue} {x : Entry × Obs} (h : next q = some x) : landable x = true := by
   induction q generalizing x with
@@ -943,10 +947,8 @@ theorem nextIgnoresListingOrder : NextIgnoresListingOrder := by
 
 theorem quietAfterRebase : QuietAfterRebase := by
   intro agentInLine ownerInLine covered p g hc hg
-  have hg' : (g == Gate.failure) = false := by simpa using hg
-  refine ⟨rfl, rfl, by simp [wake, hc], ?_, ?_⟩
-  · cases hi : agentInLine p <;> simp [wake, hg', hi, hc]
-  · intro hi; simp [wake, hg', hi, hc]
+  refine ⟨rfl, rfl, by simp [wake, hc], ?_, ?_, ?_⟩ <;>
+    cases hi : agentInLine p <;> cases ho : ownerInLine p <;> cases g <;> simp_all [wake]
 
 theorem mem_queueOf {os : List Obs} {x : Entry × Obs} :
     x ∈ queueOf os ↔ ∃ o ∈ os, x.2 = o ∧ x.1 ∈ o.entries := by
@@ -1075,6 +1077,19 @@ theorem conflictPushesNothing :
 theorem unreadBaseLetsTheLineMoveOn :
     plan (queueOf [{ ownerKeptBehind with base := .unread }, agentBehind]) =
       .push 149 "bbb" "br" := by decide +kernel
+theorem headAlreadyOnMainIsStuck :
+    step orchestrator (queueOf [{ ownerKeptBehind with base := .mergedMain }])
+      { ownerKeptBehind with base := .mergedMain } = .stop (.stuck .historyError) := by
+  decide +kernel
+theorem headAlreadyOnMainLetsTheLineMoveOn :
+    plan (queueOf [{ ownerKeptBehind with base := .mergedMain }, agentBehind]) =
+      .push 149 "bbb" "br" := by decide +kernel
+def agentBehindNewer : Obs :=
+  { agentBehind with pr := 147, head := "ddd", ids := [("ddd", "id-d"), ("dr", "id-d")],
+                     base := .clean "dr", verdicts := [⟨760, "ddd", verifier, "sonnet", .pass⟩],
+                     botAt := some "ddd", words := [.agentLand orchestrator ⟨820, "ddd"⟩] }
+theorem olderAgentEntryIsPushedFirst :
+    plan (queueOf [agentBehindNewer, agentBehind]) = .push 149 "bbb" "br" := by decide +kernel
 theorem newContentRetiresTheOwnerWord :
     plan (queueOf [ownerKeptNewContent, agentBehind]) = .push 149 "bbb" "br" := by
   decide +kernel
@@ -1184,6 +1199,10 @@ def criticalTwoPasses : Obs :=
 theorem criticalWithAnOpusPassIsCovered : criticalTwoPasses.covered = true := by decide +kernel
 theorem criticalWithoutAnOpusPassIsNotCovered :
     (onTrustPath opusWrittenReady).covered = false := by decide +kernel
+def criticalAuthoredByVerifierOpus : Obs :=
+  onTrustPath { criticalTwoPasses with author := some ⟨verifierOpus, "opus"⟩ }
+theorem criticalAuthorsOwnOpusPassIsNotTheOpusPass :
+    criticalAuthoredByVerifierOpus.covered = false := by decide +kernel
 theorem criticalWithOnlyAnOpusPassOnTheAuthorsModelIsNotCovered :
     (onTrustPath { opusWrittenReady with verdicts :=
       [⟨11, "h", verifierOpus, "opus", .pass⟩] }).covered = false := by decide +kernel
@@ -1296,6 +1315,20 @@ theorem redGateOnAnAgentEntryWakesTheHolder :
 theorem redGateOnTheOwnersWordAloneWakesTheHolder :
     wake (fun _ => false) (fun p => p == 153) (fun _ => true) (.gateDone 153 .failure) =
       .holder 153 := by decide +kernel
+theorem unfinishedGateOnTheOwnersWordAloneWakesTheOrchestrator :
+    [Gate.cancelled, .skipped, .pending, .missing].map (fun g =>
+      wake (fun _ => false) (fun p => p == 153) (fun _ => true) (.gateDone 153 g)) =
+      [.orchestrator, .orchestrator, .orchestrator, .orchestrator] := by decide +kernel
+theorem unfinishedGateOnTheOwnersWordAloneWakesTheOrchestratorEvenUncovered :
+    [Gate.cancelled, .skipped, .pending, .missing].map (fun g =>
+      wake (fun _ => false) (fun p => p == 153) (fun _ => false) (.gateDone 153 g)) =
+      [.orchestrator, .orchestrator, .orchestrator, .orchestrator] := by decide +kernel
+theorem botReviewOfUncoveredWorkWakesTheHolder :
+    wake (fun _ => false) (fun _ => false) (fun _ => false) (.botReviewed 149) = .holder 149 := by
+  decide +kernel
+theorem otherOwnerSpeechWakesTheOrchestrator :
+    wake (fun _ => false) (fun p => p == 153) (fun _ => true) (.ownerSpoke 153) =
+      .orchestrator := by decide +kernel
 theorem updaterPushWakesNobody :
     wake (fun p => p == 149) (fun _ => false) (fun _ => true) (.updaterPushed 149) =
       .nobody := by decide +kernel
@@ -1312,6 +1345,18 @@ theorem snapshotGreenGateOnAnAgentEntryWakesItsLander :
 theorem snapshotRedGateOnTheOwnersEntryWakesTheHolder :
     wakeOf [ownerKeptBehind, agentBehind, agentPushedGatePending] (.gateDone 153 .failure) =
       .holder 153 := by decide +kernel
+theorem snapshotCancelledGateOnTheOwnersEntryWakesTheOrchestrator :
+    wakeOf [{ ownerKeptPushed with gate := .cancelled }, agentBehind] (.gateDone 153 .cancelled) =
+      .orchestrator := by decide +kernel
+theorem snapshotSkippedGateOnTheOwnersEntryWakesTheOrchestrator :
+    wakeOf [{ ownerKeptPushed with gate := .skipped }, agentBehind] (.gateDone 153 .skipped) =
+      .orchestrator := by decide +kernel
+theorem cancelledGateOnTheOwnersEntryIsRerun :
+    step orchestrator (queueOf [{ ownerKeptPushed with gate := .cancelled }, agentBehind])
+      { ownerKeptPushed with gate := .cancelled } = .awaitGate "ar" := by decide +kernel
+theorem snapshotGreenGateOnAStuckEntryWakesNobody :
+    wakeOf [{ agentBehind with base := .conflict }] (.gateDone 149 .success) = .nobody := by
+  decide +kernel
 theorem snapshotOwnerAndAgentWordsWakeTheLander :
     wakeOf [{ agentBehind with words :=
       [.agentLand orchestrator agentMark, .ownerLand ⟨810, "bbb"⟩] }] (.gateDone 149 .success) =

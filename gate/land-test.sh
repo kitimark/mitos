@@ -52,6 +52,8 @@ decides "the owner's /land gives one push, of that pull request" '.' \
   '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"head":"aaa","kind":"awaitPush"}}'
 decides "a landing in flight goes before an agent's entry" 'del(.prs[0]) | .pr = 149' \
   '{"next":159,"plan":{"kind":"idle"},"step":{"ahead":159,"kind":"wait"}}'
+decides "the step is of the pull request named, not of the first one listed" '.pr = 159' \
+  '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"ahead":153,"kind":"wait"}}'
 decides "nothing landing: no next, no push, and the agent may enter" \
   '.prs = [.prs[1] | .words = []] | .pr = 149' \
   '{"next":null,"plan":{"kind":"idle"},"step":{"about":"bbb","kind":"enter"}}'
@@ -109,6 +111,13 @@ decides "a green gate on a pull request in line only on the owner's word wakes n
 decides "a red gate on a pull request in line only on the owner's word wakes the holder" \
   'del(.me, .pr) | .event = {"kind":"gateDone","pr":153,"gate":"failure"}' \
   '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"wake":{"kind":"holder","pr":153}}'
+pushed153='.prs[0] |= (.head = "ar" | .pushes = [{"byUpdater":true,"before":"aaa","after":"ar"}] | .base = {"kind":"current"})'
+decides "a cancelled gate on the owner's word alone wakes the orchestrator to re-run it" \
+  "$pushed153"' | .prs[0].gate = "cancelled" | del(.prs[2]) | .event = {"kind":"gateDone","pr":153,"gate":"cancelled"}' \
+  '{"next":153,"plan":{"kind":"idle"},"step":{"head":"ar","kind":"awaitGate"},"wake":{"kind":"orchestrator"}}'
+decides "a skipped gate on the owner's word alone wakes the orchestrator, while the agent behind waits" \
+  "$pushed153"' | .prs[0].gate = "skipped" | del(.prs[2]) | .pr = 149 | .event = {"kind":"gateDone","pr":153,"gate":"skipped"}' \
+  '{"next":153,"plan":{"kind":"idle"},"step":{"ahead":153,"kind":"wait"},"wake":{"kind":"orchestrator"}}'
 decides "an agent's entry beside the owner's word still wakes the lander on a green gate" \
   'del(.me, .pr) | .prs[1].words += [{"kind":"ownerLand","said":810,"about":"bbb"}] | .event = {"kind":"gateDone","pr":149,"gate":"success"}' \
   '{"next":149,"plan":{"expect":"bbb","kind":"push","pr":149,"replay":"br"},"wake":{"kind":"lander","pr":149}}'
