@@ -4,7 +4,8 @@ namespace Mitos.Proofs
 open Mitos Mitos.Impl
 
 theorem fires_iff {x : String} {seen : List String} {e : Edge} :
-    fires x seen e = true ↔ e.providingRepo = x ∨ e.providingRepo ∈ seen := by
+    fires x seen e = true ↔
+      (e.providingRepo = x ∨ e.providingRepo ∈ seen) ∧ e.requiringRepo ∉ seen := by
   simp [fires]
 
 theorem impactGo_sound (es : List Edge) (x : String) :
@@ -22,7 +23,7 @@ theorem impactGo_sound (es : List Edge) (x : String) :
       rcases hy with rfl | hy
       · have hstep : Affects es e.providingRepo e.requiringRepo :=
           .step (hrest e (List.mem_of_find?_eq_some h))
-        rcases fires_iff.mp (List.find?_some h) with hd | hd
+        rcases fires_iff.mp (List.find?_some h) with ⟨hd | hd, _⟩
         · exact hd ▸ hstep
         · exact .trans (hseen _ hd) hstep
       · exact hseen y hy
@@ -39,7 +40,9 @@ theorem impactGo_closed (es : List Edge) (x : String) :
     intro hinv e he hfire
     rcases hinv e he with hr | hs
     · have := List.find?_eq_none.mp h e hr
-      exact absurd (fires_iff.mpr hfire) this
+      by_cases hn : e.requiringRepo ∈ seen
+      · exact hn
+      · exact absurd (fires_iff.mpr ⟨hfire, hn⟩) this
     · exact hs
   | case2 rest seen e h _ ih =>
     intro hinv
