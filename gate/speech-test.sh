@@ -96,6 +96,8 @@ reads "a /land carrying on a quote holds" "112 ownerHold@224 inside-a-quote" \
   "$(comment 112 owner null 12 12 '"> example\n/land"')"
 reads "a code span across lines holds a /land" "112 ownerHold@224 fence-or-html-in-the-comment" \
   "$(comment 112 owner null 12 12 "\"\`example\\n/land \\n\`\"")"
+reads "a link reference definition holds a /land" "112 ownerHold@224 link-in-the-comment" \
+  "$(comment 112 owner null 12 12 '"[ref]:\n/land"')"
 reads "a quoted /hold holds" "112 ownerHold@224 hold" "$(comment 112 owner null 12 12 '"> /hold"')"
 reads "a lone CR ends a line" "112 ownerHold@224 hold" \
   "$(comment 112 owner null 12 12 '"notes\r/hold"')"
@@ -114,6 +116,8 @@ reads "a record with a duplicate key is malformed" "112 ignored malformed-record
 reads "a teammate name holding a workflow command marker is escaped" \
   "112 agentLand@224 claude \"##\\\\u{005B}error]x\" $hC record" \
   "$(comment 112 owner claude 12 12 "\"\`\`\`mitos-protocol\n{\\\"v\\\":1,\\\"kind\\\":\\\"land\\\",\\\"task\\\":7,\\\"as\\\":{\\\"provider\\\":\\\"claude\\\",\\\"teammate\\\":\\\"##[error]x\\\"},\\\"head\\\":\\\"$hC\\\"}\n\`\`\`\"")"
+reads "a record inside an HTML comment is not at the top level" "112 ignored record-not-at-top-level" \
+  "$(comment 112 owner claude 12 12 "\"<!--\n\`\`\`mitos-protocol\n{\\\"v\\\":1,\\\"kind\\\":\\\"land\\\",\\\"task\\\":7,\\\"as\\\":{\\\"provider\\\":\\\"claude\\\",\\\"teammate\\\":\\\"worker\\\"},\\\"head\\\":\\\"$hC\\\"}\n\`\`\`\n-->\"")"
 
 "$bin" speech --owner owner --pr 7 <(echo "[$(comment 112 owner null 12 12 '"/land"')]") \
   >"$tmp/out" 2>"$tmp/err" || true
@@ -130,6 +134,8 @@ echo '[{"id":1,"user":{"login":"owner"},"performed_via_github_app":null,"created
 echo '{"id":1}' >"$tmp/object.json"
 echo '[{' >"$tmp/cut.json"
 printf 'not\ta push\n' >"$tmp/badpushes.tsv"
+printf '%s\t%s\t%s\t%s\t%s\n' 2026-11-13T12:00:02Z push owner 0000000000000000000000000000000000000000 \
+  not-a-sha >"$tmp/nonsha.tsv"
 
 refuses "a comment without performed_via_github_app is refused" 1 \
   '^speech: the comments are refused: \[0\]\.performed_via_github_app: missing$' \
@@ -145,6 +151,9 @@ refuses "cut JSON is refused" 1 '^speech: the comments are refused: not JSON' \
   --owner owner --pr 7 "$tmp/cut.json"
 refuses "a line that is not a push is refused" 1 '^speech: the pushes are refused: ' \
   --owner owner --pr 7 --pushes "$tmp/badpushes.tsv" "$tmp/good.json"
+refuses "a push whose after is not a sha is refused" 1 \
+  '^speech: the pushes are refused: a push.s before or after is not a lowercase 40-hex sha' \
+  --owner owner --pr 7 --pushes "$tmp/nonsha.tsv" "$tmp/good.json"
 refuses "a missing file is an I/O error" 1 '^speech: stopped on an I/O error' \
   --owner owner --pr 7 "$tmp/none.json"
 refuses "no arguments is a usage error" 2 '^speech needs'

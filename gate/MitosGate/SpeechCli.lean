@@ -42,6 +42,14 @@ def comments (text : String) : Except String (List Comment) := do
     | .error _ => throw "expected a list of comments"
   a.mapIdx (fun i c => (comment c).mapError (s!"[{i}]{·}")) |>.mapM id
 
+def parsePushes (text : String) : Except Message (List Carry.Push) := do
+  let ps ← (RunLog.splitLines text).mapM Carry.parsePush
+  for p in ps do
+    unless isSha p.before.toList && isSha p.after.toList do
+      throw (msg "a push's before or after is not a lowercase 40-hex sha: " ++
+        quote (p.before ++ " " ++ p.after))
+  return ps
+
 def whyName : Why → String
   | .notOwner => "not-owner"
   | .unknownApp => "app-outside-the-list"
@@ -54,7 +62,9 @@ def whyName : Why → String
   | .protocolFence => "record-without-app"
   | .noWord => "no-word"
   | .markup => "fence-or-html-in-the-comment"
+  | .link => "link-in-the-comment"
   | .quoteContinuation => "inside-a-quote"
+  | .nested => "record-not-at-top-level"
   | .hold => "hold"
   | .severalWords => "several-words"
   | .badArgument => "bad-argument"
@@ -96,7 +106,7 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
     let ps ← match pushes with
       | none => pure []
       | some p =>
-        match (RunLog.splitLines (← IO.FS.readFile p)).mapM Carry.parsePush with
+        match parsePushes (← IO.FS.readFile p) with
         | .ok ps => pure ps
         | .error e =>
           IO.eprintln (msg "speech: the pushes are refused: " ++ e).ciLine

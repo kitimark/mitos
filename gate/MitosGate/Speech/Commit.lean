@@ -25,7 +25,8 @@ def headAt (pushes : List Carry.Push) (t : Stamp) : Option Sha :=
       match (ts.filter (·.1 < t)).filter (·.1 == latest (ts.filter (·.1 < t))) with
       | [] => none
       | (_, p) :: rest =>
-        if pushLike p.kind && rest.all (fun e => pushLike e.2.kind && e.2.after == p.after) then
+        if pushLike p.kind && isSha p.after.toList &&
+            rest.all (fun e => pushLike e.2.kind && e.2.after == p.after) then
           some p.after
         else none
 
@@ -49,7 +50,7 @@ def ResolveFullSelf : Prop :=
 
 def HeadAtSound : Prop :=
   ∀ pushes t s, headAt pushes t = some s →
-    ∃ p ∈ pushes, p.after = s ∧ pushLike p.kind = true ∧
+    ∃ p ∈ pushes, p.after = s ∧ isSha s.toList = true ∧ pushLike p.kind = true ∧
       ∃ tp, stamp? p.time.toList = some tp ∧ tp < t ∧
         ∀ q ∈ pushes, ∃ tq, stamp? q.time.toList = some tq ∧ tq ≠ t ∧ (tq < t → tq ≤ tp) ∧
           (tq = tp → pushLike q.kind = true ∧ q.after = s)
@@ -148,7 +149,7 @@ theorem headAtSound : HeadAtSound := by
           simp only [List.mem_filter, decide_eq_true_eq, beq_iff_eq] at hpm
           obtain ⟨⟨hpts, hpt⟩, hplat⟩ := hpm
           obtain ⟨hpin, hpst⟩ := hback _ hpts
-          refine ⟨p, hpin, rfl, hk.1, tp, hpst, hpt, fun q hq => ?_⟩
+          refine ⟨p, hpin, rfl, hk.1.2, hk.1.1, tp, hpst, hpt, fun q hq => ?_⟩
           obtain ⟨tq, hqs, hqm⟩ := hall q hq
           have hne : tq ≠ t := by
             intro he
@@ -164,7 +165,7 @@ theorem headAtSound : HeadAtSound := by
               exact ⟨⟨hqm, hpt⟩, hplat⟩
             rw [hl] at hqf
             rcases List.mem_cons.1 hqf with he | he
-            · cases he; exact ⟨hk.1, rfl⟩
+            · cases he; exact ⟨hk.1.1, rfl⟩
             · have := hk.2 _ he
               simpa using this
         · cases h

@@ -24,7 +24,7 @@ def delegates : List Teammate := []
 
 inductive Why
   | notOwner | unknownApp | noRecord | malformed | notLand | wrongTask | wrongProvider
-  | footer | protocolFence | noWord | markup | quoteContinuation
+  | footer | protocolFence | noWord | markup | link | quoteContinuation | nested
   | hold | severalWords | badArgument | unknownCommit | ambiguousCommit | noHead
   deriving DecidableEq
 
@@ -75,6 +75,16 @@ def holdLine (l : List Char) : Bool :=
 
 def markup (l : List Char) : Bool := marker l || l.contains '`' || l.contains '<'
 
+def quoted (l : List Char) : Bool :=
+  match lead l with
+  | some ('>' :: _) => true
+  | _ => false
+
+/-- GitHub's Markdown hides a line inside a link reference, a link title or an image's alt text.
+Within a quote such markup reaches a later line only as a lazy continuation, which `inQuote`
+holds. -/
+def link (l : List Char) : Bool := l.contains '[' && !quoted l
+
 /-- GitHub's Markdown carries a quote on to the lines after it until a blank line. -/
 def inQuote : Bool → List (List Char) → Bool
   | _, [] => false
@@ -89,6 +99,7 @@ lines. -/
 def doubt (b : List Char) : Option Why :=
   if (lines b).any holdLine then some .hold
   else if (lines b).any markup then some .markup
+  else if (lines b).any link then some .link
   else if inQuote false (lines b) then some .quoteContinuation
   else none
 
@@ -147,15 +158,30 @@ def record? (cs : List Char) : Except Why Record :=
         | _, _, _ => .error .malformed
     | _, _ => .error .malformed
 
+def listItem (l : List Char) : Bool :=
+  match lead l with
+  | some (c :: r) =>
+    ((c == '-' || c == '*' || c == '+') && (match r with | [] => true | d :: _ => isSp d)) ||
+      (digit c && match r.dropWhile digit with
+        | d :: _ => d == '.' || d == ')'
+        | [] => false)
+  | _ => false
+
+/-- GitHub's Markdown draws a fence inside an HTML block or a list item, where it is not a
+top-level block. -/
+def nested (l : List Char) : Bool := l.contains '<' || listItem l
+
 def agentRead (x : Ctx) (provider : String) (b : List Char) : Read :=
   match (scan b).protocol with
   | [(true, body)] =>
-    match record? (joinLines body) with
-    | .error why => .ignored why
-    | .ok r =>
-      if r.task ≠ x.pr then .ignored .wrongTask
-      else if r.provider ≠ provider then .ignored .wrongProvider
-      else .agent ⟨provider, r.teammate⟩ r.head
+    if (scan b).top.any nested then .ignored .nested
+    else
+      match record? (joinLines body) with
+      | .error why => .ignored why
+      | .ok r =>
+        if r.task ≠ x.pr then .ignored .wrongTask
+        else if r.provider ≠ provider then .ignored .wrongProvider
+        else .agent ⟨provider, r.teammate⟩ r.head
   | [] => .ignored .noRecord
   | _ => .ignored .malformed
 
@@ -193,6 +219,7 @@ def AgentNeedsSlugProviderTaskHead : Prop :=
   ∀ (x : Ctx) pushes (c : Comment) who about, read x pushes c = .agent who about →
     c.login = x.owner ∧ c.updated = c.created ∧
     ∃ s, c.slug = some s ∧ x.apps.lookup s = some who.provider ∧
+    (scan c.body.toList).top.any nested = false ∧
     ∃ body r, (scan c.body.toList).protocol = [(true, body)] ∧ record? (joinLines body) = .ok r ∧
       r.task = x.pr ∧ r.provider = who.provider ∧ r.teammate = who.name ∧ r.head = about ∧
       isSha about.toList = true
@@ -265,6 +292,7 @@ theorem read_edited {x : Ctx} {pushes : List Carry.Push} {c : Comment} (ho : c.l
 
 theorem agentRead_agent {x : Ctx} {p : String} {b : List Char} {who : Teammate} {about : Sha}
     (h : agentRead x p b = .agent who about) :
+    (scan b).top.any nested = false ∧
     ∃ body r, (scan b).protocol = [(true, body)] ∧ record? (joinLines body) = .ok r ∧
       r.task = x.pr ∧ r.provider = p ∧ who = ⟨p, r.teammate⟩ ∧ r.head = about := by
   unfold agentRead at h
@@ -272,14 +300,18 @@ theorem agentRead_agent {x : Ctx} {p : String} {b : List Char} {who : Teammate} 
   · next body hs =>
     split at h
     · cases h
-    · next r hr =>
+    · next hn =>
       split at h
       · cases h
-      · split at h
+      · next r hr =>
+        split at h
         · cases h
-        · next h1 h2 =>
-          cases h
-          exact ⟨body, r, hs, hr, by simpa using h1, by simpa using h2, rfl, rfl⟩
+        · split at h
+          · cases h
+          · next h1 h2 =>
+            cases h
+            exact ⟨by simpa using hn, body, r, hs, hr, by simpa using h1, by simpa using h2, rfl,
+              rfl⟩
   · cases h
   · cases h
 
@@ -317,8 +349,8 @@ theorem agentNeedsSlugProviderTaskHead : AgentNeedsSlugProviderTaskHead := by
         simp only at h
         split at h
         · next p hp =>
-          obtain ⟨body, r, h1, h2, h3, h4, rfl, h6⟩ := agentRead_agent h
-          refine ⟨s, rfl, hp, body, r, h1, h2, h3, h4, rfl, h6, ?_⟩
+          obtain ⟨hn, body, r, h1, h2, h3, h4, rfl, h6⟩ := agentRead_agent h
+          refine ⟨s, rfl, hp, hn, body, r, h1, h2, h3, h4, rfl, h6, ?_⟩
           obtain ⟨_, -, -, hh⟩ := record_ok h2
           rw [← h6]
           exact sha?_isSha hh
