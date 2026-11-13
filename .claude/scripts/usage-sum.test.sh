@@ -29,6 +29,7 @@ mkdir -p "$work/wf_demo-1a2" "$work/plain"
 } >"$work/wf_demo-1a2/agent-two.jsonl"
 echo '{"type":"system","subtype":"x"}' >"$work/wf_demo-1a2/journal.jsonl"
 msg msg_D 6 20 300 40 >"$work/plain/solo.jsonl"
+printf '%s\n' '{"type":"assistant","message":{"id":"msg_F","model":"m","content":[{"type":"text"}],"usage":{"input_tokens":1,"output_tokens":20,"cache_read_input_tokens":300,"cache_creation_input_tokens":4,"iterations":[{"type":"message","input_tokens":1,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":0},{"type":"fallback_message","input_tokens":1,"output_tokens":20,"cache_read_input_tokens":300,"cache_creation_input_tokens":4}]}}}' >"$work/fallback.jsonl"
 
 row() { printf '%s\n' "$1" | awk -v l="$2" '$1 == l {print $2, $3, $4, $5, $6}'; }
 
@@ -43,6 +44,9 @@ check "a message split over 3 blocks counts once; id-less lines count each; synt
 
 out=$("$script" "$work/wf_demo-1a2/agent-two.jsonl")
 check "the same id in another file counts again (dedup is per file)" "$(row "$out" total)" "2 8 14 22 26"
+
+out=$("$script" "$work/fallback.jsonl")
+check "a refusal fallback counts every attempt in usage.iterations as one call" "$(row "$out" total)" "1 2 25 400 4"
 
 out=$("$script" "$work/wf_demo-1a2" "$work/plain")
 check "a directory takes every journal with usage" "$(row "$out" total)" "7 21 146 3324 123"
