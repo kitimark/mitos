@@ -266,10 +266,10 @@ watcher's echo filter and the merge rule below rely on both.
   change. Only an agent that did not write the code gives a verdict. CI, bot reviews and the root's own
   reading are inputs to one.
 - A wording-only change alters no behavior. It edits prose, comments or typos, and no code,
-  script, spec, lock, workflow, skill rule or hook. A change to a plan row or a task file that
-  sets a type, a statement, a rule or a cut line is not wording-only. The root confirms that from
-  the diff. Such a change needs no verdict, and a green `gate` at its head stands in for one in
-  the merge rule below.
+  script, spec, lock, workflow, skill rule or hook, and no line of a plan row or a task file that
+  sets a type, a statement, a rule or a cut line. The root confirms that from the diff. A
+  wording-only change needs no verdict, and a green `gate` at its head stands in for one in the
+  merge rule below.
 - The verifier runs on the model that did not write most of the diff. A trust-critical PR also
   gets an `opus` verifier at `xhigh` or above at every head that needs a verifier, so an
   `opus`-written one gets two. Trust-critical means the PR needs `spec-approved` or touches a
