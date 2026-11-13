@@ -33,9 +33,10 @@ when the snapshot names `me` and `pr`, and `wake` when it names an `event`.
 
 What this module checks, and the decision does not: every object has only the keys it defines and
 every value its type; a commit is 1 to 64 letters and digits (so no printed line holds text that a
-runner could read as a command); pull request numbers are distinct; a pull request's words are in
-ascending comment id, because the newest owner word is the last one listed; and no two words share
-a comment id, which statement 13 (`nextIgnoresListingOrder`) needs.
+runner could read as a command); pull request numbers are distinct; no two words share a comment
+id, which statement 13 (`nextIgnoresListingOrder`) and `newestOwner_perm` need; and a pull
+request's words are in ascending comment id, the reader's contract. The decision does not depend
+on that order: the newest owner word is the one with the greatest comment id wherever it is listed.
 -/
 
 open Lean (Json)
@@ -180,11 +181,6 @@ private def snapshot : D Snapshot := fun j => do
   obj ["prs", "me", "pr", "event"] j
   return { prs := ← at' "prs" (list observation) j, me := ← opt "me" teammate j,
            pr := ← opt "pr" nat j, event := ← opt "event" event j }
-
-def Word.said : Word → Nat
-  | .ownerLand m => m.said
-  | .ownerHold s => s
-  | .agentLand _ m => m.said
 
 private def firstDup : List Nat → Option Nat
   | [] => none
