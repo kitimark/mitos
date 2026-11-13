@@ -606,6 +606,67 @@ else
   failed=1
 fi
 
+b6=$work/b6
+own="$(cd "$(dirname "$0")" && pwd)/watch-own.sh"
+mkdir -p "$b6/f"
+b6base=$(date -u -d '2026-11-13T12:00:00Z' +%s)
+cat >"$b6/f/open.json" <<EOF
+[{"number":45,"user":{"login":"kitimark"},"head":{"sha":"$A"},"labels":[],"assignees":[]},
+ {"number":46,"user":{"login":"kitimark"},"head":{"sha":"$B"},"labels":[],"assignees":[]}]
+EOF
+echo '[]' >"$b6/f/closed.json"
+echo "{\"commit\":{\"sha\":\"$M1\"}}" >"$b6/f/main.json"
+echo '[[]]' >"$b6/f/icomments.json"
+echo '[[]]' >"$b6/f/rcomments.json"
+b6at() { STATE=$b6/state run FAKE_DIR="$b6" WATCH_CI_MINUTES=9999 WATCH_NOW=$((b6base + $1)); }
+b6set() {
+  local file=$1 prog=$2
+  shift 2
+  jq "$@" "$prog" "$b6/f/$file" >"$b6/f/$file.new" && mv "$b6/f/$file.new" "$b6/f/$file"
+}
+rec() { WATCH_NOW=$((b6base + $1)) "$own" "$b6/state" "${@:2}"; }
+b6at 0
+is "own writes: the baseline prints nothing" ""
+rec 10 assign 45 kitimark
+b6set open.json '(.[] | select(.number == 45) | .assignees) = [{"login":"kitimark"}]'
+b6at 60
+is "an own assignment is dropped" ""
+if [ -s "$b6/state/own-writes" ]; then echo "FAIL  a matched record was not consumed"; failed=1
+else echo "ok    a matched record is consumed"; fi
+b6set open.json '(.[] | select(.number == 45) | .assignees) = []'
+b6at 120
+is "an unassignment with no record still prints" "pr #45 labels=- assignees=-"
+b6set open.json '(.[] | select(.number == 45) | .assignees) = [{"login":"kitimark"}]'
+b6at 180
+is "the same assignment by someone else, once the record is consumed, still prints" "pr #45 labels=- assignees=kitimark"
+b6set open.json '(.[] | select(.number == 45) | .assignees) = []'
+b6at 240
+rec 250 assign 46 kitimark
+b6set open.json '(.[] | select(.number == 46) | .assignees) = [{"login":"kitimark"}]'
+b6at 2100
+is "a record older than 30 minutes hides nothing" "pr #46 labels=- assignees=kitimark"
+rec 2110 label 45 spec-approved
+b6set open.json '(.[] | select(.number == 45) | .labels) = [{"name":"spec-approved"}]'
+b6at 2160
+is "an own label is dropped" ""
+rec 2170 assign 45 kitimark
+b6set open.json '(.[] | select(.number == 45) | .assignees) = [{"login":"kitimark"}] | (.[] | select(.number == 45) | .labels) += [{"name":"follow-up"}]'
+b6at 2220
+is "a line with one own write and one other change still prints" "pr #45 labels=follow-up,spec-approved assignees=kitimark"
+rec 2230 merge 45
+m_at=$(utc_at $((b6base + 2240)))
+b6set open.json 'map(select(.number > 46))'
+b6set closed.json '. + [{"number":45,"user":{"login":"kitimark"},"closed_at":$t,"merged_at":$t},
+  {"number":46,"user":{"login":"kitimark"},"closed_at":$t,"merged_at":$t}]' --arg t "$m_at"
+echo "{\"commit\":{\"sha\":\"$M2\"}}" >"$b6/f/main.json"
+b6at 2300
+is "an own merge is dropped; another merge and the move of main still print" "pr #46 merged at ${m_at:0:16}Z
+main ${M2:0:7}"
+if "$own" "$b6/state" frobnicate 45 x >/dev/null 2>&1 || "$own" "$b6/state" assign 45 >/dev/null 2>&1 \
+  || "$own" "$b6/state" merge 4x >/dev/null 2>&1 || "$own" "$b6/state" assign 45 "two words" >/dev/null 2>&1; then
+  echo "FAIL  watch-own.sh took a malformed record"; failed=1
+else echo "ok    watch-own.sh refuses a malformed record"; fi
+
 if grep -q -e SECRET123 -e 127.0.0.1:1234 "$work/all"; then
   echo "FAIL  the origin URL was printed"; failed=1
 else echo "ok    the origin URL is never printed"; fi
