@@ -88,9 +88,15 @@ tool.
   root keeps one state directory for the whole session, `<scratchpad>/watch-github`: it makes it
   at the first arm, passes the same one at every re-arm and never makes a second one, because the
   script keeps its lock, snapshot and cursor there. So a re-armed monitor neither repeats nor
-  misses an event. Before each assignment, label or merge the root makes on a PR, it records it
-  with `.claude/scripts/watch-own.sh <state-dir> <assign|unassign|label|unlabel|merge|close> <n> [value]`,
-  so the monitor drops that write's echo once, within 30 minutes. A new directory's first poll prints the user's comments that no footer comment
+  misses an event. When the root changes a PR's assignees or labels, or merges or closes it, it
+  records the write once it succeeds, in the same command where it can:
+  `<write> && .claude/scripts/watch-own.sh <state-dir> <kind> <n> <value>`. The kind is `assign`,
+  `unassign`, `label`, `unlabel`, `merge` or `close`, and the value is the login or the label; a
+  merge or a close takes none. The next poll leaves out that PR's line only when the writes
+  recorded since the poll before account for the whole change, and then forgets them. So a write
+  that failed or was undone hides nothing later, and a change by anyone else prints unless a write
+  the root recorded in that same poll asked for the very same change.
+  A new directory's first poll prints the user's comments that no footer comment
   follows; a new session also sets `WATCH_SINCE` to the dashboard's last update, so the first
   poll prints the merges and comments since then. It arms the monitor with `timeout_ms` 1800000,
   the cap, and re-arms it with one call in the turn it expires or exits, unless it cannot run

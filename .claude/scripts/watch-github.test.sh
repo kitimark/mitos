@@ -631,20 +631,20 @@ rec 10 assign 45 kitimark
 b6set open.json '(.[] | select(.number == 45) | .assignees) = [{"login":"kitimark"}]'
 b6at 60
 is "an own assignment is dropped" ""
-if [ -s "$b6/state/own-writes" ]; then echo "FAIL  a matched record was not consumed"; failed=1
-else echo "ok    a matched record is consumed"; fi
+if [ -s "$b6/state/own-writes" ]; then echo "FAIL  a used record was kept"; failed=1
+else echo "ok    the poll that uses a record removes it"; fi
 b6set open.json '(.[] | select(.number == 45) | .assignees) = []'
 b6at 120
 is "an unassignment with no record still prints" "pr #45 labels=- assignees=-"
 b6set open.json '(.[] | select(.number == 45) | .assignees) = [{"login":"kitimark"}]'
 b6at 180
-is "the same assignment by someone else, once the record is consumed, still prints" "pr #45 labels=- assignees=kitimark"
+is "the same assignment by someone else in a later poll still prints" "pr #45 labels=- assignees=kitimark"
 b6set open.json '(.[] | select(.number == 45) | .assignees) = []'
 b6at 240
 rec 250 assign 46 kitimark
 b6set open.json '(.[] | select(.number == 46) | .assignees) = [{"login":"kitimark"}]'
 b6at 2100
-is "a record older than 30 minutes hides nothing" "pr #46 labels=- assignees=kitimark"
+is "a record older than 5 minutes hides nothing" "pr #46 labels=- assignees=kitimark"
 rec 2110 label 45 spec-approved
 b6set open.json '(.[] | select(.number == 45) | .labels) = [{"name":"spec-approved"}]'
 b6at 2160
@@ -658,7 +658,7 @@ b6at 2225
 is "after that mixed line the assignee's removal prints" "pr #45 labels=follow-up,spec-approved assignees=-"
 b6set open.json '(.[] | select(.number == 45) | .assignees) = [{"login":"kitimark"}]'
 b6at 2230
-is "and so does its restoration: the matched record was consumed with the mixed line" "pr #45 labels=follow-up,spec-approved assignees=kitimark"
+is "and so does its restoration in a later poll" "pr #45 labels=follow-up,spec-approved assignees=kitimark"
 rec 2230 merge 45
 m_at=$(utc_at $((b6base + 2240)))
 b6set open.json 'map(select(.number > 46))'
@@ -672,6 +672,184 @@ if "$own" "$b6/state" frobnicate 45 x >/dev/null 2>&1 || "$own" "$b6/state" assi
   || "$own" "$b6/state" merge 4x >/dev/null 2>&1 || "$own" "$b6/state" assign 45 "two words" >/dev/null 2>&1; then
   echo "FAIL  watch-own.sh took a malformed record"; failed=1
 else echo "ok    watch-own.sh refuses a malformed record"; fi
+
+b7=$work/b7
+mkdir -p "$b7/f"
+b7base=$(date -u -d '2026-11-13T15:00:00Z' +%s)
+cat >"$b7/f/open.json" <<EOF
+[{"number":45,"user":{"login":"kitimark"},"head":{"sha":"$A"},"labels":[],"assignees":[]},
+ {"number":46,"user":{"login":"kitimark"},"head":{"sha":"$B"},"labels":[],"assignees":[]},
+ {"number":47,"user":{"login":"kitimark"},"head":{"sha":"$C"},"labels":[],"assignees":[]},
+ {"number":48,"user":{"login":"kitimark"},"head":{"sha":"$D"},"labels":[],"assignees":[]}]
+EOF
+echo '[]' >"$b7/f/closed.json"
+echo "{\"commit\":{\"sha\":\"$M1\"}}" >"$b7/f/main.json"
+echo '[[]]' >"$b7/f/icomments.json"
+echo '[[]]' >"$b7/f/rcomments.json"
+b7at() { STATE=$b7/state run FAKE_DIR="$b7" WATCH_CI_MINUTES=9999 WATCH_NOW=$((b7base + $1)); }
+b7set() {
+  local file=$1 prog=$2
+  shift 2
+  jq "$@" "$prog" "$b7/f/$file" >"$b7/f/$file.new" && mv "$b7/f/$file.new" "$b7/f/$file"
+}
+b7who() { b7set open.json '(.[] | select(.number == $n) | .assignees) = [$v | splits(" ") | select(. != "") | {login: .}]' --argjson n "$1" --arg v "$2"; }
+b7lab() { b7set open.json '(.[] | select(.number == $n) | .labels) = [$v | splits(" ") | select(. != "") | {name: .}]' --argjson n "$1" --arg v "$2"; }
+b7rec() { WATCH_NOW=$((b7base + $1)) "$own" "$b7/state" "${@:2}"; }
+hold_lock() {
+  rm -f "$work/held"
+  (exec 8>"$1" && flock 8 && : >"$work/held" && exec sleep 60) &
+  holder=$!
+  until [ -e "$work/held" ]; do sleep 0.1; done
+}
+drop_lock() { kill "$holder"; wait "$holder" 2>/dev/null; }
+
+b7at 0
+is "fail open: the baseline prints nothing" ""
+b7rec 10 assign 45 kitimark
+b7at 60
+is "S1: a record whose write never landed prints nothing" ""
+b7who 45 kitimark
+b7at 660
+is "S1: the owner's assignment 10 minutes after a write that never landed prints" "pr #45 labels=- assignees=kitimark"
+
+b7rec 670 merge 46
+b7at 720
+is "S1b: a merge record whose merge failed prints nothing" ""
+m46=$(utc_at $((b7base + 1480)))
+b7set open.json 'map(select(.number != 46))'
+b7set closed.json '. + [{"number":46,"user":{"login":"kitimark"},"closed_at":$t,"merged_at":$t}]' --arg t "$m46"
+b7at 1500
+is "S1b: the owner's merge 13 minutes after a merge that failed prints" "pr #46 merged at ${m46:0:16}Z"
+
+b7rec 1510 unassign 45 kitimark
+b7rec 1511 assign 45 kitimark
+b7at 1560
+is "S2: a re-ping inside one poll prints nothing" ""
+b7who 45 ""
+b7at 1620
+is "S2: the owner's later unassignment prints" "pr #45 labels=- assignees=-"
+b7who 45 kitimark
+b7at 1680
+is "S2: and the owner's assignment after it prints" "pr #45 labels=- assignees=kitimark"
+
+b7rec 1690 label 47 x
+b7rec 1691 unlabel 47 x
+b7at 1740
+is "S4: a label added and removed inside one poll prints nothing" ""
+b7lab 47 x
+b7at 1800
+is "S4: after a label added and removed inside one poll, the owner's add prints" "pr #47 labels=x assignees=-"
+
+b7who 48 kitimark
+b7rec 1810 assign 48 kitimark
+hold_lock "$b7/state/own.lock"
+b7at 1860
+drop_lock
+is "S5: with the own-writes lock busy, the root's assignment prints" "pr #48 labels=- assignees=kitimark"
+b7who 48 ""
+b7at 1920
+is "S5: the owner's unassignment prints" "pr #48 labels=- assignees=-"
+b7who 48 kitimark
+b7at 1980
+is "S5: the owner's assignment after the busy poll prints" "pr #48 labels=- assignees=kitimark"
+
+b7rec 1990 assign 45 kitimark
+b7at 2040
+is "P4: an assignment that changed nothing prints nothing" ""
+b7who 45 ""
+b7at 2100
+is "P4: the owner's unassignment prints" "pr #45 labels=- assignees=-"
+b7who 45 kitimark
+b7at 2160
+is "P4: the owner's assignment after it prints" "pr #45 labels=- assignees=kitimark"
+
+b7who 45 ""
+b7rec 2170 unassign 45 kitimark
+b7at 2220
+is "a re-ping across two polls: the root's unassignment is dropped" ""
+b7who 45 kitimark
+b7rec 2230 assign 45 kitimark
+b7at 2280
+is "and the root's assignment in the next poll is dropped" ""
+b7rec 2290 unassign 45 kitimark
+b7rec 2291 assign 45 kitimark
+b7who 45 ""
+b7at 2340
+is "the owner's unassignment right after a re-ping in the same poll prints" "pr #45 labels=- assignees=-"
+
+b7rec 2350 assign 47 kitimark
+b7who 45 kitimark
+b7at 2400
+is "a record for another PR hides nothing" "pr #45 labels=- assignees=kitimark"
+b7rec 2410 unassign 47 kitimark
+b7who 47 kitimark
+b7at 2460
+is "an unassign record does not hide an assignment" "pr #47 labels=x assignees=kitimark"
+b7rec 2470 assign 48 alice
+b7who 48 "bob kitimark"
+b7at 2520
+is "a record for one login does not hide another" "pr #48 labels=- assignees=bob,kitimark"
+b7rec 2530 merge 47
+c47=$(utc_at $((b7base + 2540)))
+b7set open.json 'map(select(.number != 47))'
+b7set closed.json '. + [{"number":47,"user":{"login":"kitimark"},"closed_at":$t,"merged_at":null}]' --arg t "$c47"
+b7at 2580
+is "a merge record does not hide a close" "pr #47 closed at ${c47:0:16}Z"
+b7set open.json '. + [{"number":49,"user":{"login":"kitimark"},"head":{"sha":$s},"labels":[],"assignees":[{"login":"kitimark"}]}]' --arg s "$M3"
+b7rec 2590 assign 49 kitimark
+b7at 2640
+is "a new PR prints even with a record for it" "pr #49 head ${M3:0:7} checks -
+pr #49 labels=- assignees=kitimark"
+
+b7rec 2700 unassign 49 kitimark
+b7at 2700
+is "a record dated at the poll's second waits for the next poll" ""
+b7who 49 ""
+b7at 2760
+is "and the next poll uses it" ""
+b7lab 48 y
+b7rec 2770 label 48 y
+b7at 2770
+is "a change already read with its record dated at the poll's second prints" "pr #48 labels=y assignees=bob,kitimark"
+b7at 2830
+b7lab 48 ""
+b7rec 2840 unlabel 48 y
+b7at 3140
+is "a record exactly 5 minutes old is used" ""
+b7lab 48 z
+b7rec 3150 label 48 z
+b7at 3451
+is "a record over 5 minutes old hides nothing" "pr #48 labels=z assignees=bob,kitimark"
+
+b7set open.json '(.[] | select(.number == 49) | .labels) = [range(1; 22) | {name: "l\(. + 10)"}]'
+b7at 3460
+b7set open.json '(.[] | select(.number == 49) | .labels) |= map(select(.name != "l30" and .name != "l31"))'
+b7rec 3470 unlabel 49 l30
+b7at 3490
+is "a list the line cuts at 20 is never matched" "pr #49 labels=l11,l12,l13,l14,l15,l16,l17,l18,l19,l20,l21,l22,l23,l24,l25,l26,l27,l28,l29 assignees=-"
+
+b7rec 9000 assign 45 alice
+b7at 3500
+b7who 45 "alice kitimark"
+b7at 9010
+is "M2: a record dated in the future hides nothing" "pr #45 labels=- assignees=alice,kitimark"
+
+b7rec 9020 unassign 45 alice
+b7who 45 kitimark
+mv "$b7/state/own-writes" "$b7/own-writes.saved"
+mkdir "$b7/state/own-writes"
+b7at 9060
+is "M1: a filter that fails prints every line" "pr #45 labels=- assignees=kitimark"
+rmdir "$b7/state/own-writes"
+mv "$b7/own-writes.saved" "$b7/state/own-writes"
+
+hold_lock "$b7/state/own.lock"
+cp "$b7/state/own-writes" "$work/own-before"
+if b7rec 9070 assign 45 alice 2>/dev/null; then lock_rc=0; else lock_rc=1; fi
+drop_lock
+if [ "$lock_rc" = 1 ] && cmp -s "$b7/state/own-writes" "$work/own-before"; then
+  echo "ok    watch-own.sh records nothing while the lock stays busy"
+else echo "FAIL  watch-own.sh wrote without the lock"; failed=1; fi
 
 if grep -q -e SECRET123 -e 127.0.0.1:1234 "$work/all"; then
   echo "FAIL  the origin URL was printed"; failed=1

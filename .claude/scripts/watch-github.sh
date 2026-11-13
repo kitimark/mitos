@@ -15,7 +15,7 @@ since_seed=${WATCH_SINCE:-}
 ci_minutes=${WATCH_CI_MINUTES:-10}
 fixed_now=${WATCH_NOW:-}
 comment_window_s=300
-own_ttl_s=1800
+own_ttl_s=300
 tier_owner=0
 tier_state=1
 tier_other=2
@@ -257,76 +257,79 @@ poll() {
   } >"$w/events" 2>/dev/null || return 1
 }
 
-drop_own_echoes() {
-  local own=$dir/own-writes old=$dir/snapshot
-  [ -e "$old" ] || old=/dev/null
+own_filter() {
+  local from=-1 to prev=$dir/snapshot
+  [ -s "$dir/own-from" ] && from=$(cat "$dir/own-from")
+  [[ $from =~ ^[0-9]{1,12}$ ]] || from=-1
+  to=$(cat "$w/now")
+  [ -e "$prev" ] || prev=/dev/null
   (
-    flock -w 5 8 || { cat; exit 0; }
-    touch "$own"
-    awk -v now="$(now_s)" -v ttl="$own_ttl_s" -v out="$w/own-writes.new" '
-      function find(key,   i) {
-        for (i = 1; i <= nrec; i++) if (!used[i] && rk[i] == key) return i
-        return 0
-      }
-      function list(s, arr,   m, i, c) {
-        c = 0
-        if (s == "-" || s == "") return 0
-        m = split(s, tmp, ",")
-        for (i = 1; i <= m; i++) arr[++c] = tmp[i]
-        return c
-      }
-      function need(kind, n, a, na, b, nb,   i, j, found) {
-        for (i = 1; i <= na; i++) {
-          found = 0
-          for (j = 1; j <= nb; j++) if (b[j] == a[i]) found = 1
-          if (!found) want[++nwant] = kind " " n " " a[i]
+    flock -w 2 8 || exit 1
+    awk -v from="$from" -v to="$to" -v upto="$(now_s)" -v ttl="$own_ttl_s" -v keep="$w/own-writes.keep" '
+      function setof(s, arr,   m, i) {
+        split("", arr)
+        if (s == "-") return 0
+        m = split(s, parts, ",")
+        if (m >= 20) return -1
+        for (i = 1; i <= m; i++) {
+          if (parts[i] == "" || (parts[i] in arr)) return -1
+          arr[parts[i]] = 1
         }
+        return m
       }
+      function same(a, b,   k) {
+        for (k in a) if (!(k in b)) return 0
+        for (k in b) if (!(k in a)) return 0
+        return 1
+      }
+      function made(n, newl, newa,   l, a, nl, na, i, kv) {
+        if (setof(prevl[n], l) < 0 || setof(preva[n], a) < 0) return 0
+        if (setof(newl, nl) < 0 || setof(newa, na) < 0) return 0
+        for (i = 1; i <= nops[n]; i++) {
+          split(op[n, i], kv, " ")
+          if (kv[1] == "assign") a[kv[2]] = 1
+          else if (kv[1] == "unassign") delete a[kv[2]]
+          else if (kv[1] == "label") l[kv[2]] = 1
+          else if (kv[1] == "unlabel") delete l[kv[2]]
+        }
+        return same(l, nl) && same(a, na)
+      }
+      BEGIN { printf "" >keep }
       FILENAME == ARGV[1] {
-        if (NF >= 3 && $1 ~ /^[0-9]+$/ && $1 + ttl >= now) {
-          nrec++
-          rk[nrec] = $2 " " $3 ($4 != "" ? " " $4 : "")
-          rt[nrec] = $0
-        }
+        if (NF < 3 || NF > 4 || $1 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/) next
+        r = $1 + 0
+        if (r >= to && r <= upto) { print >keep; next }
+        if (from < 0 || r < from || r >= to || r < to - ttl) next
+        if (NF == 3 && ($2 == "merge" || $2 == "close")) ev[$2 " " $3] = 1
+        else if (NF == 4 && $2 ~ /^(assign|unassign|label|unlabel)$/) op[$3, ++nops[$3]] = $2 " " $4
         next
       }
       FILENAME == ARGV[2] {
-        if ($0 ~ /^pr #[0-9]+ labels=[^ ]* assignees=[^ ]*$/) { n = $2; sub(/^#/, "", n); prev[n] = $0 }
+        if ($0 ~ /^pr #[0-9]+ labels=[^ ]+ assignees=[^ ]+$/) {
+          n = substr($2, 2); prevl[n] = substr($3, 8); preva[n] = substr($4, 11)
+        }
         next
       }
       {
-        t = index($0, "\t")
-        text = substr($0, t + 1)
-        nwant = 0
-        split(text, f, " ")
-        n = f[2]; sub(/^#/, "", n)
-        if (text ~ /^pr #[0-9]+ merged at /) want[++nwant] = "merge " n
-        else if (text ~ /^pr #[0-9]+ closed at /) want[++nwant] = "close " n
-        else if (text ~ /^pr #[0-9]+ labels=[^ ]* assignees=[^ ]*$/ && (n in prev)) {
-          split(prev[n], g, " ")
-          lab_new = f[3]; sub(/^labels=/, "", lab_new)
-          as_new = f[4]; sub(/^assignees=/, "", as_new)
-          lab_old = g[3]; sub(/^labels=/, "", lab_old)
-          as_old = g[4]; sub(/^assignees=/, "", as_old)
-          nln = list(lab_new, ln); nlo = list(lab_old, lo)
-          nan = list(as_new, an); nao = list(as_old, ao)
-          need("label", n, ln, nln, lo, nlo); need("unlabel", n, lo, nlo, ln, nln)
-          need("assign", n, an, nan, ao, nao); need("unassign", n, ao, nao, an, nan)
+        text = substr($0, index($0, "\t") + 1)
+        n = substr(text, 5); sub(/ .*/, "", n)
+        if (text ~ /^pr #[0-9]+ merged at / && (("merge " n) in ev)) next
+        if (text ~ /^pr #[0-9]+ closed at / && (("close " n) in ev)) next
+        if (text ~ /^pr #[0-9]+ labels=[^ ]+ assignees=[^ ]+$/ && (n in nops) && (n in prevl)) {
+          split(text, f, " ")
+          if (made(n, substr(f[3], 8), substr(f[4], 11))) next
         }
-        ok = nwant > 0
-        for (i = 1; i <= nwant; i++) {
-          h = find(want[i])
-          if (h) used[h] = 1
-          else ok = 0
-        }
-        if (ok) next
         print
-      }
-      END {
-        printf "" >out
-        for (i = 1; i <= nrec; i++) if (!used[i]) print rt[i] >out
-      }' "$own" "$old" /dev/stdin && { [ ! -e "$w/own-writes.new" ] || mv "$w/own-writes.new" "$own"; }
+      }' "$dir/own-writes" "$prev" "$w/lines" && mv "$w/own-writes.keep" "$dir/own-writes"
   ) 8>"$dir/own.lock"
+}
+
+drop_own_echoes() {
+  if [ -s "$dir/own-writes" ] && own_filter >"$w/kept" 2>/dev/null; then
+    cat "$w/kept"
+  else
+    cat "$w/lines"
+  fi
 }
 
 report() {
@@ -343,7 +346,8 @@ report() {
       LC_ALL=C comm -13 "$dir/snapshot" "$w/snapshot" | awk -v tier_state="$tier_state" -v tier_other="$tier_other" \
         '{ print (/^pr #[0-9]+ outside / ? tier_other : tier_state) "\t" $0 }'
     fi
-  } | drop_own_echoes | LC_ALL=C sort -s -t "$(printf '\t')" -k1,1 | cut -f2- >"$w/out"
+  } >"$w/lines"
+  drop_own_echoes | LC_ALL=C sort -s -t "$(printf '\t')" -k1,1 | cut -f2- >"$w/out"
   local total
   total=$(wc -l <"$w/out")
   head -n "$maxlines" "$w/out"
@@ -360,6 +364,7 @@ report() {
   rm -f "$dir/seeded"
   cursor=$(cat "$w/now")
   printf '%s\n' "$cursor" >"$dir/cursor"
+  printf '%s\n' "$cursor" >"$dir/own-from"
 }
 
 fails=0
