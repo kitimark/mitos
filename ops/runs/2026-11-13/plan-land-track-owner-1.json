@@ -1,0 +1,1 @@
+{"task":"plan-land-track","role":"owner","model":"sonnet","attempt":1,"iterations":1,"wall_min":15,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Adds the Land track section to plan/phase-1.md and opens issues P1-010 to P1-017 (#189 to #196) as sub-issues of #179. Plan-only change, no Lean checks run."}

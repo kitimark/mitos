@@ -49,3 +49,31 @@ P1-002 and P1-004 can run in parallel; P1-003 follows P1-002 because both edit
 `Mitos/Impl/Resolve.lean`. In practice P1-002, P1-003 and P1-004 landed in one implementation PR,
 which also added the solution module `Mitos/Proofs/Resolver.lean`; exit criteria 1 and 2 are met
 there (`lake comparator --paranoid` accepts; `lake check` passes).
+
+## Land track (#179)
+
+The land / auto-rebase migration. It replaces the updater that rebases every open PR on each move
+of `main` with a planner that pushes only the PR that lands next, so rebase churn stops costing CI
+runs, paid bot reviews and agent tokens. The design is [#178](https://github.com/kitimark/mitos/issues/178)
+and the tracker is [#179](https://github.com/kitimark/mitos/issues/179). Step numbers are the
+tracker's.
+
+| # | Task | Kind | Issue |
+|---|---|---|---|
+| (step 0) | Bind admins on `main`, so a behind PR cannot merge (405) | setting | none, owner setting, done |
+| P1-010 | Step 1. `Land.lean` with its proofs; `mitos-gate land` over fixed JSON (owner-gated: `gate/`) | gate | [#189](https://github.com/kitimark/mitos/issues/189) |
+| P1-011 | Step 2. Owner-speech parser with its statements; the one snapshot producer (owner-gated: `gate/`) | gate | [#190](https://github.com/kitimark/mitos/issues/190) |
+| P1-012 | Step 3. Shadow run: `decide` only prints its plan (owner-gated: `.github/`) | ci | [#191](https://github.com/kitimark/mitos/issues/191) |
+| P1-013 | Step 4. Claude connector: `land.sh`, wake rules, the `bot-review.sh` cover rule (owner-gated: `.claude/`) | tooling | [#192](https://github.com/kitimark/mitos/issues/192) |
+| P1-014 | Step 5. The switch: `apply` pushes only the planned PR; `report` is added; the old loop is deleted (owner-gated: `.github/`) | ci | [#193](https://github.com/kitimark/mitos/issues/193) |
+| P1-015 | Step 6. Process rules: merge means `land`; hand-overs give `/land <commit>` (owner-gated: `.claude/`, `docs/process.md`, `.cursor/`) | process | [#194](https://github.com/kitimark/mitos/issues/194) |
+| P1-016 | Step 7. Grok connector: the relay applies the wake table (owner-gated: `.github/`, `.cursor/`) | tooling | [#195](https://github.com/kitimark/mitos/issues/195) |
+| P1-017 | Step 8. Fold `/land`, `/hold` and `land` into the protocol draft; add a `behind` flag to the TLA+ model | process | [#196](https://github.com/kitimark/mitos/issues/196) |
+
+Steps 1 and 2 can start now. Steps 3 and 4 follow them. Step 5, the switch, needs steps 0 to 4,
+and [PR #149](https://github.com/kitimark/mitos/pull/149) and issue
+[#171](https://github.com/kitimark/mitos/issues/171) must land first. To roll back step 5,
+revert it. Step 6 follows step 5 at once. Steps 7 and 8 follow step 1.
+
+These rows are not Phase 1 exit criteria. If the exit criteria are met first, the rows still open
+move to the next phase's plan in that plan's PR.
