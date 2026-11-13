@@ -468,7 +468,7 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   as a pure deletion, a rebase, plan-row links or a run-log-only change, needs no pass, and its
   catch-up says "no-comments: no new comments". A PR from an outside agent that the root only
   observes needs none unless the user asks. The catch-up's Status names the pass, its result
-  (deletions, and flags fixed or none) and the head it ran at. Before a catch-up that hands the
+  (deletions, flags fixed, and any flag left open, including a failed pass) and the head it ran at. Before a catch-up that hands the
   user a PR, run `.claude/scripts/bot-review.sh <pr>`, and hand the PR over only on `reviewed` or
   `refused`. On
   `paused` or `behind`, run it again with `--request`. Then wait for CodeRabbit's finished check
