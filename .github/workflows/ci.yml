@@ -135,6 +135,9 @@ jobs:
           fi
           .claude/scripts/sourced-bash.test.sh
 
+      - name: Every plan row that links an issue has a task file with a design, or is listed as pending
+        run: .claude/scripts/plan-tasks.test.sh
+
       - name: A never-started jobless run does not fail cancel-superseded
         run: .github/scripts/cancel-superseded.test.sh
 

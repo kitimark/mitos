@@ -166,6 +166,7 @@ which covers what no kernel term references, such as a structure field's default
 | `pr-state.sh`, `watch-github.sh` and the files they source run `gh` only as `gh api` in their wrappers, and never name GraphQL | `.claude/scripts/gh-api-rest.test.sh` | ✓ | ✓ | | yes |
 | `hook-state.sh` and `origin-repo.sh` name bash with a shebang | `.claude/scripts/sourced-bash.test.sh` | ✓ | ✓ | | yes |
 | `usage-sum.sh` counts each message id once per journal and sums calls, input, output, cache-read and cache-creation tokens per file, per workflow run and in total | `.claude/scripts/usage-sum.test.sh` | ✓ | | | no |
+| Every `plan/phase-N.md` row that links an issue has a `tasks/<id>-*.md` with a Design block or `Design: n/a (<reason>)`, unless `.claude/scripts/plan-tasks.pending` lists it; a listed row with a valid file fails, so the list only shrinks | `.claude/scripts/plan-tasks.test.sh` | ✓ | ✓ | | yes |
 | Core: no `sorry`, standard axioms only | `cd core && lake check` | ✓ | ✓ | ✓ | yes |
 | Core implementation proves the Challenge | `cd core && lake comparator --paranoid` | ✓ | ✓ | ✓ | yes |
 | Spec changes carry `spec-approved` | CI step | | ✓ | | yes |
