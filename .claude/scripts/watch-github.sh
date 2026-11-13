@@ -15,6 +15,7 @@ since_seed=${WATCH_SINCE:-}
 ci_minutes=${WATCH_CI_MINUTES:-10}
 fixed_now=${WATCH_NOW:-}
 comment_window_s=300
+own_ttl_s=1800
 tier_owner=0
 tier_state=1
 tier_other=2
@@ -256,6 +257,74 @@ poll() {
   } >"$w/events" 2>/dev/null || return 1
 }
 
+drop_own_echoes() {
+  local own=$dir/own-writes old=$dir/snapshot
+  [ -e "$old" ] || old=/dev/null
+  (
+    flock -w 5 8 || { cat; exit 0; }
+    touch "$own"
+    awk -v now="$(now_s)" -v ttl="$own_ttl_s" -v out="$w/own-writes.new" '
+      function find(key,   i) {
+        for (i = 1; i <= nrec; i++) if (!used[i] && rk[i] == key) return i
+        return 0
+      }
+      function list(s, arr,   m, i, c) {
+        c = 0
+        if (s == "-" || s == "") return 0
+        m = split(s, tmp, ",")
+        for (i = 1; i <= m; i++) arr[++c] = tmp[i]
+        return c
+      }
+      function need(kind, n, a, na, b, nb,   i, j, found) {
+        for (i = 1; i <= na; i++) {
+          found = 0
+          for (j = 1; j <= nb; j++) if (b[j] == a[i]) found = 1
+          if (!found) want[++nwant] = kind " " n " " a[i]
+        }
+      }
+      FILENAME == ARGV[1] {
+        if (NF >= 3 && $1 ~ /^[0-9]+$/ && $1 + ttl >= now) {
+          nrec++
+          rk[nrec] = $2 " " $3 ($4 != "" ? " " $4 : "")
+          rt[nrec] = $0
+        }
+        next
+      }
+      FILENAME == ARGV[2] {
+        if ($0 ~ /^pr #[0-9]+ labels=[^ ]* assignees=[^ ]*$/) { n = $2; sub(/^#/, "", n); prev[n] = $0 }
+        next
+      }
+      {
+        t = index($0, "\t")
+        text = substr($0, t + 1)
+        nwant = 0
+        split(text, f, " ")
+        n = f[2]; sub(/^#/, "", n)
+        if (text ~ /^pr #[0-9]+ merged at /) want[++nwant] = "merge " n
+        else if (text ~ /^pr #[0-9]+ closed at /) want[++nwant] = "close " n
+        else if (text ~ /^pr #[0-9]+ labels=[^ ]* assignees=[^ ]*$/ && (n in prev)) {
+          split(prev[n], g, " ")
+          lab_new = f[3]; sub(/^labels=/, "", lab_new)
+          as_new = f[4]; sub(/^assignees=/, "", as_new)
+          lab_old = g[3]; sub(/^labels=/, "", lab_old)
+          as_old = g[4]; sub(/^assignees=/, "", as_old)
+          nln = list(lab_new, ln); nlo = list(lab_old, lo)
+          nan = list(as_new, an); nao = list(as_old, ao)
+          need("label", n, ln, nln, lo, nlo); need("unlabel", n, lo, nlo, ln, nln)
+          need("assign", n, an, nan, ao, nao); need("unassign", n, ao, nao, an, nan)
+        }
+        ok = nwant > 0
+        for (i = 1; ok && i <= nwant; i++) { hit[i] = find(want[i]); if (!hit[i]) ok = 0 }
+        if (ok) { for (i = 1; i <= nwant; i++) used[hit[i]] = 1; next }
+        print
+      }
+      END {
+        printf "" >out
+        for (i = 1; i <= nrec; i++) if (!used[i]) print rt[i] >out
+      }' "$own" "$old" /dev/stdin && { [ ! -e "$w/own-writes.new" ] || mv "$w/own-writes.new" "$own"; }
+  ) 8>"$dir/own.lock"
+}
+
 report() {
   : >"$w/newkeys"
   local quiet=0
@@ -270,7 +339,7 @@ report() {
       LC_ALL=C comm -13 "$dir/snapshot" "$w/snapshot" | awk -v tier_state="$tier_state" -v tier_other="$tier_other" \
         '{ print (/^pr #[0-9]+ outside / ? tier_other : tier_state) "\t" $0 }'
     fi
-  } | LC_ALL=C sort -s -t "$(printf '\t')" -k1,1 | cut -f2- >"$w/out"
+  } | drop_own_echoes | LC_ALL=C sort -s -t "$(printf '\t')" -k1,1 | cut -f2- >"$w/out"
   local total
   total=$(wc -l <"$w/out")
   head -n "$maxlines" "$w/out"
