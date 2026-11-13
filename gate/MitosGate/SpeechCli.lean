@@ -1,21 +1,6 @@
 import Lean.Data.Json
 import MitosGate.Speech
 
-/-!
-# `mitos-gate speech`: what each of the owner's comments says
-
-`mitos-gate speech --owner <login> --pr N [--pushes <tsv>] <comments.json>` reads a pull request's
-issue comments, one JSON array as the REST route `issues/N/comments` returns it, and prints one line
-for each comment from `<login>`: its id, its reading with its position, and why. `--pushes` is the
-branch's activity as `mitos-gate carry` reads it; without it no bare `/land` has a head, and the
-commits a `/land <sha>` can name are those the pushes list.
-
-A comment must have `id`, `user.login`, `performed_via_github_app` (an object with a `slug`, or
-`null`), `created_at` and `updated_at` as `YYYY-MM-DDTHH:MM:SSZ`, and a string `body`. A missing
-`performed_via_github_app` is refused rather than read as typed. A refusal is one line on standard
-error with exit 1; a usage error is exit 2.
--/
-
 open Lean (Json)
 
 namespace MitosGate.SpeechCli

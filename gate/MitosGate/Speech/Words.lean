@@ -1,13 +1,8 @@
 import MitosGate.Speech.Comment
 
 /-!
-# The words, in order
-
 REST keeps only the last `updated_at` and never the first text, so an edited comment cannot be
-read as what was first posted. Any edit of a comment from the owner's login, whatever its slug and
-body, is a hold: an ignored edit could hide a `/hold`. The hold sits just above every comment
-created by the edit's second, so a word typed before the edit, or in the same second, does not
-lift it, a later `/land` does, and a second edit only moves it later.
+read as what was first posted.
 -/
 
 namespace MitosGate.Speech
@@ -24,12 +19,8 @@ def Read.pos (r : Read) (cs : List Comment) (c : Comment) : Nat :=
   | .editHold => editPos cs c
   | _ => 2 * c.id
 
-/-- Starting from the pull request's number gives the holds of two empty incomplete reads different
-positions, since `land` refuses a snapshot where two words share one. -/
 def top (x : Ctx) (cs : List Comment) : Nat := cs.foldr (fun d k => max d.id k) x.pr
 
-/-- Two words at one position become one hold. Only an edit hold shares a position with another
-word when comment ids are distinct, and then both are holds. -/
 def place (w : Word) : List Word → List Word
   | [] => [w]
   | v :: vs =>
@@ -43,8 +34,6 @@ def said (x : Ctx) (cs : List Comment) (pushes : List Carry.Push) (complete : Bo
   let ws := cs.filterMap fun c => (read x pushes c).word ((read x pushes c).pos cs c)
   if complete then ws else .ownerHold (2 * top x cs + 1) :: ws
 
-/-- The words, ascending by position, and why each other comment says nothing. A read that may
-have missed comments (`complete = false`) adds a hold above every word. -/
 def words (x : Ctx) (cs : List Comment) (pushes : List Carry.Push) (complete : Bool) :
     List Word × List (Nat × Why) :=
   (arrange (said x cs pushes complete),
@@ -52,8 +41,6 @@ def words (x : Ctx) (cs : List Comment) (pushes : List Carry.Push) (complete : B
       match read x pushes c with
       | .ignored why => some (c.id, why)
       | _ => none)
-
-/-! ## Statements -/
 
 def EditHoldsWhateverItSays : Prop :=
   ∀ (x : Ctx) cs pushes b (c : Comment), c ∈ cs → c.login = x.owner → c.updated ≠ c.created →
@@ -89,10 +76,6 @@ def OwnerLandIsTyped : Prop :=
     ∃ c ∈ cs, c.login = x.owner ∧ c.slug = none ∧ c.updated = c.created ∧
       footer c.body.toList = false ∧ m.said = 2 * c.id ∧
       ∃ arg, ownerLines c.body.toList = .ok [.land arg] ∧ target x pushes c.created arg = some m.about
-
-/-! ## Proofs -/
-
-/-! ### Placing words -/
 
 theorem place_mem {w u : Word} {vs : List Word} (h : u ∈ place w vs) :
     u = w ∨ u ∈ vs ∨ u = .ownerHold w.said := by
@@ -211,8 +194,6 @@ theorem positionsAscendingDistinct : PositionsAscendingDistinct := by
   intro x cs pushes b
   rw [List.pairwise_map]
   exact arrange_sorted _
-
-/-! ### Positions -/
 
 theorem lastBy_ge (cs : List Comment) (c : Comment) :
     c.id ≤ lastBy cs c ∧ ∀ d ∈ cs, d.created ≤ c.updated → d.id ≤ lastBy cs c := by

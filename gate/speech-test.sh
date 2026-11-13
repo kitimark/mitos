@@ -27,7 +27,6 @@ printf '%s\t%s\t%s\t%s\t%s\n' \
   2026-11-13T12:00:02Z branch_creation owner 0000000000000000000000000000000000000000 "$hA" \
   >"$tmp/pushes.tsv"
 
-# comment <id> <login> <slug or null> <created second> <updated second> <body as a JSON string>
 comment() {
   local slug=null
   [ "$3" != null ] && slug="{\"slug\":\"$3\"}"
@@ -35,7 +34,6 @@ comment() {
     "$1" "$2" "$slug" "$4" "$5" "$6"
 }
 
-# reads <name> <want stdout> <comment>... : exit 0 and exactly that output, with the pushes
 reads() {
   local name=$1 want=$2 got=0
   shift 2
@@ -49,7 +47,6 @@ reads() {
   ok "$name"
 }
 
-# refuses <name> <exit> <stderr pattern> <args>... : that exit, no stdout, one stderr line
 refuses() {
   local name=$1 want=$2 pat=$3 got=0
   shift 3
