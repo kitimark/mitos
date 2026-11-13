@@ -207,6 +207,8 @@ if [[ -z $(probe_line opus) ]]; then echo "ok    an async_launched notice for a 
 if [[ -z $(probe_line opus) ]]; then echo "ok    an isAsync notice alone is not recorded"; else echo "FAIL  isAsync notice recorded: '$(probe_line opus)'"; failed=1; fi
 "$hook" <<<"$(jq -c 'del(.tool_response.isAsync)' <<<"$async_notice")" >/dev/null 2>&1
 if [[ -z $(probe_line opus) ]]; then echo "ok    a status async_launched notice alone is not recorded"; else echo "FAIL  status notice recorded: '$(probe_line opus)'"; failed=1; fi
+"$hook" <<<"$(jq -c '.tool_response = {status:"remote_launched",content:[{type:"text",text:"ok"}]}' <<<"$async_notice")" >/dev/null 2>&1
+if [[ -z $(probe_line opus) ]]; then echo "ok    a remote_launched response is not recorded"; else echo "FAIL  remote_launched recorded: '$(probe_line opus)'"; failed=1; fi
 "$hook" <<<"$(jq -c '.tool_response = {status:"completed",isAsync:false,content:[{type:"text",text:"ok"}]}' <<<"$async_notice")" >/dev/null 2>&1
 if [[ $(probe_line opus) == *" pass" ]]; then echo "ok    a completed foreground probe is recorded"; else echo "FAIL  completed probe: '$(probe_line opus)'"; failed=1; fi
 rm -f "$MITOS_HOOK_STATE/p1.probe-opus"

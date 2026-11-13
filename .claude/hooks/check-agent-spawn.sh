@@ -21,7 +21,7 @@ else
       family=$(jq -r --arg m "${probe_models[*]}" '
         select(.tool_input.subagent_type != "fork"
                and .tool_input.run_in_background != true
-               and ((.tool_response | if type == "object" then .isAsync == true or .status == "async_launched" else false end) | not)
+               and ((.tool_response | if type == "object" then .isAsync == true or (.status // "completed") != "completed" else false end) | not)
                and ((.tool_input.prompt // "") | tostring | gsub("^\\s+|\\s+$"; "") | ascii_downcase) == "probe")
         | (.tool_input.model // "" | tostring | ascii_downcase) as $model
         | ($m | split(" ") | map(select(. as $f | $model | contains($f))) | first // empty)' \
