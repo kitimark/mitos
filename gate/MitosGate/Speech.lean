@@ -10,8 +10,8 @@ Every agent posts through the owner's account, so the login cannot tell the owne
 What can: an app post carries the app's slug (`performed_via_github_app`), and a post made through
 the account's token without an app ends with the adapter footer. So only an unedited comment from
 the owner's login, with no slug and no trailing footer, is the owner typing. A footer inside a
-`>` quote is not trailing, and a word line inside a quote, a fence or an indented block is not a
-word.
+`>` quote is not trailing, and a `/land` inside a quote, a fence or an indented block is not a
+word, while a `/hold` holds wherever it sits (`doubt`).
 
 REST keeps only the last `updated_at` and never the first text, so an edited comment cannot be
 read as what was first posted. Any edit of a comment from the owner's login, whatever its slug and
@@ -54,7 +54,7 @@ def delegates : List Teammate := []
 
 inductive Why
   | notOwner | unknownApp | noRecord | malformed | notLand | wrongTask | wrongProvider
-  | footer | protocolFence | noWord | unplacedFence
+  | footer | protocolFence | noWord | markup | quoteContinuation
   | hold | severalWords | badArgument | unknownCommit | ambiguousCommit | noHead
   deriving DecidableEq
 
@@ -244,22 +244,48 @@ def unresolved (x : Ctx) (arg : List Char) : Why :=
     if matching x.known arg = [] then .unknownCommit else .ambiguousCommit
   else .badArgument
 
-/-- Three backticks or tildes outside every fence this scanner places may open one it does not,
-such as a fence inside a list item, so a `/land` beside them holds. -/
+def holdLine (l : List Char) : Bool :=
+  "/hold".toList.isPrefixOf (l.dropWhile (" \t>-*+.)0123456789".toList.contains ·))
+
 def marker : List Char → Bool
   | '`' :: '`' :: '`' :: _ => true
   | '~' :: '~' :: '~' :: _ => true
   | _ :: r => marker r
   | [] => false
 
+def markup (l : List Char) : Bool :=
+  marker l ||
+    match lead l with
+    | some ('<' :: _) => true
+    | _ => false
+
+/-- GitHub's Markdown carries a quote on to the lines after it until a blank line. -/
+def inQuote : Bool → List (List Char) → Bool
+  | _, [] => false
+  | q, l :: ls =>
+    match lead l with
+    | some ('>' :: _) => inQuote true ls
+    | _ => if blank l then inQuote false ls else (q && (word? l).isSome) || inQuote q ls
+
+/-- The scanner places fences, quotes and indents only as top-level Markdown has them, while GitHub
+also draws them inside list items and HTML blocks. So a `/hold` at the start of any line, after
+spaces, quote marks or a list marker, holds wherever it sits, and a lone `/land` holds beside a fence
+marker or an HTML line, or inside a quote. A plain `/land` lifts such a hold. -/
+def doubt (b : List Char) : Option Why :=
+  if (lines b).any holdLine then some .hold
+  else if (lines b).any markup then some .markup
+  else if inQuote false (lines b) then some .quoteContinuation
+  else none
+
 def ownerRead (x : Ctx) (pushes : List Carry.Push) (t : Stamp) (b : List Char) : Read :=
   match ownerLines b with
   | .error why => .ignored why
-  | .ok [] => .ignored .noWord
+  | .ok [] => if (lines b).any holdLine then .hold .hold else .ignored .noWord
   | .ok [.hold] => .hold .hold
   | .ok [.land arg] =>
-    if (scan b).top.any marker then .hold .unplacedFence
-    else
+    match doubt b with
+    | some why => .hold why
+    | none =>
       match target x pushes t arg with
       | some s => .land s
       | none => .hold (unresolved x arg)
@@ -510,6 +536,11 @@ def UnresolvedLandHolds : Prop :=
   ∀ (x : Ctx) pushes (c : Comment) arg, c.login = x.owner → c.updated = c.created →
     c.slug = none → ownerLines c.body.toList = .ok [.land arg] →
     target x pushes c.created arg = none → ∃ why, read x pushes c = .hold why
+
+def HoldLineHolds : Prop :=
+  ∀ (x : Ctx) pushes (c : Comment) ls, c.login = x.owner → c.updated = c.created →
+    c.slug = none → ownerLines c.body.toList = .ok ls →
+    (lines c.body.toList).any holdLine = true → ∃ why, read x pushes c = .hold why
 
 def ResolveUnique : Prop :=
   ∀ known p s, p.length < 40 → resolve known p = some s →
@@ -972,13 +1003,23 @@ theorem unresolvedLandHolds : UnresolvedLandHolds := by
   simp only [ht]
   split <;> exact ⟨_, rfl⟩
 
+theorem holdLineHolds : HoldLineHolds := by
+  intro x pushes c ls ho hu hs hl hh
+  rw [read_typed ho hu hs, ownerRead, hl]
+  match ls with
+  | [] => simp only [hh, ite_true]; exact ⟨_, rfl⟩
+  | [.hold] => exact ⟨_, rfl⟩
+  | [.land _] => simp only [doubt, hh, ite_true]; exact ⟨_, rfl⟩
+  | .hold :: _ :: _ => exact ⟨_, rfl⟩
+  | .land _ :: _ :: _ => exact ⟨_, rfl⟩
+
 theorem ownerRead_land {x : Ctx} {pushes : List Carry.Push} {t : Stamp} {b : List Char}
     {s : Sha} (h : ownerRead x pushes t b = .land s) :
     ∃ arg, ownerLines b = .ok [.land arg] ∧ target x pushes t arg = some s := by
   unfold ownerRead at h
   split at h
   · cases h
-  · cases h
+  · split at h <;> cases h
   · cases h
   · next arg hl =>
     split at h
@@ -1251,13 +1292,34 @@ theorem loneCREndsALine : readOf (typed 112 12 "notes\r/hold") = .hold .hold := 
 theorem holdAfterALoneCRHolds :
     stepOf [typed 108 8 "/land", typed 112 12 "notes\r/hold"] = .stop .held := by decide +kernel
 theorem backtickInTheInfoStringIsNoFence :
-    readOf (typed 112 12 "```lang`x\n/hold") = .hold .hold := by decide +kernel
+    readOf (typed 112 12 "```lang`x\n/land") = .hold .markup := by decide +kernel
 theorem tildeInfoStringMayHoldABacktick :
-    readOf (typed 112 12 "~~~lang`x\n/hold") = .ignored .noWord := by decide +kernel
+    readOf (typed 112 12 "~~~lang`x\n/land") = .ignored .noWord := by decide +kernel
 theorem fenceInAListItemHoldsALand :
     stepOf [typed 112 12 "- ```\n  /land\n  ```"] = .stop .held := by decide +kernel
 theorem inlineTripleBackticksHoldALand :
-    readOf (typed 112 12 "see ```x``` here\n/land") = .hold .unplacedFence := by decide +kernel
+    readOf (typed 112 12 "see ```x``` here\n/land") = .hold .markup := by decide +kernel
+theorem fenceClosedOutsideAListHoldsALand :
+    stepOf [typed 112 12 ("- list\n\n  ```\n  inside\n```\n/land " ++ hC ++ "\n```")] =
+      .stop .held := by decide +kernel
+theorem htmlBlockHoldsALand : readOf (typed 112 12 "<pre>\n/land\n</pre>") = .hold .markup := by
+  decide +kernel
+theorem landCarryingOnAQuoteHolds :
+    stepOf [typed 108 8 "/hold", typed 112 12 "> example\n/land"] = .stop .held := by
+  decide +kernel
+theorem landCarryingOnAQuoteReadsAHold :
+    readOf (typed 112 12 "> example\nmore\n/land") = .hold .quoteContinuation := by
+  decide +kernel
+theorem blankLineEndsTheQuote : readOf (typed 112 12 "> example\n\n/land") = .land hC := by
+  decide +kernel
+theorem holdIndentedInAListItemHolds : readOf (typed 112 12 "- x\n\n    /hold") = .hold .hold := by
+  decide +kernel
+theorem quotedHoldHolds : readOf (typed 112 12 "> /hold") = .hold .hold := by decide +kernel
+theorem fencedHoldHolds : readOf (typed 112 12 "```\n/hold\n```") = .hold .hold := by
+  decide +kernel
+theorem listItemHoldHolds : readOf (typed 112 12 "1. /hold") = .hold .hold := by decide +kernel
+theorem quotedHoldBesideALandHolds :
+    stepOf [typed 112 12 "> /hold\n\n/land"] = .stop .held := by decide +kernel
 theorem tildeFencedLandIsNoWord :
     readOf (typed 112 12 "~~~sh\n/land\n~~~~") = .ignored .noWord := by decide +kernel
 theorem unclosedFenceRunsToTheEnd :
@@ -1370,7 +1432,7 @@ open Lean in
   for n in [``appNeverOwner, ``footerIsNeverOwner, ``editHoldsWhateverItSays,
       ``editHoldBeatsEarlierComments, ``secondEditOnlyMovesLater,
       ``agentNeedsSlugProviderTaskHead, ``fenceDuplicateKeyMalformed, ``severalWordLinesHold,
-      ``unresolvedLandHolds, ``resolveUnique, ``resolveFullSelf, ``headAtSound,
+      ``unresolvedLandHolds, ``holdLineHolds, ``resolveUnique, ``resolveFullSelf, ``headAtSound,
       ``sameSecondUnknown, ``incompleteReadHolds, ``positionsAscendingDistinct, ``wordTraces,
       ``ownerLandIsTyped] ++ fixtures.toList do
     for a in ← collectAxioms n do
