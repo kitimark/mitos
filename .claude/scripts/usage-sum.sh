@@ -19,10 +19,17 @@ for arg in "$@"; do
 done
 
 # A transcript repeats a message's usage on every content block of that message.
+# After a refusal fallback, usage.iterations lists every billed attempt, and the top-level
+# fields cover only the attempt that produced the message.
 sums='
+  def attempts: .message.usage
+    | if (.iterations | type) == "array" and (.iterations | length) > 0 then .iterations else [.] end;
+  def total(f): [attempts[] | .[f] // 0] | add;
   [ inputs | fromjson? | select(type == "object" and .type == "assistant")
     | select((.message.usage | type) == "object" and .message.model != "<synthetic>")
-    | {id: (.message.id // ("line" + (input_line_number | tostring))), u: .message.usage} ]
+    | {id: (.message.id // ("line" + (input_line_number | tostring))), u: {input_tokens: total("input_tokens"), output_tokens: total("output_tokens"),
+                      cache_read_input_tokens: total("cache_read_input_tokens"),
+                      cache_creation_input_tokens: total("cache_creation_input_tokens")}} ]
   | unique_by(.id)
   | if length == 0 then empty else
       [length,
