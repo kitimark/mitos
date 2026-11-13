@@ -2,7 +2,8 @@
 
 phase: 1
 goal: Impact analysis returns exactly the repos that depend on a changed repo.
-statement: Mitos.Proofs.impact_correct  (Mitos.Spec.ImpactCorrect Mitos.Impl.impact)
+statement: Mitos.Proofs.impact_correct  (Mitos.Spec.ImpactCorrect Mitos.Impl.impact),
+  Mitos.Proofs.impact_nodup  (Mitos.Spec.ImpactNodup Mitos.Impl.impact)
 touches: core/Mitos/Impl/Impact.lean, core/Mitos/Proofs/Impact.lean, core/Mitos/Proofs/Impact/Nodup.lean
 must_not_touch: statements.lock, core/Mitos/Core/, core/Challenge/, core/comparator.json, gate/, eval/cheats/
 checks: build, imports, lock, core lake check
@@ -17,7 +18,8 @@ escalation: hint → automation → stronger model → pair → split → revisi
   reachable; at the end the visited set is closed under reverse edges.
 - The visited list holds each repo once (#101): an edge fires only while its requiring repo is not
   visited yet, so no repo is added twice. `Mitos.Proofs.impact_nodup`
-  (`core/Mitos/Proofs/Impact/Nodup.lean`) proves it. It is not in the lock until the spec states it.
+  (`core/Mitos/Proofs/Impact/Nodup.lean`) proves it, as `Mitos.Spec.ImpactNodup Mitos.Impl.impact`
+  since the #101 spec PR added that statement and its Challenge line.
 
 - If this is the last of P1-002, P1-003 and P1-004 to merge, also add
   `core/Mitos/Proofs/Resolver.lean`, which re-exports all eight theorems under the Challenge's

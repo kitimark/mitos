@@ -11,3 +11,7 @@ theorem Mitos.Proofs.resolve_assumptions_exact : Mitos.Spec.AssumptionsExact Mit
 theorem Mitos.Proofs.resolve_status_honest : Mitos.Spec.StatusHonest Mitos.Impl.resolve := sorry
 theorem Mitos.Proofs.resolve_retract_exact : Mitos.Spec.RetractExact Mitos.Impl.resolve := sorry
 theorem Mitos.Proofs.impact_correct : Mitos.Spec.ImpactCorrect Mitos.Impl.impact := sorry
+theorem Mitos.Proofs.resolve_edges_nodup : Mitos.Spec.EdgesNodup Mitos.Impl.resolve := sorry
+theorem Mitos.Proofs.resolve_unresolved_nodup : Mitos.Spec.UnresolvedNodup Mitos.Impl.resolve := sorry
+theorem Mitos.Proofs.resolve_assumptions_nodup : Mitos.Spec.AssumptionsNodup Mitos.Impl.resolve := sorry
+theorem Mitos.Proofs.impact_nodup : Mitos.Spec.ImpactNodup Mitos.Impl.impact := sorry

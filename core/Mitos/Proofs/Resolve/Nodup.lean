@@ -10,14 +10,13 @@ theorem assumptionsOf_nodup (r p : Located) : (assumptionsOf r p).Nodup := by
   · rename_i h
     simp [List.nodup_cons, h]
 
-theorem resolve_assumes_nodup (fs : List Located) :
-    ∀ e ∈ (resolve fs).edges, e.assumes.Nodup := by
-  intro e he
+theorem resolve_assumptions_nodup : Spec.AssumptionsNodup resolve := by
+  intro fs _ e he
   obtain ⟨r, _, p, _, _, rfl⟩ := mem_edges.mp he
   simpa [mkEdge] using assumptionsOf_nodup r p
 
-theorem resolve_unresolved_nodup {fs : List Located} (wf : WellFormed fs) :
-    (resolve fs).unresolved.Nodup := by
+theorem resolve_unresolved_nodup : Spec.UnresolvedNodup resolve := by
+  intro fs wf
   unfold resolve WellFormed at *
   have hreq : List.Sublist (fs.filter isRequirement) fs := List.filter_sublist
   have hempty :
@@ -26,8 +25,8 @@ theorem resolve_unresolved_nodup {fs : List Located} (wf : WellFormed fs) :
         (fs.filter isRequirement) := List.filter_sublist
   exact List.Nodup.sublist ((hempty.trans hreq).map (·.id)) wf
 
-theorem resolve_keys_nodup {fs : List Located} (wf : WellFormed fs) :
-    ((resolve fs).edges.map Edge.key).Nodup := by
+theorem resolve_edges_nodup : Spec.EdgesNodup resolve := by
+  intro fs wf
   unfold WellFormed at wf
   have hkeys :
       (resolve fs).edges.map Edge.key =
@@ -57,9 +56,9 @@ theorem resolve_keys_nodup {fs : List Located} (wf : WellFormed fs) :
       exact hne (congrArg Prod.fst heq)
     exact hids.imp H
 
-theorem resolve_edges_nodup {fs : List Located} (wf : WellFormed fs) :
+theorem resolve_edge_list_nodup {fs : List Located} (wf : WellFormed fs) :
     (resolve fs).edges.Nodup := by
-  have h := resolve_keys_nodup wf
+  have h := resolve_edges_nodup fs wf
   unfold List.Nodup at *
   exact List.Pairwise.of_map Edge.key (fun _ _ hk heq => hk (congrArg Edge.key heq)) h
 

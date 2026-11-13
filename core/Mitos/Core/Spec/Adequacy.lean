@@ -70,6 +70,28 @@ theorem silent_impact_not_correct : ¬ ImpactCorrect (fun _ _ => []) := by
   have := (h [goodEdge] "sdk" "web").2 (Affects.step (e := goodEdge) (by simp))
   simp at this
 
+theorem same_key_edges_not_nodup :
+    ¬ EdgesNodup (fun _ => ⟨[goodEdge, { goodEdge with status := .inferred }], []⟩) := by
+  intro h
+  have := h [req, prov] wf
+  simp [Edge.key] at this
+
+theorem doubled_unresolved_not_nodup : ¬ UnresolvedNodup (fun _ => ⟨[], [0, 0]⟩) := by
+  intro h
+  have := h [req] wf1
+  simp at this
+
+theorem doubled_assumption_not_nodup :
+    ¬ AssumptionsNodup (fun _ => ⟨[{ goodEdge with assumes := [.extractor "npm", .extractor "npm"] }], []⟩) := by
+  intro h
+  have := h [req, prov] wf _ (List.mem_singleton_self _)
+  simp at this
+
+theorem doubled_impact_not_nodup : ¬ ImpactNodup (fun _ _ => ["web", "web"]) := by
+  intro h
+  have := h [goodEdge] "sdk"
+  simp at this
+
 /-- A file where character offsets and byte offsets differ. -/
 def accented : String := "é sdk"
 

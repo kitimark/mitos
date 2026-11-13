@@ -798,6 +798,23 @@ changes only when `core/Mitos/Impl/`, the Challenge or the cases change.
 **Not in this task.** A scheduler: the cases run one after another. The `mitos-gate cheats`
 runner being built in parallel has a job scheduler this runner could reuse later.
 
+### No-duplicates (#101, option a)
+
+The owner chose option (a) of #101: the spec states that the resolver lists each edge key, each
+unresolved id and each assumption of an edge once, and that impact lists each repo once
+(`Spec.EdgesNodup`, `Spec.UnresolvedNodup`, `Spec.AssumptionsNodup`, `Spec.ImpactNodup`, and four
+Challenge theorems). The two known gaps are `breaks=` cases now, with no proof repair:
+`edges_duplicated` breaks `resolve_edges_nodup` and `assumptions_dedupe_dropped` breaks
+`resolve_assumptions_nodup`, each refuted on one requirement and one provider of the same
+extractor. The eleven cheat cases built on `assumptions_dedupe_dropped` still claim
+`breaks=resolve_assumptions_exact`, which that mutant meets, so each still pins its check. No mutant
+breaks `resolve_unresolved_nodup` or `impact_nodup` yet (#231).
+
+**Evidence** (one local run each, default kernel): all 42 cases as expected in three batches, 22
+refuted, no known gap, 20 cheat cases rejected at their runs (231 s, 217 s and 78 s); the two flipped
+cases also with `--paranoid` (67 s). The runner reads the approved Challenge as 14 declarations and
+14 commands.
+
 ## Done when
 - [x] every `breaks=` case is refuted, every `survives=` case survives and every cheat case is
       rejected at its run, locally, default and `--paranoid`
@@ -824,5 +841,6 @@ runner being built in parallel has a job scheduler this runner could reuse later
       seven probes keep the two checks from going blind
 - [x] all `checks` pass locally
 - [x] run-log record written (ops/runs/)
-- [ ] the owner decides the known gaps `assumptions_dedupe_dropped` and `edges_duplicated`
-      (list multiplicity: strengthen the spec, or rule multiplicity out of scope; #101)
+- [x] the owner decides the known gaps `assumptions_dedupe_dropped` and `edges_duplicated`
+      (list multiplicity: strengthen the spec, or rule multiplicity out of scope; #101): the spec
+      states no-duplicates, and both are refuted `breaks=` cases

@@ -37,4 +37,16 @@ def RetractExact (R : Resolver) : Prop :=
 def ImpactCorrect (I : List Edge → String → List String) : Prop :=
   ∀ es x y, y ∈ I es x ↔ Affects es x y
 
+def EdgesNodup (R : Resolver) : Prop :=
+  ∀ fs, WellFormed fs → ((R fs).edges.map Edge.key).Nodup
+
+def UnresolvedNodup (R : Resolver) : Prop :=
+  ∀ fs, WellFormed fs → (R fs).unresolved.Nodup
+
+def AssumptionsNodup (R : Resolver) : Prop :=
+  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, e.assumes.Nodup
+
+def ImpactNodup (I : List Edge → String → List String) : Prop :=
+  ∀ es x, (I es x).Nodup
+
 end Mitos.Spec
