@@ -9,7 +9,10 @@
 # Rows that have no valid file yet are listed in `.claude/scripts/plan-tasks.pending`, one id per
 # line (`#` starts a comment). The list can only shrink: a listed row that now has a valid file
 # fails, and so does a listed id that is no linked row. A linked row that is not listed fails
-# until its file is written. The Architect writes the files (kitimark-mode, Plan-time designs).
+# until its file is written, and an id added to the list since the merge base with origin/main
+# fails, so a row cannot skip its design by joining the list. (Where there is no origin/main, or
+# the base has no list, that last check prints a skip note.) The Architect writes the files
+# (kitimark-mode, Plan-time designs).
 set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -47,11 +50,17 @@ linked_rows() {
   done
 }
 
-# The non-blank lines of a file's `## Design` block, one per line.
+# The non-blank lines of a file's `## Design` block, one per line, with runs of blanks collapsed
+# and the ends trimmed, so a stray space cannot make a shipped placeholder line look new.
 design_block() {
   awk '
     /^## / { indesign = ($0 == "## Design"); next }
-    indesign && $0 !~ /^[ \t]*$/ { print }
+    indesign && $0 !~ /^[ \t]*$/ {
+      gsub(/[ \t]+/, " ")
+      sub(/^ /, "")
+      sub(/ $/, "")
+      print
+    }
   ' "$1"
 }
 
@@ -121,14 +130,42 @@ check() {
   return "$bad"
 }
 
+# Prints each pending id of tree $1 that the list did not hold at the merge base with origin/main,
+# so the list cannot grow. Skips, with a note on stderr, where there is no git base to compare
+# with or the base has no list yet (the change that adds the list).
+growth() {
+  local tree=$1 base id
+  local -a old=()
+  base=$(git -C "$tree" merge-base origin/main HEAD 2>/dev/null) || {
+    echo "skip the growth check: no origin/main to compare with" >&2
+    return 0
+  }
+  if ! git -C "$tree" cat-file -e "$base:$pending_rel" 2>/dev/null; then
+    echo "skip the growth check: $pending_rel is not in the merge base" >&2
+    return 0
+  fi
+  mapfile -t old < <(git -C "$tree" show "$base:$pending_rel" | sed 's/#.*//; s/[[:space:]]//g' | grep .)
+  [ -f "$tree/$pending_rel" ] || return 0
+  while IFS= read -r id; do
+    printf '%s\n' "${old[@]}" | grep -qxF "$id" || echo "$id was added to $pending_rel after the merge base: write its task file instead"
+  done < <(sed 's/#.*//; s/[[:space:]]//g' "$tree/$pending_rel" | grep .)
+}
+
+# Prints each problem of tree $1, in rows, files and list growth.
+problems() {
+  local out
+  out=$(check "$1"; growth "$1")
+  [ -z "$out" ] || { echo "$out"; return 1; }
+}
+
 # PLAN_TASKS_ROOT checks another tree and skips the self-test.
 if [ -n "${PLAN_TASKS_ROOT:-}" ]; then
-  check "$root"
+  problems "$root"
   exit $?
 fi
 
 failed=0
-if out=$(check "$root"); then
+if out=$(problems "$root"); then
   echo "ok   the tree: every linked row has a design or is pending"
 else
   echo "FAIL the tree"
@@ -165,7 +202,7 @@ PLAN
 
 expect() {
   local name=$1 want=$2 out
-  if out=$(check "$t"); then
+  if out=$(problems "$t" 2>/dev/null); then
     if [ "$want" = ok ]; then echo "ok   $name"; else echo "FAIL $name was accepted"; failed=1; fi
   elif [ "$want" = fail ]; then
     echo "ok   $name rejected: $(echo "$out" | head -1)"
@@ -192,8 +229,40 @@ sed -n '/^## Design$/,/^## Done when$/p' "$t/tasks/TEMPLATE.md" | sed '$d' >"$t/
 expect "the template's Design block unfilled" fail
 
 fresh
+sed -n '/^## Design$/,/^## Done when$/p' "$t/tasks/TEMPLATE.md" | sed '$d; 1!s/$/ /; s/^\(types:\)/\1\t/' >"$t/tasks/P9-001-a.md"
+expect "the template's Design block with stray blanks" fail
+
+fresh
 printf 'Design: n/a ()\n' >"$t/tasks/P9-003-b.md"
 expect "an n/a with no reason" fail
+
+# The list cannot grow: the base commit is origin/main in a scratch repo.
+base() {
+  git -C "$t" init -q
+  git -C "$t" add -A
+  git -C "$t" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+  git -C "$t" update-ref refs/remotes/origin/main HEAD
+}
+
+fresh
+echo P9-001 >"$t/$pending_rel"
+rm "$t/tasks/P9-001-a.md"
+base
+expect "an unchanged list" ok
+
+fresh
+rm "$t/tasks/P9-001-a.md"
+base
+echo P9-001 >"$t/$pending_rel"
+expect "a row added to the list after the base" fail
+
+fresh
+echo P9-001 >"$t/$pending_rel"
+rm "$t/tasks/P9-001-a.md"
+base
+: >"$t/$pending_rel"
+printf '# t\n\n## Design\nA design.\n' >"$t/tasks/P9-001-a.md"
+expect "a listed row removed from the list with its file written" ok
 
 fresh
 echo P9-001 >"$t/$pending_rel"
