@@ -88,6 +88,9 @@ done
 verdicts=null
 if [ ! -e "$dir/dash.failed" ]; then
   verdicts=$(jq -c --arg owner "$owner" '
+    # A model name as the cell spells it (opus-xhigh, claude-sonnet-5-5, sonnet4.5) maps to exactly
+    # one of the fixed families, or to null: unknown or ambiguous names are no model at all.
+    def fam: [scan("opus|sonnet|haiku|fable")] | unique | if length == 1 then .[0] else null end;
     def verdicts_from_dashboard:
       [(.body // "") | if type == "string" then . else error("bad body") end | split("\n")[]
        | select(test("^\\s*\\|\\s*#[0-9]+"))
@@ -103,9 +106,10 @@ if [ ! -e "$dir/dash.failed" ]; then
           else null end) as $h
        | (if $pass then
             [($v | ascii_downcase | ((capture("^pass\\b(?<s>[^,]*?)(\\s+(at|carried)\\b|,|$)") // {s: ""}).s)
-              | scan("([a-z][a-z0-9.]*)-(?:low|medium|high|xhigh|max)\\b") | .[0])] | unique
+              | scan("([a-z][a-z0-9.-]*)-(?:low|medium|high|xhigh|max)\\b") | .[0] | fam | select(. != null))] | unique
           else [] end) as $models
-       | (($v | ascii_downcase | capture("\\bauthor\\s+(?<a>[a-z][a-z0-9.]*)").a?) // null) as $author
+       | ((($v | ascii_downcase | capture("\\bauthor\\s+(?<a>[a-z][a-z0-9.-]*)").a?) // null) as $raw
+          | if $raw == null then null else ($raw | fam) // "?" end) as $author
        | {key: $n, value: {h: $h, k: (if $pass then "pass" else "other" end), m: $models, a: $author}}] | from_entries;
 
     [.[] | select(type == "object" and .title == "Owner dashboard" and .pull_request == null
@@ -272,6 +276,7 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
   def hold($vi; $trust):
     if $vi == null or $vi.k != "pass" then null
     elif $vi.a == null then "the verdict cell names no author model"
+    elif $vi.a == "?" then "the author in the verdict cell is not exactly one of opus, sonnet, haiku, fable"
     elif ($vi.m | length) == 0 then "the verdict cell names no verifier model"
     elif all($vi.m[]; . == $vi.a) then "every verdict is from the author model, \($vi.a | .[0:20])"
     elif $trust and ($vi.m | any(. == "opus") | not) then "no opus verdict, and the PR is or may be trust-critical"

@@ -342,9 +342,12 @@ watcher's echo filter and the merge rule below rely on both.
   sonnet`. `pr-state.sh` reads the verdict head, the verdict models and the author from that
   cell, and prints no `merge-ready` line, with `merge-hold=<reason>` on the PR's state line, when
   the cell names no author or no verdict model, when every verdict model is the author's, or when
-  the PR is trust-critical and no verdict is from `opus`. Trust-critical there means a path of
-  the spec or trust-infrastructure bullets of What stays with the user, or the `spec-approved`
-  label, and a PR whose files cannot be read counts as trust-critical. A cell written before this
+  the PR is trust-critical and no verdict is from `opus`. The author and each verdict's model may
+  be spelled as a full model id (`author claude-sonnet-5-5`, `sonnet4.5-xhigh`): the hook maps each
+  to one of `opus`, `sonnet`, `haiku` or `fable`. An author that maps to none of them or to more
+  than one is held, and a verdict token that maps to none of them is no verdict model.
+  Trust-critical there means a path of the spec or trust-infrastructure bullets of What stays
+  with the user, or the `spec-approved` label, and a PR whose files cannot be read counts as trust-critical. A cell written before this
   format, with no author, therefore never reads merge-ready: the root rewrites it, naming the
   author, once a verifier of another model has passed that head. `wording-only` needs neither.
   A `verdict` commit status would show in the PR's checks, but the
