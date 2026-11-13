@@ -478,6 +478,10 @@ The owner catches up on GitHub, not in a chat session:
   assignment of the owner made from the owner's account. An assignment that any other account
   or a bot makes gets no ping. Never label a PR to show the owner its state, because any label
   change re-runs the full `gate`.
+- **`/no-comments` before a hand-over.** A PR whose diff adds comments goes to the owner only
+  after the orchestrator's `/no-comments` pass over its head, the push of what the pass accepts,
+  and a verifier's verdict at that cleaned head. The catch-up names the pass and its result, or
+  says "no-comments: no new comments".
 - **CodeRabbit before a hand-over.** A PR goes to the owner only once
   `.claude/scripts/bot-review.sh` reads `reviewed` at its head and its PR owner has answered that
   review, or once CodeRabbit refuses it, which the catch-up names.

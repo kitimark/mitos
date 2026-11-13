@@ -238,14 +238,16 @@ watcher's echo filter and the merge rule below rely on both.
   restack included, does not count when the new head keeps the content id (see Verdicts) of the
   head the round started from, both from one build of `main`'s tool, with the parent PR's branch
   in place of `origin/main` for a PR in a stack. That head still needs a verifier, as Verdicts
-  says. Before a third round starts, the root narrows or splits the PR. The PR keeps its task's
+  says. A `/no-comments` pass that only deletes or rewords comments does not count either, and a
+  reshape fix it accepts counts as the PR's next round. Before a third round starts, the root narrows or splits the PR. The PR keeps its task's
   change and the blocking fixes, and the rest moves to separate PRs or the follow-up issue. The
   third brief names what is left.
 
 ## Verdicts
 
-- The root spawns a verifier at the head each PR owner reports, except for a wording-only change.
-  Only an agent that did not write the code gives a verdict. CI, bot reviews and the root's own
+- The root spawns a verifier at the head each PR owner reports, or at the head that follows its
+  `/no-comments` pass (see Needs you means assigned to the user), except for a wording-only
+  change. Only an agent that did not write the code gives a verdict. CI, bot reviews and the root's own
   reading are inputs to one.
 - A wording-only change alters no behavior. It edits prose, comments or typos, and no code,
   script, spec, lock, workflow, skill rule or hook. The root confirms that from the diff. Such a
@@ -457,8 +459,18 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   `@kitimark this needs you:` and a line as `github-actions[bot]` on each assignment of the user
   made from the user's account. The line is the first line of the item's latest catch-up, in a
   code span with every `@` and every invisible character taken out, so it mentions nobody, links
-  nothing and hides no text. Before a catch-up that hands the user a PR, run
-  `.claude/scripts/bot-review.sh <pr>`, and hand the PR over only on `reviewed` or `refused`. On
+  nothing and hides no text. A hand-over runs in this order: the PR owner reports its head, the
+  root runs the `/no-comments` pass, a PR owner pushes what the pass accepts, the verifier checks
+  the resulting head, then `bot-review.sh` and the catch-up. The pass is
+  `.claude/skills/no-comments/SKILL.md` over the head's diff against `main`. The root runs it,
+  because it spawns Comment Sicko and a PR owner may have no Agent tool. The PR owner pushes the
+  accepted deletions and fixes and answers the bot threads. A PR whose diff adds no comments, such
+  as a pure deletion, a rebase, plan-row links or a run-log-only change, needs no pass, and its
+  catch-up says "no-comments: no new comments". A PR from an outside agent that the root only
+  observes needs none unless the user asks. The catch-up's Status names the pass, its result
+  (deletions, and flags fixed or none) and the head it ran at. Before a catch-up that hands the
+  user a PR, run `.claude/scripts/bot-review.sh <pr>`, and hand the PR over only on `reviewed` or
+  `refused`. On
   `paused` or `behind`, run it again with `--request`. Then wait for CodeRabbit's finished check
   at that head on the monitor, and have the PR's owner answer its threads in the same round. The
   catch-up names the head CodeRabbit last reviewed, or the `refused:` reason. A monitor line
