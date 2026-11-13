@@ -97,12 +97,21 @@ decides "a standing fail beats wording-only" \
   "$only149"' | .prs[0].verdicts = [{"said":740,"head":"bbb","judge":{"provider":"claude","name":"verifier"},"model":"sonnet","result":"fail"},{"said":750,"head":"bbb","judge":{"provider":"claude","name":"root"},"model":"opus","result":"wordingOnly"}]' \
   '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"}}'
 
-decides "a green gate wakes the lander of a pull request in line" \
+decides "a green gate wakes the lander of a pull request in line on an agent's entry" \
   'del(.me, .pr) | .event = {"kind":"gateDone","pr":149,"gate":"success"}' \
   '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"wake":{"kind":"lander","pr":149}}'
 decides "a red gate wakes the holder" \
   'del(.me, .pr) | .event = {"kind":"gateDone","pr":149,"gate":"failure"}' \
   '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"wake":{"kind":"holder","pr":149}}'
+decides "a green gate on a pull request in line only on the owner's word wakes nobody" \
+  'del(.me, .pr) | .event = {"kind":"gateDone","pr":153,"gate":"success"}' \
+  '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"wake":{"kind":"nobody"}}'
+decides "a red gate on a pull request in line only on the owner's word wakes the holder" \
+  'del(.me, .pr) | .event = {"kind":"gateDone","pr":153,"gate":"failure"}' \
+  '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"wake":{"kind":"holder","pr":153}}'
+decides "an agent's entry beside the owner's word still wakes the lander on a green gate" \
+  'del(.me, .pr) | .prs[1].words += [{"kind":"ownerLand","said":810,"about":"bbb"}] | .event = {"kind":"gateDone","pr":149,"gate":"success"}' \
+  '{"next":149,"plan":{"expect":"bbb","kind":"push","pr":149,"replay":"br"},"wake":{"kind":"lander","pr":149}}'
 decides "a move of main wakes nobody" 'del(.me, .pr) | .event = {"kind":"mainMoved"}' \
   '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"wake":{"kind":"nobody"}}'
 decides "the step and the wake are both answered when both are asked" \
