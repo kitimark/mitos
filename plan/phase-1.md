@@ -66,14 +66,16 @@ tracker's.
 | P1-012 | Step 3. Shadow run: `decide` only prints its plan (owner-gated: `.github/`) | ci | [#191](https://github.com/kitimark/mitos/issues/191) |
 | P1-013 | Step 4. Claude connector: `land.sh`, wake rules, the `bot-review.sh` cover rule (owner-gated: `.claude/`) | tooling | [#192](https://github.com/kitimark/mitos/issues/192) |
 | P1-014 | Step 5. The switch: `apply` pushes only the planned PR; `report` is added; the old loop is deleted (owner-gated: `.github/`) | ci | [#193](https://github.com/kitimark/mitos/issues/193) |
-| P1-015 | Step 6. Process rules: merge means `land`; hand-overs give `/land <commit>` (owner-gated: `.claude/`, `docs/process.md`, `.cursor/`) | process | [#194](https://github.com/kitimark/mitos/issues/194) |
+| P1-015 | Step 6. Process rules: merge means `land`; hand-overs give `/land <commit>`; the old updater's rules go (owner-gated: `.claude/`, `docs/process.md`, `.cursor/`) | process | [#194](https://github.com/kitimark/mitos/issues/194) |
 | P1-016 | Step 7. Grok connector: the relay applies the wake table (owner-gated: `.github/`, `.cursor/`) | tooling | [#195](https://github.com/kitimark/mitos/issues/195) |
 | P1-017 | Step 8. Fold `/land`, `/hold` and `land` into the protocol draft; add a `behind` flag to the TLA+ model | process | [#196](https://github.com/kitimark/mitos/issues/196) |
 
 Steps 1 and 2 can start now. Steps 3 and 4 follow them. Step 5, the switch, needs steps 0 to 4,
-and [PR #149](https://github.com/kitimark/mitos/pull/149) and issue
-[#171](https://github.com/kitimark/mitos/issues/171) must land first. To roll back step 5,
-revert it. Step 6 follows step 5 at once. Steps 7 and 8 follow step 1.
+issue [#171](https://github.com/kitimark/mitos/issues/171) must land first, and holder `push`
+records must have started ([amendment](https://github.com/kitimark/mitos/issues/178#issuecomment-6832011164),
+asked of #172 in round 3). To roll back step 5, revert it, and if step 6 has landed, revert step 6's
+rules too. Step 6 follows step 5 at once. Step 7 follows steps 1 and 2 (it reads the one snapshot
+and the parser) and is best after step 5. Step 8 follows step 1.
 
 These rows are not Phase 1 exit criteria. If the exit criteria are met first, the rows still open
 move to the next phase's plan in that plan's PR.
