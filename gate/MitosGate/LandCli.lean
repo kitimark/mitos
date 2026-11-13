@@ -44,8 +44,7 @@ namespace MitosGate.LandCli
 
 open MitosGate.Land
 
-/-! ## Decoding: the boundary
-
+/-!
 An error is a path and a message, written `.prs[0].words[1].said: expected a natural number`. A
 leaf says `: message`; each object key and list index puts itself before it. -/
 
@@ -83,7 +82,6 @@ private def str : D String := fun j =>
   | .ok s => .ok s
   | .error _ => .error ": expected a string"
 
-/-- A commit: 1 to 64 letters and digits. Nothing else is printed back. -/
 private def sha : D Sha := fun j => do
   let s ← str j
   unless 0 < s.length && s.length ≤ 64 && s.all fun c => c.isAlphanum do
@@ -95,14 +93,12 @@ private def list (d : D α) : D (List α) := fun j =>
   | .error _ => .error ": expected a list"
   | .ok a => a.toList.mapIdx (fun i v => (d v).mapError fun e => s!"[{i}]{e}") |>.mapM id
 
-/-- A string that is one of the names in the table. -/
 private def named (table : List (String × α)) : D α := fun j => do
   let s ← str j
   match table.lookup s with
   | some v => return v
   | none => throw s!": {s.quote} is not one of {", ".intercalate (table.map (·.1.quote))}"
 
-/-- An object `{kind, ...}`: the table gives, for each kind, its other keys and its decoder. -/
 private def tagged (table : List (String × List String × D α)) : D α := fun j => do
   let k ← at' "kind" str j
   match table.lookup k with
@@ -174,8 +170,6 @@ private def event : D Event := tagged
    ("landWord", ["pr"], fun j => return .landWord (← at' "pr" nat j)),
    ("ownerSpoke", ["pr"], fun j => return .ownerSpoke (← at' "pr" nat j))]
 
-/-! ## The snapshot -/
-
 structure Snapshot where
   prs : List Obs
   me : Option Teammate
@@ -198,7 +192,6 @@ private def firstDup : List Nat → Option Nat
 
 private def ascending (l : List Nat) : Bool := (l.zip l.tail).all fun p => p.1 < p.2
 
-/-- The conditions the decision relies on and does not check (see the module doc). -/
 def Snapshot.check (s : Snapshot) : Except String Unit := do
   if let some p := firstDup (s.prs.map (·.pr)) then
     throw s!"pull request {p} is listed twice"
@@ -213,8 +206,6 @@ def Snapshot.check (s : Snapshot) : Except String Unit := do
     unless s.prs.any (·.pr == p) do throw s!"pr: pull request {p} is not in prs"
   | _, _ => throw "me and pr go together: give both or neither"
 
-/-! ## The decision -/
-
 structure Decision where
   next : Option Pr
   plan : Plan
@@ -228,8 +219,6 @@ def Snapshot.decide (s : Snapshot) : Decision :=
       | some me, some p => (s.prs.find? (·.pr == p)).map (step me q)
       | _, _ => none,
     wake := s.event.map (wakeOf s.prs) }
-
-/-! ## Encoding -/
 
 private def kind (k : String) (fields : List (String × Json) := []) : Json :=
   Json.mkObj (("kind", Json.str k) :: fields)
@@ -273,9 +262,6 @@ def Decision.json (d : Decision) : Json :=
     (d.step.map fun s => [("step", stepJson s)]).getD [] ++
     (d.wake.map fun w => [("wake", wakeJson w)]).getD []
 
-/-! ## The command -/
-
-/-- The decision for the text of a snapshot, or why the snapshot is refused. -/
 def run (text : String) : Except String Json := do
   let j ← match Json.parse text with
     | .ok j => pure j
