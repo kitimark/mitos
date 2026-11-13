@@ -1,4 +1,4 @@
-why=The known gap assumptions_dedupe_dropped as a breaks= case, plus a resolve that a tactic block makes bogus when include_str finds the case's file, inside first | … | … so that the hole run, which holds no such file, builds the real one (review on #86, round 2, sonnet B1).
+why=assumptions_dedupe_dropped, which meets AssumptionsExact, as a breaks= case, plus a resolve that a tactic block makes bogus when include_str finds the case's file, inside first | … | … so that the hole run, which holds no such file, builds the real one (review on #86, round 2, sonnet B1).
 breaks=resolve_assumptions_exact
 rejects=lint
 file=Mitos/Impl/Resolve.lean

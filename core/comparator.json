@@ -9,7 +9,11 @@
     "Mitos.Proofs.resolve_assumptions_exact",
     "Mitos.Proofs.resolve_status_honest",
     "Mitos.Proofs.resolve_retract_exact",
-    "Mitos.Proofs.impact_correct"
+    "Mitos.Proofs.impact_correct",
+    "Mitos.Proofs.resolve_edges_nodup",
+    "Mitos.Proofs.resolve_unresolved_nodup",
+    "Mitos.Proofs.resolve_assumptions_nodup",
+    "Mitos.Proofs.impact_nodup"
   ],
   "definition_names": ["Mitos.Impl.resolve", "Mitos.Impl.impact"],
   "permitted_axioms": ["propext", "Quot.sound", "Classical.choice"]

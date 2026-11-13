@@ -12,7 +12,8 @@ theorem impactGo_nodup (x : String) :
     intro hnd
     exact ih (List.nodup_cons.mpr ⟨(fires_iff.mp (List.find?_some h)).2, hnd⟩)
 
-theorem impact_nodup (es : List Edge) (x : String) : (impact es x).Nodup :=
-  impactGo_nodup x es [] List.nodup_nil
+theorem impact_nodup : Spec.ImpactNodup impact := by
+  intro es x
+  exact impactGo_nodup x es [] List.nodup_nil
 
 end Mitos.Proofs

@@ -1,4 +1,4 @@
-why=The known gap assumptions_dedupe_dropped as a breaks= case, plus an implementation that imports Lean and runs code at elaboration (run_cmd) to declare a bogus resolve only when the case's file is in the workspace (review on #86, round 2, opus m1).
+why=assumptions_dedupe_dropped, which meets AssumptionsExact, as a breaks= case, plus an implementation that imports Lean and runs code at elaboration (run_cmd) to declare a bogus resolve only when the case's file is in the workspace (review on #86, round 2, opus m1).
 breaks=resolve_assumptions_exact
 rejects=lint
 file=Mitos/Impl/Resolve.lean
