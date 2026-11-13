@@ -1,0 +1,60 @@
+{
+  "me": { "provider": "claude", "name": "orchestrator" },
+  "pr": 153,
+  "prs": [
+    {
+      "pr": 153, "updatable": true, "enforced": true, "head": "aaa", "pushes": [],
+      "ids": [ { "sha": "aaa", "id": "id-a" }, { "sha": "ar", "id": "id-a" } ],
+      "paths": [ ".github/workflows/ci.yml" ],
+      "base": { "kind": "clean", "replay": "ar" }, "gate": "success",
+      "author": { "who": { "provider": "grok", "name": "builder" }, "model": "grok" },
+      "verdicts": [
+        { "said": 850, "head": "aaa", "judge": { "provider": "claude", "name": "verifier-opus" },
+          "model": "opus", "result": "pass" },
+        { "said": 851, "head": "aaa", "judge": { "provider": "claude", "name": "verifier" },
+          "model": "sonnet", "result": "pass" }
+      ],
+      "botAt": "aaa",
+      "delegates": [ { "provider": "claude", "name": "orchestrator" } ],
+      "words": [ { "kind": "ownerLand", "said": 900, "about": "aaa" } ],
+      "rest": true
+    },
+    {
+      "pr": 149, "updatable": true, "enforced": true, "head": "bbb", "pushes": [],
+      "ids": [ { "sha": "bbb", "id": "id-b" }, { "sha": "br", "id": "id-b" } ],
+      "paths": [ "core/Mitos/Chain.lean" ],
+      "base": { "kind": "clean", "replay": "br" }, "gate": "success",
+      "author": { "who": { "provider": "grok", "name": "builder" }, "model": "grok" },
+      "verdicts": [
+        { "said": 750, "head": "bbb", "judge": { "provider": "claude", "name": "verifier" },
+          "model": "sonnet", "result": "pass" }
+      ],
+      "botAt": "bbb",
+      "delegates": [ { "provider": "claude", "name": "orchestrator" } ],
+      "words": [
+        { "kind": "agentLand", "who": { "provider": "claude", "name": "orchestrator" },
+          "said": 800, "about": "bbb" }
+      ],
+      "rest": true
+    },
+    {
+      "pr": 159, "updatable": true, "enforced": true, "head": "cc2",
+      "pushes": [ { "byUpdater": true, "before": "ccc", "after": "cc2" } ],
+      "ids": [ { "sha": "ccc", "id": "id-c" }, { "sha": "cc2", "id": "id-c" } ],
+      "paths": [ "core/Mitos/Chain.lean" ],
+      "base": { "kind": "current" }, "gate": "pending",
+      "author": { "who": { "provider": "grok", "name": "builder" }, "model": "grok" },
+      "verdicts": [
+        { "said": 650, "head": "ccc", "judge": { "provider": "claude", "name": "verifier" },
+          "model": "sonnet", "result": "pass" }
+      ],
+      "botAt": "ccc",
+      "delegates": [ { "provider": "claude", "name": "orchestrator" } ],
+      "words": [
+        { "kind": "agentLand", "who": { "provider": "claude", "name": "orchestrator" },
+          "said": 700, "about": "ccc" }
+      ],
+      "rest": true
+    }
+  ]
+}
