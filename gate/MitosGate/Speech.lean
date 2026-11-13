@@ -253,11 +253,7 @@ def marker : List Char → Bool
   | _ :: r => marker r
   | [] => false
 
-def markup (l : List Char) : Bool :=
-  marker l ||
-    match lead l with
-    | some ('<' :: _) => true
-    | _ => false
+def markup (l : List Char) : Bool := marker l || l.contains '`' || l.contains '<'
 
 /-- GitHub's Markdown carries a quote on to the lines after it until a blank line. -/
 def inQuote : Bool → List (List Char) → Bool
@@ -268,9 +264,10 @@ def inQuote : Bool → List (List Char) → Bool
     | _ => if blank l then inQuote false ls else (q && (word? l).isSome) || inQuote q ls
 
 /-- The scanner places fences, quotes and indents only as top-level Markdown has them, while GitHub
-also draws them inside list items and HTML blocks. So a `/hold` at the start of any line, after
-spaces, quote marks or a list marker, holds wherever it sits, and a lone `/land` holds beside a fence
-marker or an HTML line, or inside a quote. A plain `/land` lifts such a hold. -/
+also draws them inside list items and HTML blocks, and runs a code span or an HTML comment across
+lines. So a `/hold` at the start of any line, after spaces, quote marks or a list marker, holds
+wherever it sits, and a lone `/land` holds in a comment with a backtick, a `<` or three tildes, or
+inside a quote. A plain `/land` lifts such a hold. -/
 def doubt (b : List Char) : Option Why :=
   if (lines b).any holdLine then some .hold
   else if (lines b).any markup then some .markup
@@ -1304,6 +1301,12 @@ theorem fenceClosedOutsideAListHoldsALand :
       .stop .held := by decide +kernel
 theorem htmlBlockHoldsALand : readOf (typed 112 12 "<pre>\n/land\n</pre>") = .hold .markup := by
   decide +kernel
+theorem codeSpanAcrossLinesHoldsALand :
+    readOf (typed 112 12 "`example\n/land \n`") = .hold .markup := by decide +kernel
+theorem codeSpanAcrossLinesDoesNotLand :
+    stepOf [typed 112 12 "`example\n/land\n`"] = .stop .held := by decide +kernel
+theorem htmlCommentAcrossLinesHoldsALand :
+    readOf (typed 112 12 "note <!--\n/land\n-->") = .hold .markup := by decide +kernel
 theorem landCarryingOnAQuoteHolds :
     stepOf [typed 108 8 "/hold", typed 112 12 "> example\n/land"] = .stop .held := by
   decide +kernel

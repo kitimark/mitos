@@ -97,6 +97,8 @@ reads "a fence inside a list item holds a /land" "112 ownerHold@224 fence-or-htm
   "$(comment 112 owner null 12 12 '"- ~~~\n  /land\n  ~~~"')"
 reads "a /land carrying on a quote holds" "112 ownerHold@224 inside-a-quote" \
   "$(comment 112 owner null 12 12 '"> example\n/land"')"
+reads "a code span across lines holds a /land" "112 ownerHold@224 fence-or-html-in-the-comment" \
+  "$(comment 112 owner null 12 12 "\"\`example\\n/land \\n\`\"")"
 reads "a quoted /hold holds" "112 ownerHold@224 hold" "$(comment 112 owner null 12 12 '"> /hold"')"
 reads "a lone CR ends a line" "112 ownerHold@224 hold" \
   "$(comment 112 owner null 12 12 '"notes\r/hold"')"
