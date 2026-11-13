@@ -289,7 +289,8 @@ watcher's echo filter and the merge rule below rely on both.
   most of the diff does not count as the passing verdict of the merge rule below, though an
   `opus`-written trust-critical PR still needs its `opus` one. While no other model can verify,
   the PR gets no merge command and its catch-up says to hold the merge, the same for every PR.
-  #222 tracks dropping the `merge-ready` line for such a PR.
+  `pr-state.sh` enforces this from the verdict cell (see the verdict-cell bullet below): it prints no
+  `merge-ready` line for such a PR and a `merge-hold=<reason>` on its state line instead.
 - A verdict covers one head. A later head keeps it only when it only rebases: every push to the
   PR's branch since the verified head is a force-push by `mitos-pr-updater[bot]`, the first one
   from the verified head and each later one from the commit the one before it left, up to the
@@ -333,16 +334,27 @@ watcher's echo filter and the merge rule below rely on both.
   verifiers re-run the gates, they read the cheat corpus from these logs.
 - The root writes each verdict into the PR's In flight row on the Owner dashboard, or into its
   merged line once the PR has merged (see Catching the user up). The verdict cell starts with
-  `PASS`, `FAIL` or `wording-only`, then who gave it and the short head it covers, such as
-  `PASS sonnet-xhigh + opus-xhigh at 43fc333`. At a head that only rebases, the row's Head cell
-  is the new head and the verdict cell says `PASS carried from 43fc333`. `pr-state.sh` reads the
-  verdict head from that cell. A `verdict` commit status would show in the PR's checks, but the
+  `PASS`, `FAIL` or `wording-only`, then who gave it, the short head it covers and the model that
+  wrote most of the diff, such as `PASS opus-xhigh at 43fc333, author sonnet`. Each verdict is a
+  model and an effort, such as `opus-xhigh`, and two are joined with `+`: `PASS sonnet-xhigh +
+  opus-xhigh at 43fc333, author opus`. At a head that only rebases, the row's Head cell is the new
+  head and the verdict cell keeps the models: `PASS opus-xhigh carried from 43fc333, author
+  sonnet`. `pr-state.sh` reads the verdict head, the verdict models and the author from that
+  cell, and prints no `merge-ready` line, with `merge-hold=<reason>` on the PR's state line, when
+  the cell names no author or no verdict model, when every verdict model is the author's, or when
+  the PR is trust-critical and no verdict is from `opus`. Trust-critical there means a path of
+  the spec or trust-infrastructure bullets of What stays with the user, or the `spec-approved`
+  label, and a PR whose files cannot be read counts as trust-critical. A cell written before this
+  format, with no author, therefore never reads merge-ready: the root rewrites it, naming the
+  author, once a verifier of another model has passed that head. `wording-only` needs neither.
+  A `verdict` commit status would show in the PR's checks, but the
   session proxy refuses status writes (#42).
 - A PR merges when four things hold at its current head. It has a passing verdict or is a
   wording-only change. Its `gate` is green. No review comment from the user is unanswered, read
   from the comment routes in **Forge**. It touches nothing the user keeps (see What stays with
   the user). `pr-state.sh` shows all four on each open PR's line, and a `merge-ready #N` line
-  with the merge command pinned to the head only when the first three hold. For that it reads
+  with the merge command pinned to the head only when the first three hold and the cell's
+  models pass the checks above. For that it reads
   every comment and review of a PR whose verdict covers its head, but a footer post anywhere on
   the PR counts as the answer, so the comment-route read above still decides.
 - It merges with rebase and merge, pinned to that head, through
