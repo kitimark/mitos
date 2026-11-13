@@ -68,6 +68,7 @@ def whyName : Why → String
   | .footer => "footer"
   | .protocolFence => "record-without-app"
   | .noWord => "no-word"
+  | .unplacedFence => "fence-marker-outside-a-fence"
   | .hold => "hold"
   | .severalWords => "several-words"
   | .badArgument => "bad-argument"
