@@ -155,6 +155,58 @@ with_note "$work/xdg/mitos-hook-state"
 HOME=$work/nohome XDG_RUNTIME_DIR=$work/xdg; check "XDG_RUNTIME_DIR comes first" "$spawn" "$note Put this in the brief too."
 HOME=$saved_home; unset TMPDIR XDG_RUNTIME_DIR
 
+mkdir -m 700 "$work/probes"
+export MITOS_HOOK_STATE=$work/probes
+limit_brief() {
+  jq -cn --arg p "$1" --arg m "$2" '{session_id:"p1",tool_name:"Agent",tool_input:{subagent_type:"general-purpose",model:$m,effort:"high",run_in_background:true,prompt:$p}}'
+}
+probe_call() {
+  jq -cn --arg e "$1" --arg m "$2" --arg r "$3" \
+    '{session_id:"p1",hook_event_name:$e,tool_name:"Agent",tool_input:{subagent_type:"general-purpose",model:$m,effort:"low",prompt:"probe"},tool_response:{content:[{type:"text",text:$r}]}}'
+}
+probe_line() { cat "$MITOS_HOOK_STATE/p1.probe-$1" 2>/dev/null; }
+limit_msg="is on record from the last hour"
+opus_limit=$(limit_brief "Opus is at its limit, so this routine job runs on Sonnet." sonnet)
+check "a limit claim for opus with no probe on record warns" "$opus_limit" "no probe of opus $limit_msg"
+check "a downgrade with no limit words names opus too" \
+  "$(limit_brief "Downgrading this role to Sonnet for the rest of the day." sonnet)" "no probe of opus $limit_msg"
+check "a brief that names no limit is not checked" "$(limit_brief "Rebase #12 onto main." sonnet)" ""
+check "an opus spawn that says nothing of another model is not checked" \
+  "$(limit_brief "Fix the line limit in the script." opus)" ""
+
+check "a PostToolUse probe records nothing on the spawn path" "$(probe_call PostToolUse opus ok)" ""
+read -r stamp result <<<"$(probe_line opus)"
+if [[ $stamp =~ ^[0-9]+$ && $result == pass ]]; then echo "ok    a passing opus probe is recorded"; else echo "FAIL  a passing opus probe is recorded: '$(probe_line opus)'"; failed=1; fi
+check "a fresh passing probe silences the limit warning" "$opus_limit" ""
+
+"$hook" <<<"$(probe_call PostToolUse claude-opus-4-1 "Rate limit reached")" >/dev/null 2>&1
+if [[ $(probe_line opus) == *" fail" ]]; then echo "ok    a limit answer to a probe is recorded as fail"; else echo "FAIL  limit answer: '$(probe_line opus)'"; failed=1; fi
+check "a fresh failing probe also counts as a real check" "$opus_limit" ""
+"$hook" <<<"$(probe_call PostToolUseFailure opus "")" >/dev/null 2>&1
+if [[ $(probe_line opus) == *" fail" ]]; then echo "ok    a failed probe call is recorded as fail"; else echo "FAIL  failed probe call: '$(probe_line opus)'"; failed=1; fi
+
+printf '%s pass\n' "$(($(date +%s) - 3700))" >"$MITOS_HOOK_STATE/p1.probe-opus"
+check "a probe older than an hour warns again" "$opus_limit" "no probe of opus $limit_msg"
+printf '%s pass\n' "$(($(date +%s) - 3500))" >"$MITOS_HOOK_STATE/p1.probe-opus"
+check "a probe just under an hour old counts" "$opus_limit" ""
+printf '%s pass\n' "$(date +%s)" >"$MITOS_HOOK_STATE/p1.probe-sonnet"
+rm -f "$MITOS_HOOK_STATE/p1.probe-opus"
+check "a probe of another model does not count" "$opus_limit" "no probe of opus $limit_msg"
+check "a limit claim in a session with no record warns" \
+  "$(limit_brief "Opus is at its limit." sonnet | jq -c '.session_id = "p2"')" "no probe of opus $limit_msg"
+
+before=$(probe_line sonnet)
+"$hook" <<<"$(probe_call PostToolUse sonnet "an ordinary answer" | jq -c '.tool_input.prompt = "do the work"')" >/dev/null 2>&1
+if [[ $(probe_line sonnet) == "$before" ]]; then echo "ok    a call that is not a probe leaves the record alone"; else echo "FAIL  non-probe changed record"; failed=1; fi
+
+probe_spawn=$(probe_call PreToolUse opus "" | jq -c 'del(.hook_event_name, .tool_response)')
+check "a one-word probe spawn gets no run_in_background warning" "$probe_spawn" ""
+check "a probe spawn is still checked for effort" \
+  "$(jq -c 'del(.tool_input.effort)' <<<"$probe_spawn")" "sets no effort."
+check "a different one-word prompt is not a probe" \
+  "$(jq -c '.tool_input.prompt = "ok"' <<<"$probe_spawn")" "does not set run_in_background: true"
+unset MITOS_HOOK_STATE
+
 mkdir "$work/alone"
 cp "$hook" "$work/alone/"
 hook=$work/alone/check-agent-spawn.sh
