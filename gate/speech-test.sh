@@ -93,8 +93,11 @@ reads "a quoted, fenced or indented /land is no word" \
   "112 ignored no-word\n113 ignored no-word\n114 ignored no-word" \
   "$(comment 112 owner null 12 12 '"> /land"')" "$(comment 113 owner null 13 13 '"~~~\n/land\n~~~"')" \
   "$(comment 114 owner null 14 14 '"    /land"')"
-reads "a fence inside a list item holds a /land" "112 ownerHold@224 fence-marker-outside-a-fence" \
+reads "a fence inside a list item holds a /land" "112 ownerHold@224 fence-or-html-in-the-comment" \
   "$(comment 112 owner null 12 12 '"- ~~~\n  /land\n  ~~~"')"
+reads "a /land carrying on a quote holds" "112 ownerHold@224 inside-a-quote" \
+  "$(comment 112 owner null 12 12 '"> example\n/land"')"
+reads "a quoted /hold holds" "112 ownerHold@224 hold" "$(comment 112 owner null 12 12 '"> /hold"')"
 reads "a lone CR ends a line" "112 ownerHold@224 hold" \
   "$(comment 112 owner null 12 12 '"notes\r/hold"')"
 reads "a unique prefix resolves" "112 ownerLand@224 $hB land" \
