@@ -22,7 +22,7 @@ scan() {
   mapfile -t list < <(files "$tree")
   found=$(for f in "${list[@]}"; do
     [ -f "$tree/$f" ] || continue
-    code "$tree/$f" | grep -oE '\bgh\b( +[a-z]+)?' | LC_ALL=C sort | uniq -c | sed -E "s/^ +//; s|^|$f |"
+    code "$tree/$f" | grep -oE '\bgh\b( +[a-z]+)?' | LC_ALL=C sort | uniq -c | while read -r line; do printf '%s %s\n' "$f" "$line"; done
   done)
   for f in "${list[@]}"; do
     [ -f "$tree/$f" ] || continue
@@ -40,13 +40,14 @@ scan() {
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+cd "$work" || exit 1
 
 check() {
   local want=$1 file=$2 name=$3 f got
   rm -rf "$work/tree"
   while IFS= read -r f; do mkdir -p "$work/tree/${f%/*}"; cp "$root/$f" "$work/tree/$f"; done < <(files "$root")
   if [ $# -ge 4 ]; then printf '\n%s\n' "$4" >>"$work/tree/$file"; else rm -f "$work/tree/$file"; fi
-  if scan "$work/tree" >/dev/null; then got=ok; else got=bad; fi
+  if last=$(scan "$work/tree"); then got=ok; else got=bad; fi
   if [ "$got" = "$want" ]; then echo "ok   $name"; else echo "FAIL $name: expected $want, got $got"; failed=1; fi
 }
 
@@ -62,6 +63,14 @@ check ok  $P "a REST call through fetch" 'fetch extra "repos/$repo/pulls/1" &'
 check bad $P "gh pr view"                'gh pr view 5 --json state'
 check bad $P "graphql endpoint"          'fetch bad "graphql" &'
 check bad .claude/hooks/hook-state.sh "a scanned file that is gone"
+
+L='.claude/scripts/lib/x|;e touch INJECTED;#.sh'
+check bad "$L" "a lib file named with sed syntax" 'gh api x'
+if [ ! -e INJECTED ] && grep -qF -- "> $L 1 gh api" <<<"$last"; then
+  echo "ok   that file name is reported and runs nothing"
+else
+  echo "FAIL a scanned file name ran a command or was not reported"; failed=1
+fi
 
 echo "gh-api-rest: done"
 [ "$failed" = 0 ]
