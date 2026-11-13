@@ -1,133 +1,141 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016 # fixtures keep $repo and "$2" as text
+# shellcheck disable=SC2016 # fixture lines and the fake gh keep $repo, "$cmd" and "$*" as text
+# No GraphQL in the scripts that read GitHub from a Claude Code session.
+#
+# The session proxy answers GraphQL with HTTP 403. gh pr, gh issue, gh run and the other gh
+# commands except gh api use GraphQL without naming it. So these scripts read GitHub only
+# through their wrappers fetch, fetch_all_pages and api, which run gh api.
+#
+# Threat model: an honest mistake, an agent that copies a familiar gh command into a scanned
+# file. Two rules on text. Neither models bash.
+#   1. Each use of the word gh outside a comment line, with the word after it, is listed in
+#      EXPECTED, as often as it is listed. gh pr view, cmd=gh, eval "gh ...", bash -c 'gh ...'
+#      and a direct gh api each change that list.
+#   2. No line outside a comment line has the word graphql, in any case.
+# Scanned: the NAMED files (a missing one fails) and every .claude/scripts/lib/*.sh.
+# Out of scope. A finding in one of these classes is answered with its name, not with code:
+#   O1 A spelling that hides the word gh or graphql: g"h", g\h, "$GH", a word built from parts.
+#   O2 What a route holds and whether a branch runs it. pr-state.test.sh and
+#      watch-github.test.sh run the calls, locally until #164 runs them in CI.
+#   O3 A file that is not scanned: bot-review.sh, open-pr.sh, other hooks, .github/ (Actions
+#      runners reach GraphQL), a file sourced from another folder.
+#   O4 Text on a line whose first non-blank character is #, even inside a string or heredoc.
 set -u
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 failed=0
 
-is_rest_route() {
-  local r=$1 path seg lseg lpath
-  [ -n "$r" ] || return 1
-  [[ $r == -* || $r == *' '* || $r == *'{'* || $r == *'}'* ]] && return 1
-  [[ $r == http://* || $r == https://* ]] && return 1
-  path=${r%%\?*}
-  path=${path%/}
-  seg=${path##*/}
-  lseg=${seg,,}
-  lpath=${path,,}
-  [[ $lseg == graphql || $lpath == graphql || $lpath == /graphql ]] && return 1
-  [[ $r == repos/* ]] || return 1
-  [[ $r == *';'* || $r == *'|'* || $r == *'`'* || $r == *"'"* || $r == *'"'* ]] && return 1
-  return 0
-}
+NAMED=(.claude/hooks/pr-state.sh .claude/hooks/hook-state.sh .claude/scripts/watch-github.sh)
+files() { (cd "$1" && shopt -s nullglob && printf '%s\n' "${NAMED[@]}" .claude/scripts/lib/*.sh); }
 
-routes_of() {
-  local f=$1 line rest tok nxt quoted route
-  while IFS= read -r line || [ -n "$line" ]; do
-    [[ $line =~ ^[[:space:]]*# ]] && continue
-    if [[ $line =~ ^[a-z_]+\(\)[[:space:]]*\{ ]]; then
-      line=${line%% #*}
-    fi
-    if [[ $line == *'gh api'* ]]; then
-      rest=${line#*gh api}
-      rest=${rest#"${rest%%[![:space:]]*}"}
-      route=
-      if [[ $rest == for\ * || $rest == '"$2"'* || $rest == '"${@:2}"'* ]]; then
-        :
-      else
-        while [ -n "$rest" ]; do
-          tok=${rest%%[[:space:]]*}
-          rest=${rest#"$tok"}
-          rest=${rest#"${rest%%[![:space:]]*}"}
-          tok=${tok%,}; tok=${tok%\)}; tok=${tok#\"}; tok=${tok%\"}; tok=${tok#\'}; tok=${tok%\'}
-          case $tok in
-            -X|--method)
-              nxt=${rest%%[[:space:]]*}
-              rest=${rest#"$nxt"}; rest=${rest#"${rest%%[![:space:]]*}"} ;;
-            --method=*|--raw-field=*|--field=*|--jq=*|--input=*|--header=*|--hostname=*) ;;
-            -f|-F|--raw-field|--field|--jq|--input|--header|-H)
-              nxt=${rest%%[[:space:]]*}
-              rest=${rest#"$nxt"}; rest=${rest#"${rest%%[![:space:]]*}"} ;;
-            --paginate|--slurp|--silent|--verbose|--cache) ;;
-            -*) echo "unclassified flag $tok in $f" >&2; return 1 ;;
-            '') ;;
-            *) route=$tok; break ;;
-          esac
-        done
-        [ -n "$route" ] || { echo "gh api has no route in $f" >&2; return 1; }
-        printf '%s\n' "$route"
-      fi
-    fi
-    [[ $line =~ ^[[:space:]]*(fetch|fetch_all_pages|api)[[:space:]] ]] || continue
-    [[ $line == *'()'* ]] && continue
-    quoted=$(grep -oE '"[^"]*"' <<<"$line" || true)
-    route=
-    while IFS= read -r tok; do
-      [ -n "$tok" ] || continue
-      tok=${tok#\"}; tok=${tok%\"}
-      [[ $tok == *.json ]] && continue
-      route=$tok
-    done <<<"$quoted"
-    [ -n "$route" ] || { echo "call has no route: $line" >&2; return 1; }
-    printf '%s\n' "$route"
-  done <"$f"
-}
+# Per file: the count, then gh and the word after it, in LC_ALL=C sort order.
+EXPECTED='.claude/hooks/pr-state.sh 2 gh
+.claude/hooks/pr-state.sh 5 gh api
+.claude/hooks/pr-state.sh 1 gh is
+.claude/scripts/watch-github.sh 1 gh api
+.claude/scripts/watch-github.sh 1 gh jq'
+# pr-state.sh, gh api x5: the fetch and fetch_all_pages bodies, the "gh api for $n failed"
+# message, and the 2 jq strings that print a merge or a patch command for the owner to copy.
+# gh x2: `command -v gh` and "unexpected JSON from gh". gh is: "gh is not installed".
+# watch-github.sh, gh api: the api body. gh jq: the `for tool in gh jq ...` probe.
 
-check_file() {
-  local f=$1 name routes n=0 route
-  name=$(basename "$f")
-  routes=$(routes_of "$f") || { echo "FAIL $name: $routes"; failed=1; return; }
-  [ -n "$routes" ] || { echo "FAIL $name: no routes"; failed=1; return; }
-  while IFS= read -r route; do
-    n=$((n + 1))
-    if ! is_rest_route "$route"; then
-      echo "FAIL $name: not a REST path: $route"
-      failed=1
-      return
-    fi
-  done <<<"$routes"
-  if [ "$n" -lt 10 ]; then
-    echo "FAIL $name: only $n routes, the scan missed some"
-    failed=1
-    return
+code() { grep -vE '^[[:space:]]*#' "$1"; }
+
+scan() { # scan <tree>: print what is wrong under <tree>, and return 1 if anything is
+  local tree=$1 f list found bad=0
+  for f in "${NAMED[@]}"; do [ -f "$tree/$f" ] || { echo "$f is missing"; bad=1; }; done
+  mapfile -t list < <(files "$tree")
+  found=$(for f in "${list[@]}"; do
+    [ -f "$tree/$f" ] || continue
+    code "$tree/$f" | grep -oE '\bgh\b( +[a-z]+)?' | LC_ALL=C sort | uniq -c | sed -E "s/^ +//; s|^|$f |"
+  done)
+  for f in "${list[@]}"; do
+    [ -f "$tree/$f" ] || continue
+    code "$tree/$f" | grep -qi graphql && { echo "$f names graphql outside a comment line"; bad=1; }
+  done
+  if [ "$found" != "$EXPECTED" ]; then
+    echo "gh is used where EXPECTED does not list it (< listed, > found). gh pr, gh issue and the"
+    echo "other gh commands except gh api use GraphQL, which the session proxy blocks. Read GitHub"
+    echo "through fetch, fetch_all_pages or api. If the new line is a message or data, update EXPECTED:"
+    diff <(echo "$EXPECTED") <(echo "$found") | grep '^[<>]'
+    bad=1
   fi
-  echo "ok   $name ($n REST routes)"
+  return $bad
 }
-
-check_file "$root/.claude/hooks/pr-state.sh"
-check_file "$root/.claude/scripts/watch-github.sh"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-base="$root/.claude/hooks/pr-state.sh"
-cp "$base" "$work/ok.sh"
-printf '\nfetch extra "repos/$repo/pulls/1" &\n' >>"$work/ok.sh"
-check_file "$work/ok.sh"
+mkdir "$work/bin"
+# A fake gh that records its arguments. Fixture lines run only against it, with no token.
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$GH_ARGV"\n' >"$work/bin/gh"
+chmod +x "$work/bin/gh"
 
-reject() {
-  local name=$1 line=$2 copy="$work/bad.sh"
-  cp "$base" "$copy"
-  printf '\n%s\n' "$line" >>"$copy"
-  local out
-  out=$(routes_of "$copy" 2>&1) && {
-    local route bad=0
-    while IFS= read -r route; do
-      is_rest_route "$route" || bad=1
-    done <<<"$out"
-    if [ "$bad" = 0 ]; then
-      echo "FAIL $name was accepted"
-      failed=1
-      return
-    fi
-  }
-  echo "ok   $name rejected"
+runs() { # runs <line>: what bash asks gh to do when it runs <line> alone: rest, other or none
+  local a v=none
+  : >"$work/argv"
+  env -u GH_TOKEN -u GITHUB_TOKEN GH_ARGV="$work/argv" PATH="$work/bin:$PATH" \
+    timeout 10 bash -c "$1" >/dev/null 2>&1 </dev/null
+  while IFS= read -r a; do
+    if [[ $a =~ ^api\ repos/[^[:space:]]+$ && ${a,,} != *graphql* ]]; then [ "$v" = other ] || v=rest; else v=other; fi
+  done <"$work/argv"
+  echo "$v"
 }
 
-reject "graphql endpoint" 'fetch bad "graphql" &'
-reject "graphql under repos" 'fetch bad "repos/$repo/graphql" &'
-reject "gh api graphql" "gh api graphql -f query='{ viewer { login } }'"
-reject "graphql URL" 'api bad.json "https://api.github.com/graphql"'
-reject "query text" 'api bad.json "query { viewer { login } }"'
+# check ok|bad <file> <name> [<line>]: in a copy, append <line> to <file>, or delete <file>
+# when no line is given. The scan must stay as it was (ok) or change (bad). A line that makes
+# bash run gh with anything but `api repos/...` must be bad, whatever the label says.
+check() {
+  local want=$1 file=$2 name=$3 f got ran=none
+  rm -rf "$work/tree"
+  while IFS= read -r f; do mkdir -p "$work/tree/${f%/*}"; cp "$root/$f" "$work/tree/$f"; done < <(files "$root")
+  mkdir -p "$work/tree/${file%/*}"
+  if [ $# -ge 4 ]; then
+    printf '\n%s\n' "$4" >>"$work/tree/$file"
+    ran=$(runs "$4")
+  else
+    rm -f "$work/tree/$file"
+  fi
+  if [ "$(scan "$work/tree")" = "$base" ]; then got=ok; else got=bad; fi
+  if [ "$got" = "$want" ] && { [ "$ran" != other ] || [ "$got" = bad ]; }; then
+    echo "ok   $name (bash: $ran)"
+  else
+    echo "FAIL $name: expected $want, scan $got, bash $ran"; failed=1
+  fi
+}
+
+if base=$(scan "$root"); then
+  echo "ok   the scanned files use gh only as listed and never name graphql"
+else
+  echo "FAIL $base"; failed=1
+fi
+if [ "$(runs 'gh pr view 1')" = other ] && [ "$(runs 'gh api repos/o/r/pulls')" = rest ] && [ "$(runs :)" = none ]; then
+  echo "ok   the fake gh records what bash runs"
+else
+  echo "FAIL the fake gh does not record what bash runs"; failed=1
+fi
+
+P=.claude/hooks/pr-state.sh W=.claude/scripts/watch-github.sh L=.claude/hooks/hook-state.sh
+N=.claude/scripts/lib/new.sh
+check ok  $P "a REST call through fetch"       'fetch extra "repos/$repo/pulls/1" &'
+check ok  $W "a REST call through api"         'api extra.json --paginate "repos/$repo/issues"'
+check ok  $P "a comment that names gh pr view" '# gh pr view fails in a session'
+check bad $P "graphql endpoint"                'fetch bad "graphql" &'
+check bad $P "graphql under repos"             'fetch bad "repos/$repo/graphql" &'
+check bad $P "gh api graphql"                  "gh api graphql -f query='{ viewer { login } }'"
+check bad $P "graphql URL"                     'api bad.json "https://api.github.com/graphql"'
+check bad $P "gh pr view"                      'gh pr view 5 --json state'
+check bad $W "gh issue list"                   'gh issue list'
+check bad $P "a direct gh api"                 'gh api "repos/$repo/pulls" --jq ".[].number"'
+check bad $P "a direct gh api, double space"   'gh  api "repos/$repo/pulls"'
+check bad $P "command gh"                      'command gh pr checks 5'
+check bad $P "cmd=gh then \$cmd"               'cmd=gh; "$cmd" pr view 5'
+check bad $P "eval"                            'eval "gh pr view 5"'
+check bad $W "bash -c"                         "bash -c 'gh pr view 5'"
+check bad $P "inside a group"                  '{ gh pr view 5; }'
+check bad $P "pr view on the next line"        $'gh \\\n  pr view 5'
+check bad $L "a sourced file"                  'gh pr list'
+check bad $N "a new file under lib"            'gh pr list'
+check bad $L "a scanned file that is gone"
 
 echo "gh-api-rest: done"
 [ "$failed" = 0 ]
