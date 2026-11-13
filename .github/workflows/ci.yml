@@ -125,7 +125,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: gh api routes in pr-state.sh and watch-github.sh are REST paths
+      - name: pr-state.sh, watch-github.sh and the files they source run gh only as gh api in their wrappers, and never name GraphQL
         run: .claude/scripts/gh-api-rest.test.sh
 
       - name: hook-state.sh and origin-repo.sh name bash with a shebang
