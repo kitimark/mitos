@@ -45,20 +45,31 @@ tool.
 
 | Role | Job | `subagent_type` | `model` | `effort` |
 |---|---|---|---|---|
+| Architect | designs each open plan row once, at plan time, with the **architect** skill (see Plan-time designs) | `general-purpose` | runners on `opus` and `fable`; the judge on whichever of the two the root is not running | `xhigh`, or `max` for a trust-critical spec |
 | PR owner, hard | Lean proofs, a trust-critical PR (see Verdicts), a skill or design change | `general-purpose`, worktree | `opus` | `xhigh`, or `max` for the subtlest proof |
 | PR owner, routine | a script, a fixture, a doc fix, a rebase, a conflict merge, a one-line fix | `general-purpose`, worktree | `sonnet` | `high`, or `medium` for a rebase or a one-line fix |
 | Verifier | checks one head it did not write and returns pass or fail with evidence | `general-purpose`, worktree | the model that did not write most of the diff | `xhigh`, or `high` at a rebase or small-fix head (a few lines changed since the last verified head) |
 | Watcher | waits on one condition the root's GitHub monitor cannot report (see Watchers) and returns when it changes | `general-purpose` | `sonnet` | `low` |
 | Researcher | reads docs or prior art, or diagnoses a failure, and edits nothing | `general-purpose` | `sonnet`, or `opus` for a judgment call | `medium`, or `high` on `opus` |
 
+`opus` and `fable` share one weekly limit with the `opus` verifiers that trust-critical PRs need
+(see Verdicts). Spend them first on what many agents reuse: plan-time designs and verdicts.
+
 - **Briefs.** Each brief states the user's goal, the task, the paths the agent may write, the
-  evidence that proves the job done, and where the agent stops. A worktree spawn sets
-  `isolation: "worktree"` and names the commit to start from, because an isolated worktree starts
-  from the default branch.
+  evidence that proves the job done, and where the agent stops. A brief for a plan row names the
+  row and where its design lives (see Plan-time designs), and states only what differs from that
+  design. A worktree spawn sets `isolation: "worktree"` and names the commit to start from,
+  because an isolated worktree starts from the default branch.
 - **Other spawns.** A spawn whose model a routed skill (`how`, `swarm`, `reflect` and the like)
-  or an agent file names keeps that model and takes the closest row's `effort`. Under the
-  **poteto-mode** skill, `poteto-agent` replaces `general-purpose` for PR owners. If the Agent
-  tool rejects a value, omit that field and say so.
+  or an agent file names keeps that model and takes the closest row's `effort`. The Architect row
+  is the exception: its models replace the `sonnet` runner and judge that **architect** and
+  **arena** name. Under the **poteto-mode** skill, `poteto-agent` replaces `general-purpose` for
+  PR owners. If the Agent tool rejects a value, omit that field and say so.
+- **Usage limits.** On a usage-limit error, probe the preferred model with a one-word agent before
+  any fallback, and again before each later spawn that wants it. A reset time is a bound, not a
+  schedule. Only a routine row falls back, and its brief and posts say so. A hard row waits, or
+  the root re-sequences the work. Once a probe answers, correct each post that named the limit.
+  #221 tracks a probe record in the spawn hook.
 - **Forks.** A `fork` ignores `model` and `effort` and runs on the root's settings and context.
   Fork only when the job needs the root's built state, never for a PR round, a review or a
   verdict.
@@ -153,7 +164,9 @@ on `main` after the session loaded its rules; put that note in the brief.
   the next phase's plan together with its spec PR; plans are the user's, so both wait for the
   user.
 - Choose between implementation options on your own; record the choice and the reason in the
-  task file or PR body, not as a question.
+  task file or PR body, not as a question. A go-ahead from the user settles only what it names.
+  Record a call inferred from it as the root's default, with its reason, never as the user's
+  ruling.
 - On a problem's second occurrence, or a call to the user repeated in two catch-ups, file one
   `process` issue at once. It names the cause and the structural fix, and has an owner. Every
   catch-up or dashboard line about that problem links it.
@@ -231,9 +244,12 @@ watcher's echo filter and the merge rule below rely on both.
   it. Everything else is minor.
 - Minor findings go into one `follow-up` issue per PR, which the PR body links. The PR owner files
   those it holds in its round, and the root files a passing verdict's. A minor fix joins a round
-  only when it is one line in a file that round already touches.
+  only when it is one line in a file that round already touches. A finding deferred to a later
+  plan row goes into that row's task file or issue when it is deferred. A finding with no row
+  stays in the follow-up issue, never deferred to "any time".
 - A verifier marks each finding blocking or minor. Only a blocking one fails the verdict, so a
   pass with minor findings starts no round.
+- Size a re-review of a design or an issue to its delta, about one lens per named change.
 - **Round budget.** A PR gets two rounds. A round in which its owner only rebases, a stack's
   restack included, does not count when the new head keeps the content id (see Verdicts) of the
   head the round started from, both from one build of `main`'s tool, with the parent PR's branch
@@ -250,12 +266,18 @@ watcher's echo filter and the merge rule below rely on both.
   change. Only an agent that did not write the code gives a verdict. CI, bot reviews and the root's own
   reading are inputs to one.
 - A wording-only change alters no behavior. It edits prose, comments or typos, and no code,
-  script, spec, lock, workflow, skill rule or hook. The root confirms that from the diff. Such a
-  change needs no verdict, and a green `gate` at its head stands in for one in the merge rule below.
+  script, spec, lock, workflow, skill rule or hook. A change to a plan row or a task file that
+  sets a type, a statement, a rule or a cut line is not wording-only. The root confirms that from
+  the diff. Such a change needs no verdict, and a green `gate` at its head stands in for one in
+  the merge rule below.
 - The verifier runs on the model that did not write most of the diff. A trust-critical PR also
   gets an `opus` verifier at `xhigh` or above at every head that needs a verifier, so an
   `opus`-written one gets two. Trust-critical means the PR needs `spec-approved` or touches a
-  trust-infrastructure path (see What stays with the user).
+  trust-infrastructure path (see What stays with the user). A verdict from the model that wrote
+  most of the diff does not count as the passing verdict of the merge rule below, though an
+  `opus`-written trust-critical PR still needs its `opus` one. While no other model can verify,
+  the PR gets no merge command and its catch-up says to hold the merge, the same for every PR.
+  #222 tracks dropping the `merge-ready` line for such a PR.
 - A verdict covers one head. A later head keeps it only when it only rebases: every push to the
   PR's branch since the verified head is a force-push by `mitos-pr-updater[bot]`, the first one
   from the verified head and each later one from the commit the one before it left, up to the
@@ -389,7 +411,9 @@ watcher's echo filter and the merge rule below rely on both.
 - The checks pass locally and in CI, and a small concrete run shows the behaviour. Report
   numbers and results, not "should work".
 - A cost number that decides a design states its run count, its spread and the flags it ran
-  with, such as `--paranoid`. A number from one run says so.
+  with, such as `--paranoid`. A number from one run says so. A token number that decides process
+  names its quantity, and sums output and cache-read tokens over every call, from the agents'
+  journals. #223 tracks a script for that sum.
 - A script that calls GitHub or another external API proves itself with a real run against that
   API, such as a `workflow_dispatch` run, or with a verifier told to break its API calls. A local
   stand-in such as a scratch git remote proves only the git steps.
@@ -495,10 +519,22 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   criteria, each marked `(met in #n)` once #n reads merged over REST. It changes the criteria
   text only to match the plan on `main`, which the user keeps. Work found during a task is an
   issue labelled `follow-up`, and a finding about agent rules (`.claude/`, `.cursor/`, `CLAUDE.md`,
-  `docs/process.md`) is labelled `process`.
+  `docs/process.md`) is labelled `process`. A tracker issue's steps become rows in the current
+  plan, each with its own issue, and the tracker body lists those issue links instead of
+  checkboxes.
+- **Plan-time designs.** When a plan or a tracker lands, the Architect (see Roles) writes a task
+  file for each open row from `tasks/TEMPLATE.md`, Design block included, and the row's issue
+  links it. The design stays in that file or the issue body (`.claude/skills/architect/SKILL.md`,
+  Outputs). A row that depends on a row not yet merged gets a contract at plan time, its inputs,
+  outputs and statements, with `revisit_when` set to "re-check after #N merges". The Architect
+  completes it when #N merges. An issue links a design only when it covers the row at build
+  depth, a sketch that type-checks plus named fixtures; otherwise the issue says "contract only".
+  #220 tracks a check that each linked row has a task file.
 - A notification that changes nothing for the user gets no update. That covers an agent's
-  interim status, a monitor expiring or a watcher re-arming, and every event a watcher drops.
-  Never send "nothing to do".
+  interim status, a monitor expiring or a watcher re-arming, a monitor line that echoes the
+  root's own write or shows a check still running, and every event a watcher drops. Such a turn
+  ends with no reply text. Never send "nothing to do". #224 tracks dropping those echoes in
+  `watch-github.sh`.
 - Short and plain. The user writes brief messages in non-native English. Lead with what
   happened, then what you are doing next.
 - For "why" questions: the idea first, then one concrete example from this repo.

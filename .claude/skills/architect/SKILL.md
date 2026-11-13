@@ -10,6 +10,8 @@ Sketch types, function signatures, class shapes, and module boundaries with `not
 
 ## Start
 
+A plan row that already carries an accepted build-depth design skips this skill unless a check against `main` finds drift, per the **poteto-mode** Feature playbook, steps 1–2.
+
 Open a todolist with one entry per phase before starting.
 
 1. Ground
@@ -77,3 +79,5 @@ When you scrap:
 ## Outputs
 
 The caller's usage is written first and the type sketch derived from it. One file with new types and signatures for small changes. Module map plus type definitions for larger work. The rationale ships alongside, shaped per `references/rationale-template.md`, including the usage sketch and the synthesis decision.
+
+For a plan row, the package lands in the row's task file or issue body, not in a scratchpad file, and later changes amend it there (the **kitimark-mode** skill, Plan-time designs).
