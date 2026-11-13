@@ -653,6 +653,12 @@ rec 2170 assign 45 kitimark
 b6set open.json '(.[] | select(.number == 45) | .assignees) = [{"login":"kitimark"}] | (.[] | select(.number == 45) | .labels) += [{"name":"follow-up"}]'
 b6at 2220
 is "a line with one own write and one other change still prints" "pr #45 labels=follow-up,spec-approved assignees=kitimark"
+b6set open.json '(.[] | select(.number == 45) | .assignees) = []'
+b6at 2225
+is "after that mixed line the assignee's removal prints" "pr #45 labels=follow-up,spec-approved assignees=-"
+b6set open.json '(.[] | select(.number == 45) | .assignees) = [{"login":"kitimark"}]'
+b6at 2230
+is "and so does its restoration: the matched record was consumed with the mixed line" "pr #45 labels=follow-up,spec-approved assignees=kitimark"
 rec 2230 merge 45
 m_at=$(utc_at $((b6base + 2240)))
 b6set open.json 'map(select(.number > 46))'

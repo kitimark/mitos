@@ -314,8 +314,12 @@ drop_own_echoes() {
           need("assign", n, an, nan, ao, nao); need("unassign", n, ao, nao, an, nan)
         }
         ok = nwant > 0
-        for (i = 1; ok && i <= nwant; i++) { hit[i] = find(want[i]); if (!hit[i]) ok = 0 }
-        if (ok) { for (i = 1; i <= nwant; i++) used[hit[i]] = 1; next }
+        for (i = 1; i <= nwant; i++) {
+          h = find(want[i])
+          if (h) used[h] = 1
+          else ok = 0
+        }
+        if (ok) next
         print
       }
       END {
