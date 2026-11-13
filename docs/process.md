@@ -91,6 +91,9 @@ checks: build, imports, lock, accept-toy, cheats
 budget: 40 iterations · 2h wall · 1.5M tokens
 ```
 
+A plan row's task file also holds the row's design in the template's Design block, written once
+when the plan lands (`.claude/skills/kitimark-mode/SKILL.md`, Plan-time designs).
+
 ### Roles
 
 | Role | Who | May write | May not write |
