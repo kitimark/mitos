@@ -65,11 +65,12 @@ tool.
   is the exception: its models replace the `sonnet` runner and judge that **architect** and
   **arena** name. Under the **poteto-mode** skill, `poteto-agent` replaces `general-purpose` for
   PR owners. If the Agent tool rejects a value, omit that field and say so.
-- **Usage limits.** On a usage-limit error, probe the preferred model with a one-word agent before
-  any fallback, and again before each later spawn that wants it. A reset time is a bound, not a
-  schedule. Only a routine row falls back, and its brief and posts say so. A hard row waits, or
-  the root re-sequences the work. Once a probe answers, correct each post that named the limit.
-  #221 tracks a probe record in the spawn hook.
+- **Usage limits.** On a usage-limit error, probe the preferred model with a foreground agent whose
+  whole prompt is `probe` before any fallback, and again before each later spawn that wants it. A
+  reset time is a bound, not a schedule. Only a routine row falls back, and its brief and posts say
+  so. A hard row waits, or the root re-sequences the work. Once a probe answers, correct each post that named the limit.
+  The spawn hook records each such probe's answer and warns about a brief that says a model is at
+  its limit, or drops a role to another model, with no probe of that model in the last hour (#221).
 - **Forks.** A `fork` ignores `model` and `effort` and runs on the root's settings and context.
   Fork only when the job needs the root's built state, never for a PR round, a review or a
   verdict.
@@ -150,9 +151,12 @@ tool.
 - Nobody subscribes to PR activity, because subscription events land in the root.
 
 `.claude/hooks/check-agent-spawn.sh` warns when an Agent call leaves out `model` or `effort`,
-when a fork sets either, when `run_in_background` is not true, and when a PR owner or verifier
-spawn has no `isolation: "worktree"`. It also repeats `pr-state.sh`'s note when rule files changed
-on `main` after the session loaded its rules; put that note in the brief.
+when a fork sets either, when `run_in_background` is not true (a call whose whole prompt is
+`probe` is exempt, because a probe runs in the foreground), and when a PR owner or verifier
+spawn has no `isolation: "worktree"`. It also warns when a brief claims a model is at its limit,
+or downgrades away from it, and no completed foreground `probe` call of that model (`opus`,
+`sonnet`, `haiku` or `fable`) is on record from the last hour. It repeats `pr-state.sh`'s note
+when rule files changed on `main` after the session loaded its rules; put that note in the brief.
 
 ## Decide, don't ask
 
