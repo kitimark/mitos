@@ -535,7 +535,7 @@ green on v4.35.0 with the cross-check `#guard`s above.
       passes with every `#guard` above, and
       `lake --dir eval/mutants exe mitos-mutants src_dst_swapped edges_duplicated cheat_impl_macro`
       prints the three probe lines with 3, 5 and 2 probes caught and the three cases as expected
-      (1 refuted, 1 known gap, 1 cheat rejected); the PR body says `Part of #147`
+      (2 refuted, 0 known gaps, 1 cheat rejected); the PR body says `Part of #147`
 - [ ] one nightly dispatch on PR A's branch: `full` passed, and the canary on v4.36.0-rc2 (or the
       newest rc then) passed, with no `has been deprecated` line but ContentId's three
 - [ ] the one-off mutants, one local run each on v4.35.0, in PR A's body. M1, a live decoy:
