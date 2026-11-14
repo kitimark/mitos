@@ -9,6 +9,7 @@ import MitosGate.CheatsRun
 import MitosGate.LandCli
 import MitosGate.SpeechCli
 import MitosGate.SnapshotCli
+import MitosGate.ShadowCli
 
 open MitosGate
 
@@ -47,7 +48,11 @@ def usage : String := "usage:
   mitos-gate snapshot <dir>                      the snapshot land reads, from the REST reads that
                                                  gate/snapshot-fetch.sh saved in <dir>, with content
                                                  ids and replays from git in this clone; a failed
-                                                 read holds the pull requests that need it"
+                                                 read holds the pull requests that need it
+  mitos-gate shadow <dir>                        what the decide records of a window would have done,
+                                                 against what merged, from the folder that
+                                                 gate/shadow-fetch.sh wrote: one line per merge, then
+                                                 the counts, the cost and the runs"
 
 partial def parseAccept (args : List String) (c : Accept.Config) : Except String Accept.Config :=
   match args with
@@ -148,6 +153,7 @@ def cli (args : List String) : IO UInt32 := do
   | "land" :: rest => LandCli.cli rest usage
   | "speech" :: rest => SpeechCli.cli rest usage
   | "snapshot" :: rest => SnapshotCli.cli rest usage
+  | "shadow" :: rest => ShadowCli.cli rest usage
   | _ => IO.eprintln usage; return 2
 
 def main (args : List String) : IO UInt32 := do
