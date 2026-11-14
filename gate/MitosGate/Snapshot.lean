@@ -254,6 +254,15 @@ theorem aReviewByAnotherLoginIsNoBotReview :
 theorem aPassedRabbitCheckAtTheHeadIsAReview :
     stepOf (r := withChecks [gateRun, ⟨11, "CodeRabbit", "coderabbitai", hB, "completed", "success"⟩]) =
       .present hB := by decide +kernel
+theorem aRabbitCheckFromAnotherAppIsNoReview :
+    botAt hB [⟨13, "CodeRabbit", "other-app", hB, "completed", "success"⟩] [] = none := by
+  decide +kernel
+theorem aRabbitCheckFromAnotherAppDoesNotMakeItEligible :
+    stepOf (r := withChecks [gateRun, ⟨11, "CodeRabbit", "other-app", hB, "completed", "success"⟩]) =
+      .stop .notEligible := by decide +kernel
+theorem aRabbitCheckAtAnotherHeadIsNoReview :
+    botAt hB [⟨13, "CodeRabbit", "coderabbitai", hA, "completed", "success"⟩] [] = none := by
+  decide +kernel
 theorem aGateRunFromAnotherAppIsNoGate :
     gateOf hB [⟨12, "gate", "other-app", hB, "completed", "success"⟩] = .missing := by decide +kernel
 theorem theNewestGateRunCounts :
