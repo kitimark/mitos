@@ -1,25 +1,10 @@
 #!/usr/bin/env bash
-# Every plan row whose Issue cell links an issue has a task file with a design (#220).
-#
-# A row is a table row of a `plan/phase-N.md` table whose last header cell is `Issue`, with a link
-# to `/issues/<n>` in that cell. Its task file is `tasks/<id>-*.md` or `tasks/<id>.md`. The file is
-# valid when its `## Design` block holds something beyond the lines `tasks/TEMPLATE.md` ships, or
-# when a line says `Design: n/a (<reason>)`.
-#
-# Rows that have no valid file yet are listed in `.claude/scripts/plan-tasks.pending`, one id per
-# line (`#` starts a comment). The list can only shrink: a listed row that now has a valid file
-# fails, and so does a listed id that is no linked row. A linked row that is not listed fails
-# until its file is written, and an id added to the list since the merge base with origin/main
-# fails, so a row cannot skip its design by joining the list. (Where there is no origin/main, or
-# the base has no list, that last check prints a skip note.) The Architect writes the files
-# (kitimark-mode, Plan-time designs).
 set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=${PLAN_TASKS_ROOT:-$(cd "$here/../.." && pwd)}
 pending_rel=.claude/scripts/plan-tasks.pending
 
-# Linked rows of the plan files under $1, one id per line.
 linked_rows() {
   local f
   for f in "$1"/plan/phase-*.md; do
@@ -50,8 +35,6 @@ linked_rows() {
   done
 }
 
-# The non-blank lines of a file's `## Design` block, one per line, with runs of blanks collapsed
-# and the ends trimmed, so a stray space cannot make a shipped placeholder line look new.
 design_block() {
   awk '
     /^## / { indesign = ($0 == "## Design"); next }
@@ -64,7 +47,6 @@ design_block() {
   ' "$1"
 }
 
-# Succeeds when task file $2 holds a design, given the template at $1.
 valid_file() {
   local template=$1 file=$2 extra
   grep -qE '^Design: n/a \(.+\)[[:space:]]*$' "$file" && return 0
@@ -72,7 +54,6 @@ valid_file() {
   [ -n "$extra" ]
 }
 
-# Succeeds when some task file of row $3 under $2 is valid, given the template at $1.
 row_valid() {
   local template=$1 tree=$2 id=$3 f
   for f in "$tree/tasks/$id".md "$tree/tasks/$id"-*.md; do
@@ -82,7 +63,6 @@ row_valid() {
   return 1
 }
 
-# Prints each problem under tree $1 and succeeds only when there is none.
 check() {
   local tree=$1 template=$1/tasks/TEMPLATE.md id bad=0 line
   local -a rows=() pending=()
@@ -130,9 +110,6 @@ check() {
   return "$bad"
 }
 
-# Prints each pending id of tree $1 that the list did not hold at the merge base with origin/main,
-# so the list cannot grow. Skips, with a note on stderr, where there is no git base to compare
-# with or the base has no list yet (the change that adds the list).
 growth() {
   local tree=$1 base id
   local -a old=()
@@ -151,14 +128,12 @@ growth() {
   done < <(sed 's/#.*//; s/[[:space:]]//g' "$tree/$pending_rel" | grep .)
 }
 
-# Prints each problem of tree $1, in rows, files and list growth.
 problems() {
   local out
   out=$(check "$1"; growth "$1")
   [ -z "$out" ] || { echo "$out"; return 1; }
 }
 
-# PLAN_TASKS_ROOT checks another tree and skips the self-test.
 if [ -n "${PLAN_TASKS_ROOT:-}" ]; then
   problems "$root"
   exit $?
@@ -173,7 +148,6 @@ else
   failed=1
 fi
 
-# Negative cases on a small scratch tree, so the real plan files stay untouched.
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 t=$work/t
@@ -236,7 +210,6 @@ fresh
 printf 'Design: n/a ()\n' >"$t/tasks/P9-003-b.md"
 expect "an n/a with no reason" fail
 
-# The list cannot grow: the base commit is origin/main in a scratch repo.
 base() {
   git -C "$t" init -q
   git -C "$t" add -A

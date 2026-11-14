@@ -91,13 +91,9 @@ Within a quote such markup reaches a later line only as a lazy continuation, whi
 holds. -/
 def link (l : List Char) : Bool := l.contains '[' && !quoted l
 
-/-- A `>` after any indent and list markers opens a quote here, as in `- > x`, and a list marker
-counts only with a space or tab after it, so `-> x` and `3 > 2` open none. GitHub's Markdown opens
-a quote at such a `>` only within a container that allows it: at top level, an indent of 4 or more
-columns makes code, and a list marker has at most 9 digits. So `    > x`, `\t> x` or a marker of 10
-digits holds a `/land` on the next line here although GitHub draws no quote. That over-hold is
-the intended fail-closed choice: a line taken for a quote can only hold a `/land`, never read
-one. -/
+/-- GitHub's Markdown reads a list marker only with a space or tab after it, so `-> x` and `3 > 2`
+open no quote, and opens one at a `>` only within a container that allows it: at top level, an
+indent of 4 or more columns makes code, and a list marker has at most 9 digits. -/
 def opensQuote : Bool → List Char → Bool
   | _, [] => false
   | false, c :: r =>
