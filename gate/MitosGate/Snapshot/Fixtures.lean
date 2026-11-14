@@ -180,6 +180,20 @@ theorem anEmptyRowSpoilsTheDashboard : rows (under "| | | | |\n") = none := by d
 theorem aHeaderOverAShortDelimiterSpoilsTheDashboard :
     rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|\n" ++ passFor7) = none := by
   decide +kernel
+theorem aHeaderPairUnderADataRowSpoilsTheDashboard : rows (under tableHead) = none := by
+  decide +kernel
+theorem aHeaderRowWithoutADelimiterSpoilsTheDashboard :
+    rows (under "\n| PR | `x` | red | FAIL opus-xhigh at `85b0781` for #7 |\n") = none := by
+  decide +kernel
+theorem aDelimiterWithAnEmptyCellSpoilsTheDashboard :
+    rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---| |---|---|\n" ++ passFor7) = none := by
+  decide +kernel
+theorem aDelimiterWithASpacedCellSpoilsTheDashboard :
+    rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|- -|---|---|\n" ++ passFor7) =
+      none := by decide +kernel
+theorem aDelimiterWithColonsReads :
+    rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n| :-- | --: | :-: | - |\n" ++ passFor7) =
+      only7 := by decide +kernel
 theorem aHiddenInFlightHeadingIsUnread :
     rows ("<!--\n## In flight\n\n" ++ tableHead ++ passFor7 ++ "\n-->\n") = none := by decide +kernel
 theorem anInFlightHeadingInAFenceIsUnread :
