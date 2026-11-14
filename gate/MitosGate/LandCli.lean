@@ -267,13 +267,15 @@ def Decision.json (d : Decision) : Json :=
     (d.step.map fun s => [("step", stepJson s)]).getD [] ++
     (d.wake.map fun w => [("wake", wakeJson w)]).getD []
 
-def run (text : String) : Except String Json := do
+def read (text : String) : Except String Snapshot := do
   let j ← match Json.parse text with
     | .ok j => pure j
     | .error e => throw s!"not JSON: {e}"
   let s ← (snapshot j).mapError fun e => if e.startsWith "." then (e.drop 1).toString else "snapshot" ++ e
   s.check
-  return s.decide.json
+  return s
+
+def run (text : String) : Except String Json := return (← read text).decide.json
 
 def cli (args : List String) (usage : String) : IO UInt32 := do
   let path? ← match args with
