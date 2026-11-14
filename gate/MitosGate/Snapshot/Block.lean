@@ -7,8 +7,8 @@ open Speech (lead blank digit)
 inductive Start
   | blank
   | heading
-  | hides
-  | other
+  | runsPastHeadings
+  | unsupported
   | text
   deriving DecidableEq, Repr
 
@@ -34,25 +34,25 @@ def bullet : List Char → Option (List Char)
 
 def inItem : Start → Start
   | .blank | .text => .text
-  | .hides => .hides
-  | _ => .other
+  | .runsPastHeadings => .runsPastHeadings
+  | _ => .unsupported
 
 def startIn : Nat → List Char → Start
-  | 0, _ => .other
+  | 0, _ => .unsupported
   | n + 1, l =>
     if blank l then .blank
     else
       match lead l with
-      | none => .other
+      | none => .unsupported
       | some r =>
         if atx r == some 2 then .heading
-        else if r.head? == some '<' || fenced r then .hides
-        else if (atx r).isSome || underline r || r.head? == some '>' then .other
+        else if r.head? == some '<' || fenced r then .runsPastHeadings
+        else if (atx r).isSome || underline r || r.head? == some '>' then .unsupported
         else
           match bullet r with
           | some [] => .text
           | some (' ' :: c) => inItem (startIn n c)
-          | some ('\t' :: _) => .other
+          | some ('\t' :: _) => .unsupported
           | _ => .text
 
 def start (l : List Char) : Start := startIn (l.length + 1) l
@@ -64,21 +64,26 @@ def starts (ls : List String) : List Start := ls.map (start ·.toList)
 theorem twoHashesAfterThreeSpacesAtMostAreAHeading :
     starts ["## x", "   ## x", "##\tx", "##", "## x ##"] =
       [.heading, .heading, .heading, .heading, .heading] := by decide +kernel
-theorem anIndentedHeadingIsCode : starts ["    ## x", "\t## x", "  \t## x"] = [.other, .other, .other] := by
+theorem anIndentedHeadingIsCode :
+    starts ["    ## x", "\t## x", "  \t## x"] = [.unsupported, .unsupported, .unsupported] := by
   decide +kernel
-theorem otherLevelsAndUnderlinesAreOther :
+theorem otherLevelsAndUnderlinesAreUnsupported :
     starts ["# x", "### x", "####### x", "---", "=== ", "> ## x"] =
-      [.other, .other, .text, .other, .other, .other] := by decide +kernel
-theorem htmlAndFencesHide :
+      [.unsupported, .unsupported, .text, .unsupported, .unsupported, .unsupported] := by
+  decide +kernel
+theorem htmlAndFencesRunPastHeadings :
     starts ["<!--", "<div>", "   <pre>", "```", "~~~ x", "- ```", "1. <!--", "2) - ~~~"] =
-      [.hides, .hides, .hides, .hides, .hides, .hides, .hides, .hides] := by decide +kernel
-theorem anItemOfCodeOrATabIsOther : starts ["-     ## x", "-\tx", "- ## x", "- > x"] =
-    [.other, .other, .other, .other] := by decide +kernel
+      [.runsPastHeadings, .runsPastHeadings, .runsPastHeadings, .runsPastHeadings,
+        .runsPastHeadings, .runsPastHeadings, .runsPastHeadings, .runsPastHeadings] := by
+  decide +kernel
+theorem anItemOfCodeOrATabIsUnsupported : starts ["-     ## x", "-\tx", "- ## x", "- > x"] =
+    [.unsupported, .unsupported, .unsupported, .unsupported] := by decide +kernel
 theorem theLiveLinesAreText :
     starts ["| #7 a | `x` | green | PASS |", "|---|---|---|---|", "- #6 merged 11:23 UTC.",
       "Merged in the last 24 hours (newest first):", "**Your queue:** x", "#7 b | x", "##x",
       "2026-11-14 x", "1234567890. x", "-", "- ", "*"] =
-      [.text, .text, .text, .text, .text, .text, .text, .text, .text, .other, .other, .text] := by
+      [.text, .text, .text, .text, .text, .text, .text, .text, .text, .unsupported, .unsupported,
+        .text] := by
   decide +kernel
 theorem blankLines : starts ["", "  \t "] = [.blank, .blank] := by decide +kernel
 
