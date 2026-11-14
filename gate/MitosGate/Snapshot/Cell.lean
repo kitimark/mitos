@@ -35,7 +35,7 @@ def result? (s : List Char) : Option (Result × List Char) :=
   else if "wording-only".toList.isPrefixOf s then some (.wordingOnly, s.drop 12)
   else none
 
-def cover? (s : List Char) : Option (List Char × List Char) :=
+def atOrCarriedFrom? (s : List Char) : Option (List Char × List Char) :=
   let r := if "at ".toList.isPrefixOf s then some (s.drop 3)
     else if "carried from ".toList.isPrefixOf s then some (s.drop 13) else none
   r.bind fun r =>
@@ -67,7 +67,7 @@ def tailOf (js : List (List Char) × List Char) : Option (List Char) :=
     | ' ' :: x => some x
     | _ => none
 
-def paren (s : List Char) : List (List Char) :=
+def judgesInParenthesis (s : List Char) : List (List Char) :=
   match s with
   | ' ' :: '(' :: r =>
     match judges r.length r with
@@ -79,12 +79,12 @@ def paren (s : List Char) : List (List Char) :=
 def said? (cell : List Char) : Option Said :=
   match result? (unwrap cell) with
   | some (r, ' ' :: rest) =>
-    match (tailOf (judges rest.length rest)).bind cover? with
+    match (tailOf (judges rest.length rest)).bind atOrCarriedFrom? with
     | some (h, after) =>
-      if ((r == .wordingOnly) == ((judges rest.length rest).1 ++ paren after).isEmpty &&
-          ((judges rest.length rest).1.isEmpty || (paren after).isEmpty)) &&
+      if ((r == .wordingOnly) == ((judges rest.length rest).1 ++ judgesInParenthesis after).isEmpty &&
+          ((judges rest.length rest).1.isEmpty || (judgesInParenthesis after).isEmpty)) &&
           (r == .fail || !within "FAIL".toList ((unwrap cell).drop 1)) then
-        some ⟨r, (judges rest.length rest).1 ++ paren after, h⟩
+        some ⟨r, (judges rest.length rest).1 ++ judgesInParenthesis after, h⟩
       else none
     | none => none
   | _ => none

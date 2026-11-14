@@ -15,7 +15,7 @@ structure Global where
   owner : String
   protection : Option Protection
   stacked : Option (List Nat)
-  rows : Option (List (Nat × List Char))
+  verdictCells : Option (List (Pr × List Char))
 
 structure Pull where
   number : Nat

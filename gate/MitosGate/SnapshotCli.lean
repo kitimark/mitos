@@ -47,7 +47,7 @@ def bool (k : String) (j : Json) : Option Bool := (field k j).bind (·.getBool?.
 
 def arr (j : Json) : Option (List Json) := j.getArr?.toOption.map Array.toList
 
-def text (k : String) (j : Json) : Option String :=
+def strNullAsEmpty (k : String) (j : Json) : Option String :=
   match field k j with
   | some .null => some ""
   | some (.str s) => some s
@@ -79,7 +79,7 @@ def pull (j : Json) : Option Pull := do
   return { number := ← nat "number" j, state := ← str "state" j, draft := ← bool "draft" j,
            head := sha, headRepo, baseRef := ← str "ref" base,
            baseRepo := ← (field "repo" base).bind (str "full_name"), labels,
-           body := ← text "body" j }
+           body := ← strNullAsEmpty "body" j }
 
 def protectionOf (j : Json) : Option Protection := do
   let admins ← (field "enforce_admins" j).bind (bool "enabled")
@@ -108,15 +108,16 @@ def commentsOf (j : Json) : Option (List Speech.Comment) :=
 
 def reviewCommentsOf (j : Json) : Option (List Post) :=
   pages j >>= (·.mapM fun c => do
-    return ⟨← login "user" c, none, ← stamp "created_at" c, ← stamp "updated_at" c, ← text "body" c⟩)
+    return ⟨← login "user" c, none, ← stamp "created_at" c, ← stamp "updated_at" c,
+      ← strNullAsEmpty "body" c⟩)
 
 /-- A pending review is the owner's draft, not yet posted, and has no time. -/
 def reviewsOf (j : Json) : Option (List Review) := do
   let vs ← pages j
   let vs := vs.filter fun v => str "state" v != some "PENDING"
   vs.mapM fun v => do
-    return ⟨← nat "id" v, ← login "user" v, ← str "state" v, ← text "commit_id" v,
-      ← stamp "submitted_at" v, ← text "body" v⟩
+    return ⟨← nat "id" v, ← login "user" v, ← str "state" v,
+      ← strNullAsEmpty "commit_id" v, ← stamp "submitted_at" v, ← strNullAsEmpty "body" v⟩
 
 def activityOf (j : Json) : Option (List Carry.Push) :=
   pages j >>= (·.mapM fun a => do
@@ -149,7 +150,7 @@ def checksOf (j : Json) : Option (List Check) := do
       | some a => str "slug" a
       | none => none
     return ⟨← nat "id" c, ← str "name" c, app, ← str "head_sha" c, ← str "status" c,
-      ← text "conclusion" c⟩
+      ← strNullAsEmpty "conclusion" c⟩
 
 def splitLines (s : String) : List String := (s.splitOn "\n").filter (!·.isEmpty)
 
@@ -259,9 +260,10 @@ def obsJson (o : Obs) : Json :=
     (o.botAt.map fun b => [("botAt", Json.str b)]).getD []
 
 def unread (g : Global) (p : Pull) (r : Reads) : List String :=
-  [("protection", g.protection.isNone), ("stacks", g.stacked.isNone), ("dashboard", g.rows.isNone),
-   ("comments", r.comments.isNone), ("review-comments", r.reviewComments.isNone),
-   ("reviews", r.reviews.isNone), ("activity", (activity p r).isNone), ("files", r.files.isNone),
+  [("protection", g.protection.isNone), ("stacks", g.stacked.isNone),
+   ("dashboard", g.verdictCells.isNone), ("comments", r.comments.isNone),
+   ("review-comments", r.reviewComments.isNone), ("reviews", r.reviews.isNone),
+   ("activity", (activity p r).isNone), ("files", r.files.isNone),
    ("checks", r.checks.isNone)].filterMap fun (k, b) => if b then some k else none
 
 private def stop (m : String) : IO UInt32 := do
@@ -283,7 +285,7 @@ def run (dir : System.FilePath) : IO UInt32 := do
   let g : Global :=
     { repo, owner, protection := (← load dir "protection").bind protectionOf,
       stacked := (← load dir "stacks").bind stacksOf,
-      rows := ((← load dir "dashboard").bind (dashboardOf owner)).bind rows }
+      verdictCells := ((← load dir "dashboard").bind (dashboardOf owner)).bind rows }
   let mut out : Array Json := #[]
   for p in pulls.mergeSort (fun a b => a.number ≤ b.number) do
     let k := toString p.number
@@ -295,7 +297,7 @@ def run (dir : System.FilePath) : IO UInt32 := do
         files := (← load dir s!"files-{k}").bind filesOf,
         checks := (← load dir s!"checks-{k}").bind checksOf }
     let base ← baseOf main p.head
-    let shas := wanted (obs g p r ⟨[], base⟩)
+    let shas := contentIdCommits (obs g p r ⟨[], base⟩)
     let mut ids := #[]
     for s in shas do
       match ← contentId main s with

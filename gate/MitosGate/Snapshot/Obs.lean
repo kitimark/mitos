@@ -6,10 +6,10 @@ namespace MitosGate.Snapshot
 open Land (Sha Pr Teammate Obs Verdict Author Result Base Gate Word Mark Push Entry)
 open Speech (Comment Stamp lines lead blank isSha hex digit)
 
-def cell (g : Global) (n : Pr) : Option (List Char) := g.rows.bind (·.lookup n)
+def dashboardCell (g : Global) (n : Pr) : Option (List Char) := g.verdictCells.bind (·.lookup n)
 
 def complete (g : Global) (p : Pull) (r : Reads) : Bool :=
-  g.protection.isSome && g.stacked.isSome && g.rows.isSome && r.comments.isSome &&
+  g.protection.isSome && g.stacked.isSome && g.verdictCells.isSome && r.comments.isSome &&
     r.reviewComments.isSome && r.reviews.isSome && (activity p r).isSome && r.files.isSome &&
     r.checks.isSome
 
@@ -19,8 +19,8 @@ def ctx (g : Global) (p : Pull) (r : Reads) : Speech.Ctx :=
 def obs (g : Global) (p : Pull) (r : Reads) (x : Git) : Obs :=
   { pr := p.number, updatable := updatable g p, enforced := enforced g, head := p.head,
     pushes := ((activity p r).getD []).map toLand, ids := x.ids, paths := r.files, base := x.base,
-    gate := gateOf p.head (r.checks.getD []), author := (cell g p.number).bind authorOf,
-    verdicts := ((cell g p.number).map (verdictsOf (ctx g p r).known)).getD [],
+    gate := gateOf p.head (r.checks.getD []), author := (dashboardCell g p.number).bind authorOf,
+    verdicts := ((dashboardCell g p.number).map (verdictsOf (ctx g p r).known)).getD [],
     botAt := botAt p.head (r.checks.getD []) (r.reviews.getD []), delegates := Speech.delegates,
     words := (Speech.words (ctx g p r) (r.comments.getD []) ((activity p r).getD [])
       (complete g p r)).1,
@@ -32,7 +32,7 @@ def abouts : List Word → List Sha
   | .agentLand _ m :: ws => m.about :: abouts ws
   | .ownerHold _ :: ws => abouts ws
 
-def wanted (o : Obs) : List Sha :=
+def contentIdCommits (o : Obs) : List Sha :=
   (o.head :: (match o.base with
     | .clean r => [r]
     | _ => []) ++ o.verdicts.map (·.head) ++ abouts o.words ++ o.botAt.toList).eraseDups
@@ -63,7 +63,7 @@ def PushesAreTheActivity : Prop :=
 
 def VerdictsFromTheCell : Prop :=
   ∀ g p r x, ∀ v ∈ (obs g p r x).verdicts,
-    ∃ c s, cell g p.number = some c ∧ said? c = some s ∧ v.result = s.result ∧
+    ∃ c s, dashboardCell g p.number = some c ∧ said? c = some s ∧ v.result = s.result ∧
       v.head ∈ (ctx g p r).known ∧ s.sha.isPrefixOf v.head.toList = true ∧
       ∀ k ∈ (ctx g p r).known, s.sha.isPrefixOf k.toList = true → k = v.head
 
@@ -144,7 +144,7 @@ theorem pushesAreTheActivity : PushesAreTheActivity := by
 theorem verdictsFromTheCell : VerdictsFromTheCell := by
   intro g p r x v hv
   simp only [obs] at hv
-  cases hc : cell g p.number with
+  cases hc : dashboardCell g p.number with
   | none => rw [hc] at hv; simp at hv
   | some c =>
     rw [hc] at hv
