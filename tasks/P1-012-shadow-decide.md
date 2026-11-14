@@ -1060,11 +1060,10 @@ workflow-level permissions.
   `mainAfter`. A read of a list is one REST call per page of 100, so a run makes at least as many
   REST calls as reads, and more when a list (files, activity, comments) runs past one page.
   `cost.reads` counts the fetch's reads that saved a file, not the REST calls. The floor is read
-  once, at the start, so it leaves ci 300 calls less the run's own cost: it protects ci only while
-  a run costs under 300 calls, about N under 49 with one page per list. The report prints the peak.
+  once, at the start, and a failed read of it skips the check. Other jobs spend calls too. So the
+  floor does not bound a run's cost or reserve calls for ci. The report prints the peak.
 - Does GitHub's branch read show a merge as soon as the merge is done? The pairing rests on it
-  (`mainAfter`), and GitHub documents no freshness bound. The report lists each pair whose `read`
-  is not before `merged_at` by the runner's clock, as a sign of a stale read.
+  (`mainAfter`), GitHub documents no freshness bound, and the shadow does not measure it.
 - Does an anonymous `git fetch origin <sha>` work with `persist-credentials: false`? If not,
   persist the read token.
 - `otherTree` also catches a stale sample after a content push; the report must explain each one.
