@@ -5,8 +5,6 @@ namespace MitosGate.Snapshot
 open Land (Sha Pr Teammate Obs Verdict Author Result Base Gate Word Mark Push Entry)
 open Speech (Comment Stamp lines lead blank isSha hex digit)
 
-/-! ## The Owner dashboard -/
-
 def cells : List Char → List (List Char)
   | [] => [[]]
   | c :: cs =>
@@ -40,8 +38,6 @@ inductive Row
 
 def separator (c : List Char) : Bool := c.all fun x => x == '-' || x == ':' || x == ' '
 
-/-- A line of the In flight section. Prose is skipped. A table line has exactly the four columns
-PR, Head, `gate` and Verdict; any other table line spoils the whole dashboard. -/
 def row (l : List Char) : Row :=
   match Speech.trim l with
   | '|' :: _ =>
@@ -74,8 +70,6 @@ def rowsOf (ls : List (List Char)) : Option (List (Nat × List Char)) :=
     | _ => none
   if rs.contains .bad || !distinctNats (ds.map (·.1)) then none else some ds
 
-/-- The verdict cell of each In flight row. `none`: no single In flight section, a table line of
-another shape, or two rows for one pull request. -/
 def rows (body : String) : Option (List (Nat × List Char)) :=
   (section? (lines body.toList)).bind rowsOf
 

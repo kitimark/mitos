@@ -32,13 +32,10 @@ def abouts : List Word → List Sha
   | .agentLand _ m :: ws => m.about :: abouts ws
   | .ownerHold _ :: ws => abouts ws
 
-/-- The commits whose content id the decision may compare. -/
 def wanted (o : Obs) : List Sha :=
   (o.head :: (match o.base with
     | .clean r => [r]
     | _ => []) ++ o.verdicts.map (·.head) ++ abouts o.words ++ o.botAt.toList).eraseDups
-
-/-! ## Statements -/
 
 def FailedReadHolds : Prop :=
   ∀ g p r x, complete g p r = false →

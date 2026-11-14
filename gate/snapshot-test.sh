@@ -305,7 +305,6 @@ else
   bad "fetch: a failed read leaves no file, even after a first page" "exit non-zero: $(cat "$tmp/fetch.err")"
 fi
 for args in "owner/mitos 43" "owner 43 $tmp/g" "owner/mitos 0 $tmp/g" "owner/.. 43 $tmp/g" "owner/mitos 43 $tmp/f"; do
-  # shellcheck disable=SC2086
   if fetch $args; then
     bad "fetch refuses: $args" "exit 0"
   elif [ "$(grep -c '' "$tmp/fetch.err")" = 1 ] && grep -q '^snapshot-fetch: ' "$tmp/fetch.err"; then

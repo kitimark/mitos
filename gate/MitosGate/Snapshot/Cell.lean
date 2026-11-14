@@ -35,9 +35,6 @@ def result? (s : List Char) : Option (Result × List Char) :=
   else if "wording-only".toList.isPrefixOf s then some (.wordingOnly, s.drop 12)
   else none
 
-/-- `at <sha>` or `carried from <sha>`, the sha in backticks or not: 7 to 40 lowercase hex, and the
-text after it. A carried verdict names the head it was given at, and `carry` decides whether it
-reaches the head. -/
 def cover? (s : List Char) : Option (List Char × List Char) :=
   let r := if "at ".toList.isPrefixOf s then some (s.drop 3)
     else if "carried from ".toList.isPrefixOf s then some (s.drop 13) else none
@@ -70,8 +67,6 @@ def tailOf (js : List (List Char) × List Char) : Option (List Char) :=
     | ' ' :: x => some x
     | _ => none
 
-/-- The judges that open a parenthesis right after the sha, as in
-`PASS carried from 5c258d6 (opus-xhigh, author sonnet)`. -/
 def paren (s : List Char) : List (List Char) :=
   match s with
   | ' ' :: '(' :: r =>
@@ -81,10 +76,6 @@ def paren (s : List Char) : List (List Char) :=
     | _ => []
   | _ => []
 
-/-- `PASS <judges> at <sha>`, `FAIL <judges> at <sha>` or `wording-only at <sha>`, with
-`carried from` in place of `at`, and the judges either before `at` or in a parenthesis right after
-the sha, not both. Judges are `opus-xhigh + sonnet-high` and the like. The rest of the cell is
-prose. A cell that names `FAIL` anywhere after a `PASS` or `wording-only` says nothing. -/
 def said? (cell : List Char) : Option Said :=
   match result? (unwrap cell) with
   | some (r, ' ' :: rest) =>
@@ -122,8 +113,6 @@ def suffixes (p : List Char) : Option Char → List Char → List (List Char)
     (if !(prev.any Char.isAlphanum) && p.isPrefixOf (c :: cs) then [(c :: cs).drop p.length]
       else []) ++ suffixes p (some c) cs
 
-/-- The one `author <model>` note of the cell, its model a family that no other family follows
-before the next `.`: "author sonnet, fixed by opus" names no author. -/
 def authorOf (cell : List Char) : Option Author :=
   match suffixes "author ".toList none cell with
   | [rest] =>
