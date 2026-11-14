@@ -93,6 +93,8 @@ theorem aRowWithoutANumberSpoilsTheDashboard :
 theorem aPipeInACellSpoilsTheDashboard :
     rows (dash "| #7 a | `x` | green | PASS opus-xhigh at `85b0781` `a|b` |") = none := by
   decide +kernel
+theorem aRowWithoutTheClosingPipeSpoilsTheDashboard :
+    rows (dash "| #7 a | `x` | green | PASS opus-xhigh at `85b0781`") = none := by decide +kernel
 theorem noInFlightSectionIsUnread : rows "## Needs you\n\n| #7 | x | y | z |\n" = none := by
   decide +kernel
 theorem twoInFlightSectionsAreUnread :
