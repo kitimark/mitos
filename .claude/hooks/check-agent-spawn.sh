@@ -10,14 +10,13 @@ hook_dir=${BASH_SOURCE[0]%/*}; [[ $hook_dir == "${BASH_SOURCE[0]}" ]] && hook_di
 event=$(jq -r '.hook_event_name // empty' <<<"$input" 2>/dev/null)
 # shellcheck source-path=SCRIPTDIR source=hook-state.sh
 if ! . "$hook_dir/hook-state.sh" 2>/dev/null; then
-  # A post-call event has no spawn to check, and its output would not be a PreToolUse one.
   case $event in PostToolUse | PostToolUseFailure) exit 0 ;; esac
 else
   sid=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)
   case $event in
     PostToolUse | PostToolUseFailure)
-      # A fork ignores model, so it probes no model. A background call, or a foreground one the
-      # harness launched async, answers with a launch notice, not the probe's answer.
+      # A background call, or a foreground one the harness launched async, answers with a launch
+      # notice, not the probe's answer.
       family=$(jq -r --arg m "${probe_models[*]}" '
         select(.tool_input.subagent_type != "fork"
                and .tool_input.run_in_background != true

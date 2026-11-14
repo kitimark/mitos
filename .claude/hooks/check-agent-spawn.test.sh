@@ -199,7 +199,6 @@ check "a limit claim in a session with no record warns" \
 rm -f "$MITOS_HOOK_STATE/p1.probe-opus"
 "$hook" <<<"$(probe_call PostToolUse opus "Async agent launched" | jq -c '.tool_input.run_in_background = true')" >/dev/null 2>&1
 if [[ -z $(probe_line opus) ]]; then echo "ok    a background probe launch notice is not recorded"; else echo "FAIL  background probe recorded: '$(probe_line opus)'"; failed=1; fi
-# Real journals: a call sent with run_in_background false can still come back as a launch notice.
 async_notice=$(probe_call PostToolUse opus "x" | jq -c '.tool_input.run_in_background = false | .tool_response = {status:"async_launched",isAsync:true,agentId:"a1"}')
 "$hook" <<<"$async_notice" >/dev/null 2>&1
 if [[ -z $(probe_line opus) ]]; then echo "ok    an async_launched notice for a foreground-flagged probe is not recorded"; else echo "FAIL  async notice recorded: '$(probe_line opus)'"; failed=1; fi
@@ -220,12 +219,10 @@ check "a spawn with no model still gets the limit check" \
   '{"session_id":"p1","tool_name":"Agent","tool_input":{"subagent_type":"fork","run_in_background":true,"prompt":"Opus is at its limit; fall back."}}' \
   "no probe of opus $limit_msg"
 
-# A fork ignores model, so a probe through one says nothing about that model.
 "$hook" <<<"$(probe_call PostToolUse opus ok | jq -c '.tool_input.subagent_type = "fork"')" >/dev/null 2>&1
 if [[ -z $(probe_line opus) ]]; then echo "ok    a fork probe is not recorded"; else echo "FAIL  fork probe recorded: '$(probe_line opus)'"; failed=1; fi
 check "a fork probe does not silence the limit warning" "$opus_limit" "no probe of opus $limit_msg"
 
-# fable: the role table prefers it, so it needs its own record and its own warning.
 rm -f "$MITOS_HOOK_STATE/p1.probe-fable"
 "$hook" <<<"$(probe_call PostToolUse fable ok)" >/dev/null 2>&1
 if [[ $(probe_line fable) == *" pass" ]]; then echo "ok    a passing fable probe is recorded"; else echo "FAIL  fable probe: '$(probe_line fable)'"; failed=1; fi
@@ -262,7 +259,6 @@ check "a different one-word prompt is not a probe" \
   "$(jq -c '.tool_input.prompt = "ok"' <<<"$probe_spawn")" "does not set run_in_background: true"
 unset MITOS_HOOK_STATE
 
-# The hook only runs after a call if settings.json wires it to both post-call events.
 settings=${hook%/*}/../settings.json
 for ev in PostToolUse PostToolUseFailure; do
   if jq -e --arg ev "$ev" '[.hooks[$ev][]? | select(.matcher == "Agent") | .hooks[].command | endswith("/check-agent-spawn.sh")] | any' "$settings" >/dev/null 2>&1; then
@@ -277,7 +273,6 @@ check "without hook-state.sh the other warnings stay" \
   '{"session_id":"s1","tool_name":"Agent","tool_input":{"description":"verifier","prompt":"p"}}' \
   "sets no model or effort. Set both from the role table in .claude/skills/kitimark-mode/SKILL.md, or say why the session default is right. This Agent call does not set run_in_background"
 
-# Without hook-state.sh a post-call event must print nothing, not a PreToolUse warning.
 out=$("$hook" <<<"$(probe_call PostToolUse sonnet ok | jq -c 'del(.tool_input.effort, .tool_input.model)')" 2>/dev/null)
 if [ -z "$out" ]; then echo "ok    a post-call event without hook-state.sh prints nothing"; else echo "FAIL  post-call output: $out"; failed=1; fi
 
