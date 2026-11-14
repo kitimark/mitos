@@ -16,12 +16,14 @@ def cells : List Char → List (List Char)
 
 def inFlight : List Char := "## In flight".toList
 
-def isInFlight (l : List Char) : Bool := l.head? == some '#' && Speech.trim l == inFlight
+def outsideListItems (heading : List Char) : Bool := heading.head? == some '#'
+
+def isInFlight (l : List Char) : Bool := outsideListItems l && Speech.trim l == inFlight
 
 def section? (ls : List (List Char)) : Option (List (List Char)) :=
   match ls.filter isInFlight with
   | [_] =>
-    if (ls.takeWhile (!isInFlight ·)).any (start · == .hides) then none
+    if (ls.takeWhile (!isInFlight ·)).any (start · == .runsPastHeadings) then none
     else some (((ls.dropWhile (!isInFlight ·)).drop 1).takeWhile (start · != .heading))
   | _ => none
 
@@ -73,12 +75,20 @@ def row (l : List Char) : Row :=
     | _ => .bad
   | t => if t.contains '|' then .bad else .skip
 
-def rowsAfter : List Char → Bool → List (List Char) → List Row
-  | _, _, [] => []
-  | _, true, l :: ls => .skip :: rowsAfter l false ls
-  | above, false, l :: ls =>
-    if blank above && headerRow l && ls.head?.any delimiterRow then .skip :: rowsAfter l true ls
-    else row l :: rowsAfter l false ls
+inductive Above
+  | blankOrHeading
+  | headerOfPair
+  | nonBlank
+
+def Above.of (l : List Char) : Above := if blank l then .blankOrHeading else .nonBlank
+
+def rowsAfter : Above → List (List Char) → List Row
+  | _, [] => []
+  | .headerOfPair, l :: ls => .skip :: rowsAfter (.of l) ls
+  | .blankOrHeading, l :: ls =>
+    if headerRow l && ls.head?.any delimiterRow then .skip :: rowsAfter .headerOfPair ls
+    else row l :: rowsAfter (.of l) ls
+  | .nonBlank, l :: ls => row l :: rowsAfter (.of l) ls
 
 def piped (l : List Char) : Bool := (Speech.trim l).head? == some '|'
 
@@ -95,7 +105,7 @@ def distinctNats : List Nat → Bool
 def textOrBlank (l : List Char) : Bool := start l == .text || start l == .blank
 
 def rowsOf (ls : List (List Char)) : Option (List (Nat × List Char)) :=
-  let rs := rowsAfter [] false ls
+  let rs := rowsAfter .blankOrHeading ls
   let ds := rs.filterMap fun
     | .data n v => some (n, v)
     | _ => none
