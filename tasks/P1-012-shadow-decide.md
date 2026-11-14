@@ -26,15 +26,18 @@ escalation: hint → automation → stronger model → pair → split → revisi
   the product"), grafts from A. No second cross-judge ran. The judge type-checked the Lean sketch
   against B's build of #246 (six proofs on the three standard axioms, 12 kernel fixtures pass),
   linted the workflow with actionlint, and ran the recorder through shellcheck and four stub runs
-  (decided, refused, skipped, bad event text). Not verified: a run of the recorder against the
+  (decided, refused, skipped, bad event text). Round 2 of #248 pasted the judge's five sketch
+  files below verbatim and re-checked them against `main` at 4ba56dc: `Shadow.lean`, its proofs
+  and its fixtures type-check as pasted, on the same axioms, and actionlint 1.7.12 and shellcheck
+  0.11.0 report nothing on the two recorder files. Not verified: a run of the recorder against the
   real `mitos-gate snapshot`, and anything in a real workflow run.
 
 ## Design
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
 lists.
 
-depth: build for the recorder (`land.yml`, `land-decide.sh`) and for `Shadow.lean`. Contract only
-for `ShadowCli`, `shadow-fetch.sh` and every part that names 2b.
+depth: build for the recorder (`land.yml`, `land-decide.sh`) and for `Shadow.lean`, whose sketches
+are below in full. Contract only for `ShadowCli`, `shadow-fetch.sh` and every part that names 2b.
 
 revisit_when: re-check after the P1-011 step 2b PR (#246, Closes #190) merges.
 
@@ -79,68 +82,502 @@ The PR owner posts that output on #191. The owner does nothing during the shadow
 
 ### The record (the one data structure)
 
-Only `land-decide.sh` writes it, and only `ShadowCli.run?` parses it.
+Only `land-decide.sh` writes it, as one line in `<dir>/record.json`, and only `ShadowCli.run?`
+parses it. A decided or refused record has these fields; `TRIGGER` and `OUTCOME` are below.
 
 ```
-{"v":1,"trigger":{"kind":"mainMoved"|"gateDone","head","conclusion"|"comment","pr","id"|"dispatch"},
- "read":"<UTC, end of the reads>","main":"<sha read>","tool":"<sha built>",
- "cost":{"setup","fetch","snapshot","decide","reads"},"unread":["<2b's failed-read lines, verbatim>"],
- "outcome":{"kind":"decided","snapshot":{"prs":[…]},"decision":{…},"trees":[{"commit","tree"}],"notes":[…]}
-          |{"kind":"refused","stage":"fetch|snapshot|land","said":[…]}
-          |{"kind":"skipped","remaining":N}}
+{"v": 1,
+ "trigger": TRIGGER,
+ "read": "<UTC, YYYY-MM-DDTHH:MM:SSZ, when the reads ended>",
+ "main": "<40-hex sha from reads/main.json, or \"\" when that read failed>",
+ "tool": "<40-hex sha of the clone's HEAD, the tool that was built>",
+ "cost": {"setup": <s>, "fetch": <s>, "snapshot": <s>, "decide": <s>,
+          "reads": <number of reads that saved a file>},
+ "unread": ["<one stderr line of snapshot-fetch.sh per failed read, verbatim>", ...],
+ "outcome": OUTCOME}
 ```
 
-- A refused run exits 1, so it is red. A skipped run (under the REST floor of 300) exits 0.
+`TRIGGER`, one shape per `Trigger` constructor, from the event that started the job:
+
+| `Trigger` | Event | JSON |
+|---|---|---|
+| `mainMoved` | `push` to `main` | `{"kind":"mainMoved"}` |
+| `gateDone head conclusion` | `workflow_run` of `ci`, completed, for a pull request of this repository | `{"kind":"gateDone","head":"<40-hex sha>","conclusion":"<1 to 32 of a-z and _, such as success or cancelled>"}` |
+| `comment pr id` | `issue_comment`, created or edited, by the owner's login on a pull request | `{"kind":"comment","pr":<pull request number>,"id":<comment id>}` |
+| `dispatch` | `workflow_dispatch` on `main` | `{"kind":"dispatch"}` |
+
+`OUTCOME`, one shape per `ShadowCli.Run` constructor:
+
+| `Run` | Exit | JSON |
+|---|---|---|
+| `decided` | 0 | `{"kind":"decided","snapshot":{"prs":[...]},"decision":{"next":...,"plan":...},"trees":[{"commit":"<replay sha>","tree":"<its tree>"}],"notes":["<a stderr line of mitos-gate snapshot, verbatim>"]}` |
+| `refused` | 1 | `{"kind":"refused","stage":"fetch"\|"snapshot"\|"land","said":["<a stderr line of that stage, verbatim>"]}` |
+| `skipped` | 0 | `{"kind":"skipped","remaining":<REST calls left>}` |
+
+- A run skips when fewer than 300 REST calls are left. Its record has no `main`, `cost` or
+  `unread`, and its `read` is from before any read:
+
+  ```
+  {"v":1,"trigger":TRIGGER,"read":"<UTC>","tool":"<sha>","outcome":{"kind":"skipped","remaining":<n>}}
+  ```
+- A refused run exits 1, so it is red. A record whose `main` is `""` is refused too, at the stage
+  the run reached.
 - `trees` gives the tree of each clean replay, because the replay commit exists only in
   `decide`'s clone.
+- The line holds no run number. `Record.run` is the `<run>` of the artifact's name, which
+  `shadow-fetch.sh` keeps, so `run?` takes it as an argument.
 - A change to the snapshot schema bumps `v`.
 - The scorer's folder is written only by `shadow-fetch.sh`: `records/`, `runs.json` (id, event,
   conclusion, times), `merges.json` and `baseline.json`.
 
-types:
+### The recorder (PR 1 starts from these two files)
+
+Both files below are the judge's sketch, verbatim. actionlint 1.7.12 (which also runs shellcheck on
+each `run:` line) and shellcheck 0.11.0 report nothing on them. PR 1 adds them with
+`land-decide.test.sh` and the ci steps under `cut_line`.
+
+`.github/workflows/land.yml`:
+
+```yaml
+name: land
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  decide:
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.event == 'pull_request' &&
+          github.event.workflow_run.head_repository.full_name == github.repository) ||
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+          github.event.comment.user.login == github.repository_owner))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: land-decide
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      checks: read
+    env:
+      LAND_DASHBOARD: 43
+    steps:
+      - id: t0
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.elan
+            .lake
+            core/.lake
+          key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+      - run: .github/scripts/install-elan.sh
+      - run: .github/scripts/install-toolchains.sh
+      - run: lake build mitos-gate
+      - name: Decide (prints only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAND_T0: ${{ steps.t0.outputs.at }}
+          LAND_EVENT: ${{ github.event_name }}
+          LAND_EVENT_HEAD: ${{ github.event.workflow_run.head_sha }}
+          LAND_EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          LAND_EVENT_PR: ${{ github.event.issue.number }}
+          LAND_EVENT_COMMENT: ${{ github.event.comment.id }}
+        run: .github/scripts/land-decide.sh "$GITHUB_REPOSITORY" "$LAND_DASHBOARD" "$RUNNER_TEMP/land"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: land-record-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/land/record.json
+          retention-days: 90
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: land-reads-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/land/reads
+          retention-days: 7
+```
+
+`.github/scripts/land-decide.sh`:
+
+```bash
+#!/usr/bin/env bash
+# Usage: .github/scripts/land-decide.sh <owner/name> <dashboard-issue> <dir>
+#
+# One decide run, in a clone of the repository: the reads, the snapshot, the decision, then one
+# line, <dir>/record.json. It holds no rule: every decision is `mitos-gate`'s, and it reads no
+# line that another tool printed. Exit 0: decided, or skipped under the REST floor. Exit 1:
+# refused, and the record says at which stage. Exit 2: usage.
+set -u
+
+die() { printf 'land-decide: %s\n' "$1" >&2; exit 2; }
+[ $# = 3 ] || die "usage: land-decide.sh <owner/name> <dashboard-issue> <dir>"
+repo=$1 dash=$2 out=$3
+gate=${MITOS_GATE:-.lake/build/bin/mitos-gate}
+fetch=${SNAPSHOT_FETCH:-gate/snapshot-fetch.sh}
+floor=${LAND_REST_FLOOR:-300}
+for tool in jq git date gh; do command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"; done
+mkdir -p -- "$out" || die "cannot make the folder"
+[ -z "$(ls -A -- "$out")" ] || die "the folder is not empty"
+
+sha() { [[ $1 =~ ^[0-9a-f]{40}$ ]]; }
+num() { [[ $1 =~ ^(0|[1-9][0-9]{0,18})$ ]]; }
+trigger() {
+  case ${LAND_EVENT:-workflow_dispatch} in
+    push) jq -cn '{kind: "mainMoved"}' ;;
+    workflow_run)
+      sha "${LAND_EVENT_HEAD:-}" && [[ ${LAND_EVENT_CONCLUSION:-} =~ ^[a-z_]{1,32}$ ]] || return 1
+      jq -cn --arg h "$LAND_EVENT_HEAD" --arg c "$LAND_EVENT_CONCLUSION" \
+        '{kind: "gateDone", head: $h, conclusion: $c}' ;;
+    issue_comment)
+      num "${LAND_EVENT_PR:-}" && num "${LAND_EVENT_COMMENT:-}" || return 1
+      jq -cn --argjson p "$LAND_EVENT_PR" --argjson c "$LAND_EVENT_COMMENT" \
+        '{kind: "comment", pr: $p, id: $c}' ;;
+    workflow_dispatch) jq -cn '{kind: "dispatch"}' ;;
+    *) return 1 ;;
+  esac
+}
+trig=$(trigger) || die "the trigger is not one this script records"
+tool=$(git rev-parse --verify --quiet 'HEAD^{commit}') || die "not in a clone"
+num "$floor" || die "LAND_REST_FLOOR is not a number"
+
+now() { date -u +%s; }
+lines() { if [ -f "$1" ]; then jq -Rsc 'split("\n") | map(select(. != ""))' "$1"; else echo '[]'; fi; }
+t_job=${LAND_T0:-$(now)}; num "$t_job" || die "LAND_T0 is not a time"
+t0=$(now)
+stamp() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
+head_of() {
+  jq -cn --argjson trigger "$trig" --arg read "$(stamp "$1")" --arg tool "$tool" \
+    --argjson setup "$((t0 - t_job))" '{v: 1, trigger: $trigger, read: $read, tool: $tool, setup: $setup}'
+}
+
+left=$(gh api rate_limit --jq .resources.core.remaining 2>/dev/null) || left=
+if num "$left" && [ "$left" -lt "$floor" ]; then
+  jq -c --argjson left "$left" 'del(.setup) + {outcome: {kind: "skipped", remaining: $left}}' \
+    <<<"$(head_of "$t0")" >"$out/record.json"
+  printf 'land-decide: skipped, %s REST calls left\n' "$left"
+  exit 0
+fi
+
+"$fetch" "$repo" "$dash" "$out/reads" 2>"$out/fetch.err"; code=$?
+t1=$(now)
+stage=fetch
+if [ "$code" = 0 ]; then
+  stage=snapshot
+  "$gate" snapshot "$out/reads" >"$out/snapshot.json" 2>"$out/snapshot.err"; code=$?
+fi
+t2=$(now)
+if [ "$code" = 0 ]; then
+  stage=land
+  "$gate" land "$out/snapshot.json" >"$out/decision.json" 2>"$out/land.err"; code=$?
+fi
+t3=$(now)
+
+main=$(jq -er '.commit.sha' "$out/reads/main.json" 2>/dev/null) && sha "$main" || main=
+reads=$(find "$out/reads" -name '*.json' 2>/dev/null | wc -l)
+head=$(jq -c --arg main "$main" --argjson reads "$reads" --argjson unread "$(lines "$out/fetch.err")" \
+  --argjson fetch "$((t1 - t0))" --argjson snapshot "$((t2 - t1))" --argjson decide "$((t3 - t2))" \
+  '{v, trigger, read, main: $main, tool,
+    cost: {setup, fetch: $fetch, snapshot: $snapshot, decide: $decide, reads: $reads},
+    unread: $unread}' <<<"$(head_of "$t1")")
+
+if [ "$code" != 0 ] || [ -z "$main" ]; then
+  jq -c --arg stage "$stage" --argjson said "$(lines "$out/$stage.err")" \
+    '. + {outcome: {kind: "refused", stage: $stage, said: $said}}' <<<"$head" >"$out/record.json"
+  printf 'land-decide: refused at %s\n' "$stage" >&2
+  exit 1
+fi
+
+trees='[]'
+while read -r commit; do
+  sha "$commit" || continue
+  tree=$(git rev-parse --verify --quiet "$commit^{tree}") || continue
+  trees=$(jq -c --arg c "$commit" --arg t "$tree" '. + [{commit: $c, tree: $t}]' <<<"$trees")
+done < <(jq -r '.prs[] | select(.base.kind == "clean") | .base.replay' "$out/snapshot.json")
+
+jq -c --argjson head "$head" --argjson trees "$trees" --slurpfile decision "$out/decision.json" \
+  --argjson notes "$(lines "$out/snapshot.err")" \
+  '$head + {outcome: {kind: "decided", snapshot: ., decision: $decision[0], trees: $trees,
+    notes: $notes}}' "$out/snapshot.json" >"$out/record.json"
+cat "$out/decision.json" "$out/snapshot.err"
+```
+
+### The scorer (PR 2)
+
+types: `gate/MitosGate/Shadow.lean`, the judge's sketch, verbatim. It type-checks against `main` at
+4ba56dc with real bodies, and ends with the statements.
 
 ```lean
-namespace MitosGate.Shadow
-inductive Trigger | mainMoved | gateDone (head : Sha) (conclusion : String)
-  | comment (pr : Pr) (id : Nat) | dispatch
-structure Cost where setup : Nat; fetch : Nat; snapshot : Nat; decide : Nat; reads : Nat
-structure TreeOf where commit : Sha; tree : Sha
-structure Record where run : Nat; trigger : Trigger; read : Stamp; main : Sha; tool : Sha
-  cost : Cost; prs : List Obs; trees : List TreeOf
-structure Merge where pr : Pr; time : Stamp; before : Sha; head : Sha; tree : Sha
-inductive Clause | updatable | enforced | covered | reviewed | rest
-def lacks (o : Obs) : List Clause
-def observer : Teammate := ⟨"shadow", "observer"⟩
-def withWord (said : Nat) (o : Obs) : Obs
-inductive Reading | asRead (step : Step) | oneWordAway (after : Step)
-def reading (os : List Obs) (o : Obs) : Reading
-inductive Head | same | replayedAsPlanned | replayedOtherwise | other
-structure Sat where run : Nat; age : Nat; reading : Reading; lacks : List Clause
-  head : Head; authorKnown : Bool; updaterPushes : Nat
-inductive Seat | unseen | unlisted (run : Nat) | sat (s : Sat)
-def last (m : Merge) : List Record → Option Record
-def seat (m : Merge) (rs : List Record) : Seat
-inductive Finding | agrees | waits | disagrees (why : Stop) | otherTree | blind
-def finding : Seat → Finding
-structure Tally where agrees : Nat; waits : Nat; disagrees : Nat; otherTree : Nat; blind : Nat
-  assumed : Nat; noAuthor : Nat; updaterPushes : Nat
-def tally (ms : List Merge) (rs : List Record) : Tally
-structure Spread where n : Nat; min : Nat; median : Nat; p90 : Nat; max : Nat
-end MitosGate.Shadow
+import MitosGate.LandCli
+import MitosGate.Speech
 
--- contract only
-def LandCli.read : String → Except String Snapshot          -- parse and check; `run` then uses it
-inductive ShadowCli.Stage | fetch | snapshot | land
-inductive ShadowCli.Run | decided (r : Shadow.Record)
-  | refused (t : Shadow.Trigger) (s : Stage) | skipped (t : Shadow.Trigger) (remaining : Nat)
-def ShadowCli.run? (j : Json) : Except String Run            -- not implemented; refuses v ≠ 1
-def ShadowCli.cli (args : List String) (usage : String) : IO UInt32   -- not implemented
+namespace MitosGate.Shadow
+
+open Land
+
+abbrev Stamp := Speech.Stamp
+
+inductive Trigger
+  | mainMoved
+  | gateDone (head : Sha) (conclusion : String)
+  | comment (pr : Pr) (id : Nat)
+  | dispatch
+  deriving DecidableEq
+
+structure Cost where
+  setup : Nat
+  fetch : Nat
+  snapshot : Nat
+  decide : Nat
+  reads : Nat
+
+structure TreeOf where
+  commit : Sha
+  tree : Sha
+
+structure Record where
+  run : Nat
+  trigger : Trigger
+  read : Stamp
+  main : Sha
+  tool : Sha
+  cost : Cost
+  prs : List Obs
+  trees : List TreeOf
+
+structure Merge where
+  pr : Pr
+  time : Stamp
+  before : Sha
+  head : Sha
+  tree : Sha
+
+def observer : Teammate := ⟨"shadow", "observer"⟩
+
+inductive Clause
+  | updatable | enforced | covered | reviewed | rest
+  deriving DecidableEq
+
+def lacks (o : Obs) : List Clause :=
+  [(Clause.updatable, o.updatable), (.enforced, o.enforced), (.covered, o.covered),
+   (.reviewed, o.reviewed), (.rest, o.rest)].filterMap fun (c, b) => if b then none else some c
+
+def fresh (os : List Obs) : Nat := (os.flatMap fun o => o.words.map Word.said).foldr max 0 + 1
+
+def withWord (said : Nat) (o : Obs) : Obs :=
+  { o with words := o.words ++ [.ownerLand ⟨said, o.head⟩] }
+
+inductive Reading
+  | asRead (step : Step)
+  | oneWordAway (after : Step)
+  deriving DecidableEq
+
+def Reading.step : Reading → Step
+  | .asRead s | .oneWordAway s => s
+
+def reading (os : List Obs) (o : Obs) : Reading :=
+  match step observer (queueOf os) o with
+  | .stop .noEntry =>
+    let o' := withWord (fresh os) o
+    .oneWordAway (step observer (queueOf (os.map fun x => if x.pr == o.pr then o' else x)) o')
+  | s => .asRead s
+
+inductive Head
+  | same
+  | replayedAsPlanned
+  | replayedOtherwise
+  | other
+  deriving DecidableEq
+
+def headOf (r : Record) (o : Obs) (m : Merge) : Head :=
+  if o.head == m.head then .same
+  else
+    match o.base with
+    | .clean x =>
+      if r.trees.any fun t => t.commit == x && t.tree == m.tree then .replayedAsPlanned
+      else .replayedOtherwise
+    | _ => .other
+
+structure Sat where
+  run : Nat
+  age : Nat
+  reading : Reading
+  lacks : List Clause
+  head : Head
+  authorKnown : Bool
+  updaterPushes : Nat
+
+inductive Seat
+  | unseen
+  | unlisted (run : Nat)
+  | sat (s : Sat)
+
+def precedes (m : Merge) (r : Record) : Bool := r.main == m.before && decide (r.read ≤ m.time)
+
+def last (m : Merge) : List Record → Option Record
+  | [] => none
+  | r :: rs =>
+    match last m rs with
+    | some x => if precedes m r && decide (x.read < r.read) then some r else some x
+    | none => if precedes m r then some r else none
+
+def seat (m : Merge) (rs : List Record) : Seat :=
+  match last m rs with
+  | none => .unseen
+  | some r =>
+    match r.prs.find? (·.pr == m.pr) with
+    | none => .unlisted r.run
+    | some o =>
+      .sat { run := r.run, age := m.time - r.read, reading := reading r.prs o, lacks := lacks o,
+             head := headOf r o m, authorKnown := o.author.isSome,
+             updaterPushes := (o.pushes.filter (·.byUpdater)).length }
+
+inductive Finding
+  | agrees
+  | waits
+  | disagrees (why : Stop)
+  | otherTree
+  | blind
+  deriving DecidableEq
+
+def finding : Seat → Finding
+  | .unseen | .unlisted _ => .blind
+  | .sat s =>
+    match s.head, s.reading.step with
+    | .other, _ => .blind
+    | .replayedOtherwise, _ => .otherTree
+    | _, .stop why => .disagrees why
+    | .same, .present _ => .agrees
+    | .replayedAsPlanned, .awaitPush _ => .agrees
+    | _, _ => .waits
+
+structure Tally where
+  agrees : Nat := 0
+  waits : Nat := 0
+  disagrees : Nat := 0
+  otherTree : Nat := 0
+  blind : Nat := 0
+  assumed : Nat := 0
+  noAuthor : Nat := 0
+  updaterPushes : Nat := 0
+
+def Tally.add (t : Tally) (s : Seat) : Tally :=
+  let t := match finding s with
+    | .agrees => { t with agrees := t.agrees + 1 }
+    | .waits => { t with waits := t.waits + 1 }
+    | .disagrees _ => { t with disagrees := t.disagrees + 1 }
+    | .otherTree => { t with otherTree := t.otherTree + 1 }
+    | .blind => { t with blind := t.blind + 1 }
+  match s with
+  | .sat x =>
+    { t with updaterPushes := t.updaterPushes + x.updaterPushes,
+             assumed := t.assumed + (match x.reading with | .oneWordAway _ => 1 | _ => 0),
+             noAuthor := t.noAuthor + (if x.authorKnown then 0 else 1) }
+  | _ => t
+
+def tally (ms : List Merge) (rs : List Record) : Tally :=
+  ms.foldl (fun t m => t.add (seat m rs)) ({} : Tally)
+
+structure Spread where
+  n : Nat
+  min : Nat
+  median : Nat
+  p90 : Nat
+  max : Nat
+
+def spread (xs : List Nat) : Spread :=
+  let s := xs.mergeSort (· ≤ ·)
+  { n := s.length, min := s.head?.getD 0, median := s.getD (s.length / 2) 0,
+    p90 := s.getD (s.length * 9 / 10) 0, max := s.getLast?.getD 0 }
+
+/-! ## Statements -/
+
+def ReadyIsOneWordFromLanding : Prop :=
+  ∀ (me : Teammate) (q : Queue) (o : Obs) (said : Nat),
+    step me q o = .stop .noEntry → (∀ w ∈ o.words, w.said < said) →
+    landable (⟨o.pr, ⟨said, o.head⟩, .owner⟩, withWord said o) = true
+
+def TheWordIsOnlyAssumedWhenReady : Prop :=
+  ∀ (os : List Obs) (o : Obs),
+    (∃ s, reading os o = .oneWordAway s) ↔ step observer (queueOf os) o = .stop .noEntry
+
+def LacksNothingIffEligible : Prop :=
+  ∀ o : Obs, lacks o = [] ↔ o.eligibleBeforeRebase = true
+
+def PairedRecordPrecedesTheMerge : Prop :=
+  ∀ (m : Merge) (rs : List Record) (r : Record), last m rs = some r →
+    r ∈ rs ∧ r.main = m.before ∧ r.read ≤ m.time ∧
+      ∀ x ∈ rs, x.main = m.before → x.read ≤ m.time → x.read ≤ r.read
+
+def SeatIgnoresRecordOrder : Prop :=
+  ∀ (m : Merge) (rs rs' : List Record), rs.Perm rs' → (rs.map (·.read)).Nodup →
+    seat m rs = seat m rs'
+
+def AgreesMeansTheMergedContent : Prop :=
+  ∀ s : Sat, finding (.sat s) = .agrees →
+    (s.head = .same ∧ ∃ h, s.reading.step = .present h) ∨
+      (s.head = .replayedAsPlanned ∧ ∃ h, s.reading.step = .awaitPush h)
+
+def TallyCountsEveryMergeOnce : Prop :=
+  ∀ (ms : List Merge) (rs : List Record),
+    let t := tally ms rs
+    t.agrees + t.waits + t.disagrees + t.otherTree + t.blind = ms.length
+
+end MitosGate.Shadow
+```
+
+Contract only, after `Shadow.lean`. The names and types are fixed; the bodies are the builder's.
+This block type-checks against `main` at 4ba56dc after the one above.
+
+```lean
+namespace MitosGate
+open Lean (Json)
+
+-- parse and check; `run` then uses it
+def LandCli.read : String → Except String LandCli.Snapshot := sorry
+
+namespace ShadowCli
+inductive Stage
+  | fetch
+  | snapshot
+  | land
+inductive Run
+  | decided (r : Shadow.Record)
+  | refused (t : Shadow.Trigger) (s : Stage)
+  | skipped (t : Shadow.Trigger) (remaining : Nat)
+-- refuses v ≠ 1; `run` is the `<run>` of the artifact's name
+def run? (run : Nat) (j : Json) : Except String Run := sorry
+def cli (args : List String) (usage : String) : IO UInt32 := sorry
+end ShadowCli
+end MitosGate
 ```
 
 `run?` counts a record as drifted when `LandCli.run` on its snapshot does not give the decision it
 printed. Drifted records are listed and not scored.
 
-statements: proved in the sketch, standard axioms only.
+statements: proved in the sketch, standard axioms only. Their Lean is the `Statements` section at
+the end of the `Shadow.lean` block above, and the proofs are below. Against `main` at 4ba56dc,
+`agreesMeansTheMergedContent` uses `propext` alone and the other five `propext`,
+`Classical.choice` and `Quot.sound`.
 
 | Statement | Says |
 |---|---|
@@ -153,12 +590,199 @@ statements: proved in the sketch, standard axioms only.
 
 Stated and type-checked, not proved: `SeatIgnoresRecordOrder`.
 
+<details>
+<summary>The sketch's proofs. The builder puts them after the statements in
+<code>Shadow.lean</code>; the closing <code>#eval</code> only prints their axioms.</summary>
+
+```lean
+import MitosGate.Shadow
+
+namespace MitosGate.Shadow
+open Land
+
+theorem walk_self (v : String) (ps : List Carry.Push) : Carry.walk v v ps = true := by
+  cases ps <;> simp [Carry.walk]
+
+theorem newestOwner_append_land (m : Mark) :
+    ∀ ws : List Word, (∀ w ∈ ws, w.said < m.said) →
+      newestOwner (ws ++ [.ownerLand m]) = some (.ownerLand m)
+  | [], _ => by simp [newestOwner, Word.byOwner]
+  | w :: ws, h => by
+    have ih := newestOwner_append_land m ws (fun x hx => h x (List.mem_cons_of_mem _ hx))
+    have hw : w.said < m.said := h w (List.mem_cons_self ..)
+    simp only [List.cons_append, newestOwner, ih]
+    have : ¬ ((Word.ownerLand m).said < w.said) := by
+      show ¬ (m.said < w.said)
+      omega
+    simp [this]
+
+theorem lacksNothingIffEligible : LacksNothingIffEligible := by
+  intro o
+  simp only [lacks, Obs.eligibleBeforeRebase]
+  cases o.updatable <;> cases o.enforced <;> cases o.covered <;> cases o.reviewed <;>
+    cases o.rest <;> simp [List.filterMap]
+
+theorem agreesMeansTheMergedContent : AgreesMeansTheMergedContent := by
+  intro s h
+  simp only [finding] at h
+  split at h
+  · cases h
+  · cases h
+  · cases h
+  · rename_i h1 h2; exact .inl ⟨h1, _, h2⟩
+  · rename_i h1 h2; exact .inr ⟨h1, _, h2⟩
+  · cases h
+
+theorem covered_head_id {o : Obs} (h : o.covered = true) : (o.id? o.head).isSome = true := by
+  have hc : o.Covered := of_decide_eq_true h
+  unfold Obs.Covered at hc
+  split at hc
+  · exact hc.elim
+  · have key : ∀ v, o.stands v → (o.id? o.head).isSome = true := by
+      intro v hv
+      have := hv.1
+      simp only [Obs.carries, Bool.and_eq_true] at this
+      obtain ⟨⟨_, h1⟩, h2⟩ := this
+      have : o.id? v.head = o.id? o.head := by simpa using h2
+      rw [← this]; exact h1
+    rcases hc.2 with ⟨v, _, hv, _⟩ | ⟨⟨v, _, hv, _⟩, _⟩ <;> exact key v hv
+
+theorem readyIsOneWordFromLanding : ReadyIsOneWordFromLanding := by
+  intro me q o said h hs
+  have hel : o.eligibleBeforeRebase = true ∧ o.stuck? = none := by
+    unfold step at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · rename_i _ _ he
+          split at h
+          · cases h
+          · rename_i hst
+            refine ⟨by simpa using he, hst⟩
+  obtain ⟨he, hst⟩ := hel
+  have hcov : o.covered = true := by
+    simp only [Obs.eligibleBeforeRebase, Bool.and_eq_true] at he
+    exact he.1.1.2
+  have hid := covered_head_id hcov
+  have hn := newestOwner_append_land ⟨said, o.head⟩ o.words hs
+  simp only [landable, Entry.valid, Bool.and_eq_true]
+  refine ⟨⟨⟨?_, he⟩, ?_⟩, ?_⟩
+  · simp only [Obs.entries, withWord, hn]
+    simp
+  · show (Carry.walk o.head o.head (o.pushes.map Push.toCarry) && (o.id? o.head).isSome &&
+      o.id? o.head == o.id? o.head) = true
+    simp [walk_self, hid]
+  · show (o.stuck?).isNone = true
+    simp [hst]
+
+theorem theWordIsOnlyAssumedWhenReady : TheWordIsOnlyAssumedWhenReady := by
+  intro os o
+  unfold reading
+  split
+  · rename_i h; simp [h]
+  · rename_i h
+    constructor
+    · rintro ⟨s, hs⟩; cases hs
+    · intro h'; exact absurd h' (h)
+
+def Tally.total (t : Tally) : Nat := t.agrees + t.waits + t.disagrees + t.otherTree + t.blind
+
+theorem add_total (t : Tally) (s : Seat) : (t.add s).total = t.total + 1 := by
+  unfold Tally.add Tally.total
+  cases s <;> (dsimp only; split <;> simp <;> omega)
+
+theorem foldl_total (rs : List Record) :
+    ∀ (ms : List Merge) (t : Tally),
+      (ms.foldl (fun t m => t.add (seat m rs)) t).total = t.total + ms.length
+  | [], t => by simp
+  | m :: ms, t => by
+    simp only [List.foldl_cons, List.length_cons]
+    rw [foldl_total rs ms, add_total]; omega
+
+theorem tallyCountsEveryMergeOnce : TallyCountsEveryMergeOnce := by
+  intro ms rs
+  have := foldl_total rs ms {}
+  simpa [tally, Tally.total] using this
+
+theorem last_none {m : Merge} : ∀ {rs : List Record}, last m rs = none →
+    ∀ y ∈ rs, precedes m y = false
+  | [], _, y, hy => by cases hy
+  | a :: rs, h, y, hy => by
+    simp only [last] at h
+    split at h
+    · split at h <;> cases h
+    · rename_i hx
+      split at h
+      · cases h
+      · rename_i hc
+        rcases List.mem_cons.mp hy with rfl | hy
+        · simpa using hc
+        · exact last_none hx y hy
+
+theorem pairedRecordPrecedesTheMerge : PairedRecordPrecedesTheMerge := by
+  intro m rs
+  induction rs with
+  | nil => intro r h; cases h
+  | cons a rs ih =>
+    intro r h
+    simp only [last] at h
+    split at h
+    · rename_i x hx
+      obtain ⟨hmem, hmain, hread, hmax⟩ := ih x hx
+      split at h
+      · rename_i hc
+        cases h
+        simp only [precedes, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+        refine ⟨List.mem_cons_self .., hc.1.1, hc.1.2, ?_⟩
+        intro y hy h1 h2
+        rcases List.mem_cons.mp hy with rfl | hy
+        · exact Nat.le_refl _
+        · exact Nat.le_trans (hmax y hy h1 h2) (Nat.le_of_lt hc.2)
+      · rename_i hc
+        cases h
+        refine ⟨List.mem_cons_of_mem _ hmem, hmain, hread, ?_⟩
+        intro y hy h1 h2
+        rcases List.mem_cons.mp hy with rfl | hy
+        · simp only [precedes, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, not_and,
+            Nat.not_lt] at hc
+          exact hc ⟨h1, h2⟩
+        · exact hmax y hy h1 h2
+    · rename_i hx
+      split at h
+      · rename_i hc
+        cases h
+        simp only [precedes, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+        refine ⟨List.mem_cons_self .., hc.1, hc.2, ?_⟩
+        intro y hy h1 h2
+        rcases List.mem_cons.mp hy with rfl | hy
+        · exact Nat.le_refl _
+        · have := last_none hx y hy
+          simp [precedes, h1, h2] at this
+      · cases h
+
+open Lean in
+#eval show CoreM Unit from do
+  for n in [``readyIsOneWordFromLanding, ``lacksNothingIffEligible, ``agreesMeansTheMergedContent,
+      ``theWordIsOnlyAssumedWhenReady, ``tallyCountsEveryMergeOnce,
+      ``pairedRecordPrecedesTheMerge] do
+    IO.println s!"{n}: {(← collectAxioms n).toList}"
+end MitosGate.Shadow
+```
+
+</details>
+
 reuse:
 - `gate/MitosGate/Land.lean`: `step` (238), `queueOf` (189), `Obs.eligibleBeforeRebase` (130) and
-  the statements `PushOnlyNext` (298), `NoEntryNoPush` (303), `PushIsNotRepeated` (314: right
-  after its push, the entry stays landable with `base = current`, so that push is not planned
-  again; it bounds no pushes per merge), `UnenforcedLandsNothing` (324), `HoldWins` (329),
-  `StuckDoesNotBlock` (340), `NextIgnoresListingOrder` (346).
+  the statements `PushOnlyNext` (298), `NoEntryNoPush` (303), `PushIsNotRepeated` (314),
+  `UnenforcedLandsNothing` (324), `HoldWins` (329), `StuckDoesNotBlock` (340),
+  `NextIgnoresListingOrder` (346).
+  - `PushIsNotRepeated` takes a landable entry `(e, o)` with `o.base = .clean r` and no verdict
+    whose head is `r`. Then the model's `pushed r o` is still landable with `base = .current`, so
+    the model does not plan that push again. It is about the model's `pushed`, not what GitHub
+    shows after a real push, and it bounds no pushes per merge.
 - 2a: `IncompleteReadHolds` and `PositionsAscendingDistinct` (`gate/MitosGate/Speech/Words.lean`,
   61 and 64).
 - Printing: `ciLine` (`gate/MitosGate/Util.lean`, 282).
@@ -167,11 +791,54 @@ reuse:
 - Contract only: 2b's `FailedReadHolds`, `EnforcedNeedsProtection` and `OnlyTheOwnerQueues`.
 
 fixtures:
-- Kernel (12, all pass in the sketch): `readyBehindIsOneWordFromThePush`,
-  `readyOnMainGreenIsOneWordFromPresent`, `aHoldIsReadAsItIs`, `aTypedWordIsReadAsItIs`,
-  `newContentIsNotAssumed`, `anotherWordAheadMakesTheAssumedWordWait`,
-  `theReplayThatMergedAgrees`, `anotherTreeIsNotAgreement`, `aRecordOfAnotherMainIsUnseen`,
-  `aRecordAfterTheMergeIsUnseen`, `theNewestRecordBeforeTheMergeIsUsed`, `aHeldMergeDisagrees`.
+- Kernel (12, all pass in the sketch and against `main` at 4ba56dc). The builder puts them in
+  `Shadow.lean`, as `Land.lean` keeps its `Fixture` namespace:
+
+```lean
+import MitosGate.Shadow
+namespace MitosGate.Shadow.Fixture
+open Land Land.Fixture
+
+def unsaid : Obs := { agentBehind with words := [] }
+def unsaidOnMain : Obs := { agentOnMain with words := [] }
+
+theorem readyBehindIsOneWordFromThePush :
+    reading [unsaid] unsaid = .oneWordAway (.awaitPush "bbb") := by decide +kernel
+theorem readyOnMainGreenIsOneWordFromPresent :
+    reading [unsaidOnMain] unsaidOnMain = .oneWordAway (.present "bbb") := by decide +kernel
+theorem aHoldIsReadAsItIs :
+    reading [ownerKeptHeld] ownerKeptHeld = .asRead (.stop .held) := by decide +kernel
+theorem aTypedWordIsReadAsItIs :
+    reading [ownerKeptPushed] ownerKeptPushed = .asRead (.present "ar") := by decide +kernel
+theorem newContentIsNotAssumed :
+    reading [{ ownerKeptNewContent with words := [] }] { ownerKeptNewContent with words := [] } =
+      .asRead (.stop .notEligible) := by decide +kernel
+theorem anotherWordAheadMakesTheAssumedWordWait :
+    reading [ownerKeptPushed, unsaid] unsaid = .oneWordAway (.wait 153) := by decide +kernel
+
+def rec (run read : Nat) (main : Sha) (prs : List Obs) : Record :=
+  { run, trigger := .mainMoved, read, main, tool := main, cost := ⟨20, 12, 1, 0, 36⟩, prs,
+    trees := [⟨"br", "tb"⟩] }
+def merged : Merge := { pr := 149, time := 100, before := "m1", head := "b2", tree := "tb" }
+
+theorem theReplayThatMergedAgrees :
+    finding (seat merged [rec 1 90 "m1" [unsaid]]) = .agrees := by decide +kernel
+theorem anotherTreeIsNotAgreement :
+    finding (seat { merged with tree := "tx" } [rec 1 90 "m1" [unsaid]]) = .otherTree := by
+  decide +kernel
+theorem aRecordOfAnotherMainIsUnseen :
+    finding (seat merged [rec 1 90 "m0" [unsaid]]) = .blind := by decide +kernel
+theorem aRecordAfterTheMergeIsUnseen :
+    finding (seat merged [rec 1 101 "m1" [unsaid]]) = .blind := by decide +kernel
+theorem theNewestRecordBeforeTheMergeIsUsed :
+    (match seat { merged with head := "bbb" } [rec 1 80 "m1" [unsaid], rec 2 90 "m1" [unsaidOnMain]] with
+      | .sat s => s.run | _ => 0) = 2 := by decide +kernel
+theorem aHeldMergeDisagrees :
+    finding (seat { merged with pr := 153, head := "aaa" } [rec 1 90 "m1" [ownerKeptHeld]]) =
+      .disagrees .held := by decide +kernel
+end MitosGate.Shadow.Fixture
+```
+
 - `.github/scripts/land-decide.test.sh` (the real `land`; stubs for the fetch, `snapshot` and
   `gh`):
   - `decided-on-the-land-fixture`: the record's decision equals `mitos-gate land` on
@@ -193,10 +860,13 @@ fixtures:
   comment from another login starts no job; a day-one report over real records.
 
 cut_line: two PRs, each `Part of #191`. The report comment that meets the bar (O2) closes #191.
-- PR 1, the recorder (`.github/` only, after 2b merges). It opens the window. It also adds one ci
-  step after `lake build` that runs every `gate/*-test.sh` by glob, as its own commit. If a test
-  is red on the CI image for a reason outside this row, that commit moves to its own PR under
-  #164.
+- PR 1, the recorder (`.github/` only, after 2b merges). It opens the window. It adds two ci steps
+  after `lake build` (`Build core and gate`), because both need the built `mitos-gate`:
+  - `land-decide.sh records each outcome and holds no key`, which runs
+    `.github/scripts/land-decide.test.sh`, as ci runs `.github/scripts/cancel-superseded.test.sh`
+    today (`ci.yml` 141 and 142);
+  - one step that runs every `gate/*-test.sh` by glob, as its own commit. If a test is red on the
+    CI image for a reason outside this row, that commit moves to its own PR under #164.
 - PR 2, the scorer (`gate/` only, in parallel with PR 1).
 - Reports on #191: day one (token reach and run time), then at the bar.
 
@@ -245,11 +915,13 @@ otherwise on #191.
 - **O5. Typing `/land` during the shadow.** Default: not needed. A typed one is counted as real,
   and it is still a standing entry when step 5 switches.
 
-### Contract only (2b), read at #246 3a7922f
+### Contract only (2b), read at #246 e4275f8 on `main` 4ba56dc
+
+Re-check this table and the facts under Rationale when #246 merges (`revisit_when`).
 
 | Needed from 2b | Used for |
 |---|---|
-| `gate/snapshot-fetch.sh <owner/name> <dashboard> <empty dir>`: GETs only, exit 0, one stderr line per failed read, 6 + 6N reads | `unread`, `cost.reads` |
+| `gate/snapshot-fetch.sh <owner/name> <dashboard> <empty dir>`: GETs only, through `gh api`. Exit 0, with one stderr line per failed read. Exit 2 on a usage error: wrong arguments, a missing `gh`, `jq` or `timeout`, or a folder that is not empty. 6 + 6N reads at most for N open pull requests. | `unread`, `cost.reads` |
 | `mitos-gate snapshot <dir>`: prints `{"prs":[…]}`, exit 1 on a fatal read, fetches missing commits from `origin` itself | `snapshot`, `notes`, `refused` |
 | `<dir>/main.json` `.commit.sha` | `main` |
 | The replay commit of `base: clean` is in the clone afterwards | `trees` |
@@ -269,7 +941,7 @@ what one decision costs. Three facts make a printing job useless as proof:
 The main risk is in neither candidate: the workflow token cannot read protection, so every pull
 request reads `held` until that is fixed, and the same read blocks step 5 (O1).
 
-### Facts this design rests on (checked against `main` at 50e0587 and #246 at 3a7922f)
+### Facts this design rests on (checked against `main` at 4ba56dc and #246 at e4275f8)
 
 - `step` depends on `me` only through `Obs.mayMerge` (`Land.lean` 133, used in `step` at 249 and
   257), which is true for no one while `Speech.delegates = []` (`Speech/Comment.lean` 23). So the
@@ -285,8 +957,10 @@ request reads `held` until that is fixed, and the same read blocks step 5 (O1).
   protection, and its `FailedReadHolds` then gives `stop held`.
 - The hand-off must name a tree, because a push is of the replay only if it has the tree of
   `replay` (`Land.lean` 208).
-- `LandCli.read` is needed: `snapshot` is private (`LandCli.lean` 180) and only `run` is public
-  (261). #246 edits the same file.
+- `LandCli.read` is needed: the parser `snapshot` (`LandCli.lean` 180) and the decoders it uses
+  (52 to 165) are private. `Snapshot`, `Snapshot.check` and `Snapshot.decide` are public, but the
+  public `run` (261) takes text and returns the decision's JSON, not the `Snapshot`. #246 edits
+  the same file.
 
 ### Synthesis decision
 
@@ -350,16 +1024,19 @@ workflow-level permissions.
 - Does a job whose `if:` is false stay out of its job-level concurrency group? The "superseded"
   count answers this on day one.
 - Can the workflow token read the stacks route? The first run's `unread` shows.
-- Is 1,000 REST calls an hour enough at 6 + 6N per run? The floor protects ci, and the report
-  prints the peak.
+- Is 1,000 REST calls an hour enough? A run makes 6 + 6N reads at most. A read of a list is one
+  REST call per page of 100, so a run makes at least as many REST calls as reads, and more when a
+  list (files, activity, comments) runs past one page. `cost.reads` counts the reads that saved a
+  file, not the REST calls. The floor protects ci, and the report prints the peak.
 - Does an anonymous `git fetch origin <sha>` work with `persist-credentials: false`? If not,
   persist the read token.
 - `otherTree` also catches a stale sample after a content push; the report must explain each one.
 
 ### Next implementation step
 
-After #246 merges, re-check the contract table against `main`, then build PR 1 from the linted
-workflow and recorder sketch.
+After #246 merges, re-check the contract table and the facts against `main`, then build PR 1 from
+the recorder's two files above, and PR 2 from the `Shadow.lean` block, its proofs and its
+fixtures.
 
 ## Done when
 - [ ] PR 1 merged: a dispatch run of `decide` on `main` leaves a record whose `unread` lists what
