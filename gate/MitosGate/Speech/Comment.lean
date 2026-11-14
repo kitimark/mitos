@@ -85,13 +85,25 @@ Within a quote such markup reaches a later line only as a lazy continuation, whi
 holds. -/
 def link (l : List Char) : Bool := l.contains '[' && !quoted l
 
+/-- GitHub's Markdown opens a quote at a `>` after any indent and list markers, as in `- > x`, and
+reads a list marker only with a space or tab after it, so `-> x` and `3 > 2` open none. -/
+def opensQuote : Bool → List Char → Bool
+  | _, [] => false
+  | false, c :: r =>
+    if c == '>' then true
+    else if isSp c then opensQuote false r
+    else if c == '-' || c == '*' || c == '+' then r.head?.any isSp && opensQuote false r
+    else digit c && opensQuote true r
+  | true, c :: r =>
+    if digit c then opensQuote true r
+    else (c == '.' || c == ')') && r.head?.any isSp && opensQuote false r
+
 /-- GitHub's Markdown carries a quote on to the lines after it until a blank line. -/
 def inQuote : Bool → List (List Char) → Bool
   | _, [] => false
   | q, l :: ls =>
-    match lead l with
-    | some ('>' :: _) => inQuote true ls
-    | _ => if blank l then inQuote false ls else (q && (word? l).isSome) || inQuote q ls
+    if opensQuote false l then inQuote true ls
+    else if blank l then inQuote false ls else (q && (word? l).isSome) || inQuote q ls
 
 /-- The scanner places fences, quotes and indents only as top-level Markdown has them, while GitHub
 also draws them inside list items and HTML blocks, and runs a code span or an HTML comment across

@@ -155,6 +155,20 @@ theorem landCarryingOnAQuoteReadsAHold :
   decide +kernel
 theorem blankLineEndsTheQuote : readOf (typed 112 12 "> example\n\n/land") = .land hC := by
   decide +kernel
+theorem listQuoteHoldsALand :
+    readOf (typed 112 12 "- > example\n/land") = .hold .quoteContinuation := by decide +kernel
+theorem indentedListQuoteHoldsALand :
+    readOf (typed 112 12 "- x\n\n    > example\n/land") = .hold .quoteContinuation := by
+  decide +kernel
+theorem listQuoteDoesNotLiftAHold :
+    stepOf [typed 108 8 "/hold", typed 112 12 "- > example\n/land"] = .stop .held := by
+  decide +kernel
+theorem orderedListQuoteHoldsALand :
+    readOf (typed 112 12 "1. > example\n/land") = .hold .quoteContinuation := by decide +kernel
+theorem listLinesBesideALandLand : readOf (typed 112 12 "1. step\n- note\n/land") = .land hC := by
+  decide +kernel
+theorem arrowAndComparisonOpenNoQuote :
+    readOf (typed 112 12 "- -> moved\n3 > 2\n/land") = .land hC := by decide +kernel
 theorem holdIndentedInAListItemHolds : readOf (typed 112 12 "- x\n\n    /hold") = .hold .hold := by
   decide +kernel
 theorem quotedHoldHolds : readOf (typed 112 12 "> /hold") = .hold .hold := by decide +kernel
