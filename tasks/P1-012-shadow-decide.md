@@ -55,11 +55,11 @@ rough budgets.
   - `.github/workflows/land.yml`: when `decide` runs and what it may read; 76 lines; copies the
     `gate` job of `ci.yml` (`permissions: {}` at the top and `read` per job, ci's cache restored,
     `install-elan.sh` and `install-toolchains.sh`).
-  - `.github/scripts/land-decide.sh`: one `decide` run as one record; 109 lines; copies
+  - `.github/scripts/land-decide.sh`: one `decide` run as one record; 110 lines; copies
     `gate/snapshot-fetch.sh` (usage header, `die`, exit 2 on usage, `timeout -k 5 120` on each
     `gh api` read).
   - `.github/scripts/land-decide.test.sh`: the recorder's outcomes against stubs, and the static
-    pins of `land.yml`; 363 lines; copies `gate/land-test.sh` (`ok` and `bad` counters, one
+    pins of `land.yml`; 380 lines; copies `gate/land-test.sh` (`ok` and `bad` counters, one
     summary line).
   - `.github/workflows/ci.yml`: two steps in the `gate` job after `Build core and gate`; copies the
     `cancel-superseded.test.sh` step.
@@ -941,6 +941,8 @@ end MitosGate.Shadow.Fixture
     named; the concurrency group is on the job; no event text sits in a `run:` line.
   - `every-read-has-a-timeout` (verifier on #248): each `gh api` call runs under
     `timeout -k 5 120`.
+  - `an-unwritten-record-is-red` (CodeRabbit on #260): when `record.json` cannot be written, a
+    skipped, decided or refused run exits 1 and prints no decision.
 - `gate/shadow-fixtures/` and `gate/shadow-test.sh`: `record-idle.json` (a real record),
   `record-refused.json`, `record-skipped.json`, `record-v2.json` (refused), `record-main-moved.json`
   (pairs with no merge), and `window/` with its expected report. A drifted record is listed and not
@@ -1040,9 +1042,9 @@ How PR 1 differs from the two sketches:
 2. Both `gh api` calls run under `timeout -k 5 120` with standard input closed, as
    `snapshot-fetch.sh`'s reads do, and the tool check names `timeout`. The verifier on #248 asked
    for this on the `mainAfter` read. The rate read had the same gap, so it got the same fix.
-3. `land-decide.test.sh` has five cases more than the design named (marked `PR 1` or `verifier on
+3. `land-decide.test.sh` has six cases more than the design named (marked `PR 1` or `verifier on
    #248` under `fixtures`). It pins more than the design asked: the action list, the `run:` lines
-   and the two `gh` calls. All 15 cases pass. Each of 19 mutants of `land-decide.sh` and
+   and the two `gh` calls. All 16 cases pass. Each of 21 mutants of `land-decide.sh` and
    `land.yml` fails at least one case. For example, a fork's run, a write permission, a secret, a
    write flag on a read, `-le` for the floor, or a dropped `mainAfterSaid`.
 4. `decided-on-the-land-fixture` feeds the `prs` of `queue.json` without its `me` and `pr`, because
@@ -1051,6 +1053,9 @@ How PR 1 differs from the two sketches:
    test runs twice (about 7 s).
 6. The test has a file-level `shellcheck disable=SC2016`, as `.github/scripts/rebase-prs.test.sh`
    does: its single-quoted `$names` are jq variables.
+7. Each write of `record.json` is checked, and a failed write exits 1 with
+   `land-decide: the record was not written` (CodeRabbit on #260). In the sketch, a failed write or
+   a failed `jq` in the decided branch still exited 0, through the last `cat`, with no record.
 
 The dry run, since the workflow can run only after PR 1 merges:
 - From a clone of `main` at 31cc93a with its push URL disabled, through a `gh` wrapper that logged
