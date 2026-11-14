@@ -76,15 +76,25 @@ def judgesInParenthesis (s : List Char) : List (List Char) :=
     | _ => []
   | _ => []
 
+def judgedUnlessWordingOnly (r : Result) (js : List (List Char)) : Bool :=
+  (r == .wordingOnly) == js.isEmpty
+
+def judgesInAtMostOnePlace (beforeSha inParenthesis : List (List Char)) : Bool :=
+  beforeSha.isEmpty || inParenthesis.isEmpty
+
+def onlyAFailSaysFail (r : Result) (cell : List Char) : Bool :=
+  r == .fail || !within "FAIL".toList ((unwrap cell).drop 1)
+
 def said? (cell : List Char) : Option Said :=
   match result? (unwrap cell) with
   | some (r, ' ' :: rest) =>
     match (tailOf (judges rest.length rest)).bind atOrCarriedFrom? with
     | some (h, after) =>
-      if ((r == .wordingOnly) == ((judges rest.length rest).1 ++ judgesInParenthesis after).isEmpty &&
-          ((judges rest.length rest).1.isEmpty || (judgesInParenthesis after).isEmpty)) &&
-          (r == .fail || !within "FAIL".toList ((unwrap cell).drop 1)) then
-        some ⟨r, (judges rest.length rest).1 ++ judgesInParenthesis after, h⟩
+      let beforeSha := (judges rest.length rest).1
+      let inParenthesis := judgesInParenthesis after
+      if judgedUnlessWordingOnly r (beforeSha ++ inParenthesis) &&
+          judgesInAtMostOnePlace beforeSha inParenthesis && onlyAFailSaysFail r cell then
+        some ⟨r, beforeSha ++ inParenthesis, h⟩
       else none
     | none => none
   | _ => none
@@ -113,12 +123,14 @@ def suffixes (p : List Char) : Option Char → List Char → List (List Char)
     (if !(prev.any Char.isAlphanum) && p.isPrefixOf (c :: cs) then [(c :: cs).drop p.length]
       else []) ++ suffixes p (some c) cs
 
+def noModelBeforeNextDot (s : List Char) : Bool :=
+  !families.any fun f => within f (s.takeWhile (· != '.'))
+
 def authorOf (cell : List Char) : Option Author :=
   match suffixes "author ".toList none cell with
   | [rest] =>
     let tok := rest.takeWhile Char.isLower
-    if families.contains tok &&
-        !families.any (fun f => within f ((rest.drop tok.length).takeWhile (· != '.'))) then
+    if families.contains tok && noModelBeforeNextDot (rest.drop tok.length) then
       some ⟨⟨"claude", "author"⟩, String.ofList tok⟩
     else none
   | _ => none
@@ -173,10 +185,12 @@ theorem passNamesNoFail : PassNamesNoFail := by
   split at h
   · next r rest hr =>
     split at h
-    · split at h
+    · dsimp only at h
+      split at h
       · next hok =>
         cases h
-        simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true'] at hok
+        simp only [onlyAFailSaysFail, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
+          Bool.not_eq_true'] at hok
         rcases hok.2 with h | h
         · exact absurd h hf
         · exact h

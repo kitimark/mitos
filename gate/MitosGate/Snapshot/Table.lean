@@ -38,25 +38,30 @@ inductive Row
 
 def separator (c : List Char) : Bool := c.all fun x => x == '-' || x == ':' || x == ' '
 
+def betweenOuterPipes (l : List Char) : Option (List (List Char)) :=
+  match cells l with
+  | [] :: rest =>
+    match rest.reverse with
+    | [] :: inner => some inner.reverse
+    | _ => none
+  | _ => none
+
 def row (l : List Char) : Row :=
   match Speech.trim l with
   | '|' :: _ =>
-    match cells (Speech.trim l) with
-    | [] :: rest =>
-      match rest.reverse with
-      | [] :: mid =>
-        if mid.all separator then .skip
-        else
-          match mid.reverse with
-          | [pr, _, _, v] =>
-            if Speech.trim pr == "PR".toList then .skip
-            else
-              match prNumber pr with
-              | some n => .data n (Speech.trim v)
-              | none => .bad
-          | _ => .bad
-      | _ => .bad
-    | _ => .bad
+    match betweenOuterPipes (Speech.trim l) with
+    | some inner =>
+      if inner.all separator then .skip
+      else
+        match inner with
+        | [pr, _, _, v] =>
+          if Speech.trim pr == "PR".toList then .skip
+          else
+            match prNumber pr with
+            | some n => .data n (Speech.trim v)
+            | none => .bad
+        | _ => .bad
+    | none => .bad
   | _ => .skip
 
 def distinctNats : List Nat → Bool
