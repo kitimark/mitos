@@ -108,7 +108,7 @@ The owner's decisions on the draft are in
 - **Impact through bindings:** a change in the repo that holds a binding counts as impact
   (`Edge.through` and `Affects.through` *(new)*).
 - **Revisit D1 by measurement.** The nightly scorecard reports the most derivations any
-  repo-level edge has. D1 reopens when that number exceeds **[threshold set by the owner]**:
+  repo-level edge has. D1 reopens when that number exceeds **8**:
   option A if the counts explode, option B if users need minimal environments. On the
   hand-written chain fixture the number shows only what its author wrote, so it means most once
   a real chain extractor exists.
