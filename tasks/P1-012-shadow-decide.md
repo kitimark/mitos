@@ -65,10 +65,15 @@ shadow: 23 merges, 312 records, 2 refused, 4 skipped, 0 drifted
 #236 at d3e0dff: disagrees. stop notEligible, lacks reviewed; record 12 s old
 #231: blind. unseen
 merges: agrees 19, waits 1, disagrees 2, other tree 0, blind 1; a word was assumed for 19; no author 3
-pushes: the updater started 158 ci runs; the plan makes at most 23
+pushes: the updater started 158 ci runs; the plans name 27 distinct pushes
 decide (s): setup 38 (20, p90 61, 170), fetch 15, snapshot 1, decide 0; n=312
 runs: mainMoved 32, gateDone 260 (cancelled 118), comment 20; 9 superseded while pending
 ```
+
+The `pushes` line counts the distinct `push` plans (`pr`, `expect`, `replay`) over the decided
+records. It is an estimate of the pushes the planner would make, not a bound: a hold or a new
+`main` between a push and its merge costs another push, and `PushIsNotRepeated` only stops the
+same push from being planned twice.
 
 The PR owner posts that output on #191. The owner does nothing during the shadow.
 
@@ -150,8 +155,9 @@ Stated and type-checked, not proved: `SeatIgnoresRecordOrder`.
 
 reuse:
 - `gate/MitosGate/Land.lean`: `step` (238), `queueOf` (189), `Obs.eligibleBeforeRebase` (130) and
-  the statements `PushOnlyNext` (298), `NoEntryNoPush` (303), `PushIsNotRepeated` (314, the "at
-  most one push per landing" bound), `UnenforcedLandsNothing` (324), `HoldWins` (329),
+  the statements `PushOnlyNext` (298), `NoEntryNoPush` (303), `PushIsNotRepeated` (314: right
+  after its push, the entry stays landable with `base = current`, so that push is not planned
+  again; it bounds no pushes per merge), `UnenforcedLandsNothing` (324), `HoldWins` (329),
   `StuckDoesNotBlock` (340), `NextIgnoresListingOrder` (346).
 - 2a: `IncompleteReadHolds` and `PositionsAscendingDistinct` (`gate/MitosGate/Speech/Words.lean`,
   61 and 64).
