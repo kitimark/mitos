@@ -22,9 +22,8 @@ escalation: hint → automation → stronger model → pair → split → revisi
 - Design written at plan time by an arena: two runners (opus and fable) and a judge (fable).
   Base: the fable candidate. The grafts from the opus candidate are under Rationale, Synthesis
   decision.
-- No Lean was run for this design. The sketch is not type-checked yet: one agent type-checks it
-  before a builder starts, and amends this file where the sketch changes. What was run is under
-  Rationale, Evidence.
+- The sketch type-checks on Lean v4.35.0, and all twelve `decide +kernel` golden lines hold. What
+  was run at design time is under Rationale, Evidence.
 
 ## Design
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
@@ -32,7 +31,7 @@ lists.
 
 depth: build. The four files under `types` are the sketch. Every definition and statement is
 final text, `model.adequate` is written out, and each `sorry` is a proof the builder writes. The
-named fixtures are the twelve golden files. The sketch is not type-checked yet (Context).
+named fixtures are the twelve golden files. The sketch type-checks on v4.35.0 (Context).
 
 revisit_when: none. The row depends on no unmerged row. P2-001b adds a `FactKind` constructor;
 the model never matches on `FactKind`, so only the records move.
@@ -734,7 +733,8 @@ run each. It tests the rules, not the Lean text.
   more than linear time. The builder measures this first. If a kernel fails, the adequacy module
   can state the file as `String.ofList` of a character list (`rfl` against the literal, then
   `String.toList_ofList`), or `wholeFile` can shrink. A change to a golden file is the owner's.
-- Not verified: that the sketch type-checks; the cost of the proofs in any kernel; Go versions
+- Verified on v4.35.0: the sketch type-checks and all twelve `decide +kernel` golden lines hold.
+  Not verified: the cost of the proofs in any kernel; Go versions
   other than 1.24.7; go.mod files outside one Go distribution.
 
 ### Next implementation step
