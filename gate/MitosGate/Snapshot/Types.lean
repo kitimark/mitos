@@ -10,7 +10,6 @@ structure Protection where
   strict : Bool
   checks : List String
 
-/-- `rows`: the In flight verdict cells of the Owner dashboard, as `Snapshot.rows` reads its body. -/
 structure Global where
   repo : String
   owner : String
@@ -37,8 +36,7 @@ structure Check where
   status : String
   conclusion : String
 
-/-- An issue comment, a review comment or a review, as far as answering goes. The review routes
-have no app field. -/
+/-- The review routes have no app field. -/
 structure Post where
   login : String
   slug : Option String

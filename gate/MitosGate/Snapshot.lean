@@ -1,22 +1,9 @@
 import MitosGate.Snapshot.Obs
 
-/-!
-What the REST routes said, read into one `Land.Obs` per pull request. `none` is a read that failed
-or that is not what its route returns. Any such read of what a pull request's observation needs
-puts the incomplete-read hold on it, so it holds (`failedReadHolds`); the field itself also takes
-its safe value.
-
-Until verdicts are conversation records, they come from the verdict cell of the pull request's row
-in the Owner dashboard's In flight table, and so does the author's model, the root's
-`author <model>` note, until holder `push` records exist.
--/
-
 namespace MitosGate.Snapshot
 
 open Land (Sha Pr Teammate Obs Verdict Author Result Base Gate Word Mark Push Entry)
 open Speech (Comment Stamp lines lead blank isSha hex digit)
-
-/-! ## Fixtures -/
 
 namespace Fixture
 

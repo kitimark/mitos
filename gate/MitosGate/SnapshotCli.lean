@@ -47,7 +47,6 @@ def bool (k : String) (j : Json) : Option Bool := (field k j).bind (·.getBool?.
 
 def arr (j : Json) : Option (List Json) := j.getArr?.toOption.map Array.toList
 
-/-- A string field that the route may give as `null`. -/
 def text (k : String) (j : Json) : Option String :=
   match field k j with
   | some .null => some ""
@@ -56,7 +55,6 @@ def text (k : String) (j : Json) : Option String :=
 
 def stamp (k : String) (j : Json) : Option Stamp := (str k j).bind (Speech.stamp? ·.toList)
 
-/-- The login of `user` or `actor`; a deleted account is `null`, which is nobody. -/
 def login (k : String) (j : Json) : Option String :=
   match field k j with
   | some .null => some ""
@@ -137,8 +135,6 @@ def filesOf (j : Json) : Option (List String) := do
       | some (.str o) => some [n, o]
       | some _ => none).map List.flatten
 
-/-- Check-run pages are objects. Every page gives the same `total_count`, and the runs listed
-must number that many. -/
 def checksOf (j : Json) : Option (List Check) := do
   let ps ← arr j
   let first ← ps.head?
@@ -188,8 +184,6 @@ def replayEnv : Array (String × Option String) :=
     ("GIT_AUTHOR_DATE", some "@0 +0000"), ("GIT_COMMITTER_NAME", some "mitos-snapshot"),
     ("GIT_COMMITTER_EMAIL", some "snapshot@mitos.invalid"), ("GIT_COMMITTER_DATE", some "@0 +0000")]
 
-/-- Where the head stands against `main`. A merge commit on the branch, or any git failure, is
-`unread`. -/
 def baseOf (main head : Sha) : IO Base := do
   unless ← ensure head do return .unread
   match (← git #["merge-base", "--is-ancestor", head, main]).1 with
@@ -249,7 +243,6 @@ def verdictJson (v : Verdict) : Json :=
   Json.mkObj [("said", n v.said), ("head", .str v.head), ("judge", teamJson v.judge),
     ("model", .str v.model), ("result", .str (resultName v.result))]
 
-/-- The fields `mitos-gate land` reads; an absent optional field is the safe `none`. -/
 def obsJson (o : Obs) : Json :=
   Json.mkObj <|
     [("pr", n o.pr), ("updatable", .bool o.updatable), ("enforced", .bool o.enforced),
@@ -265,7 +258,6 @@ def obsJson (o : Obs) : Json :=
     (o.author.map fun a => [("author", Json.mkObj [("who", teamJson a.who), ("model", .str a.model)])]).getD [] ++
     (o.botAt.map fun b => [("botAt", Json.str b)]).getD []
 
-/-- The names of the failed reads, for the line that says why a pull request holds. -/
 def unread (g : Global) (p : Pull) (r : Reads) : List String :=
   [("protection", g.protection.isNone), ("stacks", g.stacked.isNone), ("dashboard", g.rows.isNone),
    ("comments", r.comments.isNone), ("review-comments", r.reviewComments.isNone),
