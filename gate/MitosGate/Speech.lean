@@ -165,6 +165,20 @@ theorem listQuoteDoesNotLiftAHold :
   decide +kernel
 theorem orderedListQuoteHoldsALand :
     readOf (typed 112 12 "1. > example\n/land") = .hold .quoteContinuation := by decide +kernel
+theorem bomQuoteHoldsALand :
+    readOf (typed 112 12 "\uFEFF> example\n/land") = .hold .quoteContinuation := by
+  decide +kernel
+theorem bomListQuoteHoldsALand :
+    readOf (typed 112 12 "\uFEFF- > x\n/land") = .hold .quoteContinuation := by decide +kernel
+theorem bomQuoteDoesNotLiftAHold :
+    stepOf [typed 108 8 "/hold", typed 112 12 "\uFEFF> example\n/land"] = .stop .held := by
+  decide +kernel
+theorem bomThenLandLands : readOf (typed 112 12 "\uFEFF/land") = .land hC := by decide +kernel
+theorem bomThenHoldHolds :
+    stepOf [typed 108 8 "/land", typed 112 12 "\uFEFF/hold"] = .stop .held := by decide +kernel
+theorem bomFenceHidesARecord :
+    readOf (app "claude" 112 12 ("\uFEFF```\n" ++ fence (landBy "claude" "worker" 7 hC))) =
+      .ignored .noRecord := by decide +kernel
 theorem listLinesBesideALandLand : readOf (typed 112 12 "1. step\n- note\n/land") = .land hC := by
   decide +kernel
 theorem arrowAndComparisonOpenNoQuote :
@@ -301,7 +315,7 @@ open Lean in
       ``agentNeedsSlugProviderTaskHead, ``fenceDuplicateKeyMalformed, ``severalWordLinesHold,
       ``unresolvedLandHolds, ``holdLineHolds, ``resolveUnique, ``resolveFullSelf, ``headAtSound,
       ``sameSecondUnknown, ``incompleteReadHolds, ``positionsAscendingDistinct, ``wordTraces,
-      ``ownerLandIsTyped] ++ fixtures.toList do
+      ``ownerLandIsTyped, ``bomIsSkipped] ++ fixtures.toList do
     for a in ← collectAxioms n do
       unless standard.contains a do
         throwError "{n} depends on the axiom {a}"
