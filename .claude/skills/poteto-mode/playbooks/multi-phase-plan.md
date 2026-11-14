@@ -56,7 +56,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Pick the GitHub path once, `gh` or the GitHub MCP tools, per **Forge** in **Opening a PR**. Record any fallback. Never require `gt`.
 - [ ] Open the PR ready, never draft, per **Opening a PR**, through its **Forge** create route (`.claude/scripts/open-pr.sh --head <branch> --title <title> --body-file <file> --base <base-branch>` where the repository ships it). A stack child targets its parent branch.
 - [ ] Run the repo's lint and typecheck once before the PR-facing push. Push with hooks on.
-- [ ] Run the slop strip from poteto-mode's Non-negotiables before each commit and `/no-comments` before review.
+- [ ] Run the slop strip from poteto-mode's Non-negotiables before each commit and `/no-comments` before review. Under the **kitimark-mode** skill the root runs `/no-comments` on the head the owner reports.
 - [ ] Triage every Bugbot and security-reviewer comment per `../references/bugbot-triage.md`.
 - [ ] Rebase onto current trunk before the code-ready report and babysit. Keep that merge base in fix rounds. Rebase again only at merge prep, on a `git merge-tree` conflict with trunk, on a CI failure that comes from a change on trunk, or when a known concurrent change to the same files lands.
 

@@ -181,7 +181,9 @@ when rule files changed on `main` after the session loaded its rules; put that n
   ruling.
 - On a problem's second occurrence, or a call to the user repeated in two catch-ups, file one
   `process` issue at once. It names the cause and the structural fix, and has an owner. Every
-  catch-up or dashboard line about that problem links it.
+  catch-up or dashboard line about that problem links it. A standing rule the user gives in chat,
+  or the second identical per-PR ask that names a skill or a check, goes into a rules PR in the
+  same session.
 
 ## PR owners carry their PR
 
@@ -269,7 +271,8 @@ watcher's echo filter and the merge rule below rely on both.
   says. A `/no-comments` pass that only deletes or rewords comments does not count either, and a
   reshape fix it accepts counts as the PR's next round. Before a third round starts, the root narrows or splits the PR. The PR keeps its task's
   change and the blocking fixes, and the rest moves to separate PRs or the follow-up issue. The
-  third brief names what is left.
+  third brief names what is left. A PR that still fails after its third round stops there: the
+  root starts no fourth round and posts a catch-up that names what still fails.
 
 ## Verdicts
 
@@ -341,7 +344,8 @@ watcher's echo filter and the merge rule below rely on both.
   model and an effort, such as `opus-xhigh`, and two are joined with `+`: `PASS sonnet-xhigh +
   opus-xhigh at 43fc333, author opus`. At a head that only rebases, the row's Head cell is the new
   head and the verdict cell keeps the models: `PASS opus-xhigh carried from 43fc333, author
-  sonnet`. `pr-state.sh` reads the verdict head, the verdict models and the author from that
+  sonnet`. The root updates the Head cell and the verdict cell together. `pr-state.sh` reads
+  the verdict head, the verdict models and the author from that
   cell, and prints no `merge-ready` line, with `merge-hold=<reason>` on the PR's state line, when
   the cell names no author or no verdict model, when every verdict model is the author's, or when
   the PR is trust-critical and no verdict is from `opus`. The author and each verdict's model may
@@ -516,10 +520,13 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   root runs the `/no-comments` pass, a PR owner pushes what the pass accepts, the verifier checks
   the resulting head, then `bot-review.sh` and the catch-up. The pass is
   `.claude/skills/no-comments/SKILL.md` over the head's diff against `main`. The root runs it,
-  because it spawns Comment Sicko and a PR owner may have no Agent tool. The PR owner pushes the
+  because it spawns Comment Sicko and a PR owner may have no Agent tool. A PR owner never runs the
+  pass itself, no brief asks it to, and there is no fallback. The PR owner pushes the
   accepted deletions and fixes and answers the bot threads. A PR whose diff adds no comments, such
-  as a pure deletion, a rebase, plan-row links or a run-log-only change, needs no pass, and its
-  catch-up says "no-comments: no new comments". A PR from an outside agent that the root only
+  as a pure deletion, plan-row links or a run-log-only change, needs no pass, and its
+  catch-up says "no-comments: no new comments". A head that only rebases a passed head keeps the
+  pass when `mitos-gate carry` exits 0, as a verdict does, and its catch-up names the pass and the
+  head it ran at. A PR from an outside agent that the root only
   observes needs none unless the user asks. The catch-up's Status names the pass, its result
   (deletions, flags fixed, and any flag left open, including a failed pass) and the head it ran at. Before a catch-up that hands the
   user a PR, run `.claude/scripts/bot-review.sh <pr>`, and hand the PR over only on `reviewed` or
@@ -554,7 +561,9 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
 - **Plan-time designs.** When a plan or a tracker lands, the Architect (see Roles) writes a task
   file for each open row from `tasks/TEMPLATE.md`, Design block included, and the row's issue
   links it. The design stays in that file or the issue body (`.claude/skills/architect/SKILL.md`,
-  Outputs). A row that depends on a row not yet merged gets a contract at plan time, its inputs,
+  Outputs). Its `modules:` field maps each file to the one topic it owns. A build that outgrows
+  that map reports it as a deviation and does not split silently. A row that depends on a row
+  not yet merged gets a contract at plan time, its inputs,
   outputs and statements, with `revisit_when` set to "re-check after #N merges". The Architect
   completes it when #N merges. An issue links a design only when it covers the row at build
   depth, a sketch that type-checks plus named fixtures; otherwise the issue says "contract only".
@@ -602,7 +611,9 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
 - The user may merge before a verdict. The verifier then still runs, on the merged head. Its
   verdict goes in the PR's merged line under the In flight table, such as `#44 merged 09:30 UTC,
   then PASS opus-xhigh at 04fcb83; follow-ups #47`. A FAIL also becomes a `follow-up` issue and a
-  fix PR, as #28 fixed #27.
+  fix PR, as #28 fixed #27. A PR that merged without its `/no-comments` pass gets the pass on the
+  merged head, and a follow-up PR carries the edits it accepts. The root finds such PRs by reading
+  their catch-ups over REST.
 
 ## Research
 
