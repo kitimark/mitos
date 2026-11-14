@@ -81,7 +81,20 @@ scores "a snapshot this build refuses is drift" \
   'record 9001-1: drifted: its snapshot is refused: prs\[0\]\."extra": not a field here' \
   "$(edited refused-snapshot '.outcome.snapshot.prs[0].extra = 1')"
 scores "a key the scorer does not read is ignored" \
-  '#257 at d7616ac: waits\. .*' "$(edited extra-key '. + {mainAfterSaid: ["gh: 502"]}')"
+  '#257 at d7616ac: waits\. .*' "$(edited extra-key '. + {unknown: {kind: 1}}')"
+scores "an empty mainAfterSaid is read" \
+  '#257 at d7616ac: waits\. .*' "$(edited said-empty '. + {mainAfterSaid: []}')"
+scores "a mainAfterSaid with lines is read" \
+  '#257 at d7616ac: waits\. .*' "$(edited said-lines '. + {mainAfterSaid: ["gh: HTTP 502"]}')"
+m5=$(jq -r .main "$fx/record-main-after-unread.json")
+BEFORE=$m5 scores "the record whose second read of main failed is decided" \
+  'shadow: 1 merges, 1 records, 0 refused, 0 skipped, 0 drifted, 0 unreadable' \
+  "$fx/record-main-after-unread.json"
+BEFORE=$m5 scores "the record whose second read of main failed pairs with no merge of its main" \
+  '#257 at d7616ac: blind\. unseen' "$fx/record-main-after-unread.json"
+BEFORE=$m5 scores "the control: with its second read, that record is paired" \
+  '#257 at d7616ac: blind\. not listed in run 9001' \
+  "$(jq -c '.mainAfter = .main | .mainAfterSaid = []' "$fx/record-main-after-unread.json" >"$tmp/said-control.json"; echo "$tmp/said-control.json")"
 scores "the refused record is counted" \
   'shadow: 1 merges, 1 records, 1 refused, 0 skipped, 0 drifted, 0 unreadable' "$fx/record-refused.json"
 scores "the skipped record is counted" \
@@ -171,7 +184,8 @@ case "$*" in
     printf '{"workflow_runs":[%s,%s,%s]}' "$(run 9001 success)" "$(run 9002 cancelled)" "$(run 9003 skipped)" ;;
   *"actions/workflows/ci.yml/runs"*"&page=1")
     printf '{"workflow_runs":[{"id":1,"event":"pull_request","triggering_actor":{"login":"mitos-pr-updater[bot]"}},{"id":2,"event":"push","triggering_actor":null}]}' ;;
-  *"artifacts?name=land-record-9001-1&"*) printf '{"total_count":1,"artifacts":[{"id":77,"expired":false}]}' ;;
+  *"artifacts?name=land-record-9001-1&"*)
+    printf '{"total_count":3,"artifacts":[{"id":66,"expired":false,"workflow_run":{"id":4242}},{"id":55,"expired":true,"workflow_run":{"id":9001}},{"id":77,"expired":false,"workflow_run":{"id":9001}}]}' ;;
   *"artifacts?name="*) printf '{"total_count":0,"artifacts":[]}' ;;
   *"artifacts/77/zip"*) cat "$FAKE_ZIP" ;;
   *"pulls?state=closed"*"&page=1")
@@ -184,7 +198,9 @@ case "$*" in
   "api -i repos/"*"/activity?ref=refs/heads/main&direction=desc&per_page=100&after=Y3Vy_c29y-1")
     printf 'HTTP/1.1 200 OK\r\n\r\n[{"before":"%s","after":"%s","timestamp":"%sT23:59:59Z"},{"before":"x","after":"y","timestamp":"2000-01-01T00:00:00Z"}]' \
       "$FAKE_MAIN" "$FAKE_MERGE" "$FAKE_DAY" ;;
-  *"git/commits/"*) printf 'dddddddddddddddddddddddddddddddddddddddd\n' ;;
+  *"git/commits/"*)
+    [ -n "${FAKE_BLOCK:-}" ] && mkdir -p "$FAKE_BLOCK"
+    printf 'dddddddddddddddddddddddddddddddddddddddd\n' ;;
   *) exit 1 ;;
 esac
 EOF
@@ -223,6 +239,11 @@ if fetch owner/mitos "$day" "$tmp/f"; then
   else
     bad "fetch: REST only, one day at a time, and no artifact read for a run the filter skipped" "$(cat "$tmp/gh.log")"
   fi
+  if grep -q 'artifacts/77/zip' "$tmp/gh.log" && ! grep -qE 'artifacts/(55|66)/zip' "$tmp/gh.log"; then
+    ok "fetch: only an unexpired artifact of the run itself is read"
+  else
+    bad "fetch: only an unexpired artifact of the run itself is read" "$(cat "$tmp/gh.log")"
+  fi
   if [ "$(jq length "$tmp/f/runs.json")" = 103 ] && ! grep -q -- '--paginate' "$tmp/gh.log" \
     && grep -q 'after=Y3Vy_c29y-1$' "$tmp/gh.log" && ! grep -q 'page=2$' <(grep 'pulls?' "$tmp/gh.log"); then
     ok "fetch: pages by number and by cursor, and stops at the window"
@@ -247,6 +268,13 @@ if [ "$got" = 1 ] && [ "$(cat "$tmp/fetch.err")" = 'shadow-fetch: the read of th
   ok "fetch: a failed read is exit 1, with one line"
 else
   bad "fetch: a failed read is exit 1, with one line" "exit $got: $(cat "$tmp/fetch.err")"
+fi
+got=0
+FAKE_BLOCK="$tmp/k/merges.json" fetch owner/mitos "$day" "$tmp/k" || got=$?
+if [ "$got" = 1 ] && [ "$(cat "$tmp/fetch.err")" = 'shadow-fetch: merges.json was not written' ]; then
+  ok "fetch: a write that fails is exit 1, with one line"
+else
+  bad "fetch: a write that fails is exit 1, with one line" "exit $got: $(cat "$tmp/fetch.err")"
 fi
 refuses() {
   local args="$*"

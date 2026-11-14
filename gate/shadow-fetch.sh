@@ -14,6 +14,7 @@ set -u
 
 die() { printf 'shadow-fetch: %s\n' "$1" >&2; exit 2; }
 failed() { printf 'shadow-fetch: the read of %s failed\n' "$1" >&2; exit 1; }
+unwritten() { printf 'shadow-fetch: %s was not written\n' "$1" >&2; exit 1; }
 [ $# = 3 ] || die "usage: gate/shadow-fetch.sh <owner/name> <from-date> <dir>"
 repo=$1 from=$2 out=$3
 [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && $repo != */. && $repo != */.. ]] \
@@ -64,7 +65,7 @@ by_cursor() {
 # A list of runs filtered by date holds at most 1000 runs, so this reads one day at a time.
 runs_of() {
   local wf=$1 keep=$2 file=$3 day=$from
-  : >"$tmp/runs"
+  { : >"$tmp/runs"; } 2>/dev/null || unwritten "a scratch file"
   while [[ ! $day > $today ]]; do
     if ! by_number "repos/$repo/actions/workflows/$wf/runs?created=$day&per_page=100" \
       .workflow_runs false >"$tmp/items" || ! jq -c "$keep" "$tmp/items" >>"$tmp/runs"; then
@@ -72,7 +73,7 @@ runs_of() {
     fi
     day=$(date -u -d "$day + 1 day" +%F)
   done
-  jq -s . "$tmp/runs" >"$out/$file"
+  { jq -s . "$tmp/runs" >"$out/$file"; } 2>/dev/null || unwritten "$file"
 }
 
 runs_of "$workflow" '{id, attempt: .run_attempt, event, conclusion, created: .created_at,
@@ -84,7 +85,9 @@ while read -r id attempts; do
   for ((a = 1; a <= attempts; a++)); do
     name="land-record-$id-$a"
     if ! api "repos/$repo/actions/artifacts?name=$name&per_page=100" >"$tmp/list" \
-      || ! art=$(jq -r '[.artifacts[] | select(.expired | not)][0].id // ""' "$tmp/list"); then
+      || ! art=$(jq -r --argjson run "$id" \
+        '[.artifacts[] | select((.expired | not) and .workflow_run.id == $run)][0].id // ""' \
+        "$tmp/list"); then
       failed "the artifacts named $name"
     fi
     [[ $art =~ ^[0-9]+$ ]] || continue
@@ -107,14 +110,15 @@ jq -c --arg start "$start" --slurpfile act "$tmp/activity" \
    {pr: .number, time: .merged_at, head: .head.sha, after: ($after // ""),
     before: ([$act[] | select($after != null and .after == $after)][0].before // "")}' \
   "$tmp/pulls" >"$tmp/merged" || failed "the merged pull requests"
-: >"$tmp/merges"
+{ : >"$tmp/merges"; } 2>/dev/null || unwritten "a scratch file"
 while read -r merge; do
   after=$(jq -r .after <<<"$merge")
   tree=
   if [[ $after =~ ^[0-9a-f]{40}$ ]]; then
     tree=$(api "repos/$repo/git/commits/$after" --jq .tree.sha) || failed "the commit $after"
   fi
-  jq -c --arg tree "$tree" 'del(.after) + {tree: $tree}' <<<"$merge" >>"$tmp/merges"
+  { jq -c --arg tree "$tree" 'del(.after) + {tree: $tree}' <<<"$merge" >>"$tmp/merges"; } \
+    2>/dev/null || unwritten "a scratch file"
 done <"$tmp/merged"
-jq -s . "$tmp/merges" >"$out/merges.json"
+{ jq -s . "$tmp/merges" >"$out/merges.json"; } 2>/dev/null || unwritten merges.json
 exit 0
