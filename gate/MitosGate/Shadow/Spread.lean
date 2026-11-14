@@ -12,10 +12,10 @@ def insertSorted (x : Nat) : List Nat → List Nat
   | [] => [x]
   | y :: ys => if x ≤ y then x :: y :: ys else y :: insertSorted x ys
 
-def sortAsc (xs : List Nat) : List Nat := xs.foldr insertSorted []
+def kernelSort (xs : List Nat) : List Nat := xs.foldr insertSorted []
 
 def spread (xs : List Nat) : Spread :=
-  let s := sortAsc xs
+  let s := kernelSort xs
   { n := s.length, min := s.head?.getD 0, median := s.getD (s.length / 2) 0,
     p90 := s.getD (s.length * 9 / 10) 0, max := s.getLast?.getD 0 }
 

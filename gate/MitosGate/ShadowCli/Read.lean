@@ -8,7 +8,7 @@ open Lean (Json)
 namespace MitosGate.ShadowCli
 
 open Shadow
-open Land (Sha)
+open Land (Sha Obs)
 
 private abbrev D (α : Type) := Json → Except String α
 
@@ -32,12 +32,12 @@ private def sha : D Sha := fun j => do
   unless Speech.isSha s.toList do throw ": expected a commit, 40 hexadecimal digits"
   return s
 
-private def shaOrUnread : D Sha := fun j => do
-  if (← str j).isEmpty then return "" else sha j
+private def shaOrUnread : D (Option Sha) := fun j => do
+  if (← str j).isEmpty then return none else some <$> sha j
 
 private def stamp : D Stamp := fun j => do
   let some t := Speech.stamp? (← str j).toList | throw ": expected a time, YYYY-MM-DDTHH:MM:SSZ"
-  return t
+  return ⟨t⟩
 
 private def list (d : D α) : D (List α) := fun j =>
   match j.getArr? with
@@ -79,7 +79,9 @@ def Run.trigger : Run → Trigger
   | .decided r => r.trigger
   | .refused t _ | .skipped t _ => t
 
-def drifted : String := "drifted: "
+inductive Unscored
+  | unreadable (why : String)
+  | drifted (why : String)
 
 private def cost : D Cost := fun j => do
   return ⟨← at' "setup" nat j, ← at' "fetch" nat j, ← at' "snapshot" nat j,
@@ -88,13 +90,18 @@ private def cost : D Cost := fun j => do
 private def treeOf : D TreeOf := fun j => do
   return ⟨← at' "commit" sha j, ← at' "tree" sha j⟩
 
-def run? (run : Nat) (j : Json) : Except String Run := do
+private structure Replay where
+  record : List Obs → Record
+  snapshot : Json
+  printed : Json
+
+private def parse (run : Nat) (j : Json) : Except String (Run ⊕ Replay) := do
   let v ← at' "v" nat j
   unless v == 1 do throw s!"v is {v}, and this scorer reads v 1"
   let t ← at' "trigger" trigger j
   match ← at' "outcome" (at' "kind" str) j with
-  | "skipped" => return .skipped t (← at' "outcome" (at' "remaining" nat) j)
-  | "refused" => return .refused t (← at' "outcome" (at' "stage" stage) j)
+  | "skipped" => return .inl (.skipped t (← at' "outcome" (at' "remaining" nat) j))
+  | "refused" => return .inl (.refused t (← at' "outcome" (at' "stage" stage) j))
   | "decided" =>
     let read ← at' "read" stamp j
     let main ← at' "main" shaOrUnread j
@@ -103,14 +110,22 @@ def run? (run : Nat) (j : Json) : Except String Run := do
     let cost ← at' "cost" cost j
     let trees ← at' "outcome" (at' "trees" (list treeOf)) j
     let printed ← at' "outcome" (at' "decision" pure) j
-    let s ← at' "outcome" (at' "snapshot" pure) j
-    let s ← (LandCli.read s.compress).mapError (s!"{drifted}its snapshot is refused: " ++ ·)
-    let now := s.decide.json
-    unless now.compress == printed.compress do
-      throw s!"{drifted}it printed {printed.compress}, and this build decides {now.compress}"
-    return .decided { run, trigger := t, read, main := if main == after then main else "", tool,
-                      cost, prs := s.prs, trees }
+    let snapshot ← at' "outcome" (at' "snapshot" pure) j
+    let main := if main == after then main else none
+    return .inr ⟨fun prs => { run, trigger := t, read, main, tool, cost, prs, trees }, snapshot,
+      printed⟩
   | k => throw s!".outcome.kind: {k.quote} is not an outcome"
+
+def run? (run : Nat) (j : Json) : Except Unscored Run := do
+  match ← (parse run j).mapError .unreadable with
+  | .inl r => return r
+  | .inr d =>
+    let s ← (LandCli.read d.snapshot.compress).mapError
+      fun e => .drifted s!"its snapshot is refused: {e}"
+    let now := s.decide.json
+    unless now.compress == d.printed.compress do
+      throw (.drifted s!"it printed {d.printed.compress}, and this build decides {now.compress}")
+    return .decided (d.record s.prs)
 
 private def merge : D Merge := fun j => do
   return { pr := ← at' "pr" nat j, time := ← at' "time" stamp j,
@@ -121,12 +136,14 @@ def merges : D (List Merge) := list merge
 
 structure Job where
   id : Nat
-  conclusion : String
+  conclusion : Option String
+
+private def conclusionOrRunning : D (Option String)
+  | .null => return none
+  | j => some <$> conclusion j
 
 private def job : D Job := fun j => do
-  let c ← match j.getObjVal? "conclusion" with
-    | .ok .null => pure ""
-    | _ => at' "conclusion" conclusion j
+  let c ← at' "conclusion" conclusionOrRunning j
   return ⟨← at' "id" nat j, c⟩
 
 def jobs : D (List Job) := list job
@@ -134,5 +151,16 @@ def jobs : D (List Job) := list job
 def updaterCiRuns : D Nat := fun j => do
   let actors ← list (at' "actor" str) j
   return (actors.filter (· == Carry.updater)).length
+
+namespace Fixture
+
+theorem anEmptyCommitIsUnread : (shaOrUnread (.str "")).toOption = some none := by
+  decide +kernel
+theorem aCommitIsRead : (shaOrUnread (.str (String.ofList (List.replicate 40 'a')))).toOption =
+    some (some (String.ofList (List.replicate 40 'a'))) := by decide +kernel
+theorem aRunningJobHasNoConclusion : (conclusionOrRunning .null).toOption = some none := by
+  decide +kernel
+
+end Fixture
 
 end MitosGate.ShadowCli

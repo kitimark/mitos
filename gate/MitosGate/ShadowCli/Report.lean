@@ -7,7 +7,7 @@ open Land (Sha Step Stop Plan plan queueOf)
 
 structure Window where
   merges : List Merge
-  records : List (String × Except String Run)
+  records : List (String × Except Unscored Run)
   recorded : List Nat
   jobs : List Job
   updaterCiRuns : Nat
@@ -86,15 +86,16 @@ def costLine (rs : List Record) : String :=
 
 def readsLine (rs : List Record) : String :=
   s!"reads: {spreadText (spread (rs.map (·.cost.reads)))} a run; " ++
-    s!"peak {peak 3600 (rs.map fun r => (seconds r.read, r.cost.reads))} in one hour"
+    s!"peak {peak 3600 (rs.map fun r => (r.read.seconds, r.cost.reads))} in one hour"
 
 def runsLine (w : Window) (runs : List Run) : String :=
   let count (p : Trigger → Bool) := (runs.filter fun r => p r.trigger).length
   let gate (cancelled : Bool) := count fun
     | .gateDone _ c => !cancelled || c == "cancelled"
     | _ => false
-  let superseded := w.jobs.filter fun j => j.conclusion == "cancelled" && !w.recorded.contains j.id
-  let filtered := w.jobs.filter (·.conclusion == "skipped")
+  let superseded := w.jobs.filter fun j =>
+    j.conclusion == some "cancelled" && !w.recorded.contains j.id
+  let filtered := w.jobs.filter (·.conclusion == some "skipped")
   s!"runs: mainMoved {count (· == .mainMoved)}, gateDone {gate false} (cancelled {gate true}), " ++
     s!"comment {count fun | .comment .. => true | _ => false}, " ++
     s!"dispatch {count (· == .dispatch)}; " ++
@@ -105,15 +106,16 @@ def report (w : Window) : List String :=
   let decided := runs.filterMap fun | .decided r => some r | _ => none
   let refused := runs.filter fun | .refused .. => true | _ => false
   let skipped := runs.filter fun | .skipped .. => true | _ => false
-  let bad := w.records.filterMap fun (f, r) => match r with
-    | .error e => some (f, e)
-    | .ok _ => none
-  let drift := bad.filter (·.2.startsWith drifted)
-  let unreadable := bad.filter (!·.2.startsWith drifted)
+  let drift := w.records.filterMap fun
+    | (f, .error (.drifted e)) => some (f, e)
+    | _ => none
+  let unreadable := w.records.filterMap fun
+    | (f, .error (.unreadable e)) => some (f, e)
+    | _ => none
   let t := tally w.merges decided
   [s!"shadow: {w.merges.length} merges, {w.records.length} records, {refused.length} refused, " ++
     s!"{skipped.length} skipped, {drift.length} drifted, {unreadable.length} unreadable"] ++
-  drift.map (fun (f, e) => s!"record {f}: {e}") ++
+  drift.map (fun (f, e) => s!"record {f}: drifted: {e}") ++
   unreadable.map (fun (f, e) => s!"record {f}: unreadable: {e}") ++
   (w.merges.mergeSort fun a b => b.time < a.time || (b.time == a.time && b.pr ≤ a.pr)).map
     (mergeLine decided) ++

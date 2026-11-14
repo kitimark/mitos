@@ -4,7 +4,20 @@ namespace MitosGate.Shadow
 
 open Land
 
-def observer : Teammate := ⟨"shadow", "observer"⟩
+theorem name_lt_sum : ∀ {ds : List Teammate} {t : Teammate}, t ∈ ds →
+    t.name.length < (ds.map (·.name.length)).sum + 1
+  | d :: ds, t, h => by
+    rcases List.mem_cons.mp h with rfl | h
+    · simp only [List.map_cons, List.sum_cons]; omega
+    · have := name_lt_sum h
+      simp only [List.map_cons, List.sum_cons]; omega
+
+def outsider (o : Obs) : { t : Teammate // o.mayMerge t = false } :=
+  ⟨⟨"", "".pushn '.' ((o.delegates.map (·.name.length)).sum + 1)⟩, by
+    simp only [Obs.mayMerge, Bool.and_eq_false_iff, Bool.not_eq_false']
+    refine .inr (Bool.eq_false_iff.mpr fun h => ?_)
+    have := name_lt_sum (List.contains_iff_mem.mp h)
+    simp at this⟩
 
 def fresh (os : List Obs) : Nat := (os.flatMap fun o => o.words.map Word.said).foldr max 0 + 1
 
@@ -20,10 +33,11 @@ def Reading.step : Reading → Step
   | .asRead s | .oneWordAway s => s
 
 def reading (os : List Obs) (o : Obs) : Reading :=
-  match step observer (queueOf os) o with
+  match step (outsider o).1 (queueOf os) o with
   | .stop .noEntry =>
     let o' := withWord (fresh os) o
-    .oneWordAway (step observer (queueOf (os.map fun x => if x.pr == o.pr then o' else x)) o')
+    .oneWordAway
+      (step (outsider o').1 (queueOf (os.map fun x => if x.pr == o.pr then o' else x)) o')
   | s => .asRead s
 
 def ReadyIsOneWordFromLanding : Prop :=
@@ -33,7 +47,7 @@ def ReadyIsOneWordFromLanding : Prop :=
 
 def TheWordIsOnlyAssumedWhenReady : Prop :=
   ∀ (os : List Obs) (o : Obs),
-    (∃ s, reading os o = .oneWordAway s) ↔ step observer (queueOf os) o = .stop .noEntry
+    (∃ s, reading os o = .oneWordAway s) ↔ step (outsider o).1 (queueOf os) o = .stop .noEntry
 
 theorem walk_self (v : String) (ps : List Carry.Push) : Carry.walk v v ps = true := by
   cases ps <;> simp [Carry.walk]
@@ -126,6 +140,12 @@ theorem newContentIsNotAssumed :
       .asRead (.stop .notEligible) := by decide +kernel
 theorem anotherWordAheadMakesTheAssumedWordWait :
     reading [ownerKeptPushed, unsaid] unsaid = .oneWordAway (.wait 153) := by decide +kernel
+
+def delegatesAnyName : Obs := { unsaid with delegates := [⟨"shadow", "observer"⟩, orchestrator] }
+
+theorem theReaderIsNoDelegate :
+    reading [delegatesAnyName] delegatesAnyName = .oneWordAway (.awaitPush "bbb") := by
+  decide +kernel
 
 end Fixture
 
