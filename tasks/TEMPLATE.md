@@ -17,6 +17,7 @@ escalation: hint → automation → stronger model → pair → split → revisi
 Plan-time designs); `touches` and `must_not_touch` above are its file lists>
 depth: <build: a sketch that type-checks, plus named fixtures | contract only>
 revisit_when: <"re-check after #N merges" for a row that depends on an unmerged row, else none>
+modules: <each file, the one topic it owns, a rough line budget, and the existing file whose layout it copies>
 types: <types and signatures>
 statements: <named statements>
 reuse: <existing modules to reuse>
