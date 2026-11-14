@@ -8,6 +8,7 @@ import MitosGate.Carry
 import MitosGate.CheatsRun
 import MitosGate.LandCli
 import MitosGate.SpeechCli
+import MitosGate.SnapshotCli
 
 open MitosGate
 
@@ -42,7 +43,11 @@ def usage : String := "usage:
   mitos-gate speech --owner <login> --pr <n> [--pushes <tsv>] <comments.json>
                                                  what each of <login>'s issue comments on the pull
                                                  request says: one line each (id, reading, why); the
-                                                 pushes are the branch's activity as carry reads it"
+                                                 pushes are the branch's activity as carry reads it
+  mitos-gate snapshot <dir>                      the snapshot land reads, from the REST reads that
+                                                 gate/snapshot-fetch.sh saved in <dir>, with content
+                                                 ids and replays from git in this clone; a failed
+                                                 read holds the pull requests that need it"
 
 partial def parseAccept (args : List String) (c : Accept.Config) : Except String Accept.Config :=
   match args with
@@ -142,6 +147,7 @@ def cli (args : List String) : IO UInt32 := do
   | "cheats" :: rest => CheatsRun.cli rest usage
   | "land" :: rest => LandCli.cli rest usage
   | "speech" :: rest => SpeechCli.cli rest usage
+  | "snapshot" :: rest => SnapshotCli.cli rest usage
   | _ => IO.eprintln usage; return 2
 
 def main (args : List String) : IO UInt32 := do
