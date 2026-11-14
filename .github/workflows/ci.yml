@@ -178,6 +178,15 @@ jobs:
       - name: land-decide.sh records each outcome and holds no key
         run: .github/scripts/land-decide.test.sh
 
+      - name: Every gate shell test passes (gate/*-test.sh)
+        run: |
+          failed=
+          for t in gate/*-test.sh; do
+            echo "== $t"
+            "$t" || failed="$failed $t"
+          done
+          if [ -n "$failed" ]; then echo "::error::these gate shell tests failed:$failed"; exit 1; fi
+
       - name: Run-log lines are append-only, one record per (task, role, attempt)
         env:
           EVENT: ${{ github.event_name }}
