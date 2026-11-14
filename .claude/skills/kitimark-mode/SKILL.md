@@ -611,9 +611,10 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
 - The user may merge before a verdict. The verifier then still runs, on the merged head. Its
   verdict goes in the PR's merged line under the In flight table, such as `#44 merged 09:30 UTC,
   then PASS opus-xhigh at 04fcb83; follow-ups #47`. A FAIL also becomes a `follow-up` issue and a
-  fix PR, as #28 fixed #27. A PR that merged without its `/no-comments` pass gets the pass on the
-  merged head, and a follow-up PR carries the edits it accepts. The root finds such PRs by reading
-  their catch-ups over REST.
+  fix PR, as #28 fixed #27. A PR that merged without its `/no-comments` pass gets the pass over
+  what it merged, the diff from the `main` commit it landed on to its last merged commit, and a
+  follow-up PR carries the edits it accepts. The root finds such PRs by reading their catch-ups
+  over REST.
 
 ## Research
 
