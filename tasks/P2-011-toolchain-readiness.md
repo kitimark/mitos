@@ -31,15 +31,15 @@ escalation: hint → automation → stronger model → pair → split → revisi
 - Roles (kitimark-mode table): PR A has no owner path and is routine against this sketch (sonnet,
   high), verified by opus at xhigh. PR B is trust-critical (`gate/`, `lean-toolchain`): opus at
   xhigh, verified by sonnet and by opus.
-- Designed at plan time by one designer, with no arena and no Lean build. The type-check pass
-  checks the sketches below against `main` before a builder starts.
+- Designed at plan time by one designer, with no arena. The PR A and PR B sketches build on
+  v4.35.0 and the three-case run passes.
 
 ## Design
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
 lists.
 
 depth: build. PR A's three files and PR B's three ContentId lines are sketched below in full; the
-rest of PR B is a checklist with no new code. Not type-checked at design time.
+rest of PR B is a checklist with no new code. The sketches build on v4.35.0.
 
 revisit_when: PR A: none (it waits for no unmerged row). PR B: re-check when leanprover/lean4
 publishes v4.36.0, and after #208 (P2-007, `accepted/GoMod.json`) or #209 (P2-008,
@@ -531,7 +531,8 @@ replace the `lines` field of `Probe` by the function, and get `lake --dir eval/m
 green on v4.35.0 with the cross-check `#guard`s above.
 
 ## Done when
-- [ ] PR A merged by agents after a passing verdict: on v4.35.0 `lake --dir eval/mutants build`
+- [ ] PR A merged by the owner after a passing verdict (it removes four `expect` entries from the
+      mutant probes, a spec change for the owner): on v4.35.0 `lake --dir eval/mutants build`
       passes with every `#guard` above, and
       `lake --dir eval/mutants exe mitos-mutants src_dst_swapped edges_duplicated cheat_impl_macro`
       prints the three probe lines with 3, 5 and 2 probes caught and the three cases as expected

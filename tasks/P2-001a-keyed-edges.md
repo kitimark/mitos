@@ -42,10 +42,9 @@ escalation: hint → automation → stronger model → pair → split → revisi
   #232), so the Challenge has twelve theorems and `statements.lock` 165 declarations; the mutant
   corpus is 42 cases (22 refuted, no known gap, 20 cheat cases rejected).
 - Design written at plan time by an arena of two runners and a judge (Rationale, Synthesis
-  decision). It was checked by reading `main` at e5bd16c and the toolchain's sources. No Lean was
-  built in the design run, so the sketch below is not type-checked yet. A type-check pass follows,
-  one build at a time, and records its result here. Until it passes, #203 and #205 call this design
-  "contract only".
+  decision). It was checked by reading `main` at e5bd16c and the toolchain's sources. The sketch
+  type-checks on Lean v4.35.0 against `main` at e5bd16c, with `sorry` bodies only where the design
+  says (the regenerated lock had 206 declarations).
 
 ## Design
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
@@ -406,7 +405,7 @@ def renderEdge (k : RepoKey) : String :=
 
 To type-check the core sketch: in a copy of `core/` at `main`, apply the `Graph.lean`,
 `Spec/Derivations.lean`, `Spec/Resolve.lean`, `Spec/Adequacy.lean`, `Spec/Repo.lean` and `Core.lean`
-changes above, give the seven adequacy theorems whose proofs change `sorry` bodies, and elaborate
+changes above, give the six adequacy theorems whose proofs change `sorry` bodies, and elaborate
 the `MitosCore` library only, in one build. `Mitos.Impl` and `Mitos.Proofs` need the `mkEdge` line
 and the proof edits first.
 
@@ -431,7 +430,9 @@ Restated (the texts are the `Spec/Resolve.lean` block):
   `UnresolvedNodup`, `AssumptionsNodup`, `ImpactNodup`. `Total` still reads `e.requiringFactId`,
   which is now a def through the key.
 
-New locked theorems, seventeen lines:
+New locked theorems, sixteen lines (`WellFormed.eq_of_id` is not pinned by the lock, because
+`Lock.isGenerated` skips names whose last component starts with `eq_`; renaming the lemma would pin
+it):
 - `Graph.lean`: `WellFormed.eq_of_id`, `wellFormed_retract` (both moved, statements unchanged).
 - `Spec/Derivations.lean`, the five laws:
   - `mem_derivations`: the derivations are exactly Phase 1's matches.
@@ -466,7 +467,7 @@ against this list. 165 → about 207 declarations.
   `RepoKey`'s projections now).
 - Added: `Derivation`, `RepoKey` and `Chain` with their constructors, readers and instances;
   `Edge.repoKey`; `Chain.direct`, `Chain.origins`, `Chain.repoKey`; `derivations`; `provDeclared`,
-  `twoProvisions`; the seventeen theorems.
+  `twoProvisions`; the sixteen theorems.
 - Unchanged, byte for byte: `Spec.Total`, `Spec.ImpactCorrect`, `Spec.ImpactNodup`,
   `Spec.UnresolvedNodup`, `Spec.AssumptionsNodup`, `matchesB` (it only changes file), and every
   line outside the graph.
@@ -759,7 +760,7 @@ Rejected:
 - We accept that `Derivation` sits in `Graph.lean` and its rules in `Spec/Derivations.lean`, so a
   new rule touches two files (the compiler links them), in exchange for moving no approved
   declaration except `matchesB`.
-- We accept seventeen new locked theorem lines in exchange for each restated clause having a
+- We accept sixteen new locked theorem lines in exchange for each restated clause having a
   fixture that stops proving when the clause is weakened, and for the laws being stated once.
 - We accept that `Affects.step`'s lock line changes with no text change, and that four `Edge.*`
   projection lines leave the lock, in exchange for one field list for the repo-level key.
@@ -791,7 +792,8 @@ Rejected:
   but it doubles the locked text and cannot survive P2-001b.
 
 ### Open questions and risks (for the builder to measure)
-- Does the sketch type-check? The design run built nothing.
+- The sketch type-checks on Lean v4.35.0 against `main` at e5bd16c, with `sorry` bodies only where
+  the design says (the regenerated lock had 206 declarations).
 - Does step 2, the reshape alone, need no proof change? It is its own step so that a surprise
   from `extends` shows before the statements move.
 - Do all 22 refutations replay on five kernels now that the terms go through `derivations`? If a

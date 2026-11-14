@@ -18,7 +18,7 @@ escalation: hint → automation → stronger model → pair → split → revisi
   decisions are in
   [#156](https://github.com/kitimark/mitos/issues/156#issuecomment-6795388085).
 - #160 (plan review follow-ups) has no item for this row.
-- Design written at plan time with P2-006's, by the same arena. No Lean was run for it.
+- Design written at plan time with P2-006's, by the same arena. The contract sketch type-checks on Lean v4.35.0.
 
 ## Design
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
