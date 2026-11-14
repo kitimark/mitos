@@ -16,11 +16,8 @@ def cells : List Char → List (List Char)
 
 def inFlight : List Char := "## In flight".toList
 
-/-- Only a heading at the start of its line counts, because an indented one can sit in a block that
-a list item above it opened. -/
 def isInFlight (l : List Char) : Bool := l.head? == some '#' && Speech.trim l == inFlight
 
-/-- A block that hides lines can hide the In flight heading too, so one above it spoils the read. -/
 def section? (ls : List (List Char)) : Option (List (List Char)) :=
   match ls.filter isInFlight with
   | [_] =>
@@ -76,8 +73,6 @@ def row (l : List Char) : Row :=
     | _ => .bad
   | t => if t.contains '|' then .bad else .skip
 
-/-- GitHub reads a header row and a delimiter row as a table's head only as a pair under a blank
-line or the heading, and as data rows anywhere else. -/
 def rowsAfter : List Char → Bool → List (List Char) → List Row
   | _, _, [] => []
   | _, true, l :: ls => .skip :: rowsAfter l false ls
