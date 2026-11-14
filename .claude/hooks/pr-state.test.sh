@@ -491,8 +491,6 @@ DASH_TITLE="Owner dashboard (old)" dash "| #21 other | \`2222222\` | green | PAS
 run ok
 reject "another title is not the dashboard" "merge-ready"
 
-# The verdict cell names the author model (kitimark-mode, Verdicts). A verdict from the author's
-# model does not make a PR merge-ready, and a trust-critical PR needs an opus verdict.
 ready_reset
 echo '[{"filename":"core/Mitos/Resolve.lean"}]' >"$work/files-21.json"
 agent_merges="an agent merges"
@@ -528,8 +526,6 @@ expect "two verdicts, the other one from the author: merge-ready" "$(mline 21 "$
 verdict_row 'PASS sonnet-xhigh + sonnet-high at 2222222, author sonnet'
 reject "two verdicts, both from the author model: no merge command" "merge-ready #21"
 expect "two verdicts, both from the author model: the line says why" "merge-hold=every verdict is from the author model, sonnet"
-# The author and each verdict token map to a family of opus, sonnet, haiku, fable, however the model
-# is spelled. A name that maps to none, or to more than one, is not a model.
 verdict_row 'PASS sonnet-xhigh at 2222222, author claude-sonnet-5-5'
 reject "an author spelled as a full model id still matches its family: no merge command" "merge-ready #21"
 expect "an author spelled as a full model id: the line says why" "$l21 merge-hold=every verdict is from the author model, sonnet"
@@ -564,7 +560,6 @@ reject "a FAIL names no hold reason" "merge-hold"
 verdict_row 'PASS sonnet-xhigh at 1111111, author sonnet'
 reject "a verdict at an old head names no hold reason" "merge-hold"
 
-# Trust-critical: a spec or trust-infrastructure path, or the spec-approved label.
 echo '[{"filename":"gate/MitosGate/X.lean"}]' >"$work/files-21.json"
 l21="open #21 head 2222222 ready labels=- assignees=- gate=success verdict=2222222(the head) owner-unanswered=- user-kept=yes"
 verdict_row 'PASS fable-xhigh at 2222222, author sonnet'
