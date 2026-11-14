@@ -2,8 +2,6 @@
 # Re-copy pstack skills and agents from https://github.com/cursor/plugins.
 # Usage: resync-pstack.sh [<commit>]
 # With no argument, uses the tip of that repo's main branch.
-# Leaves the kept skills and agents below in place and rewrites the SHA lines
-# in .cursor/skills/PSTACK_SOURCE.md.
 set -euo pipefail
 
 kept_skills=(architect kitimark-mode no-comments poteto-mode principle-split-by-topic reflect show-me-your-work swarm)
