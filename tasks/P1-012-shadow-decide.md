@@ -90,7 +90,7 @@ parses it. A decided or refused record has these fields; `TRIGGER` and `OUTCOME`
 ```
 {"v": 1,
  "trigger": TRIGGER,
- "read": "<UTC, YYYY-MM-DDTHH:MM:SSZ, when the reads ended>",
+ "read": "<UTC, YYYY-MM-DDTHH:MM:SSZ, when the reads ended, by GitHub's clock (deferrals)>",
  "main": "<40-hex sha from reads/main.json, or \"\" when that read failed>",
  "tool": "<40-hex sha of the clone's HEAD, the tool that was built>",
  "cost": {"setup": <s>, "fetch": <s>, "snapshot": <s>, "decide": <s>,
@@ -593,10 +593,11 @@ the end of the `Shadow.lean` block above, and the proofs are below. Against `mai
 
 Stated and type-checked, not proved: `SeatIgnoresRecordOrder`.
 
-`read` is the runner's clock and `Merge.time` is the pull request's `merged_at` from GitHub, both
-in whole seconds. `read < time` keeps out a record whose reads ended in the merge's own second,
-but it assumes the two clocks agree to within that second; `main = before` is what shows that the
-record's `main` read came before the merge.
+`Merge.time` is the pull request's `merged_at`, by GitHub's clock, in whole seconds. `read < time`
+shows that the reads ended before the merge only when `read` is by that clock too: a runner whose
+clock is behind GitHub's by any amount d can pair a record whose reads ended up to d after the
+merge. So `read` comes from GitHub's clock (deferrals, into this row). `main = before` shows, by
+any clock, that the record's `main` read came before the merge.
 
 <details>
 <summary>The sketch's proofs, as their own file that imports <code>MitosGate.Shadow</code>. The
@@ -889,6 +890,12 @@ deferrals:
     `gate/lock-header-test.sh` of them.
   - "How often a mixed-model PR gets no author" (#190 default 4) is `Tally.noAuthor`.
   - The design's guess of 200 run-minutes for `decide` is the cost line.
+  - `read` by GitHub's clock (CodeRabbit on #248). PR 1 stamps `read` with the `Date` header of
+    one `gh api -i rate_limit` call after the fetch, which uses no REST quota, instead of the
+    runner's `date`, and keeps the runner's clock for the `cost` durations. If that call fails,
+    the run is refused, so no record pairs by the runner's clock. `land-decide.test.sh` adds two
+    cases: the header's time is the record's `read`, and a failed call is refused. The recorder
+    sketch above still stamps `read` with `date`.
 - To P1-014 (#193):
   - the hand-off `{main, pr, expect, tree}` as a job output; it is derivable from `main`,
     `decision.plan` and `trees`;
@@ -1044,8 +1051,6 @@ workflow-level permissions.
 - Does an anonymous `git fetch origin <sha>` work with `persist-credentials: false`? If not,
   persist the read token.
 - `otherTree` also catches a stale sample after a content push; the report must explain each one.
-- Do the runner's clock and GitHub's `merged_at` agree to within a second, as `precedes` assumes?
-  The report prints the smallest `age` it paired.
 
 ### Next implementation step
 
