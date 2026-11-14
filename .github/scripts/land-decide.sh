@@ -4,7 +4,7 @@
 # One decide run, in a clone of the repository: the reads, the snapshot, the decision, then one
 # line, <dir>/record.json. It holds no rule: every decision is `mitos-gate`'s, and it reads no
 # line that another tool printed. Exit 0: decided, or skipped under the REST floor. Exit 1:
-# refused, and the record says at which stage. Exit 2: usage.
+# refused, and the record says at which stage, or the record could not be written. Exit 2: usage.
 set -u
 
 die() { printf 'land-decide: %s\n' "$1" >&2; exit 2; }
@@ -38,6 +38,7 @@ trig=$(trigger) || die "the trigger is not one this script records"
 tool=$(git rev-parse --verify --quiet 'HEAD^{commit}') || die "not in a clone"
 num "$floor" || die "LAND_REST_FLOOR is not a number"
 
+unwritten() { printf 'land-decide: the record was not written\n' >&2; exit 1; }
 now() { date -u +%s; }
 lines() { if [ -f "$1" ]; then jq -Rsc 'split("\n") | map(select(. != ""))' "$1"; else echo '[]'; fi; }
 t_job=${LAND_T0:-$(now)}; num "$t_job" || die "LAND_T0 is not a time"
@@ -51,7 +52,7 @@ head_of() {
 left=$(timeout -k 5 120 gh api rate_limit --jq .resources.core.remaining 2>/dev/null </dev/null) || left=
 if num "$left" && [ "$left" -lt "$floor" ]; then
   jq -c --argjson left "$left" 'del(.setup) + {outcome: {kind: "skipped", remaining: $left}}' \
-    <<<"$(head_of "$t0")" >"$out/record.json"
+    <<<"$(head_of "$t0")" >"$out/record.json" || unwritten
   printf 'land-decide: skipped, %s REST calls left\n' "$left"
   exit 0
 fi
@@ -90,7 +91,7 @@ head=$(jq -c --arg main "$main" --arg after "$after" --argjson afterSaid "$after
 
 if [ "$code" != 0 ] || [ -z "$main" ]; then
   jq -c --arg stage "$stage" --argjson said "$(lines "$out/$stage.err")" \
-    '. + {outcome: {kind: "refused", stage: $stage, said: $said}}' <<<"$head" >"$out/record.json"
+    '. + {outcome: {kind: "refused", stage: $stage, said: $said}}' <<<"$head" >"$out/record.json" || unwritten
   printf 'land-decide: refused at %s\n' "$stage" >&2
   exit 1
 fi
@@ -105,5 +106,5 @@ done < <(jq -r '.prs[] | select(.base.kind == "clean") | .base.replay' "$out/sna
 jq -c --argjson head "$head" --argjson trees "$trees" --slurpfile decision "$out/decision.json" \
   --argjson notes "$(lines "$out/snapshot.err")" \
   '$head + {outcome: {kind: "decided", snapshot: ., decision: $decision[0], trees: $trees,
-    notes: $notes}}' "$out/snapshot.json" >"$out/record.json"
+    notes: $notes}}' "$out/snapshot.json" >"$out/record.json" || unwritten
 cat "$out/decision.json" "$out/snapshot.err"

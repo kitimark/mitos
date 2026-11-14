@@ -48,6 +48,7 @@ printf '%s\n' "$*" >>"$STUB_LOG"
 [ $# = 4 ] && [ "$1" = api ] && [ "$3" = --jq ] || { echo "stub gh: unexpected call" >&2; exit 64; }
 case "$2 $4" in
   "rate_limit .resources.core.remaining")
+    [ -z "${STUB_BLOCK:-}" ] || mkdir -p -- "$STUB_BLOCK"
     if [ -n "${STUB_RATE_FAIL:-}" ]; then echo "gh: rate read failed" >&2; exit 1; fi
     echo "${STUB_LEFT:-5000}" ;;
   "repos/owner/mitos/branches/main .commit.sha")
@@ -277,6 +278,22 @@ has '.trigger == {kind: "comment", pr: 12, id: 6877066338}'
 run t-dispatch STUB_LEFT=0 LAND_EVENT=workflow_dispatch
 has '.trigger == {kind: "dispatch"}'
 finish each-event-has-its-trigger
+
+start
+for kind in skipped decided refused; do
+  case $kind in
+    skipped) more=(STUB_LEFT=0) ;;
+    decided) more=() ;;
+    refused) more=(STUB_SNAPSHOT=fail) ;;
+  esac
+  run "unwritten-$kind" STUB_BLOCK="$tmp/runs/unwritten-$kind/out/record.json" "${more[@]}"
+  exits 1
+  [ -d "$rec" ] || note "$kind: the record path is not the blocking folder"
+  grep -qx 'land-decide: the record was not written' "$dir/stderr" \
+    || note "$kind: stderr: $(cat "$dir/stderr")"
+  [ ! -s "$dir/stdout" ] || [ "$kind" = skipped ] || note "$kind: printed a decision: $(cat "$dir/stdout")"
+done
+finish an-unwritten-record-is-red
 
 start
 run push-plan STUB_SNAPSHOT_FILE="$tmp/push.json"
