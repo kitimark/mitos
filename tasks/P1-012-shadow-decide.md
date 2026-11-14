@@ -29,10 +29,12 @@ escalation: hint → automation → stronger model → pair → split → revisi
   (decided, refused, skipped, bad event text). Round 2 of #248 pasted the judge's five sketch
   files below and re-checked them against `main` at 4ba56dc: `Shadow.lean`, its proofs and its
   fixtures type-check as pasted, on the same axioms, and actionlint 1.7.12 and shellcheck 0.11.0
-  report nothing on the two recorder files. The paste is verbatim except one change from review:
-  a record pairs with a merge only when its `read` is in an earlier second than the merge
-  (`precedes` and `PairedRecordPrecedesTheMerge`), and a 13th fixture pins that. Not verified: a
-  run of the recorder against the real `mitos-gate snapshot`, and anything in a real workflow run.
+  report nothing on the two recorder files. The paste is verbatim except two changes from review:
+  `land-decide.sh` reads `main` again after the fetch (`mainAfter`), which orders a record's reads
+  against a merge without a clock; and a record pairs with a merge only when its `read` is in an
+  earlier second than the merge (`precedes` and `PairedRecordPrecedesTheMerge`), which a 13th
+  fixture pins. Not verified: a run of the recorder against the real `mitos-gate snapshot`, and
+  anything in a real workflow run.
 
 ## Design
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
@@ -90,8 +92,9 @@ parses it. A decided or refused record has these fields; `TRIGGER` and `OUTCOME`
 ```
 {"v": 1,
  "trigger": TRIGGER,
- "read": "<UTC, YYYY-MM-DDTHH:MM:SSZ, when the reads ended, by GitHub's clock (deferrals)>",
+ "read": "<UTC, YYYY-MM-DDTHH:MM:SSZ, when the reads ended, by the runner's clock>",
  "main": "<40-hex sha from reads/main.json, or \"\" when that read failed>",
+ "mainAfter": "<40-hex sha of main read again after all the reads, or \"\" when that read failed>",
  "tool": "<40-hex sha of the clone's HEAD, the tool that was built>",
  "cost": {"setup": <s>, "fetch": <s>, "snapshot": <s>, "decide": <s>,
           "reads": <number of reads that saved a file>},
@@ -124,6 +127,9 @@ parses it. A decided or refused record has these fields; `TRIGGER` and `OUTCOME`
   ```
 - A refused run exits 1, so it is red. A record whose `main` is `""` is refused too, at the stage
   the run reached.
+- `mainAfter` orders the reads against merges without a clock. `run?` gives a record whose
+  `mainAfter` is not its `main` the `main` `""`, so it pairs with no merge: `main` moved while it
+  read. The run itself is decided and green.
 - `trees` gives the tree of each clean replay, because the replay commit exists only in
   `decide`'s clone.
 - The line holds no run number. `Record.run` is the `<run>` of the artifact's name, which
@@ -134,8 +140,9 @@ parses it. A decided or refused record has these fields; `TRIGGER` and `OUTCOME`
 
 ### The recorder (PR 1 starts from these two files)
 
-Both files below are the judge's sketch, verbatim. actionlint 1.7.12 (which also runs shellcheck on
-each `run:` line) and shellcheck 0.11.0 report nothing on them. PR 1 adds them with
+Both files below are the judge's sketch, verbatim except that `land-decide.sh` reads `main` again
+after the fetch and writes it as `mainAfter` (from review). actionlint 1.7.12 (which also runs
+shellcheck on each `run:` line) and shellcheck 0.11.0 report nothing on them. PR 1 adds them with
 `land-decide.test.sh` and the ci steps under `cut_line`.
 
 `.github/workflows/land.yml`:
@@ -281,6 +288,7 @@ if num "$left" && [ "$left" -lt "$floor" ]; then
 fi
 
 "$fetch" "$repo" "$dash" "$out/reads" 2>"$out/fetch.err"; code=$?
+after=$(gh api "repos/$repo/branches/main" --jq .commit.sha 2>/dev/null) && sha "$after" || after=
 t1=$(now)
 stage=fetch
 if [ "$code" = 0 ]; then
@@ -296,9 +304,10 @@ t3=$(now)
 
 main=$(jq -er '.commit.sha' "$out/reads/main.json" 2>/dev/null) && sha "$main" || main=
 reads=$(find "$out/reads" -name '*.json' 2>/dev/null | wc -l)
-head=$(jq -c --arg main "$main" --argjson reads "$reads" --argjson unread "$(lines "$out/fetch.err")" \
+head=$(jq -c --arg main "$main" --arg after "$after" --argjson reads "$reads" \
+  --argjson unread "$(lines "$out/fetch.err")" \
   --argjson fetch "$((t1 - t0))" --argjson snapshot "$((t2 - t1))" --argjson decide "$((t3 - t2))" \
-  '{v, trigger, read, main: $main, tool,
+  '{v, trigger, read, main: $main, mainAfter: $after, tool,
     cost: {setup, fetch: $fetch, snapshot: $snapshot, decide: $decide, reads: $reads},
     unread: $unread}' <<<"$(head_of "$t1")")
 
@@ -567,7 +576,7 @@ inductive Run
   | decided (r : Shadow.Record)
   | refused (t : Shadow.Trigger) (s : Stage)
   | skipped (t : Shadow.Trigger) (remaining : Nat)
--- refuses v ≠ 1; `run` is the `<run>` of the artifact's name
+-- refuses v ≠ 1; `run` is the `<run>` of the artifact's name; `main` is "" when `mainAfter` differs
 def run? (run : Nat) (j : Json) : Except String Run := sorry
 def cli (args : List String) (usage : String) : IO UInt32 := sorry
 end ShadowCli
@@ -593,11 +602,12 @@ the end of the `Shadow.lean` block above, and the proofs are below. Against `mai
 
 Stated and type-checked, not proved: `SeatIgnoresRecordOrder`.
 
-`Merge.time` is the pull request's `merged_at`, by GitHub's clock, in whole seconds. `read < time`
-shows that the reads ended before the merge only when `read` is by that clock too: a runner whose
-clock is behind GitHub's by any amount d can pair a record whose reads ended up to d after the
-merge. So `read` comes from GitHub's clock (deferrals, into this row). `main = before` shows, by
-any clock, that the record's `main` read came before the merge.
+The ordering of a record's reads against a merge comes from `main`, not from a clock. `read` is
+the runner's clock and `Merge.time` is GitHub's `merged_at`, so `read < time` alone cannot show
+that the reads ended before the merge. But a record keeps its `main` only when `mainAfter`, read
+after all its reads, is the same commit (`run?`), and a merge moves `main` off `before`. So
+`main = before` shows that every read came before the merge. `read < time` can then only drop a
+record, never pair a later one.
 
 <details>
 <summary>The sketch's proofs, as their own file that imports <code>MitosGate.Shadow</code>. The
@@ -860,6 +870,7 @@ end MitosGate.Shadow.Fixture
   - `refused-snapshot-is-red`
   - `unread-main-is-red`
   - `failed-reads-pass-through`: the lines land in `unread` verbatim, and the run exits 0.
+  - `main-moved-while-reading`: `mainAfter` is the second read's commit, and the run exits 0.
   - `rate-floor-skips`
   - `bad-event-text-is-refused`
   - `a-push-plan-records-its-tree`
@@ -868,8 +879,9 @@ end MitosGate.Shadow.Fixture
   - `filter-pins`: `refs/heads/main`, `repository_owner` and `head_repository.full_name` are
     named; the concurrency group is on the job; no event text sits in a `run:` line.
 - `gate/shadow-fixtures/` and `gate/shadow-test.sh`: `record-idle.json` (a real record),
-  `record-refused.json`, `record-skipped.json`, `record-v2.json` (refused), and `window/` with its
-  expected report. A drifted record is listed and not scored.
+  `record-refused.json`, `record-skipped.json`, `record-v2.json` (refused), `record-main-moved.json`
+  (pairs with no merge), and `window/` with its expected report. A drifted record is listed and not
+  scored.
 - Live: one dispatch run on `main` whose `unread` lists what the workflow token cannot read; a
   comment from another login starts no job; a day-one report over real records.
 
@@ -890,12 +902,6 @@ deferrals:
     `gate/lock-header-test.sh` of them.
   - "How often a mixed-model PR gets no author" (#190 default 4) is `Tally.noAuthor`.
   - The design's guess of 200 run-minutes for `decide` is the cost line.
-  - `read` by GitHub's clock (CodeRabbit on #248). PR 1 stamps `read` with the `Date` header of
-    one `gh api -i rate_limit` call after the fetch, which uses no REST quota, instead of the
-    runner's `date`, and keeps the runner's clock for the `cost` durations. If that call fails,
-    the run is refused, so no record pairs by the runner's clock. `land-decide.test.sh` adds two
-    cases: the header's time is the record's `read`, and a failed call is refused. The recorder
-    sketch above still stamps `read` with `date`.
 - To P1-014 (#193):
   - the hand-off `{main, pr, expect, tree}` as a job output; it is derivable from `main`,
     `decision.plan` and `trees`;
@@ -1044,10 +1050,11 @@ workflow-level permissions.
 - Does a job whose `if:` is false stay out of its job-level concurrency group? The "superseded"
   count answers this on day one.
 - Can the workflow token read the stacks route? The first run's `unread` shows.
-- Is 1,000 REST calls an hour enough? A run makes 6 + 6N reads at most. A read of a list is one
-  REST call per page of 100, so a run makes at least as many REST calls as reads, and more when a
-  list (files, activity, comments) runs past one page. `cost.reads` counts the reads that saved a
-  file, not the REST calls. The floor protects ci, and the report prints the peak.
+- Is 1,000 REST calls an hour enough? A run makes 7 + 6N reads at most: 6 + 6N in the fetch, and
+  `mainAfter`. A read of a list is one REST call per page of 100, so a run makes at least as many
+  REST calls as reads, and more when a list (files, activity, comments) runs past one page.
+  `cost.reads` counts the fetch's reads that saved a file, not the REST calls. The floor protects
+  ci, and the report prints the peak.
 - Does an anonymous `git fetch origin <sha>` work with `persist-credentials: false`? If not,
   persist the read token.
 - `otherTree` also catches a stale sample after a content push; the report must explain each one.
