@@ -16,15 +16,16 @@ def cells : List Char → List (List Char)
 
 def inFlight : List Char := "## In flight".toList
 
+def saysInFlight (l : List Char) : Bool := Speech.trim l == inFlight
+
 def outsideListItems (heading : List Char) : Bool := heading.head? == some '#'
 
-def isInFlight (l : List Char) : Bool := outsideListItems l && Speech.trim l == inFlight
-
 def section? (ls : List (List Char)) : Option (List (List Char)) :=
-  match ls.filter isInFlight with
-  | [_] =>
-    if (ls.takeWhile (!isInFlight ·)).any (start · == .runsPastHeadings) then none
-    else some (((ls.dropWhile (!isInFlight ·)).drop 1).takeWhile (start · != .heading))
+  match ls.filter saysInFlight with
+  | [line] =>
+    let (above, rest) := ls.span (!saysInFlight ·)
+    if !outsideListItems line || above.any (start · == .runsPastHeadings) then none
+    else some ((rest.drop 1).takeWhile (start · != .heading))
   | _ => none
 
 def prNumber (c : List Char) : Option Nat :=
