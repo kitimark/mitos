@@ -125,6 +125,80 @@ theorem crlfDashboard :
     rows "## In flight\r\n\r\n| #7 a | x | y | PASS opus-xhigh at 85b0781 |\r\n" =
       some [(7, "PASS opus-xhigh at 85b0781".toList)] := by decide +kernel
 
+def tableHead : String := "| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n"
+def under (s : String) : String := "## In flight\n\n" ++ tableHead ++ passFor7 ++ s ++ "\n## Next up\n"
+def fail8 : String := tableHead ++ "| #8 b | `x` | red | FAIL opus-xhigh at `85b0781` |\n"
+def only7 : Option (List (Nat × List Char)) :=
+  some [(7, "PASS opus-xhigh at `85b0781`, author sonnet".toList)]
+
+theorem aHeadingInACommentSpoilsTheDashboard :
+    rows (under ("\n<!--\n## old\n-->\n\n" ++ fail8)) = none := by decide +kernel
+theorem aHeadingInACodeFenceSpoilsTheDashboard :
+    rows (under ("\n```\n## old\n```\n\n" ++ fail8)) = none := by decide +kernel
+theorem aHeadingInATildeFenceSpoilsTheDashboard :
+    rows (under ("\n~~~\n## old\n~~~\n\n" ++ fail8)) = none := by decide +kernel
+theorem aHeadingIndentedByATabSpoilsTheDashboard :
+    rows (under ("\n\t## old\n\n" ++ fail8)) = none := by decide +kernel
+theorem aHeadingIndentedByFourSpacesSpoilsTheDashboard :
+    rows (under ("\n    ## old\n\n" ++ fail8)) = none := by decide +kernel
+theorem aHeadingInAPreBlockSpoilsTheDashboard :
+    rows (under ("\n<pre>\n## old\n</pre>\n\n" ++ fail8)) = none := by decide +kernel
+theorem aHeadingInADivBlockSpoilsTheDashboard :
+    rows (under ("\n<div>\n## old\n</div>\n\n" ++ fail8)) = none := by decide +kernel
+theorem aHeadingThatEndsACommentSpoilsTheDashboard :
+    rows (under ("\n<!--\n## old -->\n\n" ++ fail8)) = none := by decide +kernel
+theorem aHeadingInAFenceInAListItemSpoilsTheDashboard :
+    rows (under ("\n- ```\n  ## old\n  ```\n\n" ++ fail8)) = none := by decide +kernel
+theorem aHeadingInACommentInAListItemSpoilsTheDashboard :
+    rows (under ("\n- <!--\n  ## old\n  -->\n\n" ++ fail8)) = none := by decide +kernel
+theorem aFenceWithNoLaterTableSpoilsTheDashboard :
+    rows (under "\n```\n## not a heading\n```\n") = none := by decide +kernel
+theorem aHeadingInABlockQuoteSpoilsTheDashboard :
+    rows (under ("\n> ## old\n\n" ++ fail8)) = none := by decide +kernel
+theorem aFirstLevelHeadingSpoilsTheDashboard :
+    rows (under ("\n# old\n\n" ++ fail8)) = none := by decide +kernel
+theorem aThirdLevelHeadingSpoilsTheDashboard :
+    rows (under ("\n### old\n\n" ++ fail8)) = none := by decide +kernel
+theorem aSetextHeadingSpoilsTheDashboard :
+    rows (under ("\nNext up\n---\n\n" ++ fail8)) = none := by decide +kernel
+theorem aRowInACommentSpoilsTheDashboard :
+    rows ("## In flight\n\n" ++ tableHead ++ "| #8 b | x | y | No verdict |\n\n<!--\n" ++ passFor7 ++
+      "\n-->\n\n## Next up\n") = none := by decide +kernel
+theorem aRowInACodeFenceSpoilsTheDashboard :
+    rows ("## In flight\n\n" ++ tableHead ++ "| #8 b | x | y | No verdict |\n\n```\n" ++ passFor7 ++
+      "\n```\n\n## Next up\n") = none := by decide +kernel
+theorem anIndentedCodeRowSpoilsTheDashboard :
+    rows ("## In flight\n\n" ++ tableHead ++ "| #8 b | x | y | No verdict |\n\n    " ++ passFor7 ++
+      "\n## Next up\n") = none := by decide +kernel
+theorem aHeaderRowInTheBodySpoilsTheDashboard :
+    rows (under "| PR | `x` | red | FAIL opus-xhigh at `85b0781` for #7 |\n") = none := by
+  decide +kernel
+theorem aDelimiterRowInTheBodySpoilsTheDashboard :
+    rows (under "|---|---|---|---|\n") = none := by decide +kernel
+theorem aPipeAloneSpoilsTheDashboard : rows (under "|\n") = none := by decide +kernel
+theorem anEmptyRowSpoilsTheDashboard : rows (under "| | | | |\n") = none := by decide +kernel
+theorem aHeaderOverAShortDelimiterSpoilsTheDashboard :
+    rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|\n" ++ passFor7) = none := by
+  decide +kernel
+theorem aHiddenInFlightHeadingIsUnread :
+    rows ("<!--\n## In flight\n\n" ++ tableHead ++ passFor7 ++ "\n-->\n") = none := by decide +kernel
+theorem anInFlightHeadingInAFenceIsUnread :
+    rows ("```\n## In flight\n\n" ++ tableHead ++ passFor7 ++ "\n```\n") = none := by decide +kernel
+theorem anIndentedInFlightHeadingIsUnread :
+    rows ("    ## In flight\n\n" ++ tableHead ++ passFor7) = none := by decide +kernel
+theorem anInFlightHeadingInAListItemIsUnread :
+    rows ("- x\n\n    <!--\n  ## In flight\n\n  | PR | Head | `gate` | Verdict |\n  |---|---|---|---|\n  " ++
+      passFor7 ++ "\n  -->\n") = none := by decide +kernel
+theorem nextUpEndsTheSection :
+    rows ("## In flight\n\n" ++ tableHead ++ passFor7 ++ "\n## Next up\n\n" ++ fail8) = only7 := by
+  decide +kernel
+theorem aHeadingAfterThreeSpacesEndsTheSection :
+    rows (under "\n   ## old\n\n| #8 b | `x` | red | FAIL |\n") = only7 := by decide +kernel
+theorem aHeadingAfterATabEndsTheSection :
+    rows (under "\n##\told\n\n| #8 b | `x` | red | FAIL |\n") = only7 := by decide +kernel
+theorem anEmptyHeadingEndsTheSection :
+    rows (under "\n##\n\n| #8 b | `x` | red | FAIL |\n") = only7 := by decide +kernel
+
 def owner : String := "owner"
 def repo : String := "owner/mitos"
 def protection : Protection := ⟨true, true, ["gate"]⟩
