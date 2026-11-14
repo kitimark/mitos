@@ -5,12 +5,9 @@ namespace MitosGate.ShadowCli
 open Shadow
 open Land (Sha Step Stop Plan plan queueOf)
 
-/-- What `mitos-gate shadow` reads from the folder. -/
 structure Window where
   merges : List Merge
-  /-- Each record file: its name without `.json`, and what `run?` made of it. -/
   records : List (String × Except String Run)
-  /-- The runs that left a record file. -/
   recorded : List Nat
   jobs : List Job
   updaterCiRuns : Nat
@@ -75,7 +72,6 @@ def mergeLine (rs : List Record) (m : Merge) : String :=
 
 def spreadText (s : Spread) : String := s!"{s.median} ({s.min}, p90 {s.p90}, {s.max})"
 
-/-- The distinct `push` plans, each `(pr, expect, replay)`. -/
 def pushes (rs : List Record) : Nat :=
   (rs.filterMap fun r => match plan (queueOf r.prs) with
     | .push p e x => some (p, e, x)

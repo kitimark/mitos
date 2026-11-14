@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# Usage: gate/shadow-fetch.sh <owner/name> <from-date> <dir>
-#
-# Saves what `mitos-gate shadow <dir>` scores, for the window from <from-date> (YYYY-MM-DD, UTC)
-# to now, through `gh api` only: REST, never GraphQL.
-#   records/<run>-<attempt>.json  the record that each run of land.yml uploaded
-#   runs.json                     the runs of land.yml: id, attempt, event, conclusion, times
-#   merges.json                   the pull requests merged into main: pr, time, before, head, tree
-#   baseline.json                 the runs of ci: id, event, the login that started it
-# `before` and `tree` are "" when the activity of main or the commit does not name them. A read
-# that fails stops the script with one line on standard error and exit 1, so the folder is whole
-# only after exit 0. A usage error exits 2.
 set -u
 
 die() { printf 'shadow-fetch: %s\n' "$1" >&2; exit 2; }
@@ -36,9 +25,6 @@ trap 'rm -rf -- "$tmp"' EXIT
 
 api() { timeout -k 5 120 gh api "$@" 2>/dev/null </dev/null; }
 
-# `--paginate` follows links of the form `repositories/<id>`, which a Claude Code session's proxy
-# refuses, so these two follow the pages themselves and print one item per line. Each stops at the
-# last page, or after a page on which the jq test `stop` holds.
 by_number() {
   local route=$1 items=$2 stop=$3 k=1
   while :; do
@@ -98,7 +84,6 @@ while read -r id attempts; do
   done
 done < <(jq -r '.[] | select(.conclusion != "skipped") | "\(.id) \(.attempt)"' "$out/runs.json")
 
-# A pull request is updated when it merges, so the list sorted by update can stop at the window.
 # shellcheck disable=SC2016
 by_number "repos/$repo/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" \
   . '.[-1].updated_at < $start' >"$tmp/pulls" || failed "the closed pull requests"

@@ -29,8 +29,6 @@ fi
 idle="$fx/record-idle.json"
 main=$(jq -r .main "$idle")
 head257=$(jq -r '.outcome.snapshot.prs[] | select(.pr == 257) | .head' "$idle")
-# One folder: the records given as <run>-1.json from 9001 on, and one merge of #257 at the head
-# the real record read, 5 s after its read, onto the main it read.
 window() {
   local dir=$1 n=9001 r
   shift
@@ -161,7 +159,6 @@ got=0
 "$bin" shadow >"$tmp/out" 2>"$tmp/err" || got=$?
 if [ "$got" = 2 ] && [ ! -s "$tmp/out" ]; then ok "no argument is a usage error"; else bad "no argument is a usage error" "exit $got"; fi
 
-# shadow-fetch.sh, against a gh that answers each route from fixed text
 day=$(date -u +%F)
 art="$tmp/art"
 mkdir -p "$art"

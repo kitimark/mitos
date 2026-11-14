@@ -1,15 +1,6 @@
 import MitosGate.ShadowCli.Report
 import MitosGate.Util
 
-/-!
-# `mitos-gate shadow`: what `decide` would have done, against what merged
-
-`mitos-gate shadow <dir>` reads the folder that `gate/shadow-fetch.sh` wrote and prints the report:
-one line per merge, newest first, then the counts, the cost and the runs. A record that cannot be
-read, or whose decision this build does not repeat, is listed and not scored. A folder file that is
-missing or not of its shape is exit 1, and a usage error exit 2.
--/
-
 open Lean (Json)
 
 namespace MitosGate.ShadowCli
@@ -29,7 +20,6 @@ private def load (dir : System.FilePath) (name : String) (d : Json → Except St
     | .ok a => return a
     | .error e => throw s!"{name}{e}"
 
-/-- The `<run>` of `<run>-<attempt>`. -/
 def runOf (stem : String) : Option Nat :=
   match stem.splitOn "-" with
   | [r, a] => if a.toNat?.isSome then r.toNat? else none

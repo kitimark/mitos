@@ -12,7 +12,6 @@ def insertSorted (x : Nat) : List Nat → List Nat
   | [] => [x]
   | y :: ys => if x ≤ y then x :: y :: ys else y :: insertSorted x ys
 
-/-- An insertion sort, which `decide +kernel` can run, where it cannot run `List.mergeSort`. -/
 def sortAsc (xs : List Nat) : List Nat := xs.foldr insertSorted []
 
 def spread (xs : List Nat) : Spread :=
@@ -20,11 +19,9 @@ def spread (xs : List Nat) : Spread :=
   { n := s.length, min := s.head?.getD 0, median := s.getD (s.length / 2) 0,
     p90 := s.getD (s.length * 9 / 10) 0, max := s.getLast?.getD 0 }
 
-/-- The sum of `y` over the points `(u, y)` with `t ≤ u < t + width`. -/
 def within (width t : Nat) (xs : List (Nat × Nat)) : Nat :=
   ((xs.filter fun (u, _) => t ≤ u && u < t + width).map (·.2)).sum
 
-/-- The greatest sum over a window of `width` that starts at a point. -/
 def peak (width : Nat) (xs : List (Nat × Nat)) : Nat :=
   (xs.map fun (t, _) => within width t xs).foldr max 0
 
