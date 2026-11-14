@@ -27,10 +27,12 @@ escalation: hint → automation → stronger model → pair → split → revisi
   against B's build of #246 (six proofs on the three standard axioms, 12 kernel fixtures pass),
   linted the workflow with actionlint, and ran the recorder through shellcheck and four stub runs
   (decided, refused, skipped, bad event text). Round 2 of #248 pasted the judge's five sketch
-  files below verbatim and re-checked them against `main` at 4ba56dc: `Shadow.lean`, its proofs
-  and its fixtures type-check as pasted, on the same axioms, and actionlint 1.7.12 and shellcheck
-  0.11.0 report nothing on the two recorder files. Not verified: a run of the recorder against the
-  real `mitos-gate snapshot`, and anything in a real workflow run.
+  files below and re-checked them against `main` at 4ba56dc: `Shadow.lean`, its proofs and its
+  fixtures type-check as pasted, on the same axioms, and actionlint 1.7.12 and shellcheck 0.11.0
+  report nothing on the two recorder files. The paste is verbatim except one change from review:
+  a record pairs with a merge only when its `read` is in an earlier second than the merge
+  (`precedes` and `PairedRecordPrecedesTheMerge`), and a 13th fixture pins that. Not verified: a
+  run of the recorder against the real `mitos-gate snapshot`, and anything in a real workflow run.
 
 ## Design
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
@@ -323,8 +325,9 @@ cat "$out/decision.json" "$out/snapshot.err"
 
 ### The scorer (PR 2)
 
-types: `gate/MitosGate/Shadow.lean`, the judge's sketch, verbatim. It type-checks against `main` at
-4ba56dc with real bodies, and ends with the statements.
+types: `gate/MitosGate/Shadow.lean`, the judge's sketch, verbatim except that `precedes` and
+`PairedRecordPrecedesTheMerge` compare `read < time`. It type-checks against `main` at 4ba56dc
+with real bodies, and ends with the statements.
 
 ```lean
 import MitosGate.LandCli
@@ -431,7 +434,7 @@ inductive Seat
   | unlisted (run : Nat)
   | sat (s : Sat)
 
-def precedes (m : Merge) (r : Record) : Bool := r.main == m.before && decide (r.read ≤ m.time)
+def precedes (m : Merge) (r : Record) : Bool := r.main == m.before && decide (r.read < m.time)
 
 def last (m : Merge) : List Record → Option Record
   | [] => none
@@ -525,8 +528,8 @@ def LacksNothingIffEligible : Prop :=
 
 def PairedRecordPrecedesTheMerge : Prop :=
   ∀ (m : Merge) (rs : List Record) (r : Record), last m rs = some r →
-    r ∈ rs ∧ r.main = m.before ∧ r.read ≤ m.time ∧
-      ∀ x ∈ rs, x.main = m.before → x.read ≤ m.time → x.read ≤ r.read
+    r ∈ rs ∧ r.main = m.before ∧ r.read < m.time ∧
+      ∀ x ∈ rs, x.main = m.before → x.read < m.time → x.read ≤ r.read
 
 def SeatIgnoresRecordOrder : Prop :=
   ∀ (m : Merge) (rs rs' : List Record), rs.Perm rs' → (rs.map (·.read)).Nodup →
@@ -584,15 +587,16 @@ the end of the `Shadow.lean` block above, and the proofs are below. Against `mai
 | `ReadyIsOneWordFromLanding` | After `stop noEntry`, the owner's newest `/land` about the head is landable. |
 | `TheWordIsOnlyAssumedWhenReady` | `oneWordAway` exactly when the as-read step is `stop noEntry`. |
 | `LacksNothingIffEligible` | `lacks o = []` iff `eligibleBeforeRebase`. A new clause in `Land` breaks the build. |
-| `PairedRecordPrecedesTheMerge` | The paired record read the merge's `before`, no later than the merge, and is the newest such. |
+| `PairedRecordPrecedesTheMerge` | The paired record read the merge's `before`, in an earlier second than the merge, and is the newest such. Both stamps are whole seconds, so only `<` shows that the reads ended before the merge. |
 | `AgreesMeansTheMergedContent` | `agrees` only for `present` at the merged head, or `awaitPush` with the merged tree. |
 | `TallyCountsEveryMergeOnce` | The five counts sum to the merges. |
 
 Stated and type-checked, not proved: `SeatIgnoresRecordOrder`.
 
 <details>
-<summary>The sketch's proofs. The builder puts them after the statements in
-<code>Shadow.lean</code>; the closing <code>#eval</code> only prints their axioms.</summary>
+<summary>The sketch's proofs, as their own file that imports <code>MitosGate.Shadow</code>. The
+builder puts them after the statements in <code>Shadow.lean</code>, without that
+<code>import</code> line; the closing <code>#eval</code> only prints their axioms.</summary>
 
 ```lean
 import MitosGate.Shadow
@@ -791,8 +795,10 @@ reuse:
 - Contract only: 2b's `FailedReadHolds`, `EnforcedNeedsProtection` and `OnlyTheOwnerQueues`.
 
 fixtures:
-- Kernel (12, all pass in the sketch and against `main` at 4ba56dc). The builder puts them in
-  `Shadow.lean`, as `Land.lean` keeps its `Fixture` namespace:
+- Kernel (13, all pass against `main` at 4ba56dc: the sketch's 12 and
+  `aRecordInTheMergesSecondIsUnseen`, which fails under `≤`). The block below is its own file
+  that imports `MitosGate.Shadow`. The builder puts it in `Shadow.lean` without that `import`
+  line, as `Land.lean` keeps its `Fixture` namespace:
 
 ```lean
 import MitosGate.Shadow
@@ -830,6 +836,8 @@ theorem aRecordOfAnotherMainIsUnseen :
     finding (seat merged [rec 1 90 "m0" [unsaid]]) = .blind := by decide +kernel
 theorem aRecordAfterTheMergeIsUnseen :
     finding (seat merged [rec 1 101 "m1" [unsaid]]) = .blind := by decide +kernel
+theorem aRecordInTheMergesSecondIsUnseen :
+    finding (seat merged [rec 1 100 "m1" [unsaid]]) = .blind := by decide +kernel
 theorem theNewestRecordBeforeTheMergeIsUsed :
     (match seat { merged with head := "bbb" } [rec 1 80 "m1" [unsaid], rec 2 90 "m1" [unsaidOnMain]] with
       | .sat s => s.run | _ => 0) = 2 := by decide +kernel
