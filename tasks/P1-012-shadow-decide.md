@@ -88,6 +88,23 @@ rough budgets.
   - `gate/shadow-test.sh` and `gate/shadow-fixtures/`: the command end to end over fixed folders;
     copies `gate/snapshot-test.sh`.
 
+modules: PR 2, the scorer, as built. Each statement and fixture sits in the file of its topic.
+- `gate/MitosGate/Shadow/Types.lean` (80 lines): what the scorer reads, a record and a merge, and
+  a stamp's seconds. Copies `Snapshot/Types.lean`.
+- `gate/MitosGate/Shadow/Lacks.lean` (25): the eligibility clauses a pull request lacks.
+- `gate/MitosGate/Shadow/Reading.lean` (140): the assumed word.
+- `gate/MitosGate/Shadow/Seat.lean` (180): the pairing of a merge with a record.
+- `gate/MitosGate/Shadow/Finding.lean` (70): the finding at one merge.
+- `gate/MitosGate/Shadow/Tally.lean` (60): the count of findings over a window.
+- `gate/MitosGate/Shadow/Spread.lean` (60): how a cost spreads, over runs and over an hour.
+- `gate/MitosGate/Shadow.lean` (20): imports the topics and checks their axioms. Copies
+  `Snapshot.lean`.
+- `gate/MitosGate/ShadowCli/Read.lean` (150): the folder's JSON, `Run` and `run?`.
+- `gate/MitosGate/ShadowCli/Report.lean` (130): the report's lines.
+- `gate/MitosGate/ShadowCli.lean` (75): the command. Copies `SnapshotCli.lean`.
+- `gate/shadow-fetch.sh` (120): the folder. Copies `gate/snapshot-fetch.sh`.
+- `gate/shadow-test.sh` (270) and `gate/shadow-fixtures/`. Copies `gate/snapshot-test.sh`.
+
 ### Usage (caller's view)
 
 The shadow runs by itself. Job `decide` in `land.yml` starts on a move of `main`, a finished
@@ -1070,6 +1087,44 @@ The dry run, since the workflow can run only after PR 1 merges:
   a heading, so a later table's rows are not read. The shadow only records, so this does not block
   PR 1. Records made before the fix can miss such rows; the scorer's report explains any finding
   it causes.
+
+### PR 2 as built: the re-check and the deviations
+
+Re-checked at `main` 31cc93a, after #246 merged. The table above holds row by row: the fetch makes
+6 + 6N GETs through `gh api`, `snapshot` prints only `prs`, `main.json` names the commit, the
+replay is a `commit-tree` object, and `LandCli` had no public parser. The facts under Rationale
+hold, with line drift only: `LandCli`'s `obj` is at 56, its `snapshot` at 182 and `run` at 270.
+The workflow token's reach is PR 1's live check and was not re-read here. One new fact: in a
+Claude Code session, `gh api --paginate` fails past the first page, because the proxy refuses the
+`repositories/<id>` links that GitHub returns. The runner has no such proxy.
+
+Deviations, each pinned by a fixture or a case of `gate/shadow-test.sh`:
+- Split by topic (`modules:` above). Each module imports only what it uses: `MitosGate.Land` and
+  `MitosGate.Speech.Syntax`, not `LandCli` and all of `Speech`.
+- `precedes` also needs `before ≠ ""`. A record that saw `main` move gets `main` `""`, and so would
+  a merge whose `before` was not read, so the two would pair. `aRecordThatSawMainMoveIsUnseen`.
+- `age` is `seconds m.time - seconds r.read`. A stamp is `YYYYMMDDHHMMSS` as one number, so the
+  sketch's plain difference counts a minute as 100. `theAgeIsInSeconds` and seven stamp fixtures.
+- `spread` sorts with an insertion sort, because `decide +kernel` cannot run `List.mergeSort`.
+- New: `peak` and `PeakBoundsEveryWindow`, the most reads in one hour, which the risks ask for.
+- `run?` ignores a key it does not read, so PR 1 can keep the `mainAfter` read's error text and
+  `v` 1. A drifted record is an error of `run?` that starts with `drifted: `, because the
+  contract's `Run` has no constructor for it. `refused` carries no cost, so the cost and reads
+  lines count decided records only.
+- The report differs from the Usage sample: each merge line names the merged head and the run of
+  its record; every phase of `decide (s)`, and their total, has a spread; a `reads` line; the
+  header counts unreadable records; the `merges` line adds the updater pushes; the `runs` line
+  adds `dispatch` and the runs that the job filter skipped. The `pushes` line counts typed plans
+  as designed, so it is 0 until the owner types `/land` (O5).
+- `shadow-fetch.sh` follows pages by number and by cursor itself (the fact above), reads the runs
+  one day at a time (a filtered list stops at 1000), and reads a record through the artifacts
+  route and `unzip`. `SHADOW_WORKFLOW` names another workflow, so the script ran against real
+  REST before `land.yml` exists.
+- `gate/shadow-fixtures/record-idle.json` is a real record, from the recorder sketch above run
+  once against `kitimark/mitos` from a session. Its token could read protection, so its `unread`
+  is empty.
+- ci does not run `shadow-test.sh` yet: PR 1 adds the step that runs every `gate/*-test.sh`. The
+  test needs `zip` and `unzip`, which `ubuntu-24.04` has.
 
 ## Rationale
 
