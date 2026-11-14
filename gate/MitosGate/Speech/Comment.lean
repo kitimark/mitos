@@ -54,9 +54,15 @@ def word? (l : List Char) : Option Line :=
       | _ => none
   | _ => none
 
+/-- GitHub's Markdown skips one byte-order mark at the start of a comment and no second one
+(cmark-gfm's `blocks.c`, "Skip UTF-8 BOM"). -/
+def unbom : List Char → List Char
+  | '\uFEFF' :: r => r
+  | r => r
+
 def ownerLines (b : List Char) : Except Why (List Line) :=
-  if footer b then .error .footer
-  else if (scan b).protocol.isEmpty then .ok ((scan b).top.filterMap word?)
+  if footer (unbom b) then .error .footer
+  else if (scan (unbom b)).protocol.isEmpty then .ok ((scan (unbom b)).top.filterMap word?)
   else .error .protocolFence
 
 def target (x : Ctx) (pushes : List Carry.Push) (t : Stamp) (arg : List Char) : Option Sha :=
@@ -85,8 +91,13 @@ Within a quote such markup reaches a later line only as a lazy continuation, whi
 holds. -/
 def link (l : List Char) : Bool := l.contains '[' && !quoted l
 
-/-- GitHub's Markdown opens a quote at a `>` after any indent and list markers, as in `- > x`, and
-reads a list marker only with a space or tab after it, so `-> x` and `3 > 2` open none. -/
+/-- A `>` after any indent and list markers opens a quote here, as in `- > x`, and a list marker
+counts only with a space or tab after it, so `-> x` and `3 > 2` open none. GitHub's Markdown opens
+a quote at such a `>` only within a container that allows it: at top level, an indent of 4 or more
+columns makes code, and a list marker has at most 9 digits. So `    > x`, `\t> x` or a marker of 10
+digits holds a `/land` on the next line here although GitHub draws no quote. That over-hold is
+the intended fail-closed choice: a line taken for a quote can only hold a `/land`, never read
+one. -/
 def opensQuote : Bool → List Char → Bool
   | _, [] => false
   | false, c :: r =>
@@ -109,16 +120,16 @@ def inQuote : Bool → List (List Char) → Bool
 also draws them inside list items and HTML blocks, and runs a code span or an HTML comment across
 lines. -/
 def doubt (b : List Char) : Option Why :=
-  if (lines b).any holdLine then some .hold
-  else if (lines b).any markup then some .markup
-  else if (lines b).any link then some .link
-  else if inQuote false (lines b) then some .quoteContinuation
+  if (lines (unbom b)).any holdLine then some .hold
+  else if (lines (unbom b)).any markup then some .markup
+  else if (lines (unbom b)).any link then some .link
+  else if inQuote false (lines (unbom b)) then some .quoteContinuation
   else none
 
 def ownerRead (x : Ctx) (pushes : List Carry.Push) (t : Stamp) (b : List Char) : Read :=
   match ownerLines b with
   | .error why => .ignored why
-  | .ok [] => if (lines b).any holdLine then .hold .hold else .ignored .noWord
+  | .ok [] => if (lines (unbom b)).any holdLine then .hold .hold else .ignored .noWord
   | .ok [.hold] => .hold .hold
   | .ok [.land arg] =>
     match doubt b with
@@ -184,9 +195,9 @@ top-level block. -/
 def nested (l : List Char) : Bool := l.contains '<' || listItem l
 
 def agentRead (x : Ctx) (provider : String) (b : List Char) : Read :=
-  match (scan b).protocol with
+  match (scan (unbom b)).protocol with
   | [(true, body)] =>
-    if (scan b).top.any nested then .ignored .nested
+    if (scan (unbom b)).top.any nested then .ignored .nested
     else
       match record? (joinLines body) with
       | .error why => .ignored why
@@ -231,8 +242,9 @@ def AgentNeedsSlugProviderTaskHead : Prop :=
   ∀ (x : Ctx) pushes (c : Comment) who about, read x pushes c = .agent who about →
     c.login = x.owner ∧ c.updated = c.created ∧
     ∃ s, c.slug = some s ∧ x.apps.lookup s = some who.provider ∧
-    (scan c.body.toList).top.any nested = false ∧
-    ∃ body r, (scan c.body.toList).protocol = [(true, body)] ∧ record? (joinLines body) = .ok r ∧
+    (scan (unbom c.body.toList)).top.any nested = false ∧
+    ∃ body r, (scan (unbom c.body.toList)).protocol = [(true, body)] ∧
+      record? (joinLines body) = .ok r ∧
       r.task = x.pr ∧ r.provider = who.provider ∧ r.teammate = who.name ∧ r.head = about ∧
       isSha about.toList = true
 
@@ -256,6 +268,68 @@ def HoldLineHolds : Prop :=
   ∀ (x : Ctx) pushes (c : Comment) ls, c.login = x.owner → c.updated = c.created →
     c.slug = none → ownerLines c.body.toList = .ok ls →
     (lines c.body.toList).any holdLine = true → ∃ why, read x pushes c = .hold why
+
+def BomIsSkipped : Prop :=
+  ∀ (x : Ctx) pushes (c : Comment) r, c.body.toList = '\uFEFF' :: r → r.head? ≠ some '\uFEFF' →
+    read x pushes c = read x pushes { c with body := String.ofList r }
+
+theorem unbom_cases (b : List Char) : (∃ r, b = '\uFEFF' :: r ∧ unbom b = r) ∨ unbom b = b := by
+  unfold unbom
+  split
+  · exact .inl ⟨_, rfl, rfl⟩
+  · exact .inr rfl
+
+theorem lines_bom (r : List Char) :
+    ∃ l ls, lines r = l :: ls ∧ lines ('\uFEFF' :: r) = ('\uFEFF' :: l) :: ls := by
+  cases h : lines r with
+  | nil =>
+    unfold lines at h
+    split at h <;> try cases h
+    split at h <;> cases h
+  | cons l ls => exact ⟨l, ls, rfl, by rw [lines, h] <;> simp⟩
+
+theorem footer_unbom {b : List Char} (h : footer b = true) : footer (unbom b) = true := by
+  rcases unbom_cases b with ⟨r, rfl, hr⟩ | hr
+  · rw [hr]
+    obtain ⟨l, ls, hl, hb⟩ := lines_bom r
+    unfold footer at h ⊢
+    rw [hb] at h
+    rw [hl]
+    simp only [lastNonBlank] at h ⊢
+    cases hx : lastNonBlank ls with
+    | some x => rw [hx] at h; exact h
+    | none => rw [hx] at h; simp [blank, isSp, lead] at h
+  · rw [hr]; exact h
+
+theorem holdLine_unbom {b : List Char} (h : (lines b).any holdLine = true) :
+    (lines (unbom b)).any holdLine = true := by
+  rcases unbom_cases b with ⟨r, rfl, hr⟩ | hr
+  · rw [hr]
+    obtain ⟨l, ls, hl, hb⟩ := lines_bom r
+    rw [hb] at h
+    rw [hl]
+    simp only [List.any_cons, Bool.or_eq_true] at h ⊢
+    rcases h with h | h
+    · simp [holdLine] at h
+    · exact .inr h
+  · rw [hr]; exact h
+
+theorem ownerRead_unbom {x : Ctx} {pushes : List Carry.Push} {t : Stamp} {b b' : List Char}
+    (h : unbom b = unbom b') : ownerRead x pushes t b = ownerRead x pushes t b' := by
+  simp only [ownerRead, ownerLines, doubt, h]
+
+theorem agentRead_unbom {x : Ctx} {p : String} {b b' : List Char} (h : unbom b = unbom b') :
+    agentRead x p b = agentRead x p b' := by
+  simp only [agentRead, h]
+
+theorem bomIsSkipped : BomIsSkipped := by
+  intro x pushes c r hb hr
+  have h : unbom c.body.toList = unbom (String.ofList r).toList := by
+    rw [hb, String.toList_ofList]
+    rcases unbom_cases r with ⟨r', rfl, -⟩ | h
+    · simp at hr
+    · rw [h]; rfl
+  simp only [read, ownerRead_unbom h, agentRead_unbom h]
 
 theorem word_said {r : Read} {n : Nat} {w : Word} (h : r.word n = some w) : w.said = n := by
   cases r <;> simp [Read.word] at h <;> subst h <;> rfl
@@ -293,8 +367,8 @@ theorem footerIsNeverOwner : FooterIsNeverOwner := by
   | none =>
     unfold read
     by_cases ho : c.login = x.owner
-    · simp only [ho, hu, ne_eq, not_true_eq_false, ite_false, hs, ownerRead, ownerLines, hf,
-        ite_true]
+    · simp only [ho, hu, ne_eq, not_true_eq_false, ite_false, hs, ownerRead, ownerLines,
+        footer_unbom hf, ite_true]
       rfl
     · simp [ho, Read.byOwner]
 
@@ -304,8 +378,8 @@ theorem read_edited {x : Ctx} {pushes : List Carry.Push} {c : Comment} (ho : c.l
 
 theorem agentRead_agent {x : Ctx} {p : String} {b : List Char} {who : Teammate} {about : Sha}
     (h : agentRead x p b = .agent who about) :
-    (scan b).top.any nested = false ∧
-    ∃ body r, (scan b).protocol = [(true, body)] ∧ record? (joinLines body) = .ok r ∧
+    (scan (unbom b)).top.any nested = false ∧
+    ∃ body r, (scan (unbom b)).protocol = [(true, body)] ∧ record? (joinLines body) = .ok r ∧
       r.task = x.pr ∧ r.provider = p ∧ who = ⟨p, r.teammate⟩ ∧ r.head = about := by
   unfold agentRead at h
   split at h
@@ -406,6 +480,7 @@ theorem unresolvedLandHolds : UnresolvedLandHolds := by
 
 theorem holdLineHolds : HoldLineHolds := by
   intro x pushes c ls ho hu hs hl hh
+  replace hh := holdLine_unbom hh
   rw [read_typed ho hu hs, ownerRead, hl]
   match ls with
   | [] => simp only [hh, ite_true]; exact ⟨_, rfl⟩
@@ -435,6 +510,9 @@ theorem ownerLines_footer {b : List Char} {ls : List Line} (h : ownerLines b = .
   unfold ownerLines at h
   split at h
   · cases h
-  · next hf => simpa using hf
+  · next hf =>
+    cases hb : footer b
+    · rfl
+    · exact absurd (footer_unbom hb) hf
 
 end MitosGate.Speech
