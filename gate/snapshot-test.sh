@@ -304,15 +304,21 @@ if fetch owner/mitos 43 "$tmp/f"; then
 else
   bad "fetch: a failed read leaves no file, even after a first page" "exit non-zero: $(cat "$tmp/fetch.err")"
 fi
-for args in "owner/mitos 43" "owner 43 $tmp/g" "owner/mitos 0 $tmp/g" "owner/.. 43 $tmp/g" "owner/mitos 43 $tmp/f"; do
-  if fetch $args; then
+refuses() {
+  local args="$*"
+  if fetch "$@"; then
     bad "fetch refuses: $args" "exit 0"
   elif [ "$(grep -c '' "$tmp/fetch.err")" = 1 ] && grep -q '^snapshot-fetch: ' "$tmp/fetch.err"; then
     ok "fetch refuses: ${args//$tmp/<tmp>}"
   else
     bad "fetch refuses: $args" "$(cat "$tmp/fetch.err")"
   fi
-done
+}
+refuses owner/mitos 43
+refuses owner 43 "$tmp/g"
+refuses owner/mitos 0 "$tmp/g"
+refuses owner/.. 43 "$tmp/g"
+refuses owner/mitos 43 "$tmp/f"
 
 echo
 echo "$pass passed, $fail failed"
