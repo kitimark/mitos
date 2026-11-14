@@ -127,7 +127,7 @@ Each live lane runs in its own worktree at the PR head. Drive the surface throug
 
 - [ ] Root's clean verdict at the exact head SHA.
 - [ ] Bugbot triage done.
-- [ ] Rebased onto current trunk after the verdict, `git patch-id --verbatim` unchanged.
+- [ ] Rebased onto current trunk after the verdict. The verdict holds at the rebased head only when `mitos-gate carry` exits 0 (the **kitimark-mode** skill's Verdicts). Otherwise a verifier passes that head before merge.
 - [ ] <The owner rebase-merges its own PR, or the root appends it to the base-branch stack and the operator lands it bottom-up.>
 
 ## Close the program
