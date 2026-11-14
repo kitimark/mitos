@@ -3,7 +3,7 @@
 phase: 1
 goal: A keyless `decide` job on `main` leaves one record per run, and a report on #191 compares its decisions with what merged and states its run time.
 statement: none locked (tooling task); the scorer's own statements are under Design, statements
-touches: PR 1 (the recorder): .github/workflows/land.yml, .github/scripts/land-decide.sh, .github/scripts/land-decide.test.sh, .github/workflows/ci.yml · PR 2 (the scorer): gate/MitosGate/Shadow.lean, gate/MitosGate/ShadowCli.lean, gate/MitosGate/LandCli.lean (one public `read`), gate/Main.lean, gate/shadow-fetch.sh, gate/shadow-fixtures/, gate/shadow-test.sh · both: this file, ops/runs/
+touches: PR 1 (the recorder): .github/workflows/land.yml, .github/scripts/land-decide.sh, .github/scripts/land-decide.test.sh, .github/workflows/ci.yml · PR 2 (the scorer): gate/MitosGate/Shadow.lean, gate/MitosGate/Shadow/, gate/MitosGate/ShadowCli.lean, gate/MitosGate/LandCli.lean (one public `read`), gate/Main.lean, gate/shadow-fetch.sh, gate/shadow-fixtures/, gate/shadow-test.sh · both: this file, ops/runs/
 must_not_touch: statements.lock, models.lock, gate/MitosGate/Land.lean, gate/MitosGate/Speech*, gate/MitosGate/Snapshot*, gate/snapshot-fetch.sh, eval/cheats/, models, .github/workflows/update-prs.yml, .github/scripts/rebase-prs.sh
 checks: build, the axiom check (standard axioms only), actionlint, shellcheck, land-decide.test.sh, every gate/*-test.sh, cheats (in ci)
 budget: PR 1 10 iterations · 3h wall · 1M tokens; PR 2 20 iterations · 6h wall · 2M tokens
@@ -41,9 +41,52 @@ Written once at plan time and amended in place. `touches` and `must_not_touch` a
 lists.
 
 depth: build for the recorder (`land.yml`, `land-decide.sh`) and for `Shadow.lean`, whose sketches
-are below in full. Contract only for `ShadowCli`, `shadow-fetch.sh` and every part that names 2b.
+are below in full. Contract only for `ShadowCli`, `shadow-fetch.sh` and every part that names 2b,
+which includes the recorder's two calls into 2b, `gate/snapshot-fetch.sh` and
+`mitos-gate snapshot`: `land-decide.test.sh` stubs both, and PR 1's dry run is the one run of the
+recorder against the real ones.
 
-revisit_when: re-check after the P1-011 step 2b PR (#246, Closes #190) merges.
+revisit_when: none. #246 merged, and PR 1 re-checked the contract table and the facts against
+`main` at 31cc93a (Build notes, PR 1).
+
+modules: one topic per file (`.claude/skills/principle-split-by-topic/SKILL.md`). Line counts are
+rough budgets.
+- PR 1, the recorder (as built):
+  - `.github/workflows/land.yml`: when `decide` runs and what it may read; 76 lines; copies the
+    `gate` job of `ci.yml` (`permissions: {}` at the top and `read` per job, ci's cache restored,
+    `install-elan.sh` and `install-toolchains.sh`).
+  - `.github/scripts/land-decide.sh`: one `decide` run as one record; 109 lines; copies
+    `gate/snapshot-fetch.sh` (usage header, `die`, exit 2 on usage, `timeout -k 5 120` on each
+    `gh api` read).
+  - `.github/scripts/land-decide.test.sh`: the recorder's outcomes against stubs, and the static
+    pins of `land.yml`; 363 lines; copies `gate/land-test.sh` (`ok` and `bad` counters, one
+    summary line).
+  - `.github/workflows/ci.yml`: two steps in the `gate` job after `Build core and gate`; copies the
+    `cancel-superseded.test.sh` step.
+- PR 2, the scorer (its owner may change these lines). `Shadow.lean` as pasted below holds two
+  topics and a `Statements` banner that puts each statement far from its definition, so it splits
+  as `Snapshot.lean` and `Speech.lean` did:
+  - `gate/MitosGate/Shadow.lean`: the root, imports and the axiom check only; about 20 lines;
+    copies `gate/MitosGate/Snapshot.lean`.
+  - `gate/MitosGate/Shadow/Reading.lean`: how the scorer reads one pull request of a record, the
+    assumed word included (`observer`, `Clause`, `lacks`, `fresh`, `withWord`, `Reading`,
+    `reading`), with `ReadyIsOneWordFromLanding`, `TheWordIsOnlyAssumedWhenReady` and
+    `LacksNothingIffEligible`, their proofs and the six `reading` fixtures beside them; about 170
+    lines; copies `gate/MitosGate/Snapshot/Obs.lean`.
+  - `gate/MitosGate/Shadow/Score.lean`: a merge's finding from the records read before it (`Record`
+    and its parts, `Merge`, `headOf`, `precedes`, `last`, `seat`, `finding`, `Tally`, `tally`,
+    `Spread`), with `PairedRecordPrecedesTheMerge`, `SeatIgnoresRecordOrder`,
+    `AgreesMeansTheMergedContent` and `TallyCountsEveryMergeOnce`, their proofs and the seven
+    `seat` fixtures beside them; about 280 lines; copies `gate/MitosGate/Snapshot/Obs.lean`.
+  - `gate/MitosGate/ShadowCli.lean`: the `mitos-gate shadow` command (`run?`, the folder
+    `shadow-fetch.sh` wrote, the report); about 250 lines; copies `gate/MitosGate/SnapshotCli.lean`.
+  - `gate/MitosGate/LandCli.lean`: one public `read` beside the private `snapshot` parser; a few
+    lines.
+  - `gate/Main.lean`: one usage line and one dispatch line.
+  - `gate/shadow-fetch.sh`: the scorer's REST reads, one file per read; about 60 lines; copies
+    `gate/snapshot-fetch.sh`.
+  - `gate/shadow-test.sh` and `gate/shadow-fixtures/`: the command end to end over fixed folders;
+    copies `gate/snapshot-test.sh`.
 
 ### Usage (caller's view)
 
@@ -95,6 +138,7 @@ parses it. A decided or refused record has these fields; `TRIGGER` and `OUTCOME`
  "read": "<UTC, YYYY-MM-DDTHH:MM:SSZ, when the reads ended, by the runner's clock>",
  "main": "<40-hex sha from reads/main.json, or \"\" when that read failed>",
  "mainAfter": "<40-hex sha of main read again after all the reads, or \"\" when that read failed>",
+ "mainAfterSaid": ["<a stderr line of that read, verbatim>", ..., "<land-decide.sh's own line>"],
  "tool": "<40-hex sha of the clone's HEAD, the tool that was built>",
  "cost": {"setup": <s>, "fetch": <s>, "snapshot": <s>, "decide": <s>,
           "reads": <number of reads that saved a file>},
@@ -119,8 +163,8 @@ parses it. A decided or refused record has these fields; `TRIGGER` and `OUTCOME`
 | `refused` | 1 | `{"kind":"refused","stage":"fetch"\|"snapshot"\|"land","said":["<a stderr line of that stage, verbatim>"]}` |
 | `skipped` | 0 | `{"kind":"skipped","remaining":<REST calls left>}` |
 
-- A run skips when fewer than 300 REST calls are left. Its record has no `main`, `cost` or
-  `unread`, and its `read` is from before any read:
+- A run skips when fewer than 300 REST calls are left. Its record has no `main`, `mainAfter`,
+  `mainAfterSaid`, `cost` or `unread`, and its `read` is from before any read:
 
   ```
   {"v":1,"trigger":TRIGGER,"read":"<UTC>","tool":"<sha>","outcome":{"kind":"skipped","remaining":<n>}}
@@ -130,6 +174,10 @@ parses it. A decided or refused record has these fields; `TRIGGER` and `OUTCOME`
 - `mainAfter` orders the reads against merges without a clock. `run?` gives a record whose
   `mainAfter` is not its `main` the `main` `""`, so it pairs with no merge: `main` moved while it
   read. The run itself is decided and green.
+- `mainAfterSaid` keeps why `mainAfter` is `""`: the stderr lines of `gh api`, then one line of
+  `land-decide.sh`, `land-decide: the second read of main exited <code>` (124 when the timeout
+  stopped it, 137 when it had to kill it) or `land-decide: the second read of main gave no commit`. It is `[]` when `mainAfter`
+  is a commit. `run?` accepts the field and scores nothing from it.
 - `trees` gives the tree of each clean replay, because the replay commit exists only in
   `decide`'s clone.
 - The line holds no run number. `Record.run` is the `<run>` of the artifact's name, which
@@ -143,7 +191,8 @@ parses it. A decided or refused record has these fields; `TRIGGER` and `OUTCOME`
 Both files below are the judge's sketch, verbatim except that `land-decide.sh` reads `main` again
 after the fetch and writes it as `mainAfter` (from review). actionlint 1.7.12 (which also runs
 shellcheck on each `run:` line) and shellcheck 0.11.0 report nothing on them. PR 1 adds them with
-`land-decide.test.sh` and the ci steps under `cut_line`.
+`land-decide.test.sh` and the ci steps under `cut_line`. The built files are the source once PR 1
+merges; Build notes, PR 1 lists how they differ from these sketches.
 
 `.github/workflows/land.yml`:
 
@@ -868,19 +917,30 @@ end MitosGate.Shadow.Fixture
 
 - `.github/scripts/land-decide.test.sh` (the real `land`; stubs for the fetch, `snapshot` and
   `gh`):
-  - `decided-on-the-land-fixture`: the record's decision equals `mitos-gate land` on
-    `gate/land-fixtures/queue.json`.
+  - `decided-on-the-land-fixture`: the record's decision equals `mitos-gate land` on the `prs` of
+    `gate/land-fixtures/queue.json`, the shape 2b's snapshot prints.
+  - `refused-fetch-is-red` (PR 1): a fetch that exits 2 is refused at `fetch`, and the snapshot
+    does not run.
   - `refused-snapshot-is-red`
+  - `refused-land-is-red` (PR 1): the real `land` refuses a malformed snapshot, and its line is the
+    record's `said`.
   - `unread-main-is-red`
   - `failed-reads-pass-through`: the lines land in `unread` verbatim, and the run exits 0.
   - `main-moved-while-reading`: `mainAfter` is the second read's commit, and the run exits 0.
+  - `failed-second-read-of-main` (verifier on #248): `mainAfter` is `""`, `mainAfterSaid` keeps the
+    error text, and the run exits 0.
   - `rate-floor-skips`
   - `bad-event-text-is-refused`
+  - `each-event-has-its-trigger` (PR 1): each of the four events gives its `TRIGGER`.
   - `a-push-plan-records-its-tree`
   - `holds-no-key`: every permission is `read`; no secret, environment or app token; no write
-    verb in either script.
+    verb in either script. Pinned as built: the only actions are checkout, cache restore and
+    upload-artifact; the `run:` lines are the five of the sketch; the only `gh` calls are the two
+    reads; and the stub `gh` saw no other call in any case.
   - `filter-pins`: `refs/heads/main`, `repository_owner` and `head_repository.full_name` are
     named; the concurrency group is on the job; no event text sits in a `run:` line.
+  - `every-read-has-a-timeout` (verifier on #248): each `gh api` call runs under
+    `timeout -k 5 120`.
 - `gate/shadow-fixtures/` and `gate/shadow-test.sh`: `record-idle.json` (a real record),
   `record-refused.json`, `record-skipped.json`, `record-v2.json` (refused), `record-main-moved.json`
   (pairs with no merge), and `window/` with its expected report. A drifted record is listed and not
@@ -906,8 +966,8 @@ deferrals:
   - "How often a mixed-model PR gets no author" (#190 default 4) is `Tally.noAuthor`.
   - The design's guess of 200 run-minutes for `decide` is the cost line.
   - The `mainAfter` read's error text (CodeRabbit on #248): the sketch drops it, so a failed read
-    shows only as `""`. PR 1 keeps that line in the record; no record exists before PR 1 merges,
-    so `v` stays 1.
+    shows only as `""`. PR 1 keeps that text in the record field `mainAfterSaid`; no record
+    exists before PR 1 merges, so `v` stays 1.
 - To P1-014 (#193):
   - the hand-off `{main, pr, expect, tree}` as a job output; it is derivable from `main`,
     `decision.plan` and `trees`;
@@ -949,7 +1009,7 @@ otherwise on #191.
 
 ### Contract only (2b), read at #246 e4275f8 on `main` 4ba56dc
 
-Re-check this table and the facts under Rationale when #246 merges (`revisit_when`).
+Re-checked against `main` at 31cc93a after #246 merged; Build notes, PR 1 lists the drift.
 
 | Needed from 2b | Used for |
 |---|---|
@@ -959,6 +1019,52 @@ Re-check this table and the facts under Rationale when #246 merges (`revisit_whe
 | The replay commit of `base: clean` is in the clone afterwards | `trees` |
 | `LandCli`'s schema with the `event.pr` check, and no public parser yet | `LandCli.read` |
 | Which reads the workflow token can make (protection: no; stacks: unknown) | whether any seat is not `held` |
+
+### Build notes, PR 1
+
+The re-check against `main` at 31cc93a, after #246 merged:
+- Every row of the table above holds. Drift: `snapshot-fetch.sh` also exits 2 when `<owner/name>`
+  is not a repository name or `<dashboard-issue>` is not an issue number, and it reads each list
+  with `--paginate --slurp`. The recorder passes `$GITHUB_REPOSITORY` and `LAND_DASHBOARD: 43`,
+  which have those shapes. `mitos-gate snapshot` also exits 1 when it cannot fetch `main`'s commit.
+- The facts under Rationale hold, except two line numbers in `LandCli.lean`: the private
+  `snapshot` parser is at 182 (was 180) and the public `run` at 270 (was 261). The 2b statements
+  that `reuse` names are in `gate/MitosGate/Snapshot/Obs.lean` (41, 45 and 57).
+  `rules/branches/main` still returns `[]`, and `branches/main` still shows `everyone` and `gate`
+  but not `strict`.
+- The workflow token's reach is still unknown; the first dispatch run's `unread` shows it.
+
+How PR 1 differs from the two sketches:
+1. A new record field, `mainAfterSaid` (see The record). It closes the deferral from CodeRabbit on
+   #248. PR 2's `run?` must accept it.
+2. Both `gh api` calls run under `timeout -k 5 120` with standard input closed, as
+   `snapshot-fetch.sh`'s reads do, and the tool check names `timeout`. The verifier on #248 asked
+   for this on the `mainAfter` read. The rate read had the same gap, so it got the same fix.
+3. `land-decide.test.sh` has five cases more than the design named (marked `PR 1` or `verifier on
+   #248` under `fixtures`). It pins more than the design asked: the action list, the `run:` lines
+   and the two `gh` calls. All 15 cases pass. Each of 19 mutants of `land-decide.sh` and
+   `land.yml` fails at least one case. For example, a fork's run, a write permission, a secret, a
+   write flag on a read, `-le` for the floor, or a dropped `mainAfterSaid`.
+4. `decided-on-the-land-fixture` feeds the `prs` of `queue.json` without its `me` and `pr`, because
+   2b's snapshot prints only `prs`.
+5. The glob step also runs `gate/lock-header-test.sh`, which keeps its own named step, so that
+   test runs twice (about 7 s).
+6. The test has a file-level `shellcheck disable=SC2016`, as `.github/scripts/rebase-prs.test.sh`
+   does: its single-quoted `$names` are jq variables.
+
+The dry run, since the workflow can run only after PR 1 merges:
+- From a clone of `main` at 31cc93a with its push URL disabled, through a `gh` wrapper that logged
+  each call and refused any call but `gh api` without a write flag. The session's credential is
+  the owner's, not the workflow token, so protection and stacks read here. The dispatch run after
+  the merge shows the workflow token's reach.
+- 32 GETs, none refused: the rate read, 30 fetch reads for 4 open pull requests (6 + 6N), and
+  `mainAfter`. Exit 0 in 18 s: `fetch` 13 s, `snapshot` 5 s, `decide` 0 s. `cost.reads` 30, the
+  record 7,232 bytes on one line, the decision `{"next":null,"plan":{"kind":"idle"}}`, `unread`,
+  `notes` and `trees` empty. No pull request was a clean replay: three conflict, one is current.
+- #259 (open): 2b's reader ends the In flight section at a `## ` line that GitHub does not show as
+  a heading, so a later table's rows are not read. The shadow only records, so this does not block
+  PR 1. Records made before the fix can miss such rows; the scorer's report explains any finding
+  it causes.
 
 ## Rationale
 
