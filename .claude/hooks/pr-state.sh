@@ -88,8 +88,6 @@ done
 verdicts=null
 if [ ! -e "$dir/dash.failed" ]; then
   verdicts=$(jq -c --arg owner "$owner" '
-    # A model name as the cell spells it (opus-xhigh, claude-sonnet-5-5, sonnet4.5) maps to exactly
-    # one of the fixed families, or to null: unknown or ambiguous names are no model at all.
     def fam: [scan("opus|sonnet|haiku|fable")] | unique | if length == 1 then .[0] else null end;
     def verdicts_from_dashboard:
       [(.body // "") | if type == "string" then . else error("bad body") end | split("\n")[]
@@ -185,8 +183,6 @@ while read -r n sha; do
       "$dir/gate-$n.json" 2>/dev/null) || gate='?'
   fi
   if [ ! -e "$dir/files-$n.failed" ]; then
-    # trust-critical (kitimark-mode, Verdicts): the spec and trust-infrastructure paths of "What
-    # stays with the user", not its agent-rules paths (.claude/, .cursor/, plan/, CLAUDE.md, docs/process.md).
     kt=$(jq -r --argjson files_per_page "$files_per_page" '
       def trust: test("^(gate/|eval/cheats/|\\.github/|core/Mitos/Core/|core/Challenge/)")
         or IN("lean-toolchain", "lakefile.toml", "core/lakefile.toml", "core/Mitos/Core.lean", "core/comparator.json")
@@ -270,9 +266,6 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
            elif length > 6 then (.[0:6] | join(",")) + ",+\(length - 6)"
            else join(",") end;
   def hm: .[0:16] + "Z";
-  # Why a passing verdict at the head still gets no merge-ready line, or null (kitimark-mode, Verdicts):
-  # the cell must name the author, some verdict must come from another model, and a trust-critical
-  # PR needs an opus verdict.
   def hold($vi; $trust):
     if $vi == null or $vi.k != "pass" then null
     elif $vi.a == null then "the verdict cell names no author model"
