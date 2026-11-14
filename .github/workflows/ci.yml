@@ -175,6 +175,9 @@ jobs:
       - name: Build core and gate
         run: lake build
 
+      - name: land-decide.sh records each outcome and holds no key
+        run: .github/scripts/land-decide.test.sh
+
       - name: Run-log lines are append-only, one record per (task, role, attempt)
         env:
           EVENT: ${{ github.event_name }}
