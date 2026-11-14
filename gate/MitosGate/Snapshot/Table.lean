@@ -62,7 +62,15 @@ def row (l : List Char) : Row :=
             | none => .bad
         | _ => .bad
     | none => .bad
-  | _ => .skip
+  | t => if t.contains '|' then .bad else .skip
+
+def piped (l : List Char) : Bool := (Speech.trim l).head? == some '|'
+
+/-- GitHub's Markdown reads a non-blank line under a table row as one more row, even with no pipe
+in it, so only a row may follow a row. -/
+def rowsUnderRows : List (List Char) → Bool
+  | a :: b :: ls => (!piped a || blank b || piped b) && rowsUnderRows (b :: ls)
+  | _ => true
 
 def distinctNats : List Nat → Bool
   | [] => true
@@ -73,7 +81,7 @@ def rowsOf (ls : List (List Char)) : Option (List (Nat × List Char)) :=
   let ds := rs.filterMap fun
     | .data n v => some (n, v)
     | _ => none
-  if rs.contains .bad || !distinctNats (ds.map (·.1)) then none else some ds
+  if rs.contains .bad || !rowsUnderRows ls || !distinctNats (ds.map (·.1)) then none else some ds
 
 def rows (body : String) : Option (List (Nat × List Char)) :=
   (section? (lines body.toList)).bind rowsOf
