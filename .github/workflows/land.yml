@@ -1,0 +1,76 @@
+name: land
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  decide:
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.event == 'pull_request' &&
+          github.event.workflow_run.head_repository.full_name == github.repository) ||
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+          github.event.comment.user.login == github.repository_owner))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: land-decide
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      checks: read
+    env:
+      LAND_DASHBOARD: 43
+    steps:
+      - id: t0
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.elan
+            .lake
+            core/.lake
+          key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+      - run: .github/scripts/install-elan.sh
+      - run: .github/scripts/install-toolchains.sh
+      - run: lake build mitos-gate
+      - name: Decide (prints only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAND_T0: ${{ steps.t0.outputs.at }}
+          LAND_EVENT: ${{ github.event_name }}
+          LAND_EVENT_HEAD: ${{ github.event.workflow_run.head_sha }}
+          LAND_EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          LAND_EVENT_PR: ${{ github.event.issue.number }}
+          LAND_EVENT_COMMENT: ${{ github.event.comment.id }}
+        run: .github/scripts/land-decide.sh "$GITHUB_REPOSITORY" "$LAND_DASHBOARD" "$RUNNER_TEMP/land"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: land-record-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/land/record.json
+          retention-days: 90
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: land-reads-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/land/reads
+          retention-days: 7
