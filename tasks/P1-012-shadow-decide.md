@@ -587,11 +587,16 @@ the end of the `Shadow.lean` block above, and the proofs are below. Against `mai
 | `ReadyIsOneWordFromLanding` | After `stop noEntry`, the owner's newest `/land` about the head is landable. |
 | `TheWordIsOnlyAssumedWhenReady` | `oneWordAway` exactly when the as-read step is `stop noEntry`. |
 | `LacksNothingIffEligible` | `lacks o = []` iff `eligibleBeforeRebase`. A new clause in `Land` breaks the build. |
-| `PairedRecordPrecedesTheMerge` | The paired record read the merge's `before`, in an earlier second than the merge, and is the newest such. Both stamps are whole seconds, so only `<` shows that the reads ended before the merge. |
+| `PairedRecordPrecedesTheMerge` | The paired record read the merge's `before`, in an earlier second than the merge, and is the newest such. |
 | `AgreesMeansTheMergedContent` | `agrees` only for `present` at the merged head, or `awaitPush` with the merged tree. |
 | `TallyCountsEveryMergeOnce` | The five counts sum to the merges. |
 
 Stated and type-checked, not proved: `SeatIgnoresRecordOrder`.
+
+`read` is the runner's clock and `Merge.time` is the pull request's `merged_at` from GitHub, both
+in whole seconds. `read < time` keeps out a record whose reads ended in the merge's own second,
+but it assumes the two clocks agree to within that second; `main = before` is what shows that the
+record's `main` read came before the merge.
 
 <details>
 <summary>The sketch's proofs, as their own file that imports <code>MitosGate.Shadow</code>. The
@@ -1039,6 +1044,8 @@ workflow-level permissions.
 - Does an anonymous `git fetch origin <sha>` work with `persist-credentials: false`? If not,
   persist the read token.
 - `otherTree` also catches a stale sample after a content push; the report must explain each one.
+- Do the runner's clock and GitHub's `merged_at` agree to within a second, as `precedes` assumes?
+  The report prints the smallest `age` it paired.
 
 ### Next implementation step
 
