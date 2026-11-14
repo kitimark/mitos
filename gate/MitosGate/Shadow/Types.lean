@@ -1,18 +1,12 @@
 import MitosGate.Land
 import MitosGate.Speech.Syntax
 
-/-!
-What `mitos-gate shadow` scores: the record a `decide` run leaves, and a merge of the window.
--/
-
 namespace MitosGate.Shadow
 
 open Land
 
-/-- A UTC time as the number `YYYYMMDDHHMMSS` (`Speech.stamp?`), so `<` orders two as time. -/
 abbrev Stamp := Speech.Stamp
 
-/-- Days from 1970-01-01 to a Gregorian date from 1970 on. -/
 def days (y m d : Nat) : Nat :=
   let y := if m ≤ 2 then y - 1 else y
   let era := y / 400
@@ -20,8 +14,6 @@ def days (y m d : Nat) : Nat :=
   let doy := (153 * ((m + 9) % 12) + 2) / 5 + d - 1
   era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468
 
-/-- Seconds from 1970-01-01T00:00:00Z. The difference of two stamps as numbers is not their
-difference in seconds: a minute is 100 of them. -/
 def seconds (t : Stamp) : Nat :=
   let part (k : Nat) := t / 10 ^ k % 100
   days (t / 10 ^ 10) (part 8) (part 6) * 86400 + part 4 * 3600 + part 2 * 60 + t % 100

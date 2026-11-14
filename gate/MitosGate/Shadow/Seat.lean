@@ -2,13 +2,6 @@ import MitosGate.Shadow.Types
 import MitosGate.Shadow.Lacks
 import MitosGate.Shadow.Reading
 
-/-!
-A merge pairs with the newest record that read the `main` it merged onto, in an earlier second
-than the merge. `read` is the runner's clock and `Merge.time` is GitHub's, so the order comes from
-`main`: a record keeps its `main` only when `main`, read again after all its reads, had not moved,
-and a merge moves `main` off `before` for good. `read < time` can then only drop a record.
--/
-
 namespace MitosGate.Shadow
 
 open Land
@@ -43,7 +36,6 @@ inductive Seat
   | unlisted (run : Nat)
   | sat (s : Sat)
 
-/-- `""` is an unknown `main` on either side, and pairs with nothing. -/
 def precedes (m : Merge) (r : Record) : Bool :=
   m.before != "" && r.main == m.before && decide (r.read < m.time)
 
@@ -70,7 +62,6 @@ def PairedRecordPrecedesTheMerge : Prop :=
     r ∈ rs ∧ r.main = m.before ∧ r.read < m.time ∧
       ∀ x ∈ rs, x.main = m.before → x.read < m.time → x.read ≤ r.read
 
-/-- Stated, not proved. -/
 def SeatIgnoresRecordOrder : Prop :=
   ∀ (m : Merge) (rs rs' : List Record), rs.Perm rs' → (rs.map (·.read)).Nodup →
     seat m rs = seat m rs'

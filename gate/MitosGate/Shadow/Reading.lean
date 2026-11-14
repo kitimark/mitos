@@ -1,16 +1,9 @@
 import MitosGate.Land
 
-/-!
-With no typed `/land`, every step is `stop noEntry`, so the scorer also reads a pull request one
-assumed owner word away: the word that names its head, newer than every word it has.
--/
-
 namespace MitosGate.Shadow
 
 open Land
 
-/-- `step` reads `me` only through `Obs.mayMerge`, which no one passes while `Speech.delegates` is
-empty, and `observer` is no likely future delegate. -/
 def observer : Teammate := ⟨"shadow", "observer"⟩
 
 def fresh (os : List Obs) : Nat := (os.flatMap fun o => o.words.map Word.said).foldr max 0 + 1

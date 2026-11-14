@@ -3,12 +3,6 @@ import MitosGate.Shadow
 import MitosGate.LandCli
 import MitosGate.Carry
 
-/-!
-The files of the folder that `gate/shadow-fetch.sh` writes, as the values `MitosGate.Shadow` scores.
-A key the scorer does not read is ignored, so the recorder may add one and keep `v`. An error is a
-path and a message, as in `LandCli`.
--/
-
 open Lean (Json)
 
 namespace MitosGate.ShadowCli
@@ -38,7 +32,6 @@ private def sha : D Sha := fun j => do
   unless Speech.isSha s.toList do throw ": expected a commit, 40 hexadecimal digits"
   return s
 
-/-- `""` is a commit that was not read. -/
 private def shaOrUnread : D Sha := fun j => do
   if (← str j).isEmpty then return "" else sha j
 
@@ -86,7 +79,6 @@ def Run.trigger : Run → Trigger
   | .decided r => r.trigger
   | .refused t _ | .skipped t _ => t
 
-/-- How `run?` begins the error of a record whose decision this build does not repeat. -/
 def drifted : String := "drifted: "
 
 private def cost : D Cost := fun j => do
@@ -96,8 +88,6 @@ private def cost : D Cost := fun j => do
 private def treeOf : D TreeOf := fun j => do
   return ⟨← at' "commit" sha j, ← at' "tree" sha j⟩
 
-/-- `run` is the `<run>` of the artifact's name. A record whose `mainAfter` is not its `main` gets
-the `main` `""`: `main` moved while it read, so it pairs with no merge. -/
 def run? (run : Nat) (j : Json) : Except String Run := do
   let v ← at' "v" nat j
   unless v == 1 do throw s!"v is {v}, and this scorer reads v 1"
@@ -129,7 +119,6 @@ private def merge : D Merge := fun j => do
 
 def merges : D (List Merge) := list merge
 
-/-- A run of the workflow that records. `conclusion` is `""` while it runs. -/
 structure Job where
   id : Nat
   conclusion : String
@@ -142,7 +131,6 @@ private def job : D Job := fun j => do
 
 def jobs : D (List Job) := list job
 
-/-- The runs of `ci` that the updater started. -/
 def updaterCiRuns : D Nat := fun j => do
   let actors ← list (at' "actor" str) j
   return (actors.filter (· == Carry.updater)).length
