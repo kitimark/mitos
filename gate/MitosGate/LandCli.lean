@@ -33,7 +33,9 @@ when the snapshot names `me` and `pr`, and `wake` when it names an `event`.
 
 What this module checks, and the decision does not: every object has only the keys it defines and
 every value its type; a commit is 1 to 64 letters and digits (so no printed line holds text that a
-runner could read as a command); pull request numbers are distinct; no two words share a comment
+runner could read as a command); pull request numbers are distinct; the pull requests named by
+`pr` and by `event.pr` are listed, so `wake` never decides about one the snapshot has not read; no
+two words share a comment
 id, which statement 13 (`nextIgnoresListingOrder`) and `newestOwner_perm` need; and a pull
 request's words are in ascending comment id, the reader's contract. The decision does not depend
 on that order: the newest owner word is the one with the greatest comment id wherever it is listed.
@@ -188,6 +190,11 @@ private def firstDup : List Nat → Option Nat
 
 private def ascending (l : List Nat) : Bool := (l.zip l.tail).all fun p => p.1 < p.2
 
+private def eventPr : Event → Option Pr
+  | .mainMoved => none
+  | .updaterPushed p | .gateDone p _ | .botReviewed p | .conflictFound p | .landWord p
+  | .ownerSpoke p => some p
+
 def Snapshot.check (s : Snapshot) : Except String Unit := do
   if let some p := firstDup (s.prs.map (·.pr)) then
     throw s!"pull request {p} is listed twice"
@@ -196,6 +203,8 @@ def Snapshot.check (s : Snapshot) : Except String Unit := do
       throw s!"pull request {o.pr}: the words are not in ascending comment id"
   if let some d := firstDup (s.prs.flatMap fun o => o.words.map Word.said) then
     throw s!"comment {d} is used by two words"
+  if let some p := s.event.bind eventPr then
+    unless s.prs.any (·.pr == p) do throw s!"event.pr: pull request {p} is not in prs"
   match s.me, s.pr with
   | none, none => pure ()
   | some _, some p =>
