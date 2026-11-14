@@ -88,7 +88,7 @@ done
 verdicts=null
 if [ ! -e "$dir/dash.failed" ]; then
   verdicts=$(jq -c --arg owner "$owner" '
-    def fam: [scan("opus|sonnet|haiku|fable")] | unique | if length == 1 then .[0] else null end;
+    def model_family: [scan("opus|sonnet|haiku|fable")] | unique | if length == 1 then .[0] else null end;
     def verdicts_from_dashboard:
       [(.body // "") | if type == "string" then . else error("bad body") end | split("\n")[]
        | select(test("^\\s*\\|\\s*#[0-9]+"))
@@ -104,10 +104,10 @@ if [ ! -e "$dir/dash.failed" ]; then
           else null end) as $h
        | (if $pass then
             [($v | ascii_downcase | ((capture("^pass\\b(?<s>[^,]*?)(\\s+(at|carried)\\b|,|$)") // {s: ""}).s)
-              | scan("([a-z][a-z0-9.-]*)-(?:low|medium|high|xhigh|max)\\b") | .[0] | fam | select(. != null))] | unique
+              | scan("([a-z][a-z0-9.-]*)-(?:low|medium|high|xhigh|max)\\b") | .[0] | model_family | select(. != null))] | unique
           else [] end) as $models
        | ((($v | ascii_downcase | capture("\\bauthor\\s+(?<a>[a-z][a-z0-9.-]*)").a?) // null) as $raw
-          | if $raw == null then null else ($raw | fam) // "?" end) as $author
+          | if $raw == null then null else ($raw | model_family) // "?" end) as $author
        | {key: $n, value: {h: $h, k: (if $pass then "pass" else "other" end), m: $models, a: $author}}] | from_entries;
 
     [.[] | select(type == "object" and .title == "Owner dashboard" and .pull_request == null
@@ -175,7 +175,7 @@ fi
 
 : >"$dir/extra.ndjson"
 while read -r n sha; do
-  gate='?' kept='?' trust='?'
+  gate='?' user_kept='?' trust_critical='?'
   if [ ! -e "$dir/gate-$n.failed" ]; then
     gate=$(jq -r '[.check_runs | if type == "array" then .[] else error("no runs") end | select(.name == "gate")]
       | if length == 0 then "none" else max_by(.id) | if .status == "completed" then .conclusion else "pending" end end
@@ -184,20 +184,20 @@ while read -r n sha; do
   fi
   if [ ! -e "$dir/files-$n.failed" ]; then
     kt=$(jq -r --argjson files_per_page "$files_per_page" '
-      def trust: test("^(gate/|eval/cheats/|\\.github/|core/Mitos/Core/|core/Challenge/)")
+      def trust_critical: test("^(gate/|eval/cheats/|\\.github/|core/Mitos/Core/|core/Challenge/)")
         or IN("lean-toolchain", "lakefile.toml", "core/lakefile.toml", "core/Mitos/Core.lean", "core/comparator.json")
         or test("(^|/)(statements|models)\\.lock$");
-      def kept: trust or test("^(\\.claude/|\\.cursor/|plan/)") or IN("CLAUDE.md", "docs/process.md");
+      def user_kept: trust_critical or test("^(\\.claude/|\\.cursor/|plan/)") or IN("CLAUDE.md", "docs/process.md");
       def yn(f): if any(.[]; f) then "yes" else "no" end;
       if type != "array" then error("not an array") elif length >= $files_per_page then "? ?"
       else [.[] | .filename, (.previous_filename // empty)
             | if type == "string" then . else error("bad name") end]
-        | "\(yn(kept)) \(yn(trust))" end' "$dir/files-$n.json" 2>/dev/null) || kt='? ?'
-    read -r kept trust <<<"$kt"
+        | "\(yn(user_kept)) \(yn(trust_critical))" end' "$dir/files-$n.json" 2>/dev/null) || kt='? ?'
+    read -r user_kept trust_critical <<<"$kt"
   fi
   [ -n "$gate" ] || gate='?'
-  [ -n "$kept" ] || kept='?'
-  [ -n "$trust" ] || trust='?'
+  [ -n "$user_kept" ] || user_kept='?'
+  [ -n "$trust_critical" ] || trust_critical='?'
   full_thread_unanswered=null
   if grep -qx "$n" "$dir/full_thread_prs"; then
     full_thread_unanswered='"?"'
@@ -219,8 +219,8 @@ while read -r n sha; do
       [ -n "$full_thread_unanswered" ] || full_thread_unanswered='"?"'
     fi
   fi
-  jq -cn --argjson n "$n" --arg sha "$sha" --arg gate "$gate" --arg kept "$kept" --arg trust "$trust" --argjson full_thread_unanswered "$full_thread_unanswered" \
-    '{n: $n, sha: $sha, gate: $gate, kept: $kept, trust: $trust, full_thread_unanswered: $full_thread_unanswered}' >>"$dir/extra.ndjson"
+  jq -cn --argjson n "$n" --arg sha "$sha" --arg gate "$gate" --arg user_kept "$user_kept" --arg trust_critical "$trust_critical" --argjson full_thread_unanswered "$full_thread_unanswered" \
+    '{n: $n, sha: $sha, gate: $gate, user_kept: $user_kept, trust_critical: $trust_critical, full_thread_unanswered: $full_thread_unanswered}' >>"$dir/extra.ndjson"
 done <"$dir/heads"
 
 owner_unanswered_by_thread=null
@@ -266,13 +266,13 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
            elif length > 6 then (.[0:6] | join(",")) + ",+\(length - 6)"
            else join(",") end;
   def hm: .[0:16] + "Z";
-  def hold($vi; $trust):
+  def merge_hold_reason($vi; $trust_critical):
     if $vi == null or $vi.k != "pass" then null
     elif $vi.a == null then "the verdict cell names no author model"
     elif $vi.a == "?" then "the author in the verdict cell is not exactly one of opus, sonnet, haiku, fable"
     elif ($vi.m | length) == 0 then "the verdict cell names no verifier model"
     elif all($vi.m[]; . == $vi.a) then "every verdict is from the author model, \($vi.a | .[0:20])"
-    elif $trust and ($vi.m | any(. == "opus") | not) then "no opus verdict, and the PR is or may be trust-critical"
+    elif $trust_critical and ($vi.m | any(. == "opus") | not) then "no opus verdict, and the PR is or may be trust-critical"
     else null end;
 
   ($open[0] | arr) as $o |
@@ -304,14 +304,14 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
          else ($owner_unanswered_by_thread | if . == null then "?"
                         else ((.[$n] // []) | if length == 0 then "-" else map(tostring) | lst end) end) end) as $u |
         ($verdicts | if . == null then null else .[$n] end) as $vi |
-        ($e.trust != "no" or (.labels | any(. == "spec-approved"))) as $trust |
+        ($e.trust_critical != "no" or (.labels | any(. == "spec-approved"))) as $trust_critical |
         ($v != "?" and $v != "none" and ($e.sha | startswith($v))) as $h |
-        {v: $v, u: $u, head: $h, hold: (if $h then hold($vi; $trust) else null end)} end) as $r |
+        {v: $v, u: $u, head: $h, hold: (if $h then merge_hold_reason($vi; $trust_critical) else null end)} end) as $r |
      "open #\($n) head \(.sha) \(if .draft then "draft" else "ready" end) labels=\(.labels | lst) assignees=\(.who | lst)\(
        if $r == null then ""
-       else " gate=\($e.gate) verdict=\($r.v)\(if $r.head then "(the head)" elif $r.v == "?" or $r.v == "none" then "" else "(an old head)" end) owner-unanswered=\($r.u) user-kept=\($e.kept)\(if $r.hold != null then " merge-hold=\($r.hold)" else "" end)" end)",
+       else " gate=\($e.gate) verdict=\($r.v)\(if $r.head then "(the head)" elif $r.v == "?" or $r.v == "none" then "" else "(an old head)" end) owner-unanswered=\($r.u) user-kept=\($e.user_kept)\(if $r.hold != null then " merge-hold=\($r.hold)" else "" end)" end)",
      (if $r != null and $r.head and $r.hold == null and $e.gate == "success" and $r.u == "-" and (.draft | not) then
-        "merge-ready #\($n), \(if $e.kept == "no" then "an agent merges" elif $e.kept == "yes" then "the user merges (it touches a path the user keeps)" else "the user merges (its files could not be read)" end): gh api -X PUT repos/\($repo)/pulls/\($n)/merge -f merge_method=rebase -f sha=\($e.sha)"
+        "merge-ready #\($n), \(if $e.user_kept == "no" then "an agent merges" elif $e.user_kept == "yes" then "the user merges (it touches a path the user keeps)" else "the user merges (its files could not be read)" end): gh api -X PUT repos/\($repo)/pulls/\($n)/merge -f merge_method=rebase -f sha=\($e.sha)"
       else empty end)
    end),
   (if ($op | length) > 10 then "open PRs: more than 10, the rest are not listed" else empty end),
