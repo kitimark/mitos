@@ -185,6 +185,11 @@ def replayEnv : Array (String × Option String) :=
     ("GIT_AUTHOR_DATE", some "@0 +0000"), ("GIT_COMMITTER_NAME", some "mitos-snapshot"),
     ("GIT_COMMITTER_EMAIL", some "snapshot@mitos.invalid"), ("GIT_COMMITTER_DATE", some "@0 +0000")]
 
+def singleParent? (line : String) : Option (Sha × Sha) :=
+  match line.splitOn " " with
+  | [commit, parent] => some (commit, parent)
+  | _ => none
+
 def baseOf (main head : Sha) : IO Base := do
   unless ← ensure head do return .unread
   match (← git #["merge-base", "--is-ancestor", head, main]).1 with
@@ -202,7 +207,7 @@ def baseOf (main head : Sha) : IO Base := do
   unless c == 0 do return .unread
   let mut cur := main
   for l in splitLines out do
-    let [commit, parent] := l.splitOn " " | return .unread
+    let some (commit, parent) := singleParent? l | return .unread
     let (c, out) ← git #["merge-tree", "--write-tree", s!"--merge-base={parent}", cur, commit]
     if c == 1 then return .conflict
     let some tree := (splitLines out).head? | return .unread
