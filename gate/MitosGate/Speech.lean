@@ -165,6 +165,13 @@ theorem listQuoteDoesNotLiftAHold :
   decide +kernel
 theorem orderedListQuoteHoldsALand :
     readOf (typed 112 12 "1. > example\n/land") = .hold .quoteContinuation := by decide +kernel
+theorem fourSpaceQuoteHoldsALand :
+    readOf (typed 112 12 "    > x\n/land") = .hold .quoteContinuation := by decide +kernel
+theorem tabQuoteHoldsALand :
+    readOf (typed 112 12 "\t> x\n/land") = .hold .quoteContinuation := by decide +kernel
+theorem tenDigitMarkerQuoteHoldsALand :
+    readOf (typed 112 12 "1234567890. > x\n/land") = .hold .quoteContinuation := by
+  decide +kernel
 theorem bomQuoteHoldsALand :
     readOf (typed 112 12 "\uFEFF> example\n/land") = .hold .quoteContinuation := by
   decide +kernel
