@@ -606,8 +606,11 @@ The ordering of a record's reads against a merge comes from `main`, not from a c
 the runner's clock and `Merge.time` is GitHub's `merged_at`, so `read < time` alone cannot show
 that the reads ended before the merge. But a record keeps its `main` only when `mainAfter`, read
 after all its reads, is the same commit (`run?`), and a merge moves `main` off `before`. So
-`main = before` shows that every read came before the merge. `read < time` can then only drop a
-record, never pair a later one.
+`main = before` shows that every read came before the merge, given two facts. `main` never
+returns to an old commit: its protection refuses force pushes for everyone (`allow_force_pushes`
+false, `enforce_admins` true, read on 2026-11-14 with the owner's token). And GitHub's branch read
+shows a merge once it is done, which GitHub does not document (risks). `read < time` can then
+only drop a record, never pair a later one.
 
 <details>
 <summary>The sketch's proofs, as their own file that imports <code>MitosGate.Shadow</code>. The
@@ -902,6 +905,9 @@ deferrals:
     `gate/lock-header-test.sh` of them.
   - "How often a mixed-model PR gets no author" (#190 default 4) is `Tally.noAuthor`.
   - The design's guess of 200 run-minutes for `decide` is the cost line.
+  - The `mainAfter` read's error text (CodeRabbit on #248): the sketch drops it, so a failed read
+    shows only as `""`. PR 1 keeps that line in the record; no record exists before PR 1 merges,
+    so `v` stays 1.
 - To P1-014 (#193):
   - the hand-off `{main, pr, expect, tree}` as a job output; it is derivable from `main`,
     `decision.plan` and `trees`;
@@ -1053,8 +1059,12 @@ workflow-level permissions.
 - Is 1,000 REST calls an hour enough? A run makes 7 + 6N reads at most: 6 + 6N in the fetch, and
   `mainAfter`. A read of a list is one REST call per page of 100, so a run makes at least as many
   REST calls as reads, and more when a list (files, activity, comments) runs past one page.
-  `cost.reads` counts the fetch's reads that saved a file, not the REST calls. The floor protects
-  ci, and the report prints the peak.
+  `cost.reads` counts the fetch's reads that saved a file, not the REST calls. The floor is read
+  once, at the start, so it leaves ci 300 calls less the run's own cost: it protects ci only while
+  a run costs under 300 calls, about N under 49 with one page per list. The report prints the peak.
+- Does GitHub's branch read show a merge as soon as the merge is done? The pairing rests on it
+  (`mainAfter`), and GitHub documents no freshness bound. The report lists each pair whose `read`
+  is not before `merged_at` by the runner's clock, as a sign of a stale read.
 - Does an anonymous `git fetch origin <sha>` work with `persist-credentials: false`? If not,
   persist the read token.
 - `otherTree` also catches a stale sample after a content push; the report must explain each one.
