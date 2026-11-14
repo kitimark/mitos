@@ -207,6 +207,22 @@ if snap && decide "$me7" && [ "$(jq -c .plan "$tmp/land.out")" = '{"kind":"idle"
 else
   bad "a FAIL row without the leading pipe pushes nothing" "$(cat "$tmp/land.out" "$tmp/land.err")"
 fi
+# shellcheck disable=SC2016
+fail7=$(printf '| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n| #7 y | `%s` | red | FAIL opus-xhigh at `%s` |' "${p1:0:7}" "${p1:0:7}")
+# shellcheck disable=SC2016
+for hide in 'an HTML comment:<!--:-->' 'a code fence:```:```'; do
+  IFS=: read -r what open close <<<"$hide"
+  fresh
+  echo '[[]]' >"$d/comments-9.json"
+  jq --arg body "$(dash_body "$(printf '\n%s\n## old\n%s\n\n%s' "$open" "$close" "$fail7")")" \
+    '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
+  holds "a heading in $what above a FAIL table holds every pull request" "#7 holds: unread dashboard$"
+  if snap && decide "$me7" && [ "$(jq -c .plan "$tmp/land.out")" = '{"kind":"idle"}' ]; then
+    ok "a heading in $what above a FAIL table pushes nothing"
+  else
+    bad "a heading in $what above a FAIL table pushes nothing" "$(cat "$tmp/land.out" "$tmp/land.err")"
+  fi
+done
 fresh
 jq '.enforce_admins.enabled = false' "$b/protection.json" >"$d/protection.json"
 expect_land "protection that lets admins bypass lands nothing" "$me7" \
