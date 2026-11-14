@@ -185,6 +185,9 @@ theorem aHeaderPairUnderADataRowSpoilsTheDashboard : rows (under tableHead) = no
 theorem aHeaderRowWithoutADelimiterSpoilsTheDashboard :
     rows (under "\n| PR | `x` | red | FAIL opus-xhigh at `85b0781` for #7 |\n") = none := by
   decide +kernel
+theorem aRowOverADelimiterSpoilsTheDashboard :
+    rows ("## In flight\n\n" ++ passFor7 ++ "|---|---|---|---|\n" ++
+      "| #8 b | `x` | red | FAIL opus-xhigh at `85b0781` |\n") = none := by decide +kernel
 theorem aDelimiterWithAnEmptyCellSpoilsTheDashboard :
     rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---| |---|---|\n" ++ passFor7) = none := by
   decide +kernel
@@ -203,6 +206,18 @@ theorem anIndentedInFlightHeadingIsUnread :
 theorem anInFlightHeadingInAListItemIsUnread :
     rows ("- x\n\n    <!--\n  ## In flight\n\n  | PR | Head | `gate` | Verdict |\n  |---|---|---|---|\n  " ++
       passFor7 ++ "\n  -->\n") = none := by decide +kernel
+def fail7 : String := tableHead ++ "| #7 a | `x` | red | FAIL opus-xhigh at `85b0781` |\n"
+def passThenNextUp : String := "## In flight\n\n" ++ tableHead ++ passFor7 ++ "\n## Next up\n\n"
+theorem aSecondInFlightHeadingAfterASpaceIsUnread :
+    rows (passThenNextUp ++ " ## In flight\n\n" ++ fail7) = none := by decide +kernel
+theorem aSecondInFlightHeadingAfterThreeSpacesIsUnread :
+    rows (passThenNextUp ++ "   ## In flight\n\n" ++ fail7) = none := by decide +kernel
+theorem anIndentedInFlightHeadingAboveTheSectionIsUnread :
+    rows ("  ## In flight\n\n" ++ fail7 ++ "\n" ++ passThenNextUp) = none := by decide +kernel
+theorem aSecondInFlightHeadingInAListItemIsUnread :
+    rows (passThenNextUp ++ "- x\n\n  ## In flight\n\n  | PR | Head | `gate` | Verdict |\n" ++
+      "  |---|---|---|---|\n  | #7 a | `x` | red | FAIL opus-xhigh at `85b0781` |\n") = none := by
+  decide +kernel
 theorem nextUpEndsTheSection :
     rows ("## In flight\n\n" ++ tableHead ++ passFor7 ++ "\n## Next up\n\n" ++ fail8) = only7 := by
   decide +kernel
