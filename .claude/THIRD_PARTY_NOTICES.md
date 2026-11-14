@@ -16,8 +16,8 @@ replaced with their Claude Code equivalents; see `.claude/README.md`):
 - `skills/poteto-mode/SKILL.md`, `skills/poteto-mode/playbooks/*.md` (22 of upstream's 23),
   `skills/poteto-mode/references/bugbot-triage.md` (unchanged),
   `skills/poteto-mode/scripts/check-plan.mjs` (unchanged)
-- `skills/principle-*/SKILL.md` (24 skills; all unchanged except
-  `principle-type-system-discipline`)
+- `skills/principle-*/SKILL.md` (24 skills, all but `principle-split-by-topic`,
+  which is mitos's own; all unchanged except `principle-type-system-discipline`)
 - `skills/architect/SKILL.md`, `skills/architect/references/*` (references unchanged)
 - `skills/arena/SKILL.md`
 - `skills/swarm/SKILL.md`

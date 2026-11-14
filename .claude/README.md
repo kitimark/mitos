@@ -20,7 +20,7 @@ this repository. Most are adapted from pstack (MIT); see `THIRD_PARTY_NOTICES.md
 | `/unslop` | skill | you type it, or `/automate-me` or poteto-mode follows it | cuts AI-sounding patterns from prose |
 | `/poteto-mode` | skill | you type it | poteto's working style, with principles, 22 task playbooks, subagent and model rules, reply style |
 | `poteto-agent` | agent | spawned inside a poteto-mode playbook step | reads poteto-mode first, then does one delegated code or helper task |
-| `principle-*` (24) | skills | poteto-mode and other skills read the one that applies; you can type one | one engineering principle each, such as `principle-prove-it-works` |
+| `principle-*` (25) | skills | poteto-mode and other skills read the one that applies; you can type one | one engineering principle each, such as `principle-prove-it-works` |
 | `/architect` | skill | you type it, or `/no-comments` or a poteto-mode playbook follows it | sketches types and signatures with two or more parallel designs before code |
 | `/arena` | skill | you type it, or `/architect`, `/interrogate` or a playbook follows it | N candidates on one task, a cross-judge, a base, grafts from the rest |
 | `/swarm` | skill | you type it, or a playbook follows it | fans out N workers and returns one report |
