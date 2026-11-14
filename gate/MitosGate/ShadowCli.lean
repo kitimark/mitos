@@ -5,6 +5,17 @@ open Lean (Json)
 
 namespace MitosGate.ShadowCli
 
+open Lean in
+#eval show CoreM Unit from do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let fixtures := (← getEnv).constants.fold (fun acc n c =>
+    if (`MitosGate.ShadowCli.Fixture).isPrefixOf n && c.isTheorem then acc.push n else acc) #[]
+  if fixtures.isEmpty then throwError "no fixture theorem found"
+  for n in fixtures do
+    for a in ← collectAxioms n do
+      unless standard.contains a do
+        throwError "{n} depends on the axiom {a}"
+
 private def stop (m : String) : IO UInt32 := do
   IO.eprintln (ciLine s!"shadow: {m}")
   return 1
@@ -37,10 +48,10 @@ def window (dir : System.FilePath) : ExceptT String IO Window := do
   let mut recorded := #[]
   for stem in stems do
     let some run := runOf stem
-      | records := records.push (stem, .error "the name is not <run>-<attempt>.json")
+      | records := records.push (stem, .error (.unreadable "the name is not <run>-<attempt>.json"))
     recorded := recorded.push run
     match Json.parse (← IO.FS.readFile (recDir / (stem ++ ".json"))) with
-    | .error e => records := records.push (stem, .error s!"not JSON: {e}")
+    | .error e => records := records.push (stem, .error (.unreadable s!"not JSON: {e}"))
     | .ok j => records := records.push (stem, run? run j)
   return ⟨merges, records.toList, recorded.toList, jobs, ci⟩
 

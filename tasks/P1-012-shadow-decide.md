@@ -69,17 +69,17 @@ rough budgets.
   - `gate/MitosGate/Shadow.lean`: the root, imports and the axiom check only; 20 lines; copies
     `gate/MitosGate/Snapshot.lean`.
   - `gate/MitosGate/Shadow/Types.lean`: what the scorer reads, a record and a merge, and the
-    seconds of a stamp; 80 lines; copies `gate/MitosGate/Snapshot/Types.lean`.
+    seconds of a stamp; 85 lines; copies `gate/MitosGate/Snapshot/Types.lean`.
   - `gate/MitosGate/Shadow/Lacks.lean`: the eligibility clauses a pull request lacks; 25 lines.
-  - `gate/MitosGate/Shadow/Reading.lean`: the assumed word; 140 lines.
-  - `gate/MitosGate/Shadow/Seat.lean`: the pairing of a merge with a record; 180 lines.
+  - `gate/MitosGate/Shadow/Reading.lean`: the assumed word; 155 lines.
+  - `gate/MitosGate/Shadow/Seat.lean`: the pairing of a merge with a record; 190 lines.
   - `gate/MitosGate/Shadow/Finding.lean`: the finding at one merge; 70 lines.
   - `gate/MitosGate/Shadow/Tally.lean`: the count of findings over a window; 60 lines.
   - `gate/MitosGate/Shadow/Spread.lean`: how a cost spreads, over runs and over an hour; 60 lines.
-  - `gate/MitosGate/ShadowCli/Read.lean`: the folder's JSON, `Run` and `run?`; 150 lines.
+  - `gate/MitosGate/ShadowCli/Read.lean`: the folder's JSON, `Run` and `run?`; 170 lines.
   - `gate/MitosGate/ShadowCli/Report.lean`: the report's lines; 130 lines.
-  - `gate/MitosGate/ShadowCli.lean`: the command; 75 lines; copies
-    `gate/MitosGate/SnapshotCli.lean`.
+  - `gate/MitosGate/ShadowCli.lean`: the command, after the axiom check of `Read.lean`'s fixtures;
+    75 lines; copies `gate/MitosGate/SnapshotCli.lean`.
   - `gate/MitosGate/LandCli.lean`: one public `read`; `run` decides what it returns.
   - `gate/Main.lean`: one usage entry and one dispatch line.
   - `gate/shadow-fetch.sh`: the folder; 120 lines; copies `gate/snapshot-fetch.sh`.
@@ -647,7 +647,8 @@ the end of the `Shadow.lean` block above, and the proofs are below. Against `mai
 | `AgreesMeansTheMergedContent` | `agrees` only for `present` at the merged head, or `awaitPush` with the merged tree. |
 | `TallyCountsEveryMergeOnce` | The five counts sum to the merges. |
 
-Stated and type-checked, not proved: `SeatIgnoresRecordOrder`.
+Stated and type-checked, not proved, in the sketch: `SeatIgnoresRecordOrder`. PR 2 proves it
+(Build notes, PR 2).
 
 The ordering of a record's reads against a merge comes from `main`, not from a clock. `read` is
 the runner's clock and `Merge.time` is GitHub's `merged_at`, so `read < time` alone cannot show
@@ -1086,7 +1087,8 @@ request reads `held` until that is fixed, and the same read blocks step 5 (O1).
 
 - `step` depends on `me` only through `Obs.mayMerge` (`Land.lean` 133, used in `step` at 249 and
   257), which is true for no one while `Speech.delegates = []` (`Speech/Comment.lean` 23). So the
-  scorer decides as `observer`, which is no likely future delegate.
+  scorer decides as `observer`, which is no likely future delegate. As built it decides as
+  `outsider o`, whose type says it may not merge `o` (Build notes, PR 2).
 - Metadata cannot ride in the snapshot: every object refuses a key it does not define
   (`LandCli.lean` 54 to 60), and the snapshot takes only `prs`, `me`, `pr` and `event`.
 - The cache key above equals ci's, and ci sets `permissions: {}` at the top (`ci.yml` 9); the
@@ -1197,19 +1199,23 @@ Deviations, each pinned by a fixture or a case of `gate/shadow-test.sh`:
   the record, the pairing, the finding, the tally and the spread, five topics in about 280 lines,
   and `lacks` is not the assumed word. Each module imports only what it uses: `MitosGate.Land` and
   `MitosGate.Speech.Syntax`, not `LandCli` and all of `Speech`.
-- `precedes` also needs `before ≠ ""`. A record that saw `main` move gets `main` `""`, and so would
-  a merge whose `before` was not read, so the two would pair. `aRecordThatSawMainMoveIsUnseen`.
-- `age` is `seconds m.time - seconds r.read`. A stamp is `YYYYMMDDHHMMSS` as one number, so the
-  sketch's plain difference counts a minute as 100. `theAgeIsInSeconds` and seven stamp fixtures.
-- `spread` sorts with an insertion sort, because `decide +kernel` cannot run `List.mergeSort`.
+- A record's `main` and a merge's `before` and `tree` are `Option Sha`, not `Sha`: `none` when
+  the commit was not read, or when `main` moved while the record read. A record that saw `main`
+  move and a merge whose `before` was not read would otherwise pair. `precedes` pairs only
+  `some b` with `some b`. `aRecordThatSawMainMoveIsUnseen`.
+- `Stamp` is a structure over the `YYYYMMDDHHMMSS` number, with `<` and `≤` but no subtraction, so
+  `age` is `m.time.seconds - r.read.seconds`. The sketch's plain difference counted a minute as
+  100. `theAgeIsInSeconds` and seven stamp fixtures.
+- `spread` sorts with `kernelSort`, an insertion sort, because `decide +kernel` cannot run
+  `List.mergeSort`.
 - New: `peak` and `PeakBoundsEveryWindow`, the most reads in one hour, which the risks ask for.
 - `run?` ignores a key it does not read, so it reads PR 1's `mainAfterSaid`, empty or not, and `v`
   stays 1. `record-main-after-unread.json` carries a failed second read; every other record of the
   window carries `[]`. A record from PR 1's `land-decide.sh` at #260's head, run once against
   `kitimark/mitos`, reads as decided with no drift.
-- A drifted record is an error of `run?` that starts with `drifted: `, because the contract's `Run`
-  has no constructor for it. `refused` carries no cost, so the cost and reads lines count decided
-  records only.
+- A drifted record is the error `Unscored.drifted` of `run?`, because the contract's `Run` has no
+  constructor for it. `refused` carries no cost, so the cost and reads lines count decided records
+  only.
 - The report differs from the Usage sample: each merge line names the merged head and the run of
   its record; every phase of `decide (s)`, and their total, has a spread; a `reads` line; the
   header counts unreadable records; the `merges` line adds the updater pushes; the `runs` line
@@ -1222,8 +1228,52 @@ Deviations, each pinned by a fixture or a case of `gate/shadow-test.sh`:
 - `gate/shadow-fixtures/record-idle.json` is a real record, from the recorder sketch above run
   once against `kitimark/mitos` from a session. Its token could read protection, so its `unread`
   is empty.
-- ci does not run `shadow-test.sh` yet: PR 1 adds the step that runs every `gate/*-test.sh`. The
-  test needs `zip` and `unzip`, which `ubuntu-24.04` has.
+- ci runs `shadow-test.sh` in PR 1's step that runs every `gate/*-test.sh`. The test needs `zip`
+  and `unzip`, which `ubuntu-24.04` has.
+
+Round 2, the `/no-comments` pass. It deleted 71 comment lines in 9 files. The note on why
+`shadow-fetch.sh` pages by hand comes back as one line, because the session proxy is something
+this repository cannot change. The pass flagged seven shapes that the deleted comments had
+excused. For each, two shapes were sketched and the first was built. `window.expected` is
+byte-identical, and the 49 cases of `shadow-test.sh` pass.
+- `Stamp` (`Types.lean`): a structure over the digits with `LT`, `LE` and no `HSub`, chosen over a
+  structure that holds seconds parsed at the boundary. Seconds would order differently two stamps
+  that `Speech.stamp?` accepts but that are no dates, such as month 13, so pairing could change.
+  A `#guard_msgs` fixture pins that `a - b` on stamps does not elaborate.
+- The unread commit (`Record.main`, `Merge.before`, `Merge.tree`): `Option Sha`, chosen over a sum
+  type `Main | unread | moved`. Nothing reads the two meanings apart: both pair with no merge. The
+  JSON keeps `""`, which PR 1 writes. `shaOrUnread` turns `""` into `none`, and `precedes` and
+  `PairedRecordPrecedesTheMerge` name `some b`. `anEmptyCommitIsUnread` and `aCommitIsRead`.
+- `Job.conclusion`: `Option String`, `none` while the run is in progress (JSON `null`), chosen
+  over a `Conclusion` enum of GitHub's values, which the report does not need.
+  `aRunningJobHasNoConclusion`.
+- `drifted`: the error type of `run?` is `Unscored`, with `unreadable` and `drifted`, chosen over a
+  `Run.drifted` constructor, which the contract's `Run` does not have. A private `parse` reads the
+  fields, and its errors are `unreadable`; `run?` then replays the snapshot, and its errors are
+  `drifted`. The report matches on the constructor, not on a prefix.
+- `SeatIgnoresRecordOrder` is proved (`seatIgnoresRecordOrder`, through `last_some`, `last_perm`
+  and `eq_of_read_eq`), not deleted. `PairedRecordPrecedesTheMerge` now follows from `last_some`.
+- `observer` (`Reading.lean`): `outsider o : { t : Teammate // o.mayMerge t = false }`, a teammate
+  whose name is longer than every delegate's name, chosen over stepping as anyone and mapping
+  `enter` to `stop noEntry` and `merge` to `present` afterwards. That would copy `Land.step`'s
+  knowledge of which steps need power. `theReaderIsNoDelegate` names the old `observer` and
+  `orchestrator` as delegates and still reads one word away.
+- `sortAsc` is renamed `kernelSort` and nothing more: no proof uses it, so it is not tied to
+  `List.Sorted` or `List.Perm`.
+
+Each new fixture fails on a mutant that brings the old shape back:
+- an `HSub Stamp Stamp Nat` instance fails the `#guard_msgs` fixture, and with `age` as
+  `m.time - r.read`, `theAgeIsInSeconds` fails as well;
+- `shaOrUnread` giving `some ""` fails `anEmptyCommitIsUnread`;
+- a `null` conclusion read as `some ""` fails `aRunningJobHasNoConclusion`;
+- `precedes` as `r.main == m.before` fails `aRecordThatSawMainMoveIsUnseen` (and
+  `precedes_iff`);
+- `reading` stepping as `⟨"shadow", "observer"⟩` fails `theReaderIsNoDelegate`, and an
+  `outsider` named `⟨"shadow", "observer"⟩` does not type-check;
+- `last` taking the first preceding record in list order fails `last_some`, which both pairing
+  theorems rest on, and `theNewestRecordBeforeTheMergeIsUsed`;
+- a refused snapshot read as `unreadable` fails the case "a snapshot this build refuses is drift"
+  of `shadow-test.sh`.
 
 ## Done when
 - [ ] PR 1 merged: a dispatch run of `decide` on `main` leaves a record whose `unread` lists what

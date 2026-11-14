@@ -44,21 +44,22 @@ namespace Fixture
 open Land.Fixture
 
 theorem theReplayThatMergedAgrees :
-    finding (seat merged [rec 1 90 "m1" [unsaid]]) = .agrees := by decide +kernel
+    finding (seat merged [rec 1 90 (some "m1") [unsaid]]) = .agrees := by decide +kernel
 theorem anotherTreeIsNotAgreement :
-    finding (seat { merged with tree := "tx" } [rec 1 90 "m1" [unsaid]]) = .otherTree := by
-  decide +kernel
+    finding (seat { merged with tree := some "tx" } [rec 1 90 (some "m1") [unsaid]]) =
+      .otherTree := by decide +kernel
 theorem aRecordOfAnotherMainIsUnseen :
-    finding (seat merged [rec 1 90 "m0" [unsaid]]) = .blind := by decide +kernel
+    finding (seat merged [rec 1 90 (some "m0") [unsaid]]) = .blind := by decide +kernel
 theorem aRecordAfterTheMergeIsUnseen :
-    finding (seat merged [rec 1 101 "m1" [unsaid]]) = .blind := by decide +kernel
+    finding (seat merged [rec 1 101 (some "m1") [unsaid]]) = .blind := by decide +kernel
 theorem aRecordInTheMergesSecondIsUnseen :
-    finding (seat merged [rec 1 100 "m1" [unsaid]]) = .blind := by decide +kernel
+    finding (seat merged [rec 1 100 (some "m1") [unsaid]]) = .blind := by decide +kernel
 theorem aRecordThatSawMainMoveIsUnseen :
-    finding (seat { merged with before := "" } [rec 1 90 "" [unsaid]]) = .blind := by
+    finding (seat { merged with before := none } [rec 1 90 none [unsaid]]) = .blind := by
   decide +kernel
 theorem aHeldMergeDisagrees :
-    finding (seat { merged with pr := 153, head := "aaa" } [rec 1 90 "m1" [ownerKeptHeld]]) =
+    finding
+        (seat { merged with pr := 153, head := "aaa" } [rec 1 90 (some "m1") [ownerKeptHeld]]) =
       .disagrees .held := by decide +kernel
 
 end Fixture

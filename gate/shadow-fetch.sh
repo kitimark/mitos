@@ -25,6 +25,7 @@ trap 'rm -rf -- "$tmp"' EXIT
 
 api() { timeout -k 5 120 gh api "$@" 2>/dev/null </dev/null; }
 
+# Not `gh api --paginate`: it follows `repositories/<id>` links, which a session proxy refuses.
 by_number() {
   local route=$1 items=$2 stop=$3 k=1
   while :; do

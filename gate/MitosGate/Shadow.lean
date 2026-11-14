@@ -11,7 +11,8 @@ open Lean in
   if fixtures.isEmpty then throwError "no fixture theorem found"
   for n in [``readyIsOneWordFromLanding, ``theWordIsOnlyAssumedWhenReady,
       ``lacksNothingIffEligible, ``pairedRecordPrecedesTheMerge, ``agreesMeansTheMergedContent,
-      ``tallyCountsEveryMergeOnce, ``peakBoundsEveryWindow] ++ fixtures.toList do
+      ``seatIgnoresRecordOrder, ``tallyCountsEveryMergeOnce, ``peakBoundsEveryWindow] ++
+      fixtures.toList do
     for a in ← collectAxioms n do
       unless standard.contains a do
         throwError "{n} depends on the axiom {a}"

@@ -5,7 +5,13 @@ namespace MitosGate.Shadow
 
 open Land
 
-abbrev Stamp := Speech.Stamp
+structure Stamp where
+  digits : Speech.Stamp
+  deriving DecidableEq
+
+instance : LT Stamp := ⟨fun a b => a.digits < b.digits⟩
+instance : LE Stamp := ⟨fun a b => a.digits ≤ b.digits⟩
+instance (a b : Stamp) : Decidable (a < b) := inferInstanceAs (Decidable (a.digits < b.digits))
 
 def days (y m d : Nat) : Nat :=
   let y := if m ≤ 2 then y - 1 else y
@@ -14,9 +20,10 @@ def days (y m d : Nat) : Nat :=
   let doy := (153 * ((m + 9) % 12) + 2) / 5 + d - 1
   era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468
 
-def seconds (t : Stamp) : Nat :=
-  let part (k : Nat) := t / 10 ^ k % 100
-  days (t / 10 ^ 10) (part 8) (part 6) * 86400 + part 4 * 3600 + part 2 * 60 + t % 100
+def Stamp.seconds (t : Stamp) : Nat :=
+  let part (k : Nat) := t.digits / 10 ^ k % 100
+  days (t.digits / 10 ^ 10) (part 8) (part 6) * 86400 + part 4 * 3600 + part 2 * 60 +
+    t.digits % 100
 
 inductive Trigger
   | mainMoved
@@ -40,7 +47,7 @@ structure Record where
   run : Nat
   trigger : Trigger
   read : Stamp
-  main : Sha
+  main : Option Sha
   tool : Sha
   cost : Cost
   prs : List Obs
@@ -49,21 +56,26 @@ structure Record where
 structure Merge where
   pr : Pr
   time : Stamp
-  before : Sha
+  before : Option Sha
   head : Sha
-  tree : Sha
+  tree : Option Sha
 
 namespace Fixture
 
-theorem theEpochIsZero : seconds 19700101000000 = 0 := by decide +kernel
-theorem aDayOfThisWindow : seconds 20261114000000 = 1794614400 := by decide +kernel
-theorem aLeapDay : seconds 20240229120000 = 1709208000 := by decide +kernel
-theorem aLeapCentury : seconds 20000301000000 = 951868800 := by decide +kernel
-theorem aCenturyThatIsNotLeap : seconds 21000301000000 = 4107542400 := by decide +kernel
-theorem aMinuteIsSixtySeconds : seconds 20261113120100 - seconds 20261113120059 = 1 := by
-  decide +kernel
-theorem aYearEndsInOneSecond : seconds 20270101000000 - seconds 20261231235959 = 1 := by
-  decide +kernel
+theorem theEpochIsZero : Stamp.seconds ⟨19700101000000⟩ = 0 := by decide +kernel
+theorem aDayOfThisWindow : Stamp.seconds ⟨20261114000000⟩ = 1794614400 := by decide +kernel
+theorem aLeapDay : Stamp.seconds ⟨20240229120000⟩ = 1709208000 := by decide +kernel
+theorem aLeapCentury : Stamp.seconds ⟨20000301000000⟩ = 951868800 := by decide +kernel
+theorem aCenturyThatIsNotLeap : Stamp.seconds ⟨21000301000000⟩ = 4107542400 := by decide +kernel
+theorem aMinuteIsSixtySeconds :
+    Stamp.seconds ⟨20261113120100⟩ - Stamp.seconds ⟨20261113120059⟩ = 1 := by decide +kernel
+theorem aYearEndsInOneSecond :
+    Stamp.seconds ⟨20270101000000⟩ - Stamp.seconds ⟨20261231235959⟩ = 1 := by decide +kernel
+
+/-- error: failed to synthesize instance of type class
+  HSub Stamp Stamp -/
+#guard_msgs (substring := true) in
+example (a b : Stamp) := a - b
 
 end Fixture
 
