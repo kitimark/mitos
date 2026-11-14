@@ -26,13 +26,13 @@ Temporal decomposition organizes modules by execution order instead of the knowl
 
 Group code around domain knowledge and ownership. Methods that run at different times can still belong to one module when they protect the same decisions.
 
-Splitting a topic into separate definitions, proofs and fixtures files is the same mistake. Split by topic instead (see One file, several topics).
+Splitting a topic into separate definitions, proofs and fixtures files is the same mistake, per the **split-by-topic** principle skill.
 
 ## One file, several topics
 
-One file owns several topics, and section banners are the sign. An agent that adds to one topic must read them all, and the next topic lands in the same file.
+One file owns several topics, and section banners are the sign.
 
-Split by topic, one module per topic. Put each statement beside the definitions it talks about, never into separate definitions, proofs and fixtures files. Lean's `private` is file-scoped, so a helper that two of the new files use can no longer be `private`. Every new module must still be built and axiom-checked.
+Split it per the **split-by-topic** principle skill.
 
 ## Pass-through method
 

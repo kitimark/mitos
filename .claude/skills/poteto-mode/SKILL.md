@@ -59,6 +59,7 @@ Read the leaf skill in full for any principle you apply. Each entry names when i
 - **Make Operations Idempotent.** Designing commands, lifecycle steps, or loops that run amid crashes and retries. Converge to the same end state.
 - **Migrate Callers Then Delete Legacy APIs.** Introducing a new internal API while old callers exist. Migrate and delete in one wave.
 - **Separate Before Serializing Shared State.** Concurrent actors might write the same file, branch, key, or object. Eliminate the sharing first.
+- **Split by Topic.** Creating a file or module, adding to a large one, or meeting a file with section banners. One file owns one topic, and each statement sits beside its definition.
 
 **Verification**
 
