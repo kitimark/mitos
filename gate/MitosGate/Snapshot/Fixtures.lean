@@ -76,7 +76,7 @@ theorem unknownModelIsNone : a "PASS opus-xhigh at `5c258d6`, author gpt." = non
 def dash (rows : String) : String :=
   "Intro.\n\n## Needs you\n\n- | #1 | not | a | row |\n\n## In flight\n\n" ++
     "| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n" ++ rows ++
-    "\nMerged in the last 24 hours:\n- #9 merged\n\n## Next up\n\n| #5 | x | y | z |\n"
+    "\n\nMerged in the last 24 hours:\n- #9 merged\n\n## Next up\n\n| #5 | x | y | z |\n"
 
 theorem inFlightRows :
     rows (dash "| #7 a PR | `85b0781` | green | PASS opus-xhigh at `85b0781` |\n| #8 b | `x` | running | No verdict |") =
@@ -95,6 +95,28 @@ theorem aPipeInACellSpoilsTheDashboard :
   decide +kernel
 theorem aRowWithoutTheClosingPipeSpoilsTheDashboard :
     rows (dash "| #7 a | `x` | green | PASS opus-xhigh at `85b0781`") = none := by decide +kernel
+def passFor7 : String := "| #7 a | `x` | green | PASS opus-xhigh at `85b0781`, author sonnet |\n"
+theorem aSecondRowWithoutTheLeadingPipeSpoilsTheDashboard :
+    rows (dash (passFor7 ++ "#7 b | `x` | red | FAIL opus-xhigh at `85b0781` |")) = none := by
+  decide +kernel
+theorem aLineWithoutPipesUnderTheTableSpoilsTheDashboard :
+    rows (dash (passFor7 ++ "FAIL opus-xhigh at `85b0781` for #7")) = none := by decide +kernel
+theorem aTableWithoutLeadingPipesSpoilsTheDashboard :
+    rows (dash (passFor7 ++ "\nPR | Head | `gate` | Verdict\n--- | --- | --- | ---\n" ++
+      "#7 b | `x` | red | FAIL opus-xhigh at `85b0781`")) = none := by decide +kernel
+theorem aLineWithoutPipesUnderALaterTableSpoilsTheDashboard :
+    rows ("## In flight\n\n| #8 b | `x` | running | No verdict |\n\n" ++
+      "| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n" ++ passFor7 ++
+      "FAIL opus-xhigh at `85b0781` for #7\n\n## Next up\n") = none := by decide +kernel
+theorem theLiveShapeReads :
+    rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n" ++ passFor7 ++
+      "| #8 b (Grok Bot) | `x` | needs-rebase | No verdict. Opened by Grok Bot. |\n\n" ++
+      "Merged in the last 24 hours (newest first):\n" ++
+      "- #6 merged 11:23 UTC at `85b0781` by Claude: FAIL sonnet-xhigh at `85b0781`.\n" ++
+      "- #5 merged 10:52 UTC: PASS sonnet-high + opus-xhigh at `85b0781`.\n\n" ++
+      "- #4 merged 20:52 UTC on 11-13.\n\n\n\n- #3 merged 11:55 UTC on 11-11.\n\n## Next up\n") =
+      some [(7, "PASS opus-xhigh at `85b0781`, author sonnet".toList),
+        (8, "No verdict. Opened by Grok Bot.".toList)] := by decide +kernel
 theorem noInFlightSectionIsUnread : rows "## Needs you\n\n| #7 | x | y | z |\n" = none := by
   decide +kernel
 theorem twoInFlightSectionsAreUnread :

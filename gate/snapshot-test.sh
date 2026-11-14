@@ -197,6 +197,17 @@ fresh
 jq --arg body "$(dash_body "$(row 7 "$p1")")" '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
 holds "two rows for one pull request hold every pull request" "#7 holds: unread dashboard$"
 fresh
+echo '[[]]' >"$d/comments-9.json"
+# shellcheck disable=SC2016
+jq --arg body "$(dash_body "$(printf '#7 y | `%s` | red | FAIL opus-xhigh at `%s` |' "${p1:0:7}" "${p1:0:7}")")" \
+  '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
+holds "a FAIL row without the leading pipe holds every pull request" "#7 holds: unread dashboard$"
+if snap && decide "$me7" && [ "$(jq -c .plan "$tmp/land.out")" = '{"kind":"idle"}' ]; then
+  ok "a FAIL row without the leading pipe pushes nothing"
+else
+  bad "a FAIL row without the leading pipe pushes nothing" "$(cat "$tmp/land.out" "$tmp/land.err")"
+fi
+fresh
 jq '.enforce_admins.enabled = false' "$b/protection.json" >"$d/protection.json"
 expect_land "protection that lets admins bypass lands nothing" "$me7" \
   '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"unenforced"}}'
