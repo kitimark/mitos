@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 # Usage: .github/scripts/land-decide.sh <owner/name> <dashboard-issue> <dir>
-#
-# One decide run, in a clone of the repository: the reads, the snapshot, the decision, then one
-# line, <dir>/record.json. It holds no rule: every decision is `mitos-gate`'s, and it reads no
-# line that another tool printed. Exit 0: decided, or skipped under the REST floor. Exit 1:
-# refused, and the record says at which stage, or the record could not be written. Exit 2: usage.
+# Exit 0: decided, or skipped under the REST floor. Exit 1: refused, or the record could not be written. Exit 2: usage.
 set -u
 
 die() { printf 'land-decide: %s\n' "$1" >&2; exit 2; }

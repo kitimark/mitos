@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016 # the single-quoted $names are jq variables
-# Runs .github/scripts/land-decide.sh against stubs for gh, gate/snapshot-fetch.sh and
-# `mitos-gate snapshot`, with the real `mitos-gate land`, then pins what land.yml may hold.
-# No token, no network.
+# shellcheck disable=SC2016
 set -u
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -99,7 +96,6 @@ jq -c '{prs: [{pr: 1}]}' -n >"$tmp/bad-snapshot.json"
 
 calls=$tmp/calls.log
 : >"$calls"
-# run <name> [VAR=value]...: one run of land-decide.sh in the clone; sets dir, rec and code.
 run() {
   local name=$1
   shift
@@ -122,7 +118,6 @@ start() { problems=(); }
 note() { problems+=("$@"); }
 finish() { if [ ${#problems[@]} = 0 ]; then ok "$1"; else bad "$1" "${problems[@]}"; fi; }
 exits() { [ "$code" = "$1" ] || note "exit $code, expected $1" "stderr: $(cat "$dir/stderr")"; }
-# has <jq filter> [jq args]...: the record is one line and the filter holds on it.
 has() {
   local f=$1
   shift
@@ -303,7 +298,6 @@ has '.outcome.decision.plan == {kind: "push", pr: 153, expect: "aaa", replay: $r
   and .outcome.trees == [{commit: $r, tree: $t}]' --arg r "$r1" --arg t "$r1tree"
 finish a-push-plan-records-its-tree
 
-# The workflow's own lines, for the static pins.
 if_block=$(awk '/^    if: >-$/ { on = 1; next } on && /^    [a-z]/ { exit } on { print }' "$wf")
 perm_block=$(awk '/^    permissions:$/ { on = 1; next } on && !/^      / { exit } on { print }' "$wf")
 joined=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$script")
