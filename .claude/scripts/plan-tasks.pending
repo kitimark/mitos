@@ -1,7 +1,3 @@
-# Plan rows that link an issue and have no task file yet (#220). The Architect writes the files
-# (.claude/skills/kitimark-mode/SKILL.md, Plan-time designs); delete a row's line in the PR that
-# adds its file. plan-tasks.test.sh fails on a listed row that has a valid file, so the list only
-# shrinks. Do not add a line to make a new row pass.
 P1-010
 P1-011
 P1-012
