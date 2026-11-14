@@ -4,7 +4,7 @@ phase: 2
 goal: The next-toolchain canary passes on Lean v4.36 with every probe of the mutant runner still catching a known misread, and once v4.36.0 ships the repository is pinned to it with its records re-made.
 statement: none locked (tooling task). `MitosGate.RunLog.sortLines_eq_of_perm` keeps its statement; PR B re-proves it without the deprecated lemmas.
 touches: PR A (the probes): eval/mutants/Mutants/CrossCheck.lean, eval/mutants/Mutants/Output.lean, eval/mutants/Main.lean (the two probe loops of `leanCheck`), tasks/P1-006-mutation-testing.md (one note after each of its two Probes paragraphs) · PR B (the bump): lean-toolchain, eval/mutants/lean-toolchain, eval/score/lean-toolchain, examples/acme/lean-toolchain (and eval/diff/lean-toolchain once P2-008 has merged), any lake-manifest.json that Lake rewrites, examples/acme/accepted/*.json (re-recorded), gate/MitosGate/ContentId.lean (lines 44, 46, 49), the two version mentions in the gate 1 row of docs/process.md, the version mention in the docstring of gate/MitosGate/CheatsRun.lean, the Lean version in .coderabbit.yaml · both: this file, ops/runs/
-must_not_touch: statements.lock (unless cut_line's lock case applies), models.lock, core/, eval/cheats/, models, .github/, eval/mutants/Mutants/Challenge.lean (the reader), eval/mutants/Mutants/CommentProbe.lean, eval/mutants/cases/, eval/score/, every gate/ file not named in touches
+must_not_touch: statements.lock (unless cut_line's lock case applies), models.lock, core/, eval/cheats/, models, .github/, eval/mutants/Mutants/Challenge.lean (the reader), eval/mutants/Mutants/CommentProbe.lean, eval/mutants/cases/, eval/score/ (except its lean-toolchain, which PR B writes), every gate/ file not named in touches
 checks: PR A: build, `lake --dir eval/mutants build`, `lake --dir eval/mutants exe mitos-mutants src_dst_swapped edges_duplicated cheat_impl_macro`, one nightly dispatch on the branch · PR B: build, imports, lock, core `lake check`, comparator `--paranoid`, accept-toy `--paranoid --record`, scorecard, `mitos-lint-test`, cheats, `gate/*-test.sh`, the three mutant cases, one nightly dispatch on the branch
 budget: PR A 8 iterations · 3h wall · 1M tokens; PR B 8 iterations · 4h wall · 1.5M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
@@ -548,7 +548,7 @@ green on v4.35.0 with the cross-check `#guard`s above.
       exit 2 with `the output check missed a known misread in Challenge/OutputProbeB1.lean`
 - [ ] report only, in PR A's body: `lake exe mitos-gate lock --check`, `lake exe mitos-lint-test`
       and `lake --dir eval/score build` on v4.36.0-rc2, in a scratch copy with the toolchain files
-      pointed at it as the canary does, so the owner knows before the bump whether
+      pointed at it as the canary does and `eval/score/lean-toolchain` too (the canary leaves it alone), so the owner knows before the bump whether
       `statements.lock`, the lint's token premise or the scorer moves
 - [ ] the `follow-up` issue for the canary and CI gaps (deferrals) filed and linked from PR A
 - [ ] PR B merged by the owner after v4.36.0 ships and its canary passed on `main`: every
