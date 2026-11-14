@@ -91,12 +91,12 @@ def answers (g : Global) (s : Post) : Bool :=
 def speaks (g : Global) (s : Post) : Bool :=
   s.login == g.owner && s.slug.isNone && !Speech.footer s.body.toList
 
-def pureWord (b : List Char) : Bool :=
+def onlyLandOrHoldLines (b : List Char) : Bool :=
   (lines (Speech.unbom b)).all (fun l => blank l || (Speech.word? l).isSome) &&
     (lines (Speech.unbom b)).any (fun l => (Speech.word? l).isSome)
 
 def unanswered (g : Global) (ss : List Post) : List Post :=
-  ss.filter fun s => speaks g s && !pureWord s.body.toList &&
+  ss.filter fun s => speaks g s && !onlyLandOrHoldLines s.body.toList &&
     !ss.any fun a => answers g a && decide (s.updated < a.created)
 
 def counts (v : Review) : Bool :=
