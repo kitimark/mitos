@@ -1,3 +1,4 @@
+import MitosGate.Snapshot.Activity
 import MitosGate.Snapshot.Fields
 import MitosGate.Snapshot.Table
 
