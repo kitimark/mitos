@@ -4,11 +4,6 @@ namespace MitosGate.Snapshot
 
 open Speech (lead blank digit)
 
-/-- The block GitHub's Markdown starts at a line, as far as the In flight reader accounts for it.
-`hides` is an HTML block or a fenced code block, which can run past blank lines and headings.
-`other` is any other block that is not text, a list item or a table: indented code, a block quote,
-a heading of another level or a setext underline. A tab before a list item's text is `other` too,
-because its width depends on the column. -/
 inductive Start
   | blank
   | heading
