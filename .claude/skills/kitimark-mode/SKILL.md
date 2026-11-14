@@ -289,8 +289,10 @@ watcher's echo filter and the merge rule below rely on both.
   most of the diff does not count as the passing verdict of the merge rule below, though an
   `opus`-written trust-critical PR still needs its `opus` one. While no other model can verify,
   the PR gets no merge command and its catch-up says to hold the merge, the same for every PR.
-  `pr-state.sh` enforces this from the verdict cell (see the verdict-cell bullet below): it prints no
-  `merge-ready` line for such a PR and a `merge-hold=<reason>` on its state line instead.
+  `pr-state.sh` enforces the model rules from the verdict cell (see the verdict-cell bullet below):
+  an author named, a verdict from another model, an `opus` verdict on a trust-critical PR. It prints
+  no `merge-ready` line and a `merge-hold=<reason>` instead. It does not check the effort, so the
+  root checks the `xhigh` effort itself from the verdict cell.
 - A verdict covers one head. A later head keeps it only when it only rebases: every push to the
   PR's branch since the verified head is a force-push by `mitos-pr-updater[bot]`, the first one
   from the verified head and each later one from the commit the one before it left, up to the
