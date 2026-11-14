@@ -26,6 +26,14 @@ Temporal decomposition organizes modules by execution order instead of the knowl
 
 Group code around domain knowledge and ownership. Methods that run at different times can still belong to one module when they protect the same decisions.
 
+Splitting a topic into separate definitions, proofs and fixtures files is the same mistake, per the **split-by-topic** principle skill.
+
+## One file, several topics
+
+One file owns several topics, and section banners are the sign.
+
+Split it per the **split-by-topic** principle skill.
+
 ## Pass-through method
 
 A pass-through method forwards the same arguments to another method with the same shape. It adds a layer without hiding complexity.
@@ -55,3 +63,16 @@ Make internals unreachable from outside the module, so an import from outside fa
 Two or more places list the same items, and adding an item means editing every list. An agent that sees one list updates only that one.
 
 Keep one list and derive the others from it. If a list can't be derived, make the build fail when the lists disagree.
+
+## Meaning only in prose
+
+A rule lives only in a comment, a name or a position. A builder copies the comment into code or drops it, and a caller never sees the rule.
+
+Look for these signs:
+
+- An `Option` whose `none` means something.
+- A positional tuple.
+- A `Bool` explained by a comment.
+- A rule with no statement or fixture.
+
+Give the meaning a type, such as a named constructor or a structure with named fields, and pin each rule with a named statement or a fixture.
