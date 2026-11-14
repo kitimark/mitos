@@ -1,4 +1,4 @@
-import MitosGate.Speech
+import MitosGate.Snapshot.Block
 
 namespace MitosGate.Snapshot
 
@@ -16,11 +16,16 @@ def cells : List Char → List (List Char)
 
 def inFlight : List Char := "## In flight".toList
 
-def heading (l : List Char) : Bool := "## ".toList.isPrefixOf (Speech.trim l)
+def saysInFlight (l : List Char) : Bool := Speech.trim l == inFlight
+
+def outsideListItems (heading : List Char) : Bool := heading.head? == some '#'
 
 def section? (ls : List (List Char)) : Option (List (List Char)) :=
-  match ls.filter (fun l => Speech.trim l == inFlight) with
-  | [_] => some (((ls.dropWhile (fun l => Speech.trim l != inFlight)).drop 1).takeWhile (!heading ·))
+  match ls.filter saysInFlight with
+  | [line] =>
+    let (above, rest) := ls.span (!saysInFlight ·)
+    if !outsideListItems line || above.any (start · == .runsPastHeadings) then none
+    else some ((rest.drop 1).takeWhile (start · != .heading))
   | _ => none
 
 def prNumber (c : List Char) : Option Nat :=
@@ -36,8 +41,6 @@ inductive Row
   | bad
   deriving DecidableEq
 
-def separator (c : List Char) : Bool := c.all fun x => x == '-' || x == ':' || x == ' '
-
 def betweenOuterPipes (l : List Char) : Option (List (List Char)) :=
   match cells l with
   | [] :: rest =>
@@ -46,23 +49,47 @@ def betweenOuterPipes (l : List Char) : Option (List (List Char)) :=
     | _ => none
   | _ => none
 
+def delimiterCell (c : List Char) : Bool :=
+  let t := Speech.trim c
+  let t := if t.head? == some ':' then t.drop 1 else t
+  let t := if t.getLast? == some ':' then t.dropLast else t
+  !t.isEmpty && t.all (· == '-')
+
+def headerRow (l : List Char) : Bool :=
+  match betweenOuterPipes (Speech.trim l) with
+  | some [pr, _, _, _] => Speech.trim pr == "PR".toList
+  | _ => false
+
+def delimiterRow (l : List Char) : Bool :=
+  match betweenOuterPipes (Speech.trim l) with
+  | some cs => cs.length == 4 && cs.all delimiterCell
+  | none => false
+
 def row (l : List Char) : Row :=
   match Speech.trim l with
   | '|' :: _ =>
     match betweenOuterPipes (Speech.trim l) with
-    | some inner =>
-      if inner.all separator then .skip
-      else
-        match inner with
-        | [pr, _, _, v] =>
-          if Speech.trim pr == "PR".toList then .skip
-          else
-            match prNumber pr with
-            | some n => .data n (Speech.trim v)
-            | none => .bad
-        | _ => .bad
-    | none => .bad
+    | some [pr, _, _, v] =>
+      match prNumber pr with
+      | some n => .data n (Speech.trim v)
+      | none => .bad
+    | _ => .bad
   | t => if t.contains '|' then .bad else .skip
+
+inductive Above
+  | blankOrHeading
+  | headerOfPair
+  | nonBlank
+
+def Above.of (l : List Char) : Above := if blank l then .blankOrHeading else .nonBlank
+
+def rowsAfter : Above → List (List Char) → List Row
+  | _, [] => []
+  | .headerOfPair, l :: ls => .skip :: rowsAfter (.of l) ls
+  | .blankOrHeading, l :: ls =>
+    if headerRow l && ls.head?.any delimiterRow then .skip :: rowsAfter .headerOfPair ls
+    else row l :: rowsAfter (.of l) ls
+  | .nonBlank, l :: ls => row l :: rowsAfter (.of l) ls
 
 def piped (l : List Char) : Bool := (Speech.trim l).head? == some '|'
 
@@ -76,12 +103,16 @@ def distinctNats : List Nat → Bool
   | [] => true
   | n :: ns => !ns.contains n && distinctNats ns
 
+def textOrBlank (l : List Char) : Bool := start l == .text || start l == .blank
+
 def rowsOf (ls : List (List Char)) : Option (List (Nat × List Char)) :=
-  let rs := ls.map row
+  let rs := rowsAfter .blankOrHeading ls
   let ds := rs.filterMap fun
     | .data n v => some (n, v)
     | _ => none
-  if rs.contains .bad || !rowsUnderRows ls || !distinctNats (ds.map (·.1)) then none else some ds
+  if !ls.all textOrBlank || rs.contains .bad || !rowsUnderRows ls || !distinctNats (ds.map (·.1))
+  then none
+  else some ds
 
 def rows (body : String) : Option (List (Nat × List Char)) :=
   (section? (lines body.toList)).bind rowsOf
