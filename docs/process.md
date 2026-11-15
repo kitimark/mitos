@@ -184,7 +184,7 @@ which covers what no kernel term references, such as a structure field's default
 | Plugin lint (gate 1) | `lake exe mitos-gate lint <file>` | ✓ | ✓ | | yes |
 | Model lint allowlist accepts and rejects each command kind | `lake exe mitos-lint-test` | when touching `gate/` | ✓ | | yes |
 | Honest plugin accepted, gates 0–6 | `lake exe mitos-gate accept … --paranoid` | ✓ | ✓ | ✓ | yes |
-| Cheat corpus rejected | `lake exe mitos-gate cheats` | when touching `gate/` | ✓ | ✓, but `nightly.yml` still runs `eval/cheats/run.sh` until the PR that deletes it | yes |
+| Cheat corpus rejected | `lake exe mitos-gate cheats` | when touching `gate/` | ✓ | ✓ | yes |
 | Fixture scorecard: precision and recall per edge type against hand labels | `lake --dir eval/score exe mitos-score eval/fixtures/toy` | when touching the resolver, a plugin, the fixture or the scorer | ✓, posted on the PR | | the numbers no; a scorer error yes |
 | Full evaluation scorecard | Phase 1 | | | ✓ | — |
 | Differential tests against real tools | Phase 2 | | | ✓ | — |
@@ -365,9 +365,6 @@ text the prove step prints. Every decision the runner
 makes is in `gate/MitosGate/Cheats.lean`, with its proofs: the `expect` parser (a key it does not
 know, or a key given twice, is an error, except `lock_append`; `full` and `comparator_only` are
 required), the reading of the gate's verdict line, the pass rule, the table and the scheduler.
-`eval/cheats/run.sh`, the shell runner it replaces, runs one run at a time. Both printed the same
-table in every CI run of #84 that compared them, so CI runs only `mitos-gate cheats`. `run.sh`
-stays until `nightly.yml` no longer runs it (#103).
 
 A `comparator_only=accept` case may also have one `guards=R` line, such as
 `guards=include_str`, naming the lint rule it pins. Each gate-1 violation ends with its

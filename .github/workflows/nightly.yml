@@ -33,7 +33,7 @@ jobs:
         run: |
           lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
             --model Models.ToyRequire.model --paranoid
-      - run: eval/cheats/run.sh
+      - run: lake exe mitos-gate cheats --jobs 4
 
       - name: Build the mutant runner
         run: lake --dir eval/mutants build
@@ -129,7 +129,7 @@ jobs:
           if [ -f core/Mitos/Proofs/Resolver.lean ]; then (cd core && lake comparator); fi
           lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
             --model Models.ToyRequire.model --paranoid
-          eval/cheats/run.sh
+          lake exe mitos-gate cheats --jobs 4
           lake --dir eval/mutants build
           lake --dir eval/mutants exe mitos-mutants
           echo "### canary $VERSION: passed" >> "$GITHUB_STEP_SUMMARY"
