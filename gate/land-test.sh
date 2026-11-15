@@ -249,5 +249,23 @@ MitosGate.Land.Fixture.plantedFixture depends on the axiom MitosGate.Land.Fixtur
   fi
 fi
 
+name="the axiom check refuses a listed statement that is no theorem"
+mkdir "$tmp/notheorem"
+if ! awk '
+    $0 == "theorem holdWins : HoldWins := by" { print "def holdWins : HoldWins := by"; n++; next }
+    { print }
+    END { exit n == 1 ? 0 : 1 }' "$land" >"$tmp/notheorem/Land.lean"; then
+  bad "$name" "a line the test changes is no longer in Land.lean"
+else
+  got=0
+  (cd "$root" && lake env lean "$tmp/notheorem/Land.lean") >"$tmp/notheorem/out" 2>&1 || got=$?
+  if [ "$got" = 0 ] || [ "$(grep -c ': error: ' "$tmp/notheorem/out")" != 1 ] ||
+    ! grep -q ': error: MitosGate.Land.holdWins is not a theorem of this file$' "$tmp/notheorem/out"; then
+    bad "$name" "exit $got" "$(grep -v ': warning: ' "$tmp/notheorem/out" | head -20)"
+  else
+    ok "$name"
+  fi
+fi
+
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]
