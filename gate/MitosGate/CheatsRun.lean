@@ -1,5 +1,6 @@
 import MitosGate.Accept
 import MitosGate.Cheats
+import MitosGate.CheatsShard
 import MitosGate.Util
 
 namespace MitosGate.CheatsRun
@@ -10,12 +11,22 @@ structure Options where
   jobs : Nat := 4
   timeout : Nat := 600
   cases : List String := []
+  shard : Option String := none
+  listOnly : Bool := false
+  casesDir : Option String := none
 
 def plainName (s : String) : Bool :=
   !s.isEmpty && !s.startsWith "." && !s.contains '/'
 
 def parseArgs : List String → Options → Except String Options
   | [], o => .ok o
+  | "--shard" :: v :: rest, o =>
+    if o.shard.isSome then .error "--shard is given twice"
+    else parseArgs rest { o with shard := some v }
+  | "--list" :: rest, o => parseArgs rest { o with listOnly := true }
+  | "--cases" :: v :: rest, o =>
+    if o.casesDir.isSome then .error "--cases is given twice"
+    else parseArgs rest { o with casesDir := some v }
   | "--jobs" :: v :: rest, o =>
     match v.toNat? with
     | some n =>
@@ -207,13 +218,166 @@ def runCorpus (o : Options) : IO UInt32 := do
     s!"--jobs {o.jobs}, --timeout {o.timeout}")
   return exitCode rows
 
-def cli (args : List String) (usage : String) : IO UInt32 := do
-  match parseArgs args {} with
-  | .error e => IO.eprintln (ciLine e); IO.eprintln usage; return 2
-  | .ok o =>
-    try runCorpus o
-    catch e =>
-      IO.eprintln (ciLine s!"mitos-gate cheats stopped on an I/O error: {e}")
+def resolveDir (root : System.FilePath) (specified : Option String) : System.FilePath :=
+  match specified with
+  | none => root / "eval" / "cheats"
+  | some p =>
+    let path := System.FilePath.mk p
+    if path.isAbsolute then path else root / path
+
+def isRegular (p : System.FilePath) : IO Bool := do
+  if !(← p.pathExists) then return false
+  return (← p.metadata).type == .file
+
+def runShard (o : Options) (usage : String) : IO UInt32 := do
+  if !o.cases.isEmpty then
+    IO.eprintln (ciLine "a shard reads the case directory; do not also name cases")
+    IO.eprintln usage
+    return 2
+  let some spec := o.shard | return 2
+  let root ← IO.currentDir
+  let dir := resolveDir root o.casesDir
+  try
+    let names ← listCases dir
+    match CheatsShard.Shard.parse spec with
+    | none =>
+      IO.eprintln (ciLine s!"--shard {spec} is not k/n with k < n and n > 0")
       return 2
+    | some shard =>
+      match CheatsShard.selection names shard with
+      | .error why =>
+        IO.eprintln (ciLine why.text)
+        return 1
+      | .ok chosen =>
+        if o.listOnly then
+          for name in chosen do IO.println name
+          return 0
+        if o.casesDir.isSome then
+          IO.eprintln (ciLine "--cases with --shard only lists names; pass --list")
+          return 2
+        let logs := root / ".lake" / "cheats"
+        IO.FS.createDirAll logs
+        IO.FS.writeFile (logs / CheatsShard.artifactCases)
+          (CheatsShard.renderCaseList chosen)
+        runCorpus { o with cases := chosen }
+  catch e =>
+    IO.eprintln (ciLine s!"mitos-gate cheats stopped on an I/O error: {e}")
+    return 1
+
+structure AggFlags where
+  checks : Option String := none
+  shardsJob : Option String := none
+  merged : Option String := none
+  casesDir : Option String := none
+  dirs : List String := []
+
+def parseAggArgs (args : List String) : Except String AggFlags :=
+  let rec go (rest : List String) (a : AggFlags) : Except String AggFlags :=
+    match rest with
+    | [] => .ok a
+    | "--checks" :: v :: more =>
+      if a.checks.isSome then .error "--checks is given twice"
+      else go more { a with checks := some v }
+    | "--shards" :: v :: more =>
+      if a.shardsJob.isSome then .error "--shards is given twice"
+      else go more { a with shardsJob := some v }
+    | "--merged" :: v :: more =>
+      if a.merged.isSome then .error "--merged is given twice"
+      else go more { a with merged := some v }
+    | "--cases" :: v :: more =>
+      if a.casesDir.isSome then .error "--cases is given twice"
+      else go more { a with casesDir := some v }
+    | flag :: more =>
+      if flag.startsWith "-" then .error s!"unknown or incomplete option {flag}"
+      else .ok { a with dirs := a.dirs ++ (flag :: more) }
+  go args {}
+
+def readText (p : System.FilePath) : IO (Option String) := do
+  if ← isRegular p then return some (← IO.FS.readFile p) else return none
+
+def readSlot (dir : System.FilePath) : IO CheatsShard.ShardSlot := do
+  if !(← dir.isDir) then return .absent
+  let mut regular : List String := []
+  for e in ← dir.readDir do
+    if ← isRegular e.path then regular := e.fileName :: regular
+  return .present {
+    exitText := ← readText (dir / CheatsShard.artifactExit)
+    casesText := ← readText (dir / CheatsShard.artifactCases)
+    timingText := ← readText (dir / CheatsShard.artifactTiming)
+    tableText := ← readText (dir / CheatsShard.artifactTable)
+    regularFiles := regular
+  }
+
+def publish (merged : System.FilePath) (plan : CheatsShard.MergePlan) (slots : List System.FilePath) :
+    IO Unit := do
+  let work := System.FilePath.mk (merged.toString ++ ".work")
+  let old := System.FilePath.mk (merged.toString ++ ".old")
+  if ← work.pathExists then IO.FS.removeDirAll work
+  IO.FS.createDirAll work
+  for c in plan.copies do
+    match slots[c.shard]? with
+    | none => throw <| IO.userError s!"shard {c.shard} is not a directory that was read"
+    | some src => copyFile (src / c.file) (work / c.file)
+  IO.FS.writeFile (work / CheatsShard.artifactTiming) plan.timing
+  if ← old.pathExists then IO.FS.removeDirAll old
+  if ← merged.pathExists then IO.FS.rename merged old
+  IO.FS.rename work merged
+  if ← old.pathExists then IO.FS.removeDirAll old
+
+def aggregateCli (args : List String) : IO UInt32 := do
+  match parseAggArgs args with
+  | .error e => IO.eprintln (ciLine e); return 2
+  | .ok a =>
+    let some checks := a.checks | IO.eprintln (ciLine "aggregate needs --checks"); return 2
+    let some shardsJob := a.shardsJob | IO.eprintln (ciLine "aggregate needs --shards"); return 2
+    let some mergedText := a.merged | IO.eprintln (ciLine "aggregate needs --merged"); return 2
+    if a.dirs.isEmpty then
+      IO.eprintln (ciLine "aggregate needs one directory per shard")
+      return 2
+    let root ← IO.currentDir
+    let dir := resolveDir root a.casesDir
+    let merged :=
+      let path := System.FilePath.mk mergedText
+      if path.isAbsolute then path else root / path
+    let slots := a.dirs.map fun d =>
+      let path := System.FilePath.mk d
+      if path.isAbsolute then path else root / path
+    try
+      let names ← listCases dir
+      let mut records : List CheatsShard.ShardSlot := []
+      for slot in slots do
+        records := records ++ [← readSlot slot]
+      let input : CheatsShard.AggregateInput := {
+        checks, shardsJob, count := slots.length, directory := names, shards := records
+      }
+      match CheatsShard.verdict input with
+      | .reject why =>
+        IO.eprintln (ciLine why.render)
+        return 1
+      | .accept plan =>
+        publish merged plan slots
+        IO.print plan.stdout
+        return 0
+    catch e =>
+      IO.eprintln (ciLine s!"mitos-gate cheats aggregate stopped on an I/O error: {e}")
+      return 1
+
+def cli (args : List String) (usage : String) : IO UInt32 := do
+  match args with
+  | "aggregate" :: rest => aggregateCli rest
+  | _ =>
+    match parseArgs args {} with
+    | .error e => IO.eprintln (ciLine e); IO.eprintln usage; return 2
+    | .ok o =>
+      if o.shard.isSome then runShard o usage
+      else if o.listOnly || o.casesDir.isSome then
+        IO.eprintln (ciLine "--list and --cases belong to cheats --shard or cheats aggregate")
+        IO.eprintln usage
+        return 2
+      else
+        try runCorpus o
+        catch e =>
+          IO.eprintln (ciLine s!"mitos-gate cheats stopped on an I/O error: {e}")
+          return 2
 
 end MitosGate.CheatsRun

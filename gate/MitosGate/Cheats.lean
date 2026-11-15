@@ -1,6 +1,7 @@
 import MitosGate.GateId
 import MitosGate.Lint
 import MitosGate.Util
+import MitosGate.CheatsShard
 
 namespace MitosGate.Cheats
 
@@ -895,7 +896,7 @@ structure Row where
   deriving Repr
 
 def Row.render (r : Row) : String :=
-  pad 20 r.case ++ " " ++ r.text ++ (if r.pass then "" else "  <-- FAIL")
+  pad 20 r.case ++ " " ++ r.text ++ (if r.pass then "" else MitosGate.CheatsShard.failMark)
 
 def header : String :=
   pad 20 "CASE" ++ " " ++ pad 14 "FULL" ++ " " ++ pad 14 "EXPECT" ++ " " ++ pad 22 "COMPARATOR-ONLY" ++
@@ -962,8 +963,8 @@ inductive Mode
   deriving DecidableEq, Repr
 
 def Mode.logName : Mode → String
-  | .full => "full"
-  | .comparatorOnly => "comparator"
+  | .full => MitosGate.CheatsShard.modeFull
+  | .comparatorOnly => MitosGate.CheatsShard.modeComparator
 
 def Case.row (c : Case) (full comp : Option Run) : Row :=
   match c.expect with
@@ -987,7 +988,7 @@ theorem table_cases (res : Nat → Mode → Option Run) (cases : List Case) :
     (table res cases).map Row.case = cases.map Case.name := tableFrom_cases res 0 cases
 
 def summary (rows : List Row) : String :=
-  if rows.all (·.pass) then s!"cheat corpus: all {rows.length} cases behave as expected"
+  if rows.all (·.pass) then MitosGate.CheatsShard.allBehave rows.length
   else "cheat corpus: FAILURES (logs in .lake/cheats/)"
 
 def report (rows : List Row) : List String := header :: rows.map Row.render ++ ["", summary rows]
