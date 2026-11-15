@@ -348,7 +348,7 @@ At a run's timeout, `CheatsRun.runChild` sends SIGKILL to the run's whole proces
 
 structure TimeoutCase where
   name : String
-  script : String → String
+  script : (grandchild : String) → String
   code : UInt32
   timedOut : Bool
 
@@ -418,7 +418,7 @@ def timeoutCase (c : TimeoutCase) (tag : String) : IO (List String) := do
     dirOf.set (some dir)
     CheatsRun.runChild "bash" #["-c", c.script (grandchild tag)] (dir / "ws") (dir / "tmp") 1000
   let ms := (← IO.monoMsNow) - t0
-  let shown := { run with logged := true }.shown
+  let shown := run.shown
   let want := if c.timedOut then "TIMEOUT" else "NO-VERDICT"
   let mut errs := #[]
   unless run.timedOut == c.timedOut do
@@ -452,7 +452,7 @@ def verdictText : Option Cheats.Verdict → String
 def verdictCase (script : String) (want : Option Cheats.Verdict) : IO (List String) := do
   let run ← CheatsRun.inRunDir fun dir =>
     CheatsRun.runChild "bash" #["-c", script] (dir / "ws") (dir / "tmp") 60000
-  let got := { run with logged := true }.verdict
+  let got := run.verdict
   if got == want then return []
   return [s!"read {verdictText got}, not {verdictText want}, from stdout {repr run.stdout} " ++
     s!"and stderr {repr run.stderr}"]
@@ -473,13 +473,13 @@ def logWrite : IO (List String) := do
     IO.FS.createDirAll (lost / "stub.full.log")
     let mut errs : Array String := #[]
     let kept ← CheatsRun.runJob stub.toString root ok 0 60 "stub" e .full
-    unless kept.run.verdict == some (.rejected .provenance .judged) do
-      errs := errs.push s!"a written log: the row would show {kept.run.shown}"
+    unless kept.verdict == some (.rejected .provenance .judged) do
+      errs := errs.push s!"a written log: the row would show {kept.shown}"
     unless (← IO.FS.readFile (ok / "stub.full.log")) == kept.run.log do
       errs := errs.push "the log does not hold the run's output"
     let gone ← CheatsRun.runJob stub.toString root lost 0 60 "stub" e .full
-    unless gone.run.verdict == none && gone.run.shown == "NO-LOG" do
-      errs := errs.push s!"a log that could not be written: the row would show {gone.run.shown}"
+    unless gone.verdict == none && gone.shown == "NO-LOG" do
+      errs := errs.push s!"a log that could not be written: the row would show {gone.shown}"
     pure errs
   catch e =>
     pure #[s!"could not run: {e}"]

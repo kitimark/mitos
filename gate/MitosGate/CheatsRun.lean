@@ -129,7 +129,7 @@ def runChild (cmd : String) (args : Array String) (cwd tmp : System.FilePath) (t
     IO.sleep 100
   let out ← IO.ofExcept (← IO.wait out)
   let err ← IO.ofExcept (← IO.wait err)
-  return { exitCode := code, stdout := out, stderr := err, timedOut, logged := false }
+  return { exitCode := code, stdout := out, stderr := err, timedOut }
 
 def runGate (gate : String) (root ws tmp : System.FilePath) (m : Mode) (timeout : Nat) :
     IO Run :=
@@ -146,13 +146,12 @@ def inRunDir (act : System.FilePath → IO Run) : IO Run := do
       act dir
     catch err =>
       pure { exitCode := 255, stdout := "", stderr := s!"mitos-gate cheats: {err}\n",
-             timedOut := false, logged := false }
+             timedOut := false }
   try IO.FS.removeDirAll dir
   catch err => IO.eprintln (ciLine s!"warning: could not remove the job directory {dir}: {err}")
   return run
 
-structure Done where
-  run : Run
+structure Done extends Logged where
   startMs : Nat
   endMs : Nat
 
@@ -177,7 +176,7 @@ def runJob (gate : String) (root logs : System.FilePath) (t0 : Nat) (timeout : N
     prepare root c e (dir / "ws")
     runGate gate root (dir / "ws") (dir / "tmp") m timeout
   let logged ← writeLog c (logs / s!"{c}.{m.logName}.log") run.log
-  return { run := { run with logged }, startMs, endMs := (← IO.monoMsNow) - t0 }
+  return { run, logged, startMs, endMs := (← IO.monoMsNow) - t0 }
 
 abbrev Pending := Task (Job × Except IO.Error Done)
 
@@ -192,8 +191,8 @@ partial def schedule (n : Nat) (launch : Job → IO Pending) (report : Job × Do
       let d : Done := match r with
         | .ok d => d
         | .error err => { run := { exitCode := 255, stdout := "",
-                                   stderr := s!"mitos-gate cheats: {err}\n", timedOut := false,
-                                   logged := false }, startMs := 0, endMs := 0 }
+                                   stderr := s!"mitos-gate cheats: {err}\n", timedOut := false },
+                          logged := false, startMs := 0, endMs := 0 }
       report (j, d)
       schedule n launch report (st.finish j) rest (acc.push (j, d))
     else return acc
@@ -229,10 +228,10 @@ def runCorpus (o : Options) : IO UInt32 := do
     let (j, d) := jd
     let secs := (d.endMs - d.startMs) / 1000
     IO.eprintln (ciLine (s!"[{← finished.get}/{js.length}] {names[j.case]!} {j.mode.logName}: " ++
-      s!"{d.run.shown} ({secs} s)"))
+      s!"{d.shown} ({secs} s)"))
   let done ← schedule o.jobs launch progress (.init js) [] #[]
-  let res (i : Nat) (m : Mode) : Option Run :=
-    (done.find? fun (j, _) => j.case == i && j.mode == m).map (·.2.run)
+  let res (i : Nat) (m : Mode) : Option Logged :=
+    (done.find? fun (j, _) => j.case == i && j.mode == m).map (·.2.toLogged)
   let rows := table res cases
   let tsv := done.toList.map fun (j, d) =>
     s!"{oneLine names[j.case]!}\t{j.mode.logName}\t{d.startMs}\t{d.endMs}\t{d.run.exitCode}\t" ++

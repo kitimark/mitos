@@ -559,26 +559,22 @@ structure Run where
   stdout : String
   stderr : String
   timedOut : Bool
-  logged : Bool
   deriving Inhabited, Repr
 
 def Run.log (r : Run) : String := r.stdout ++ r.stderr
 
-def noRun : Run := { exitCode := 255, stdout := "", stderr := "", timedOut := false, logged := false }
-
 def Run.verdict (r : Run) : Option Verdict :=
-  if r.timedOut || !r.logged then none
+  if r.timedOut then none
   else match readVerdict r.stdout with
     | some v => if v.exitCode = r.exitCode then some v else none
     | none => none
 
 theorem Run.verdict_eq_some {r : Run} {v : Verdict} :
-    r.verdict = some v ↔ r.timedOut = false ∧ r.logged = true ∧ readVerdict r.stdout = some v ∧
+    r.verdict = some v ↔ r.timedOut = false ∧ readVerdict r.stdout = some v ∧
       v.exitCode = r.exitCode := by
   unfold Run.verdict
-  cases ht : r.timedOut <;> cases hl : r.logged
-  · simp
-  · simp only [Bool.false_or, Bool.not_true, Bool.false_eq_true, ↓reduceIte, true_and]
+  cases ht : r.timedOut
+  · simp only [Bool.false_eq_true, ↓reduceIte, true_and]
     cases h : readVerdict r.stdout with
     | none => simp
     | some v' =>
@@ -591,14 +587,28 @@ theorem Run.verdict_eq_some {r : Run} {v : Verdict} :
       · simp only [he, ↓reduceIte, reduceCtorEq, false_iff, not_and]
         rintro rfl; exact he
   · simp
-  · simp
+
+structure Logged where
+  run : Run
+  logged : Bool
+  deriving Inhabited, Repr
+
+def Logged.verdict (l : Logged) : Option Verdict := if l.logged then l.run.verdict else none
+
+theorem Logged.verdict_eq_some {l : Logged} {v : Verdict} :
+    l.verdict = some v ↔ l.logged = true ∧ l.run.verdict = some v := by
+  unfold Logged.verdict
+  cases l.logged <;> simp
+
+def noRun : Logged :=
+  { run := { exitCode := 255, stdout := "", stderr := "", timedOut := false }, logged := false }
 
 example : noRun.verdict = none := by decide
 
 def statementsLine : String := "VERDICT: REJECTED (gate 3: statements)\n"
 
-def exited (out err : String) (logged : Bool := true) : Run :=
-  { exitCode := 1, stdout := out, stderr := err, timedOut := false, logged }
+def exited (out err : String) : Run :=
+  { exitCode := 1, stdout := out, stderr := err, timedOut := false }
 
 example : (exited "" ("uncaught exception: x\n" ++ statementsLine)).verdict = none := by
   decide +kernel
@@ -612,8 +622,9 @@ example : (exited (statementsLine ++ statementsLine) "").verdict = none := by de
 example : (exited ("GATE 3 statements: FAIL\n" ++ statementsLine) "note\n").verdict =
     some (.rejected .statements .judged) := by decide +kernel
 
-example : (exited ("GATE 3 statements: FAIL\n" ++ statementsLine) "note\n" false).verdict = none := by
-  decide +kernel
+example :
+    Logged.verdict ⟨exited ("GATE 3 statements: FAIL\n" ++ statementsLine) "note\n", false⟩ = none :=
+  by decide +kernel
 
 def Run.shown (r : Run) : String :=
   match r.verdict with
@@ -622,7 +633,9 @@ def Run.shown (r : Run) : String :=
   | some (.rejected g .ioError) => s!"IO-ERROR@{g.num}"
   | some (.rejected g .noJudgment) => s!"NO-JUDGMENT@{g.num}"
   | some (.unrecorded _) => "REJECTED@record"
-  | none => if r.timedOut then "TIMEOUT" else if r.logged then "NO-VERDICT" else "NO-LOG"
+  | none => if r.timedOut then "TIMEOUT" else "NO-VERDICT"
+
+def Logged.shown (l : Logged) : String := if l.logged then l.run.shown else "NO-LOG"
 
 inductive CompExpect
   | accept
@@ -1080,10 +1093,10 @@ example : CompExpect.ok .reject (some (.rejected .sandbox .noJudgment)) = false 
 example : CompExpect.ok (.rejectAt .sandbox) (some (.rejected .sandbox .noJudgment)) = false := by
   decide
 
-def guardsOk (e : Expect) (full : Run) : Bool :=
+def guardsOk (e : Expect) (full : Logged) : Bool :=
   match e.guards with
   | none => true
-  | some r => guardsWhy r e.comparatorOnly full.stdout == .holds
+  | some r => guardsWhy r e.comparatorOnly full.run.stdout == .holds
 
 def pad (n : Nat) (s : String) : String := s ++ String.ofList (List.replicate (n - s.length) ' ')
 
@@ -1100,10 +1113,10 @@ def header : String :=
   pad 20 "CASE" ++ " " ++ pad 14 "FULL" ++ " " ++ pad 14 "EXPECT" ++ " " ++ pad 22 "COMPARATOR-ONLY" ++
     " " ++ pad 10 "EXPECT" ++ " " ++ "GUARDS"
 
-def judge (case : String) (e : Expect) (full comp : Run) : Row :=
+def judge (case : String) (e : Expect) (full comp : Logged) : Row :=
   let guard := match e.guards with
     | none => ""
-    | some r => guardText r (guardsWhy r e.comparatorOnly full.stdout)
+    | some r => guardText r (guardsWhy r e.comparatorOnly full.run.stdout)
   { case
     text := pad 14 full.shown ++ " " ++ pad 14 ("@" ++ toString e.full.num) ++ " " ++
       pad 22 comp.shown ++ " " ++ pad 10 e.comparatorOnly.render ++ " " ++ guard
@@ -1114,10 +1127,10 @@ def CompExpect.Holds : CompExpect → Option Verdict → Prop
   | .reject, v => ∃ g, v = some (.rejected g .judged)
   | .rejectAt g, v => v = some (.rejected g .judged)
 
-theorem judge_pass_iff {case : String} {e : Expect} {full comp : Run} :
+theorem judge_pass_iff {case : String} {e : Expect} {full comp : Logged} :
     (judge case e full comp).pass = true ↔
       full.verdict = some (.rejected e.full .judged) ∧ e.comparatorOnly.Holds comp.verdict ∧
-        ∀ r, e.guards = some r → guardsWhy r e.comparatorOnly full.stdout = .holds := by
+        ∀ r, e.guards = some r → guardsWhy r e.comparatorOnly full.run.stdout = .holds := by
   simp only [judge, Bool.and_eq_true, and_assoc]
   apply and_congr
   · generalize full.verdict = v
@@ -1140,40 +1153,40 @@ def ioAtAdequacy : Run :=
   { exitCode := 1
     stdout := "VERDICT: REJECTED (gate 6: model adequacy: I/O error)\n"
     stderr := ""
-    timedOut := false
-    logged := true }
+    timedOut := false }
 
 def judgedAtAdequacy : Run :=
   { exitCode := 1
     stdout := "VERDICT: REJECTED (gate 6: model adequacy)\n"
     stderr := ""
-    timedOut := false
-    logged := true }
+    timedOut := false }
 
 def noJudgmentAtSandbox : Run :=
   { exitCode := 1
     stdout := "VERDICT: REJECTED (gate 2: sandbox build: no judgment)\n"
     stderr := ""
-    timedOut := false
-    logged := true }
+    timedOut := false }
 
 example : (judge "wrong cause" { full := .adequacy, comparatorOnly := .reject }
-    ioAtAdequacy judgedAtAdequacy).pass = false := by decide
+    ⟨ioAtAdequacy, true⟩ ⟨judgedAtAdequacy, true⟩).pass = false := by decide
 
 example : (judge "judged" { full := .adequacy, comparatorOnly := .reject }
-    judgedAtAdequacy judgedAtAdequacy).pass = true := by decide
+    ⟨judgedAtAdequacy, true⟩ ⟨judgedAtAdequacy, true⟩).pass = true := by decide
+
+example : (judge "not logged" { full := .adequacy, comparatorOnly := .reject }
+    ⟨judgedAtAdequacy, false⟩ ⟨judgedAtAdequacy, true⟩).pass = false := by decide
 
 example : (judge "no judgment" { full := .adequacy, comparatorOnly := .reject }
-    judgedAtAdequacy noJudgmentAtSandbox).pass = false := by decide
+    ⟨judgedAtAdequacy, true⟩ ⟨noJudgmentAtSandbox, true⟩).pass = false := by decide
 
 example : (judge "no judgment at the gate" { full := .adequacy, comparatorOnly := .rejectAt .sandbox }
-    judgedAtAdequacy noJudgmentAtSandbox).pass = false := by decide
+    ⟨judgedAtAdequacy, true⟩ ⟨noJudgmentAtSandbox, true⟩).pass = false := by decide
 
 example : noJudgmentAtSandbox.shown = "NO-JUDGMENT@2" := by decide
 
 example : ioAtAdequacy.shown = "IO-ERROR@6" := by decide
 
-example : { judgedAtAdequacy with logged := false }.shown = "NO-LOG" := by decide
+example : (⟨judgedAtAdequacy, false⟩ : Logged).shown = "NO-LOG" := by decide
 
 structure Case where
   name : String
@@ -1187,25 +1200,25 @@ def Mode.logName : Mode → String
   | .full => MitosGate.CheatsShard.modeFull
   | .comparatorOnly => MitosGate.CheatsShard.modeComparator
 
-def Case.row (c : Case) (full comp : Option Run) : Row :=
+def Case.row (c : Case) (full comp : Option Logged) : Row :=
   match c.expect with
   | .error msg => { case := c.name, text := msg, pass := false }
   | .ok e => judge c.name e (full.getD noRun) (comp.getD noRun)
 
-def tableFrom (res : Nat → Mode → Option Run) : Nat → List Case → List Row
+def tableFrom (res : Nat → Mode → Option Logged) : Nat → List Case → List Row
   | _, [] => []
   | i, c :: cs => c.row (res i .full) (res i .comparatorOnly) :: tableFrom res (i + 1) cs
 
-def table (res : Nat → Mode → Option Run) (cases : List Case) : List Row := tableFrom res 0 cases
+def table (res : Nat → Mode → Option Logged) (cases : List Case) : List Row := tableFrom res 0 cases
 
-theorem tableFrom_cases (res : Nat → Mode → Option Run) :
+theorem tableFrom_cases (res : Nat → Mode → Option Logged) :
     ∀ (i : Nat) (cases : List Case), (tableFrom res i cases).map Row.case = cases.map Case.name
   | _, [] => rfl
   | i, c :: cs => by
     simp only [tableFrom, List.map_cons, tableFrom_cases res (i + 1) cs, List.cons.injEq, and_true]
     unfold Case.row; split <;> rfl
 
-theorem table_cases (res : Nat → Mode → Option Run) (cases : List Case) :
+theorem table_cases (res : Nat → Mode → Option Logged) (cases : List Case) :
     (table res cases).map Row.case = cases.map Case.name := tableFrom_cases res 0 cases
 
 def summary (rows : List Row) : String :=
