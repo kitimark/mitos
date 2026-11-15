@@ -28,16 +28,18 @@ def timingText (i : AggregateInput) : String :=
   "case\tmode\tstart_ms\tend_ms\texit\ttimed_out\tshard\n" ++
     String.intercalate "\n" lines ++ if lines.isEmpty then "" else "\n"
 
-def firstDataRow (tables : List String) (name : String) : Option String :=
-  tables.findSome? fun text =>
-    ((linesOf text).drop 1).find? fun line => firstToken line == name
+def rowOf (text name : String) : Option String :=
+  ((linesOf text).drop 1).find? fun line => firstToken line == name
 
-def stdoutText (directory : List String) (tables : List String) : String :=
+/-- The row for directory index `i` comes from residue `i % count`, the shard `byMod` validated.
+A same-named row in another shard's table is not printed. -/
+def stdoutText (directory : List String) (count : Nat) (tables : List String) : String :=
   let header :=
     match tables with
     | [] => ""
     | t :: _ => (linesOf t).head?.getD ""
-  let rows := directory.filterMap (firstDataRow tables)
+  let rows := directory.zipIdx.filterMap fun (name, i) =>
+    (tables[i % count]?).bind (rowOf · name)
   String.intercalate "\n" (header :: rows) ++ "\n\n" ++ allBehave directory.length ++ "\n"
 
 def tableOfSlot : ShardSlot → String
@@ -57,6 +59,6 @@ def plan (i : AggregateInput) : MergePlan :=
   { copies
     timing := timingText i
     shardTables := (List.range i.count).map fun k => (k, (tableTexts i)[k]?.getD "")
-    stdout := stdoutText i.directory (tableTexts i) }
+    stdout := stdoutText i.directory i.count (tableTexts i) }
 
 end MitosGate.CheatsAggregate

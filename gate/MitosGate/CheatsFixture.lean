@@ -156,12 +156,18 @@ theorem missingLogRejects :
       some (.missingLog 0 "one" modeComparator) := by
   decide
 
+theorem ownedRowWins :
+    stdoutOf (verdict (edit good 0 fun f =>
+      { f with tableText := some "CASE FULL\nthree ACCEPTED\none REJECTED\n" })) =
+      expectedStdout := by
+  decide
+
 end Fixture
 
 open Lean in
 #eval show CoreM Unit from do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
-  let theorems := (← getEnv).constants.map₂.foldl (fun acc n c =>
+  let theorems := (← getEnv).constants.fold (fun acc n c =>
     if c.isTheorem &&
         ((`MitosGate.IndexMod).isPrefixOf n ||
           (`MitosGate.DecideList).isPrefixOf n ||
