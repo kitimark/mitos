@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import MitosGate.Land
+import MitosGate.LandAnswer
 import MitosGate.Util
 
 /-!
@@ -308,6 +309,41 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
       return 1
   catch e =>
     IO.eprintln (ciLine s!"land: stopped on an I/O error: {e}")
+    return 1
+
+/-- `mitos-gate land-answers [<snapshot.json>]`: what land.yml's apply and report act on, as one
+line: `merge` is `LandAnswer.handoff` and `answers` holds one entry per pull request whose reply is
+an `Answer`. It refuses what `land` refuses (`read`); `me`, `pr` and `event` change nothing. -/
+def answersJson (s : Snapshot) : Json :=
+  Json.mkObj
+    [("merge", (LandAnswer.handoff (queueOf s.prs)).elim Json.null fun x =>
+        Json.mkObj [("pr", n x.pr), ("head", .str x.head), ("approval", n x.approval), ("requiresSpec", .bool x.requiresSpec)]),
+     ("answers", Json.arr ((LandAnswer.answers s.prs).map fun (p, a) =>
+        Json.mkObj [("pr", n p), ("line", .str a.line), ("body", .str a.body)]).toArray)]
+
+
+def answersCli (args : List String) (usage : String) : IO UInt32 := do
+  let path? ← match args with
+    | [] | ["-"] => pure (some none)
+    | [p] => pure (some (some p))
+    | _ => pure none
+  let some path := path? | do
+    IO.eprintln "land-answers takes at most one argument, the snapshot file (default: standard input)"
+    IO.eprintln usage
+    return 2
+  try
+    let text ← match path with
+      | none => (← IO.getStdin).readToEnd
+      | some p => IO.FS.readFile p
+    match (read text).map answersJson with
+    | .ok j =>
+      IO.println j.compress
+      return 0
+    | .error e =>
+      IO.eprintln (ciLine s!"land-answers: the snapshot is refused: {e}")
+      return 1
+  catch e =>
+    IO.eprintln (ciLine s!"land-answers: stopped on an I/O error: {e}")
     return 1
 
 end MitosGate.LandCli

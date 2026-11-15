@@ -266,6 +266,25 @@ else
     ok "$name"
   fi
 fi
+jq -c '.' "$base" >"$tmp/in"
+if "$bin" land-answers "$tmp/in" >"$tmp/out" 2>"$tmp/err" &&
+  jq -e '.merge == null and .answers[0].pr == 153 and
+    .answers[0].line == "Queued at aaa: waiting for the replay." and
+    (.answers[0].body | startswith("<!-- land-report -->\n"))' "$tmp/out" >/dev/null; then
+  ok "land-answers on the fixture"
+else bad "land-answers on the fixture" "$(cat "$tmp/out" "$tmp/err")"; fi
+jq -c '.prs[0] |= (.head = "ar" | .pushes = [{byUpdater:true,before:"aaa",after:"ar"}] |
+  .base = {kind:"current"}) | del(.prs[2])' "$base" >"$tmp/in"
+if "$bin" land-answers "$tmp/in" >"$tmp/out" 2>"$tmp/err" &&
+  jq -e '.merge == {pr:153,head:"ar",approval:450,requiresSpec:false} and .answers == []' "$tmp/out" >/dev/null; then
+  ok "the planned merge hands its approval"
+else bad "the planned merge hands its approval" "$(cat "$tmp/out" "$tmp/err")"; fi
+echo '{"prs":[{"pr":1}]}' >"$tmp/in"
+got=0
+"$bin" land-answers "$tmp/in" >"$tmp/out" 2>"$tmp/err" || got=$?
+if [ "$got" = 1 ] && [ ! -s "$tmp/out" ] && grep -q '^land-answers: the snapshot is refused:' "$tmp/err"; then
+  ok "a refused snapshot is refused by land-answers too"
+else bad "a refused snapshot is refused by land-answers too" "exit $got" "$(cat "$tmp/out" "$tmp/err")"; fi
 
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]
