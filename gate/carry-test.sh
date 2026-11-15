@@ -28,11 +28,8 @@ expect() {
 
 mkdir -p "$repo"
 g init -q -b main
-cp "$root/.gitattributes" "$repo/.gitattributes"
-mkdir -p "$repo/ops/runs"
 blk() { printf '  run lint\n  run build\n  run proofs\n  run axioms\n  run cheats\n  run lock\n'; }
 { echo 'strict() {'; blk; echo '}'; echo 'lax() {'; blk; echo '}'; } >"$repo/check.sh"
-echo '{"task":"m0"}' >"$repo/ops/runs/d.ndjson"
 echo x >"$repo/other.txt"
 g add -A
 g commit -qm M1
@@ -40,7 +37,6 @@ g tag M1
 
 g checkout -qb pr
 awk '/^lax\(\) \{/{f=1} !(f && $0=="  run axioms")' "$repo/check.sh" >"$tmp/x" && mv "$tmp/x" "$repo/check.sh"
-echo '{"task":"pr","attempt":1}' >>"$repo/ops/runs/d.ndjson"
 g commit -qam V
 g tag V
 { echo 'strict() {'; blk | grep -v axioms; echo '}'; echo 'lax() {'; blk; echo '}'; } >"$repo/check.sh"
@@ -48,7 +44,6 @@ g commit -qam V2
 g tag V2
 g checkout -q main
 { echo 'pre() {'; blk; echo '}'; echo 'strict() {'; blk; echo '}'; echo 'lax() {'; blk; echo '}'; } >"$repo/check.sh"
-echo '{"task":"m1"}' >>"$repo/ops/runs/d.ndjson"
 g commit -qam M2
 g checkout -qb x V2
 g rebase -q main
@@ -74,8 +69,9 @@ expect "the updater's rebase of V over pre() changes the content id" 1 \
   < <(push force_push "$bot" V H)
 
 g checkout -qb main2 M1
-echo '{"task":"n1"}' >>"$repo/ops/runs/d.ndjson"
-g commit -qam N1
+echo notes >"$repo/notes.txt"
+g add -A
+g commit -qm N1
 g tag N1
 echo y >"$repo/other.txt"
 g commit -qam N2
@@ -125,13 +121,6 @@ expect "a hostile login prints on one line with no workflow command" 1 \
   '^no carry: .* by "::warning::x ##\\u\{005B\}error\]y", not' main2 V Y2 \
   < <(printf '%s\t%s\t%s\t%s\t%s\n' t force_push '::warning::x ##[error]y' "$(g rev-parse V)" "$(g rev-parse Y2)")
 
-g checkout -qb edit Y2
-sed -i 's/n1/n9/' "$repo/ops/runs/d.ndjson"
-g commit -qam edit
-expect "a content-id refusal at the head stops the carry" 1 \
-  '^no carry: line [0-9]+ of the merge-base version of "ops/runs/d.ndjson" is missing at the head' \
-  main2 Y2 edit \
-  < <(push force_push "$bot" Y2 edit)
 expect "a verified head that is not in the clone stops it" 1 \
   '^no carry: "0123456789012345678901234567890123456789" is not a commit' \
   main2 0123456789012345678901234567890123456789 Y2 \

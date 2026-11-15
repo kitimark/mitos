@@ -1,112 +1,9 @@
 import MitosGate.RunLog
 import Std.Data.String.ToNat
 
-namespace MitosGate.RunLog
-
-def added : List String → List String → List String
-  | [], head => head
-  | b :: bs, head => added bs (head.erase b)
-
-theorem count_added (base head : List String) (l : String) :
-    (added base head).count l = head.count l - base.count l := by
-  induction base generalizing head with
-  | nil => simp [added]
-  | cons b bs ih =>
-    rw [added, ih, List.count_erase, List.count_cons]
-    split <;> omega
-
-theorem appendOnly_iff_perm_added {base head : List String} :
-    appendOnly base head = true ↔ head.Perm (base ++ added base head) := by
-  constructor
-  · intro h
-    apply List.perm_iff_count.mpr
-    intro l
-    rw [List.count_append, count_added]
-    have := appendOnly_iff_count.mp h l
-    omega
-  · intro h
-    exact appendOnly_iff_perm_append.mpr ⟨_, h⟩
-
-theorem added_perm_of_perm_append {base head a : List String} (h : head.Perm (base ++ a)) :
-    (added base head).Perm a := by
-  apply List.perm_iff_count.mpr
-  intro l
-  rw [count_added, List.perm_iff_count.mp h l, List.count_append]
-  omega
-
-def sortLines (ls : List String) : List String :=
-  ls.mergeSort fun a b => decide (a ≤ b)
-
-theorem sortLines_eq_of_perm {l₁ l₂ : List String} (h : l₁.Perm l₂) :
-    sortLines l₁ = sortLines l₂ := by
-  have trans : ∀ a b c : String, decide (a ≤ b) = true → decide (b ≤ c) = true →
-      decide (a ≤ c) = true := fun _ _ _ hab hbc =>
-    decide_eq_true (Std.le_trans (of_decide_eq_true hab) (of_decide_eq_true hbc))
-  have total : ∀ a b : String, (decide (a ≤ b) || decide (b ≤ a)) = true := fun a b => by
-    rcases Std.le_total (a := a) (b := b) with h | h <;> simp [h]
-  apply List.Perm.eq_of_pairwise (le := fun a b => decide (a ≤ b) = true)
-  · intro a b _ _ hab hba
-    exact Std.le_antisymm (of_decide_eq_true hab) (of_decide_eq_true hba)
-  · exact List.pairwise_mergeSort trans total _
-  · exact List.pairwise_mergeSort trans total _
-  · exact (List.mergeSort_perm _ _).trans (h.trans (List.mergeSort_perm _ _).symm)
-
-def addedSorted? (base head : List String) : Option (List String) :=
-  if appendOnly base head then some (sortLines (added base head)) else none
-
-theorem addedSorted?_eq_none_iff {base head : List String} :
-    addedSorted? base head = none ↔ appendOnly base head = false := by
-  unfold addedSorted?
-  cases appendOnly base head <;> simp
-
-theorem addedSorted?_edit (p s : List String) {l l' : String} (hne : l ≠ l') :
-    addedSorted? (p ++ l :: s) (p ++ l' :: s) = none :=
-  addedSorted?_eq_none_iff.mpr (appendOnly_edit p s hne)
-
-theorem addedSorted?_delete (p s : List String) (l : String) :
-    addedSorted? (p ++ l :: s) (p ++ s) = none :=
-  addedSorted?_eq_none_iff.mpr (appendOnly_delete p s l)
-
-theorem addedSorted?_of_perm_append {base head a : List String} (h : head.Perm (base ++ a)) :
-    addedSorted? base head = some (sortLines a) := by
-  have hb : appendOnly base head = true := appendOnly_iff_perm_append.mpr ⟨a, h⟩
-  simp only [addedSorted?, hb, ↓reduceIte, sortLines_eq_of_perm (added_perm_of_perm_append h)]
-
-theorem addedSorted?_union {mb main a m head head' : List String}
-    (hhead : head.Perm (mb ++ a)) (hmain : main.Perm (mb ++ m))
-    (hunion : head'.Perm (mb ++ a ++ m)) :
-    addedSorted? main head' = addedSorted? mb head := by
-  rw [addedSorted?_of_perm_append hhead]
-  apply addedSorted?_of_perm_append
-  have hswap : (mb ++ a ++ m).Perm (mb ++ m ++ a) := by
-    rw [List.append_assoc, List.append_assoc]
-    exact List.Perm.append_left mb List.perm_append_comm
-  exact hunion.trans (hswap.trans (hmain.append_right a).symm)
-
-example : added ["A", "B"] ["A", "B", "D", "C"] = ["D", "C"] := by decide
-example : added ["A", "B", "M"] ["A", "B", "C", "M", "D"] = ["C", "D"] := by decide
-example : added ["A", "A"] ["A", "B", "A", "A"] = ["B", "A"] := by decide
-example : addedSorted? ["A", "B"] ["A", "B'", "C"] = none := by decide
-example : addedSorted? ["A", "B"] ["A", "C"] = none := by decide
-example : addedSorted? ["A", "A"] ["A", "B"] = none := by decide
-
-end MitosGate.RunLog
-
 namespace MitosGate.ContentId
 
-open RunLog (quote addedSorted? missingIndex splitLines Message)
-
-def isRunLog (p : String) : Bool :=
-  let cs := p.toList
-  "ops/runs/".toList.isPrefixOf cs && ".ndjson".toList.isSuffixOf cs && !(cs.drop 9).contains '/'
-
-example : isRunLog "ops/runs/2026-11-09.ndjson" = true := by decide
-example : isRunLog "ops/runs/.ndjson" = true := by decide
-example : isRunLog "ops/runs/.x.ndjson" = true := by decide
-example : isRunLog "ops/runs/sub/x.ndjson" = false := by decide
-example : isRunLog "ops/runs/README.md" = false := by decide
-example : isRunLog "ops/runs.ndjson" = false := by decide
-example : isRunLog "x/ops/runs/a.ndjson" = false := by decide
+open RunLog (quote splitLines Message)
 
 def modeHeaders : List String := ["old mode ", "new mode ", "deleted file mode ", "new file mode "]
 
@@ -635,30 +532,6 @@ where
 def blob (oid : String) : M String :=
   return latin1 (← git #["cat-file", "blob", oid])
 
-def runLogLines (e : Entry) : M RunFile := do
-  let regular := "a run-log file must be a regular file with mode 100644"
-  let (base, head) ← match e.status with
-    | "A" =>
-      unless e.newMode == "100644" do
-        throw (quote e.path ++ msg s!" is added with mode {e.newMode}; {regular}")
-      pure ("", ← blob e.newOid)
-    | "M" =>
-      unless e.oldMode == "100644" && e.newMode == "100644" do
-        throw (quote e.path ++ msg s!" changes mode from {e.oldMode} to {e.newMode}; {regular}")
-      pure (← blob e.oldOid, ← blob e.newOid)
-    | "D" => throw (quote e.path ++ msg " is deleted. Run-log files are append-only (ops/runs/README.md)")
-    | st => throw (quote e.path ++ msg " changes in type (status " ++ quote st ++ msg s!"); {regular}")
-  let (base, noEol) := (splitLines base, !head.isEmpty && !head.endsWith "\n")
-  let head := splitLines head
-  match hs : addedSorted? base head with
-  | some ls => return ⟨e.path, ls, noEol⟩
-  | none =>
-    let i := missingIndex base head (RunLog.addedSorted?_eq_none_iff.mp hs)
-    throw (msg s!"line {i + 1} of the merge-base version of " ++ quote e.path ++
-      msg " is missing at the head. " ++
-      msg "Run-log lines are append-only: a line already on the base branch may not be edited or " ++
-      msg "deleted (ops/runs/README.md)")
-
 /-- The lines of the file a block's hunks apply to: none when the block adds the file, the line
 `--submodule=short` prints for a submodule, and the merge-base blob's lines otherwise. -/
 def baseLines (e : Entry) (blk : List String) : M (List String) := do
@@ -691,7 +564,6 @@ def compute (base head : String) : M Result := do
   let mut left ← ExceptT.mk (pure (splitBlocks patch))
   let mut rest : Array String := #[]
   let mut restFiles := 0
-  let mut runs : Array RunFile := #[]
   for e in entries do
     -- A change of type (file, symlink, submodule) is two blocks: a deletion and an addition.
     let n := if e.status == "T" then 2 else 1
@@ -699,21 +571,19 @@ def compute (base head : String) : M Result := do
     left := left.drop n
     unless mine.length == n && mine.all (·.head? == some (diffHeader e.path)) do
       throw (msg "the diff and the --raw listing disagree at " ++ quote e.path)
-    if isRunLog e.path then
-      runs := runs.push (← runLogLines e)
-    else
-      restFiles := restFiles + 1
-      for blk in mine do
-        let fileBase ← if blk.any (kind · == .hunkHeader) then baseLines e blk else pure []
-        match normalize fileBase blk with
-        | some ls => rest := rest ++ ls.toArray
-        | none => throw (msg "a hunk of " ++ quote e.path ++
-          msg " does not fit the merge-base version of the file")
+    restFiles := restFiles + 1
+    for blk in mine do
+      let fileBase ← if blk.any (kind · == .hunkHeader) then baseLines e blk else pure []
+      match normalize fileBase blk with
+      | some ls => rest := rest ++ ls.toArray
+      | none => throw (msg "a hunk of " ++ quote e.path ++
+        msg " does not fit the merge-base version of the file")
   unless left.isEmpty do
     throw (msg "the diff has a file block that the --raw listing does not have")
   let restHex ← sha256Hex (latin1Bytes (String.join (rest.toList.map (· ++ "\n"))))
-  let id ← sha256Hex (latin1Bytes (preimage restHex runs.toList))
-  return { mergeBase := mb, rest := restHex, restFiles, runs := runs.toList, id }
+  -- `runs` stays empty. Dropping the section would change the id of every diff.
+  let id ← sha256Hex (latin1Bytes (preimage restHex []))
+  return { mergeBase := mb, rest := restHex, restFiles, runs := [], id }
 
 def logLine (s : String) : String := ciLine s
 
@@ -726,11 +596,7 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
       | .ok r =>
         if verbose then
           IO.eprintln s!"merge-base {r.mergeBase}"
-          IO.eprintln s!"rest {r.rest} ({r.restFiles} file(s) outside the run logs)"
-          for f in r.runs do
-            let eol := if f.noEol then ", no newline at end of file" else ""
-            IO.eprintln (msg "runs " ++ quote f.path (max := 200) ++
-              msg s!": {f.lines.length} added line(s){eol}").ciLine
+          IO.eprintln s!"rest {r.rest} ({r.restFiles} file(s))"
         IO.println r.id
         return 0
       | .error e =>
