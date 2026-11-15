@@ -40,7 +40,8 @@ case "$2" in
   repos/acme/widgets/pulls/*/reviews*)
     s=${2#repos/acme/widgets/pulls/}; name=thread-rv-${s%%/*}; empty='[[]]' ;;
   repos/acme/widgets/pulls/[0-9]*)
-    name=pull-${2#repos/acme/widgets/pulls/}; empty='{"mergeable":true,"mergeable_state":"clean"}' ;;
+    n=${2#repos/acme/widgets/pulls/}; name=pull-$n
+    empty=$(jq -c --argjson n "$n" '.[] | select(.number == $n) | {head: {sha: .head.sha}, mergeable: true, mergeable_state: "clean", rebaseable: true}' "$FAKE_DIR/open.json" 2>/dev/null) ;;
   repos/acme/widgets/compare/*) name=compare ;;
   *) echo "unexpected route $2" >&2; exit 1 ;;
 esac
@@ -628,21 +629,22 @@ echo '{"check_runs":[{"id":2,"name":"gate","status":"completed","conclusion":"su
 run ok
 expect "a re-run: the latest gate run counts" "$(mline 45 "$H45" "$userkeeps")"
 
+pull45() { echo "{\"head\":{\"sha\":\"$H45\"},$1}" >"$work/pull-45.json"; }
 ready_reset
 run ok
 expect "a clean PR: merge command" "$(mline 45 "$H45" "$userkeeps")"
 reject "a clean PR: no conflict note" "conflict="
-echo '{"mergeable":true,"mergeable_state":"clean"}' >"$work/pull-45.json"
+pull45 '"mergeable":true,"mergeable_state":"clean"'
 run ok
 expect "a clean PR read from the PR route: merge command" "$(mline 45 "$H45" "$userkeeps")"
-echo '{"mergeable":true,"mergeable_state":"unstable"}' >"$work/pull-45.json"
+pull45 '"mergeable":true,"mergeable_state":"unstable"'
 run ok
 expect "mergeable with failing optional checks: merge command" "$(mline 45 "$H45" "$userkeeps")"
 echo '{"mergeable":false,"mergeable_state":"dirty"}' >"$work/pull-45.json"
 run ok
 expect "a dirty PR shows the conflict" "verdict=9c9db92(the head) owner-unanswered=- user-kept=yes conflict=dirty"
 reject "a dirty PR: no merge command" "merge-ready #45"
-echo '{"mergeable":true,"mergeable_state":"dirty"}' >"$work/pull-45.json"
+pull45 '"mergeable":true,"mergeable_state":"dirty"'
 run ok
 expect "mergeable_state dirty alone counts" "conflict=dirty"
 reject "mergeable_state dirty alone: no merge command" "merge-ready #45"
@@ -662,6 +664,49 @@ echo '{"mergeable":"yes"}' >"$work/pull-45.json"
 run ok
 expect "an odd mergeable value is unreadable" "conflict=unreadable"
 reject "an odd mergeable value: no merge command" "merge-ready #45"
+pull45 '"mergeable":true,"mergeable_state":"has_hooks","rebaseable":true'
+run ok
+expect "has_hooks: merge command" "$(mline 45 "$H45" "$userkeeps")"
+reject "has_hooks: no conflict note" "conflict="
+pull45 '"mergeable":true,"mergeable_state":"behind","rebaseable":true'
+run ok
+expect "behind main: strict protection forbids the merge" "user-kept=yes conflict=behind"
+reject "behind main: no merge command" "merge-ready #45"
+pull45 '"mergeable":true,"mergeable_state":"blocked","rebaseable":true'
+run ok
+expect "blocked: a required rule is unmet" "user-kept=yes conflict=blocked"
+reject "blocked: no merge command" "merge-ready #45"
+pull45 '"mergeable":true,"mergeable_state":"unknown"'
+run ok
+expect "state unknown with mergeable true is not computed" "conflict=not-computed"
+reject "state unknown: no merge command" "merge-ready #45"
+pull45 '"mergeable":true,"mergeable_state":"draft"'
+run ok
+expect "an unrecognised state is not computed" "conflict=not-computed"
+reject "an unrecognised state: no merge command" "merge-ready #45"
+pull45 '"mergeable":true'
+run ok
+expect "mergeable true with no state is not computed" "conflict=not-computed"
+reject "mergeable true with no state: no merge command" "merge-ready #45"
+pull45 '"mergeable":true,"mergeable_state":"clean","rebaseable":false'
+run ok
+expect "not rebaseable: the command merges by rebase" "user-kept=yes conflict=not-rebaseable"
+reject "not rebaseable: no merge command" "merge-ready #45"
+pull45 '"mergeable":true,"mergeable_state":"clean","rebaseable":null'
+run ok
+expect "rebaseable null does not hold" "$(mline 45 "$H45" "$userkeeps")"
+pull45 '"mergeable":true,"mergeable_state":"clean","rebaseable":"yes"'
+run ok
+expect "an odd rebaseable value is unreadable" "conflict=unreadable"
+reject "an odd rebaseable value: no merge command" "merge-ready #45"
+echo '{"head":{"sha":"ffffffffffffffffffffffffffffffffffffffff"},"mergeable":true,"mergeable_state":"clean","rebaseable":true}' >"$work/pull-45.json"
+run ok
+expect "the PR route shows another head than the list" "user-kept=yes conflict=head-moved"
+reject "another head: no merge command" "merge-ready #45"
+echo '{"mergeable":true,"mergeable_state":"clean","rebaseable":true}' >"$work/pull-45.json"
+run ok
+expect "a PR route with no head cannot be matched" "conflict=unreadable"
+reject "no head: no merge command" "merge-ready #45"
 rm -f "$work/pull-45.json"
 FAKE_FAIL=pull run ok
 exit0 "the PR route fails"
