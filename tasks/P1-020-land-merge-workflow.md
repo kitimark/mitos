@@ -48,7 +48,7 @@ modules: one topic per file.
 | File | The one topic it owns | Budget | Copies the layout of |
 |---|---|---|---|
 | `gate/MitosGate/LandAnswer.lean` (new) | what the land workflow answers to an owner word, and what it hands to `apply`: types, `reply`, `answers`, `handoff`, the rendered lines, statements, `namespace Fixture`, the axiom check | ~230 | `Shadow/Reading.lean` |
-| `gate/MitosGate/LandCli.lean` | adds `answersJson` and `answersCli` (`mitos-gate land-answers`) | +40 | its own `cli` |
+| `gate/MitosGate/LandCli.lean` | adds `answersJson` and `answersCli` (`mitos-gate land-answers`), which prints with plain `IO.println`, not `ciLine` | +40 | its own `cli` |
 | `gate/Main.lean` | one dispatch line and one usage entry | +5 | — |
 | `gate/MitosGate/Land.lean` | `Plan.merge`'s doc comment (#303 item 6), `wake`'s comment (#303 item 7) | ±6 | — |
 | `Snapshot/Types.lean` | `Post.review : Option Nat` | +3 | — |
@@ -116,7 +116,8 @@ reuse:
 - `land-protection.yml`'s pins: `actions/checkout@11d5960…` (v4.4.0) and
   `actions/create-github-app-token@d72941d…` (v1.12.0).
 - `update-prs.yml`'s environment `trusted`, `vars.PR_UPDATER_APP_ID`, `secrets.PR_UPDATER_APP_KEY`.
-- `land-decide.test.sh`'s stub `gh` and its block extractors, moved into `land-workflow.lib.sh`.
+- `land-decide.test.sh`'s stub `gh`, which each new test copies, and its block extractors, which
+  become `land-workflow.lib.sh`'s `job_block` (the lib holds nothing else).
 - `shadow-fetch.sh`'s `by_number`.
 
 fixtures (each name, then what it pins):
@@ -154,11 +155,17 @@ Lean, `Shadow.Fixture` (each passes in the sketch):
 - `shadow-test.sh`: one window merge whose pull request has an owner summary reads
   `disagrees noEntry` in `window.expected`.
 
-`land-test.sh`: `land-answers on the fixture`, `the planned merge hands its approval`,
-`a refused snapshot is refused by land-answers too`.
+`land-test.sh`: `land-answers on the fixture` (with #153's word made a bare `/land`, `jq -e .`
+exits 0 on the output and `.answers[0].body` decodes with a real newline after the marker:
+`jq -e '.answers[0].body | startswith("<!-- land-report -->\n")'`), `the planned merge hands its
+approval`, `a refused snapshot is refused by land-answers too`.
 
 `snapshot-test.sh`: `a review comment without pull_request_review_id is a failed read`,
-`a review comment of an unlisted review holds`.
+`a review comment of an unlisted review holds`. Its existing review-comment fixtures (the
+`review-comments-9.json` writes of the cases "the owner's post on $route after the approval", "the
+owner's review comment edited after the approval", "an owner review summary with text before the
+approval" and "/land <commit> in a review gives no word") are migrated to carry
+`pull_request_review_id` and a review listed in `reviews-9.json`, or the new rule fails their read.
 
 `land-decide.test.sh`:
 - `decide-outputs-on-a-merge-plan`: 40-hex heads; pins `pr`, `head`, `approval` and `digest` (the
@@ -271,7 +278,7 @@ deferrals:
 - To P1-015 (#194): the second half of #303 item 7. Off the kept paths a delegate's `step` and the
   `plan` both say merge at the same head. `Speech.delegates = []`, so only `apply` calls today; the
   step that adds delegates decides who calls, and a second call at that head gets 405 or 409.
-- To a follow-up issue the root files (not P1-021, which must not touch `gate/`): the timeline read
+- To #334 (not P1-021, which must not touch `gate/`): the timeline read
   that #297 (comment 6897897826) names, and a return of the summary rule to timing. Checked on #305
   (15 Nov): its reviews route lists 6 reviews and its timeline 2 `reviewed` events; the owner's two
   empty thread-reply reviews have none. So the timeline cannot stand in for the reviews route, and a
@@ -326,6 +333,13 @@ owner_decisions:
   11. #284 O3 is folded in, with the two `uses:` of that key-holding job pinned to the commits
       `land-protection.yml` uses, and a test over every mint.
   12. The shadow evidence is scored with both `main`'s and the head's scorer.
+  13. `LAND_MERGE` ships `on` (the sketch's `LAND_MERGE: 'on'`): the owner's goal is that `/land`
+      merges with no session calling the merge, and N4 ships the workflow before step 5, so `off`
+      would need another trust-critical PR before any real merge; the owner's merge of the build
+      PR is the moment it turns on, and one edit to the constant turns it off.
+- **Trust-critical build:** `touches` includes `gate/` files and `.github/workflows/update-prs.yml`,
+  because #319 items 1 to 3, #303 items 6 and 7 and #284 O3 live there. So the build PR is
+  trust-critical (an `opus` verifier at every head) and the owner merges it.
 - **New owner calls:** none. The real runs need the owner to type where marked.
 
 ### Synthesis decision
@@ -1027,7 +1041,7 @@ end MitosGate.LandAnswer
 ```
 
 `LandCli.lean` imports `MitosGate.LandAnswer` and adds (checked: on `[ownerKeptPushed, the same at
-#154 with its own approval, agentBehind]` it printed
+#154 with its own approval, agentBehind]` `(answersJson s).compress` printed
 `{"answers":[{"body":"<!-- land-report -->\nQueued at ar: waiting for #153 to land first.","line":"Queued at ar: waiting for #153 to land first.","pr":154}],"merge":{"approval":450,"head":"ar","pr":153}}`):
 
 ```lean
@@ -1041,9 +1055,22 @@ def answersJson (s : Snapshot) : Json :=
      ("answers", Json.arr ((LandAnswer.answers s.prs).map fun (p, a) =>
         Json.mkObj [("pr", n p), ("line", .str a.line), ("body", .str a.body)]).toArray)]
 
--- answersCli (args : List String) (usage : String) : IO UInt32 is `cli` with `answersJson`;
--- a refusal prints `land-answers: the snapshot is refused: <e>`. The helpers stay private.
+-- answersCli (args : List String) (usage : String) : IO UInt32 is `cli` with `answersJson`, except
+-- that it prints `(answersJson s).compress` with plain `IO.println`, not through `ciLine`;
+-- a refusal prints `ciLine s!"land-answers: the snapshot is refused: {e}"` on standard error.
+-- The helpers stay private.
 ```
+
+`answersCli` does not print through `ciLine`, unlike `cli`: its standard output goes to
+`$out/answers.json` and never to the log, and `ciLine` escapes every backslash as `\u{005C}`
+(`Util.lean`'s `printable` leaves out U+005C), so each body's `\n` would print as `\u{005C}n`,
+which is not JSON, and `handoff`'s `jq -e` would stop `decide` on every run with an answer.
+`ciLine` stays for standard error only. Checked at round 2 against `main` at a32a9fc with this
+file's `LandAnswer.lean` and `answersJson` and that `answersCli`: on `gate/land-fixtures/queue.json`
+with #153's word made a bare `/land` (`.prs[0].words[0].approves = false`) it exits 0, `jq -e .`
+on its output exits 0, and `.answers[0].body` starts with `<!-- land-report -->` and a real newline;
+the round-1 form, `cli`'s `IO.println (ciLine j.compress)`, printed `\u{005C}n` there and `jq -e .`
+exited 5.
 
 `gate/Main.lean`: `| "land-answers" :: rest => LandCli.answersCli rest usage`, and the usage entry
 `mitos-gate land-answers [<snapshot.json>]  what land.yml's apply and report act on: the planned
@@ -1291,7 +1318,9 @@ writes `api "repos/$repo" >"$out/repo.json"` and, per merged pull request,
 - Accepted residuals (the amendment's open item): a comment, edit or deletion in the seconds
   between `apply`'s last read and the `PUT` is not seen; a bot edit, or another run's report post,
   between `decide`'s read and `apply`'s stops the merge with a "Not merged yet" post, and the owner
-  comments `/land <head>` again.
+  comments `/land <head>` again. `apply` does not re-read the labels (`spec-approved`), the pull
+  request's body, the dashboard's verdict cell or branch protection; a change to them after
+  `decide`'s read is not seen, and GitHub re-checks only `gate` and protection at the `PUT`.
 
 ### Real runs (the builder makes them; the owner types where marked)
 
