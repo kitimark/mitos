@@ -230,11 +230,25 @@ def resolveDir (root : System.FilePath) (specified : Option String) : System.Fil
     if path.isAbsolute then path else root / path
 
 /-- A trailing separator is `path/.`, and `lstat` then follows a symlink to a
-directory. Drop those separators first. The lookup still does not resolve the
-link, and a path that is only separators stays as it is. -/
+directory. The same lookup follows a path that already ends in `/.`. Drop
+separators and a trailing `/.` until the last component is the name that was
+given. The lookup still does not resolve the link. A path that is only
+separators, or only `/.`, stays as it is. -/
 def withoutTrailingSep (p : System.FilePath) : System.FilePath :=
-  let t := (p.toString.dropEndWhile fun c => System.FilePath.pathSeparators.contains c).toString
-  if t.isEmpty then p else ⟨t⟩
+  ⟨go p.toString p.toString.length⟩
+where
+  go (s : String) (fuel : Nat) : String :=
+    match fuel with
+    | 0 => s
+    | fuel + 1 =>
+      let t := (s.dropEndWhile fun c => System.FilePath.pathSeparators.contains c).toString
+      let u := if t.isEmpty then s else t
+      let dot := System.FilePath.pathSeparator.toString ++ "."
+      if u.endsWith dot then
+        let v := (u.dropEnd dot.length).toString
+        if v.isEmpty || v.length >= s.length then s else go v fuel
+      else if u.length >= s.length then u
+      else go u fuel
 
 /-- `metadata` follows a symlink, so a link never counts as its target's type. -/
 def isSymlinkFree (p : System.FilePath) (t : IO.FS.FileType) : IO Bool := do

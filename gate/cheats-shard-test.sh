@@ -141,12 +141,20 @@ CHECKS=success SHARDS=success run_agg "has no full log" "symlink log"
 ok "a symlink is not a log"
 
 fill_good
+SHARD0_SUFFIX=/. CHECKS=success SHARDS=success run_agg 0 "real shard dir named with /."
+ok "a real shard directory named with /. is still a shard"
+
+fill_good
 mv "$work/shards/cheat-shard-logs-0" "$work/shards/real-0"
 ln -s real-0 "$work/shards/cheat-shard-logs-0"
 CHECKS=success SHARDS=success run_agg "missing shard" "symlinked shard dir"
 ok "a symlinked shard directory is not a shard"
 SHARD0_SUFFIX=/ CHECKS=success SHARDS=success run_agg "missing shard" "symlinked shard dir with a slash"
 ok "a symlinked shard directory named with a slash is not a shard"
+SHARD0_SUFFIX=/. CHECKS=success SHARDS=success run_agg "missing shard" "symlinked shard dir with /."
+ok "a symlinked shard directory named with /. is not a shard"
+SHARD0_SUFFIX=/./ CHECKS=success SHARDS=success run_agg "missing shard" "symlinked shard dir with /./"
+ok "a symlinked shard directory named with /./ is not a shard"
 
 fill_good
 rm "$work/shards/cheat-shard-logs-0/one.full.log"
