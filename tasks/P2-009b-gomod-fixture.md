@@ -694,20 +694,24 @@ Run S1, write the fixture with F1's `printf` lines, then `Score/GoMod.lean` and 
 
 ## Build notes
 
-- Built the accepted design on `3fb20ca` with Lean v4.35.0 and Go 1.24.7. The S1 diff was
-  empty. The implementation uses `List (Fact × Assumption)` in `Score.GoMod`, with the path
-  guard at `factsOf` and the seven theorems beside their definitions.
-- The scorer built without warnings. All seven `#print axioms` results contain only
-  `propext`, `Classical.choice` and `Quot.sound`.
+- Built the accepted design on `3fb20ca`, then rebased without conflicts onto `1e23bf8`.
+  The S1 diff was empty at both bases. `Score.GoMod` owns the `List (Fact × Assumption)`
+  adapter, path rule and seven theorems. `factsOf` gets only the first guarded line.
+- Lean v4.35.0 built the scorer without warnings. All seven `#print axioms` results contain
+  only `propext`, `Classical.choice` and `Quot.sound`.
 - The real CLI printed F2 with hash `889671a4d4c0eaed6b0680028ba965d63774aaaa48b7c070f860e3e5bade24cf`.
   It reports 15 facts, 6 predicted edges, 6 labels, 5 true positives, 1 false positive and
   1 miss. Precision and recall are both 0.83. The toy hash before and after is F3.
-- Go's own `go mod edit -json` parse and L1 to L5 reproduce all six hand labels. All ten
-  fixture hashes match F1. The quoted requirement and ignored `replace` remain measured gaps.
-- The run log is `ops/runs/2026-11-15/P2-009b-builder-1.json`. Global checks and CI
-  are recorded below when complete. The local
-  bubblewrap probe cannot create a user namespace in this environment. Sandboxed checks
-  retain their required policy and need CI evidence.
+- Go 1.24.7's `go mod edit -json` parse and L1 to L5 reproduce all six hand labels. All ten
+  fixture hashes match F1, with `-text` on every file and CRLF only on `util/go.mod`.
+  The real resolver confirms F6, with 7 records over 6 repo edges and a maximum of 2.
+- Core replay and `lake comparator --paranoid` passed with all bundled kernels. The initial
+  nested command sandbox rejected the user namespace. A direct retry found the missing
+  `/run/user` mount target. An ephemeral outer namespace supplied that directory, and both
+  real checks passed with Lake's inner sandbox unchanged. No host or project policy changed.
+- Global build, imports, lock, run-log validation, path fence and `plan-tasks.test.sh` passed.
+  The run log is `ops/runs/2026-11-15/P2-009b-builder-1.json`. CI is pending at PR creation,
+  so the combined local-checks and CI checkbox below remains open then.
 - Actual builder model is `gpt-6.1-sol` at high reasoning. The role table's Claude model
   names are unavailable in this environment. The user keeps the merge for this task.
 
