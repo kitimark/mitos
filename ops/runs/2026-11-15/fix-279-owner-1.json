@@ -1,0 +1,1 @@
+{"task":"fix-279","role":"owner","model":"claude-sonnet-5-5","attempt":1,"iterations":1,"wall_min":5,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Watchers sentence now names the monitor default check list gate, prove, scorecard-comment, CodeRabbit (#279 B1)."}

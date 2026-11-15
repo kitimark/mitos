@@ -109,8 +109,8 @@ tool.
   resumes reads those. A PR from another account, such as a fork's, shows only as `pr #N outside`
   with its labels, assignees and close. Its head, checks and reviews are not read, so a flood of
   fork PRs cannot spend the REST limit the agents share, and the check names a fork's workflow
-  chooses never reach the root. Check names other than `gate`, `scorecard-comment` and
-  `CodeRabbit` show only as a count, `unlisted=N`. A poll prints at most 30 lines, the user's
+  chooses never reach the root. Check names other than `gate`, `prove`, `scorecard-comment`
+  and `CodeRabbit` show only as a count, `unlisted=N`. A poll prints at most 30 lines, the user's
   comments first. A `watch-github: N more changes in this poll are not shown` line means the root
   reads the rest over REST, because the monitor will not print them again. An `owner comment <id>`
   line whose id a poster recorded is an agent's post that lost its footer, not the user's words.
