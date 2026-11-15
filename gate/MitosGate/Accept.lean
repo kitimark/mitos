@@ -368,24 +368,28 @@ def occurs (pat : List Char) : List Char → Bool
   | [] => pat.isEmpty
   | s@(_ :: rest) => pat.isPrefixOf s || occurs pat rest
 
+/-- Whether a failed comparator run ended as a judgment does. The comparator ended with code 1, its
+code for a judgment (2 is its code for a run that could not start). No compiler or tool ended
+abnormally: Lake prints `Lean exited with code N` for a Lean that is killed, crashes or exits 1
+without an error message, and `external command '…' exited with code N` for a tool, and what such a
+run printed before it stopped, a failure marker included, says nothing about the code. -/
+def endedJudged (code : Option UInt32) (out : String) : Bool :=
+  code == some 1 && !occurs "exited with code".toList out.toList
+
 /-- Whether a comparator run that `Outcome.parse` reads as `noJudgment` judged the code all the same,
-because the code does not build. The comparator ended with code 1, its code for a judgment (2 is its
-code for a run that could not start). Lake reports that a required target failed
-(`error: build failed`). No compiler or tool ended abnormally: Lake prints `Lean exited with code N`
-for a Lean that is killed, crashes or exits 1 without an error message, and
-`external command '…' exited with code N` for a tool, and a build that such an exit failed says
-nothing about the code. -/
+because the code does not build: it ended as a judgment does (`endedJudged`), and Lake reports that
+a required target failed (`error: build failed`). -/
 def buildRejected (code : Option UInt32) (out : String) : Bool :=
-  code == some 1 && occurs "error: build failed".toList out.toList &&
-    !occurs "exited with code".toList out.toList
+  endedJudged code out && occurs "error: build failed".toList out.toList
 
 /-- The cause of the rejection a failed comparator run gives its gate. A failure that `Outcome.parse`
-names is a judgment, and so is a build that fails on the code's own errors (`buildRejected`). Any
-other run, such as a `lake` that was killed or could not start, is no judgment, so no cheat case can
-count it as a rejection. -/
+names is a judgment when the run ended as one does (`endedJudged`), and so is a build that fails on
+the code's own errors (`buildRejected`). Any other run, such as a `lake` that was killed or could not
+start, or a Lean killed after it printed a failure marker, is no judgment, so no cheat case can count
+it as a rejection. -/
 def Judgment.cause (j : Judgment) : Failure → Cause
   | .noJudgment => if buildRejected j.code j.output then .judged else .noJudgment
-  | _ => .judged
+  | _ => if endedJudged j.code j.output then .judged else .noJudgment
 
 /-! Comparator tails from the logs in CI's `cheat-logs` artifact for main at b6a9bfe, then runs that
 did not judge. -/
@@ -440,6 +444,10 @@ example : buildRejected (some 1) killedLean = false := by decide +kernel
 -- A `lake` killed before it judged anything, with exit 137 and no output.
 example : buildRejected (some 137) "" = false := by decide +kernel
 
+-- The comparator's sandboxed build killed before it reported anything: the comparator still ends
+-- with code 1.
+example : buildRejected (some 1) "error: Child exited with 137\n" = false := by decide +kernel
+
 -- A comparator killed after its build reported a failure.
 example : buildRejected (some 137) "error: build failed\n" = false := by decide +kernel
 
@@ -460,7 +468,27 @@ example : (endedWith .noJudgment killedLean).cause .noJudgment = .noJudgment := 
 example : (endedWith .noJudgment "error: build failed\n").cause .noJudgment = .judged := by
   decide +kernel
 
-example : (endedWith .illegalAxiom "").cause .illegalAxiom = .judged := by decide
+example : (endedWith .illegalAxiom "error: Illegal axiom detected: 'sorryAx'\n").cause
+    .illegalAxiom = .judged := by decide +kernel
+
+-- `env_hack.comparator.log` and `missing_obligation.full.log`: judgments, though a kernel or the
+-- export ended with a code of its own, which the comparator reports as `exited with N`.
+example : endedJudged (some 1) "Lean default kernel rejected the solution
+error: Lean default exited with 1
+" = true := by decide +kernel
+
+example : endedJudged (some 1) "PANIC at LeanExport.dumpConstant LeanExport.Basic:254:48: Constant ToyRequire.complete not found in environment.
+error: Child exited with 134
+" = true := by decide +kernel
+
+/-- A failure marker printed before Lean exited 137, as a plugin's `#eval` can print one. -/
+example : (endedWith .illegalAxiom
+    "error: Illegal axiom detected: 'sorryAx'\nerror: Lean exited with code 137\n").cause
+    .illegalAxiom = .noJudgment := by decide +kernel
+
+/-- A comparator that ended with code 137 after printing a failure marker. -/
+example : ({ endedWith .kernelReject "Lean default kernel rejected the solution\n" with
+    code := some 137 }).cause .kernelReject = .noJudgment := by decide +kernel
 
 /-- The regular files under `dir`, recursively, relative to it and sorted. Anything else there, such
 as a symlink or a device, is an error: reading it could follow it out of the judging directory or
