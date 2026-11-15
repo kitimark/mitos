@@ -5,6 +5,7 @@ set -u
 root=$(cd "$(dirname "$0")/../.." && pwd)
 script=$root/.github/scripts/land-decide.sh
 wf=$root/.github/workflows/land.yml
+source "$root/.github/scripts/land-workflow.lib.sh"
 queue=$root/gate/land-fixtures/queue.json
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq is not installed"; exit 1; }
 (cd "$root" && lake build mitos-gate >/dev/null) || { echo "FAIL lake build mitos-gate"; exit 1; }
@@ -65,6 +66,11 @@ printf '%s\n' "$@" >"$STUB_FETCH_ARGS"
 echo '{"full_name":"owner/mitos","owner":{"login":"owner"}}' >"$3/repo.json"
 [ -n "${STUB_NO_MAIN:-}" ] || jq -n --arg s "$STUB_MAIN" '{commit: {sha: $s}}' >"$3/main.json"
 [ -z "${STUB_FETCH_ERR:-}" ] || printf '%s\n' "$STUB_FETCH_ERR" >&2
+if [ -n "${STUB_MERGE_READS:-}" ]; then
+  printf '%s\n' "$STUB_MERGE_READS" >"$3/comments-153.json"
+  echo '[[]]' >"$3/review-comments-153.json"
+  echo '[[]]' >"$3/reviews-153.json"
+fi
 exit "${STUB_FETCH_CODE:-0}"
 EOF
 cat >"$tmp/gate" <<'EOF'
@@ -82,6 +88,9 @@ case "$1" in
     cat "$STUB_SNAPSHOT_FILE"
     [ -z "${STUB_NOTES:-}" ] || printf '%s\n' "$STUB_NOTES" >&2 ;;
   land) shift; exec "$REAL_GATE" land "$@" ;;
+  land-answers)
+    [ -z "${STUB_ANSWERS:-}" ] || { cat "$STUB_ANSWERS"; exit; }
+    shift; exec "$REAL_GATE" land-answers "$@" ;;
   *) exit 64 ;;
 esac
 EOF
@@ -106,9 +115,9 @@ run() {
   code=0
   (cd "$clone" && env -u LAND_EVENT -u LAND_EVENT_HEAD -u LAND_EVENT_CONCLUSION -u LAND_EVENT_PR \
     -u LAND_EVENT_COMMENT -u LAND_T0 -u LAND_REST_FLOOR -u MITOS_GATE -u SNAPSHOT_FETCH \
-    PATH="$tmp/bin:$PATH" MITOS_GATE="$tmp/gate" SNAPSHOT_FETCH="$tmp/fetch" REAL_GATE="$real" \
+    PATH="$tmp/bin:$PATH" LAND_DIGEST_SCRIPT="$root/.github/scripts/land-digest.sh" MITOS_GATE="$tmp/gate" SNAPSHOT_FETCH="$tmp/fetch" REAL_GATE="$real" \
     STUB_LOG="$dir/gh.log" STUB_FETCH_ARGS="$dir/fetch.args" STUB_MAIN="$m1" \
-    STUB_SNAPSHOT=file STUB_SNAPSHOT_FILE="$tmp/queue.json" "$@" \
+    GITHUB_OUTPUT="$dir/outputs" STUB_SNAPSHOT=file STUB_SNAPSHOT_FILE="$tmp/queue.json" "$@" \
     "$script" owner/mitos 43 "$dir/out") >"$dir/stdout" 2>"$dir/stderr" || code=$?
   [ ! -f "$dir/gh.log" ] || cat "$dir/gh.log" >>"$calls"
 }
@@ -298,27 +307,83 @@ has '.outcome.decision.plan == {kind: "push", pr: 153, expect: "aaa", replay: $r
   and .outcome.trees == [{commit: $r, tree: $t}]' --arg r "$r1" --arg t "$r1tree"
 finish a-push-plan-records-its-tree
 
-if_block=$(awk '/^    if: >-$/ { on = 1; next } on && /^    [a-z]/ { exit } on { print }' "$wf")
-perm_block=$(awk '/^    permissions:$/ { on = 1; next } on && !/^      / { exit } on { print }' "$wf")
+h=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+jq -c --arg h "$h" '{prs:[.prs[0]]} | .prs[0] |= (.head=$h | .base={kind:"current"} |
+  .pushes=[] | .ids=[{sha:$h,id:"a"}] | .words[0].about=$h | .botAt=$h |
+  .verdicts |= map(.head=$h))' "$queue" >"$tmp/merge.json"
+read_comments='[[{"id":450,"user":{"login":"owner"},"created_at":"2026-11-14T08:00:00Z","updated_at":"2026-11-14T08:00:00Z","body":"/land"}]]'
+start
+run merge-outputs STUB_SNAPSHOT_FILE="$tmp/merge.json" STUB_MERGE_READS="$read_comments"
+exits 0
+want_answers=$("$real" land-answers "$tmp/merge.json")
+digest=$("$root/.github/scripts/land-digest.sh" "$dir/out/reads/comments-153.json" \
+  "$dir/out/reads/review-comments-153.json" "$dir/out/reads/reviews-153.json")
+[ "$(cat "$dir/outputs")" = "$(printf 'pr=153\nhead=%s\napproval=450\ndigest=%s\nrequires_spec=false\nanswers=%s' \
+  "$h" "$digest" "$(jq -c .answers <<<"$want_answers")")" ] || note "outputs: $(cat "$dir/outputs")"
+finish decide-outputs-on-a-merge-plan
+start
+for file in "$tmp/queue.json" "$tmp/push.json"; do
+  run no-merge STUB_SNAPSHOT_FILE="$file"
+  exits 0
+  if grep -qx 'pr=' "$dir/outputs" && grep -qx 'head=' "$dir/outputs" && grep -qx 'approval=' "$dir/outputs" \
+    && grep -qx 'digest=' "$dir/outputs" && grep -qx 'requires_spec=' "$dir/outputs" \
+    && grep -q '^answers=\[' "$dir/outputs"; then :
+  else note "nonmerge handoff: $(cat "$dir/outputs")"; fi
+done
+finish no-merge-hands-nothing-to-apply
+start
+echo '{"merge":{"pr":999,"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","approval":450,"requiresSpec":false},"answers":[]}' >"$tmp/wrong.json"
+run disagree STUB_ANSWERS="$tmp/wrong.json"
+exits 1
+[ ! -s "$dir/outputs" ] || note "disagreement wrote outputs"
+echo '{"answers":[]}' >"$tmp/wrong.json"
+run missing STUB_ANSWERS="$tmp/wrong.json"
+exits 1
+[ ! -s "$dir/outputs" ] || note "missing key wrote outputs"
+finish land-and-land-answers-disagree-is-refused
+start
+run missing-reads STUB_SNAPSHOT_FILE="$tmp/merge.json"
+exits 1
+has "$decided"
+[ ! -s "$dir/outputs" ] || note "missing reads wrote outputs"
+finish a-merge-without-its-reads-is-not-handed-on
+start
+jq -n '{merge:null,answers:[{pr:1,line:("x" * 65537),body:"x"}]}' >"$tmp/large.json"
+run answer-cap STUB_ANSWERS="$tmp/large.json" STUB_SNAPSHOT_FILE="$tmp/push.json"
+exits 1
+has "$decided"
+[ ! -s "$dir/outputs" ] || note "large answers wrote outputs"
+finish answers-over-the-cap-are-refused
+start
+"$real" land-answers "$tmp/queue.json" >"$tmp/answers.json"
+marker=$(sed -n "s/^marker='\(.*\)'$/\1/p" "$root/.github/scripts/land-report.sh")
+jq -e --arg m "$marker" 'all(.answers[]; .body | startswith($m + "\n"))' "$tmp/answers.json" >/dev/null \
+  || note "the marker differs"
+finish the-marker-is-the-reports
+
+decide_wf=$tmp/decide.yml
+job_block "$wf" decide >"$decide_wf"
+if_block=$(awk '/^    if: >-$/ { on = 1; next } on && /^    [a-z]/ { exit } on { print }' "$decide_wf")
+perm_block=$(awk '/^    permissions:$/ { on = 1; next } on && !/^      / { exit } on { print }' "$decide_wf")
 joined=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$script")
 
 start
 grep -qx 'permissions: {}' "$wf" || note "land.yml has no top-level permissions: {}"
-[ "$(grep -cE '^[[:space:]]*permissions:' "$wf")" = 2 ] || note "land.yml has another permissions block"
+[ "$(grep -cE '^[[:space:]]*permissions:' "$decide_wf")" = 1 ] || note "decide has another permissions block"
 [ -n "$perm_block" ] || note "the decide job has no permissions block"
 while IFS= read -r l; do
   [[ $l =~ ^\ {6}[a-z-]+:\ read$ ]] || note "a permission that is not read: [$l]"
 done <<<"$perm_block"
-! grep -nE 'write|secrets\.|^[[:space:]]*environment:|github-app-token|app-id|private-key|id-token' "$wf" \
+! grep -nE 'write|secrets\.|^[[:space:]]*environment:|github-app-token|app-id|private-key|id-token' "$decide_wf" \
   || note "land.yml names a write, a secret, an environment or an app token"
-if [ "$(grep -c 'github.token' "$wf")" != 1 ] || ! grep -qxF '          GH_TOKEN: ${{ github.token }}' "$wf"; then
+if [ "$(grep -c 'github.token' "$decide_wf")" != 1 ] || ! grep -qxF '          GH_TOKEN: ${{ github.token }}' "$decide_wf"; then
   note "land.yml uses the workflow token other than as GH_TOKEN of the decide step"
 fi
-grep -qx '          persist-credentials: false' "$wf" || note "checkout keeps the token in the clone"
-uses=$(grep -oE 'uses: [^ ]+' "$wf" | sort -u | tr '\n' ' ')
+grep -qx '          persist-credentials: false' "$decide_wf" || note "checkout keeps the token in the clone"
+uses=$(grep -oE 'uses: [^ ]+' "$decide_wf" | sort -u | tr '\n' ' ')
 [ "$uses" = "uses: actions/cache/restore@v4 uses: actions/checkout@v4 uses: actions/upload-artifact@v4 " ] \
   || note "land.yml uses another action: $uses"
-runs=$(grep -E '^[[:space:]]*(- )?run:' "$wf" | sed -E 's/^[[:space:]]*(- )?run: //')
+runs=$(grep -E '^[[:space:]]*(- )?run:' "$decide_wf" | sed -E 's/^[[:space:]]*(- )?run: //')
 want_runs='echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
 .github/scripts/install-elan.sh
 .github/scripts/install-toolchains.sh
@@ -337,7 +402,7 @@ done <<<"$gh_lines"
 ! grep -nwE 'curl|wget' "$script" || note "land-decide.sh names curl or wget"
 ! grep -wE 'git' <<<"$joined" | grep -vE '^for tool in |git rev-parse --verify --quiet ' \
   || note "land-decide.sh runs git other than rev-parse"
-! grep -qw gh "$wf" || note "land.yml calls gh itself"
+! grep -qw gh "$decide_wf" || note "land.yml calls gh itself"
 bad_calls=$(grep -vxE 'api rate_limit --jq \.resources\.core\.remaining|api repos/owner/mitos/branches/main --jq \.commit\.sha' "$calls")
 [ -z "$bad_calls" ] || note "the stub gh saw other calls:" "$bad_calls"
 [ -s "$calls" ] || note "the stub gh saw no call"
@@ -353,14 +418,14 @@ for pin in "github.ref == 'refs/heads/main'" \
 done
 ! grep -qE '^concurrency:' "$wf" || note "land.yml has a workflow-level concurrency group"
 awk '/^    concurrency:$/ { c = NR } c && NR == c + 1 && /^      group: land-decide$/ { g = NR }
-  g && NR == g + 1 && /^      cancel-in-progress: false$/ { ok = 1 } END { exit !ok }' "$wf" \
+  g && NR == g + 1 && /^      cancel-in-progress: false$/ { ok = 1 } END { exit !ok }' "$decide_wf" \
   || note "the decide job has no concurrency group land-decide that keeps a running run"
-! grep -nE '^[[:space:]]*(- )?run:.*\$\{\{' "$wf" || note "a run: line holds an expression"
-! grep -nE '^[[:space:]]*(- )?run:[[:space:]]*[|>]' "$wf" || note "a run: block spans lines"
+! grep -nE '^[[:space:]]*(- )?run:.*\$\{\{' "$decide_wf" || note "a run: line holds an expression"
+! grep -nE '^[[:space:]]*(- )?run:[[:space:]]*[|>]' "$decide_wf" || note "a run: block spans lines"
 while IFS= read -r l; do
   [[ $l =~ ^\ {10}LAND_EVENT_[A-Z]+:\ \$\{\{\ github\.event\.[a-z_.]+\ \}\}$ ]] \
     || note "event text outside the decide step's env: [$l]"
-done < <(grep -F '${{' "$wf" | grep -F 'github.event.')
+done < <(grep -F '${{' "$decide_wf" | grep -F 'github.event.')
 finish filter-pins
 
 start

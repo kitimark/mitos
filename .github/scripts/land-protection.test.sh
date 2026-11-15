@@ -6,6 +6,8 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 script=$root/.github/scripts/land-protection.sh
 wf=$root/.github/workflows/land-protection.yml
 land=$root/.github/workflows/land.yml
+source "$root/.github/scripts/land-workflow.lib.sh"
+land_decide=$(job_block "$land" decide)
 fetch=$root/gate/snapshot-fetch.sh
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq is not installed"; exit 1; }
 tmp=$(mktemp -d)
@@ -136,10 +138,10 @@ grep -qx 'permissions: {}' "$wf" || note "land-protection.yml has no top-level p
 [ "$(awk '/^    permissions:$/ { on = 1; next } on && !/^      / { exit } on { print }' "$wf")" = '      contents: read' ] \
   || note "the read job's workflow token may do more than read contents"
 grep -qx '    environment: trusted' "$wf" || note "the read job is not in the trusted environment"
-! grep -nE 'secrets\.|github-app-token|app-id|private-key|^[[:space:]]*environment:|id-token|write' "$land" \
-  || note "land.yml names a secret, an app token, an environment or a write"
+! grep -nE 'secrets\.|github-app-token|app-id|private-key|^[[:space:]]*environment:|id-token|write' <<<"$land_decide" \
+  || note "land.yml decide names a secret, an app token, an environment or a write"
 grep -qx '      actions: read' "$land" || note "land.yml's decide cannot read the reader's runs and artifacts"
-finish the-key-sits-in-the-reader-and-not-in-land
+finish the-key-sits-in-the-reader-and-not-in-decide
 
 start
 [ "$(grep -c '^  [a-z-]*:$' <(awk '/^jobs:$/ { on = 1; next } on' "$wf"))" = 1 ] || note "land-protection.yml has another job"
