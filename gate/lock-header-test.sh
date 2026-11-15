@@ -45,7 +45,6 @@ sed -i '2s/.*/# edited by hand/' "$tmp/line2/statements.lock"
 tail -n +3 "$root/statements.lock" >"$tmp/drop/statements.lock"
 : >"$tmp/empty/statements.lock"
 head -n 2 "$root/statements.lock" | head -c -1 >"$tmp/nonl/statements.lock"
-# lock --check also reads the spec sources (gate/lock-reach-test.sh).
 for d in good line1; do
   mkdir -p "$tmp/$d/core/Mitos" && cp -R "$root/core/Mitos/Core" "$tmp/$d/core/Mitos/Core"
 done

@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# `lock` fails on a module under core/Mitos/Core/ that Mitos.Core does not import, directly or
-# transitively. Lake's MitosCore library builds every module there, and statements.lock lists only
-# the declarations of the modules Mitos.Core reaches, so such a module would build unlocked.
-# Each case runs in a scratch folder that holds a copy of statements.lock and of core/Mitos/Core/,
-# with the environment of Mitos.Core from this checkout's build.
 set -u
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -25,7 +20,6 @@ tree() {
   cp -R "$root/core/Mitos/Core" "$tmp/$1/core/Mitos/Core"
 }
 
-# expect <name> <dir> <exit> <pattern that must match> <pattern that must not match> <args>...
 expect() {
   local name=$1 dir=$2 code=$3 yes=$4 no=$5 got=0
   shift 5

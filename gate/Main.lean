@@ -105,9 +105,6 @@ def writeOrCheck (file : System.FilePath) (txt : String) (check : Bool) (count s
   IO.println (ciLine s!"{file} is out of date: {stale}.")
   return 1
 
-/-- Fails on a module under `core/Mitos/Core/` that `env`, the environment of `Mitos.Core`, does
-not hold. Lake builds every module there, and `statements.lock` lists only the declarations of the
-modules `env` holds (`Lock.unreached`). -/
 def lockReach (env : Lean.Environment) : IO UInt32 := do
   let dir : System.FilePath := "core" / "Mitos" / "Core"
   unless ← dir.isDir do
