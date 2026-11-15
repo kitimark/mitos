@@ -371,3 +371,24 @@ order:
 - [x] all `checks` pass locally, except the cheat corpus, which runs in CI
 - [x] no `sorry`, no new axioms
 - [x] run-log record written (ops/runs/)
+
+## After merge: the #303 and #200 follow-ups
+
+One later PR changed `Land.lean` and `land-test.sh` for #303 (items 1 and 2) and for the `Land`
+items of #200:
+- `Obs.unnamed` is gone (#303 item 1). Nothing read it, and it repeated the `unnamed` arm of
+  `Obs.word`, which `LandCli` prints as `word`. Its fixture `bareLandOnAKeptPathIsAskedForTheCommit`
+  went with it. `aBareLandOffTheKeptPathsStands` now pins the `o.kept` test in `Obs.word`, as
+  `WordStandsIsTheEntry` does.
+- The rules of `Obs.Covered` are statements: `UnknownAuthorCoversNothing`,
+  `StandingFailOrHoldCoversNothing`, `CoverIsAnotherJudgesWord` and
+  `CriticalCoverIsAnOpusPassOrWordingOnly`.
+- `QuietAfterRebase` (statement 14) no longer puts its gate clauses under `covered p = true`. On
+  the owner's word alone, a gate result that is not red wakes nobody exactly when it is green,
+  covered or not; in nobody's line it wakes nobody exactly when the pull request is covered. Only
+  the bot-review clause keeps the hypothesis. The old text follows from the new one.
+- The axiom check covers every theorem of the file and names each failure. `land-test.sh` plants
+  three `sorry`s and an axiom in a copy and requires the check to name all four.
+- New fixtures pin each entry of the kept and critical path lists, unread paths as critical,
+  a stale bot review, a head without a content id and the holder wake of an uncovered gate in
+  nobody's line. 164 `Land` fixtures (154 before).

@@ -5,6 +5,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 (cd "$root" && lake build mitos-gate >/dev/null) || { echo "FAIL lake build mitos-gate"; exit 1; }
 bin="$root/.lake/build/bin/mitos-gate"
 base="$root/gate/land-fixtures/queue.json"
+land="$root/gate/MitosGate/Land.lean"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -190,6 +191,8 @@ refuses "approves on an agent's word" '.prs[1].words[0].approves = true' \
 refuses "one comment id on two words" '.prs[1].words[0].said = 900' 'comment 900 is used by two words'
 refuses "me without pr" 'del(.pr)' 'me and pr go together'
 refuses "a pr that is not listed" '.pr = 7' 'pr: pull request 7 is not in prs'
+refuses "an event about a pull request that is not listed" \
+  '.event = {"kind":"gateDone","pr":7,"gate":"success"}' 'event\.pr: pull request 7 is not in prs'
 refuses "no prs" 'del(.prs)' 'prs: missing'
 refuses "a list that is not a list" '.prs = {}' 'prs: expected a list'
 refuses "a snapshot that is not an object" '[]' 'snapshot: expected an object'
@@ -210,6 +213,40 @@ fi
 got=0
 "$bin" land a b >"$tmp/out" 2>"$tmp/err" || got=$?
 if [ "$got" = 2 ] && [ ! -s "$tmp/out" ]; then ok "two arguments are a usage error"; else bad "two arguments are a usage error" "exit $got"; fi
+
+# A copy of Land.lean with a sorry in a statement's proof, in a lemma and in a fixture, and a
+# fixture proved from a new axiom. The build-time axiom check must fail and name all four.
+name="the axiom check names each sorry and each other axiom"
+mkdir "$tmp/planted"
+if ! awk '
+    $0 == "theorem holdWins : HoldWins := by" {
+      print "theorem holdWins : HoldWins := sorry"; print "theorem holdWinsAsProved : HoldWins := by"
+      n++; next }
+    $0 == "theorem noOwnerWordIsNone : agentBehind.word = .none := by decide +kernel" {
+      print "theorem noOwnerWordIsNone : agentBehind.word = .none := sorry"; n++; next }
+    $0 == "namespace Fixture" { print "theorem plantedLemma : True := sorry"; print; n++; next }
+    $0 == "end Fixture" {
+      print "axiom plantedAxiom : False"
+      print "theorem plantedFixture : (1 : Nat) = 2 := plantedAxiom.elim"; print; n++; next }
+    { print }
+    END { exit n == 4 ? 0 : 1 }' "$land" >"$tmp/planted/Land.lean"; then
+  bad "$name" "a line the test plants beside is no longer in Land.lean"
+else
+  got=0
+  (cd "$root" && lake env lean "$tmp/planted/Land.lean") >"$tmp/planted/out" 2>&1 || got=$?
+  want="MitosGate.Land.holdWins depends on the axiom sorryAx
+MitosGate.Land.plantedLemma depends on the axiom sorryAx
+MitosGate.Land.Fixture.noOwnerWordIsNone depends on the axiom sorryAx
+MitosGate.Land.Fixture.plantedFixture depends on the axiom MitosGate.Land.Fixture.plantedAxiom"
+  named=$(sed -E 's/^.*: error: //' "$tmp/planted/out" | grep ' depends on the axiom ' | sort)
+  if [ "$got" = 0 ] || [ "$(grep -c ': error: ' "$tmp/planted/out")" != 1 ] ||
+    ! grep -q ': error: .* depends on the axiom ' "$tmp/planted/out" ||
+    [ "$named" != "$(printf '%s\n' "$want" | sort)" ]; then
+    bad "$name" "exit $got" "$(grep -v ': warning: ' "$tmp/planted/out" | head -20)"
+  else
+    ok "$name"
+  fi
+fi
 
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

@@ -181,11 +181,6 @@ def Obs.entries (o : Obs) : List Entry :=
     else agents
   | _ => agents
 
-def Obs.unnamed (o : Obs) : Bool :=
-  match newestOwner o.words with
-  | some (.ownerLand m) => o.kept && !m.approves
-  | _ => false
-
 inductive OwnerWord
   | none | held | unnamed | spoke | stale | stands
   deriving DecidableEq
@@ -316,7 +311,7 @@ def wake (agentInLine ownerInLine covered : Pr → Bool) : Event → Wake
     if g == .failure then .holder p
     else if agentInLine p then .lander p
     -- on the owner's word alone the workflow posts the merge command for a green gate; any other
-    -- result needs a re-run that no timer would start
+    -- result goes to the orchestrator, because no timer would start or re-run the gate
     else if ownerInLine p then (if g == .success then .nobody else .orchestrator)
     else if covered p then .nobody
     else .holder p
@@ -405,17 +400,34 @@ def NextIgnoresListingOrder : Prop :=
   ∀ q q' : Queue, q.Perm q' → (q.map fun x => x.1.mark.said).Nodup → next q = next q'
 
 def QuietAfterRebase : Prop :=
-  ∀ (agentInLine ownerInLine covered : Pr → Bool) (p : Pr) (g : Gate),
-    covered p = true → g ≠ .failure →
+  ∀ (agentInLine ownerInLine covered : Pr → Bool) (p : Pr) (g : Gate), g ≠ .failure →
     wake agentInLine ownerInLine covered .mainMoved = .nobody ∧
       wake agentInLine ownerInLine covered (.updaterPushed p) = .nobody ∧
-      wake agentInLine ownerInLine covered (.botReviewed p) = .nobody ∧
+      (covered p = true → wake agentInLine ownerInLine covered (.botReviewed p) = .nobody) ∧
       (wake agentInLine ownerInLine covered (.gateDone p g) = .lander p ↔
         agentInLine p = true) ∧
-      (agentInLine p = false → (ownerInLine p = false ∨ g = .success) →
-        wake agentInLine ownerInLine covered (.gateDone p g) = .nobody) ∧
+      (agentInLine p = false → ownerInLine p = false →
+        (wake agentInLine ownerInLine covered (.gateDone p g) = .nobody ↔ covered p = true)) ∧
+      (agentInLine p = false → ownerInLine p = true →
+        (wake agentInLine ownerInLine covered (.gateDone p g) = .nobody ↔ g = .success)) ∧
       (agentInLine p = false → ownerInLine p = true → g ≠ .success →
         wake agentInLine ownerInLine covered (.gateDone p g) = .orchestrator)
+
+def UnknownAuthorCoversNothing : Prop :=
+  ∀ o : Obs, o.author = none → ¬o.Covered
+
+def StandingFailOrHoldCoversNothing : Prop :=
+  ∀ (o : Obs) (v : Verdict), v ∈ o.verdicts → o.stands v →
+    (v.result = .fail ∨ v.result = .hold) → ¬o.Covered
+
+def CoverIsAnotherJudgesWord : Prop :=
+  ∀ o : Obs, o.Covered → ∃ a, o.author = some a ∧ ∃ v ∈ o.verdicts, o.stands v ∧
+    v.judge ≠ a.who ∧ (v.result = .wordingOnly ∨ (v.result = .pass ∧ v.model ≠ a.model))
+
+def CriticalCoverIsAnOpusPassOrWordingOnly : Prop :=
+  ∀ o : Obs, o.Covered → o.critical = true → ∃ a, o.author = some a ∧
+    ∃ v ∈ o.verdicts, o.stands v ∧ v.judge ≠ a.who ∧
+      (v.result = .wordingOnly ∨ (v.result = .pass ∧ v.judge.name = "verifier-opus"))
 
 theorem next_landable {q : Queue} {x : Entry × Obs} (h : next q = some x) : landable x = true := by
   induction q generalizing x with
@@ -1113,9 +1125,49 @@ theorem nextIgnoresListingOrder : NextIgnoresListingOrder := by
     exact ih2 ((h1.map _).nodup_iff.1 hn)
 
 theorem quietAfterRebase : QuietAfterRebase := by
-  intro agentInLine ownerInLine covered p g hc hg
-  refine ⟨rfl, rfl, by simp [wake, hc], ?_, ?_, ?_⟩ <;>
-    cases hi : agentInLine p <;> cases ho : ownerInLine p <;> cases g <;> simp_all [wake]
+  intro agentInLine ownerInLine covered p g hg
+  refine ⟨rfl, rfl, fun hc => by simp [wake, hc], ?_, ?_, ?_, ?_⟩ <;>
+    cases hi : agentInLine p <;> cases ho : ownerInLine p <;> cases hc : covered p <;>
+    cases g <;> simp_all [wake]
+
+theorem unknownAuthorCoversNothing : UnknownAuthorCoversNothing := by
+  intro o ha hc
+  unfold Obs.Covered at hc
+  rw [ha] at hc
+  exact hc
+
+theorem standingFailOrHoldCoversNothing : StandingFailOrHoldCoversNothing := by
+  intro o v hv hs hr hc
+  unfold Obs.Covered at hc
+  split at hc
+  · exact hc
+  · obtain ⟨hf, hh⟩ := hc.1 v hv hs
+    rcases hr with hr | hr
+    · exact hf hr
+    · exact hh hr
+
+theorem coverIsAnotherJudgesWord : CoverIsAnotherJudgesWord := by
+  intro o hc
+  unfold Obs.Covered at hc
+  split at hc
+  · exact hc.elim
+  · next a ha =>
+    refine ⟨a, ha, ?_⟩
+    rcases hc.2 with ⟨v, hm, hs, hr, hj⟩ | ⟨⟨v, hm, hs, hr, hj, hmod⟩, _⟩
+    · exact ⟨v, hm, hs, hj, .inl hr⟩
+    · exact ⟨v, hm, hs, hj, .inr ⟨hr, hmod⟩⟩
+
+theorem criticalCoverIsAnOpusPassOrWordingOnly : CriticalCoverIsAnOpusPassOrWordingOnly := by
+  intro o hc hcr
+  unfold Obs.Covered at hc
+  split at hc
+  · exact hc.elim
+  · next a ha =>
+    refine ⟨a, ha, ?_⟩
+    rcases hc.2 with ⟨v, hm, hs, hr, hj⟩ | ⟨_, h3⟩
+    · exact ⟨v, hm, hs, hj, .inl hr⟩
+    · obtain ⟨v, hm, hs, hr, hj, hn⟩ := h3 hcr
+      exact ⟨v, hm, hs, hj, .inr ⟨hr, hn⟩⟩
 
 theorem mem_queueOf {os : List Obs} {x : Entry × Obs} :
     x ∈ queueOf os ↔ ∃ o ∈ os, x.2 = o ∧ x.1 ∈ o.entries := by
@@ -1287,6 +1339,34 @@ theorem keptPathsByName :
 theorem criticalPathsByName :
     [criticalPath "plan/phase-2.md", criticalPath ".claude/skills/x.md",
       criticalPath "gate/Main.lean"] = [false, false, true] := by decide +kernel
+theorem ruleFilesAreKeptButNotCritical :
+    [".claude/settings.json", ".cursor/rules/x.mdc", "plan/phase-2.md", "CLAUDE.md",
+      "docs/process.md"].map (fun p => (keptPath p, criticalPath p)) =
+      [(true, false), (true, false), (true, false), (true, false), (true, false)] := by
+  decide +kernel
+theorem trustTreesAreCritical :
+    ["gate/Main.lean", "eval/cheats/sorry/expect", ".github/workflows/ci.yml",
+      "core/Mitos/Core/Resolve.lean", "core/Challenge/Resolver.lean"].map
+      (fun p => (keptPath p, criticalPath p)) =
+      [(true, true), (true, true), (true, true), (true, true), (true, true)] := by
+  decide +kernel
+theorem trustFilesAreCritical :
+    ["lean-toolchain", "lakefile.toml", "core/lakefile.toml", "core/Mitos/Core.lean",
+      "core/comparator.json", "statements.lock", "models.lock", "examples/acme/statements.lock",
+      "examples/acme/models.lock"].map (fun p => (keptPath p, criticalPath p)) =
+      [(true, true), (true, true), (true, true), (true, true), (true, true), (true, true),
+        (true, true), (true, true), (true, true)] := by
+  decide +kernel
+theorem nearMissesAreNotKept :
+    ["gateway/x.lean", "eval/cheatsheet.md", "core/Mitos/CoreX.lean", "plans/x.md",
+      "docs/process.md.orig", "xCLAUDE.md", "lean-toolchain.bak", "xstatements.lock",
+      "xmodels.lock"].map keptPath =
+      [false, false, false, false, false, false, false, false, false] := by
+  decide +kernel
+theorem unreadPathsAreCritical : ({ agentBehind with paths := none } : Obs).critical = true := by
+  decide +kernel
+theorem unreadPathsNeedAnOpusPass : ({ agentBehind with paths := none } : Obs).covered = false := by
+  decide +kernel
 
 def verifierSonnet : Teammate := ⟨"claude", "verifier-sonnet"⟩
 def reviewerOpus : Teammate := ⟨"claude", "reviewer-opus"⟩
@@ -1317,6 +1397,8 @@ theorem passStillCoversAfterTheUpdaterPush : agentPushedGatePending.covered = tr
 theorem aPushByAnyoneElseDoesNotCarryThePass :
     ({ agentPushedGatePending with pushes := [⟨false, "ccc", "cc2"⟩] } : Obs).covered =
       false := by decide +kernel
+theorem aHeadWithoutAContentIdIsNotCovered :
+    ({ opusWrittenReady with ids := [] } : Obs).covered = false := by decide +kernel
 theorem authorsOwnPassCoversNothing :
     ({ opusWrittenReady with verdicts := [⟨10, "h", holderOpus, "sonnet", .pass⟩] } :
       Obs).covered = false := by decide +kernel
@@ -1495,6 +1577,9 @@ theorem unfinishedGateOnTheOwnersWordAloneWakesTheOrchestratorEvenUncovered :
 theorem botReviewOfUncoveredWorkWakesTheHolder :
     wake (fun _ => false) (fun _ => false) (fun _ => false) (.botReviewed 149) = .holder 149 := by
   decide +kernel
+theorem unfinishedGateOnUncoveredWorkOutOfLineWakesTheHolder :
+    wake (fun _ => false) (fun _ => false) (fun _ => false) (.gateDone 149 .cancelled) =
+      .holder 149 := by decide +kernel
 theorem otherOwnerSpeechWakesTheOrchestrator :
     wake (fun _ => false) (fun p => p == 153) (fun _ => true) (.ownerSpoke 153) =
       .orchestrator := by decide +kernel
@@ -1551,8 +1636,6 @@ theorem bareLandOnAKeptPathIsNoEntry : bareKeptBehind.entries = [] := by decide 
 theorem bareLandOnAKeptPathIsNotPushed :
     plan (queueOf [bareKeptBehind, agentBehind]) = .push 149 "bbb" "br" := by decide +kernel
 theorem bareLandOnAKeptPathIsNotMerged : plan (queueOf [bareKeptOnMain]) = .idle := by
-  decide +kernel
-theorem bareLandOnAKeptPathIsAskedForTheCommit : bareKeptOnMain.unnamed = true := by
   decide +kernel
 theorem bareLandOnAKeptPathDoesNotHoldTheLine :
     plan (queueOf [bareKeptOnMain, secondApproved]) = .push 154 "aaa" "ar" := by decide +kernel
@@ -1625,6 +1708,10 @@ theorem draftForkOrStackMergesNothing :
     plan (queueOf [{ ownerKeptPushed with updatable := false }]) = .idle := by decide +kernel
 theorem botReviewMissingMergesNothing :
     plan (queueOf [{ ownerKeptPushed with botAt := none }]) = .idle := by decide +kernel
+theorem botReviewOfOtherContentMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with botAt := some "zzz" }]) = .idle := by decide +kernel
+theorem aHeadWithoutAContentIdMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with ids := [] }]) = .idle := by decide +kernel
 theorem redGateMergesNothing :
     plan (queueOf [{ ownerKeptPushed with gate := .failure }]) = .idle := by decide +kernel
 theorem cancelledGateMergesNothing :
@@ -1647,6 +1734,7 @@ theorem oneMergeAtATimeTheLandingOnMainFirst :
     plan (queueOf [secondApproved, ownerKeptPushed]) = .merge 153 "ar" := by decide +kernel
 
 theorem aBareLandOnAKeptPathIsUnnamed : bareKeptOnMain.word = .unnamed := by decide +kernel
+theorem aBareLandOffTheKeptPathsStands : offKeptOwnerLanded.word = .stands := by decide +kernel
 theorem anApprovalStands : ownerKeptPushed.word = .stands := by decide +kernel
 theorem aLaterCommentIsSpoke :
     ({ ownerKeptPushed with words := [.ownerLand ownerKeptMark, .ownerSpoke 950] } : Obs).word =
@@ -1660,24 +1748,31 @@ end Fixture
 
 /-! ## No `sorry`, standard axioms only
 
-`lake build` accepts a `sorry` with a warning, so the build checks it: it fails if a statement's
-proof, or a fixture's, depends on an axiom other than the three standard ones, and `sorryAx` is
-one. -/
+`lake build` accepts a `sorry` with a warning, so the build checks it: it fails if any theorem of
+this file, a statement's proof, a lemma or a fixture, depends on an axiom other than the three
+standard ones, and `sorryAx` is one. It names every such theorem. `gate/land-test.sh` plants a
+`sorry` and an axiom in a copy of this file and requires the check to name each one. -/
 
 open Lean in
 #eval show CoreM Unit from do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
-  let fixtures := (← getEnv).constants.map₂.foldl (fun acc n c =>
-    if (`MitosGate.Land.Fixture).isPrefixOf n && c.isTheorem then acc.push n else acc) #[]
-  if fixtures.isEmpty then throwError "no fixture theorem found"
+  let mine := (← getEnv).constants.map₂.foldl (fun acc n c =>
+    if (`MitosGate.Land).isPrefixOf n && c.isTheorem then acc.push n else acc) #[]
+  unless mine.any (`MitosGate.Land.Fixture).isPrefixOf do throwError "no fixture theorem found"
   for n in [``pushOnlyNext, ``noEntryNoPush, ``oneLandingAtATime, ``pushKeepsCover,
       ``pushIsNotRepeated, ``mergeIsGated, ``plannedMergeIsGated, ``ownerEntryIsTheirLastWord,
       ``keptEntryIsTheOwners, ``onlyLandOrHoldChangesTheWord, ``wordStandsIsTheEntry,
       ``unenforcedLandsNothing, ``holdWins, ``agentKeepsOwnerWord, ``onlyMergersQueue,
       ``stuckDoesNotBlock, ``nextNeverWaits, ``nextIgnoresListingOrder, ``quietAfterRebase,
-      ``mem_queueOf, ``newestOwner_perm, ``toCarry_updaterForcePush] ++ fixtures.toList do
+      ``unknownAuthorCoversNothing, ``standingFailOrHoldCoversNothing,
+      ``coverIsAnotherJudgesWord, ``criticalCoverIsAnOpusPassOrWordingOnly,
+      ``mem_queueOf, ``newestOwner_perm, ``toCarry_updaterForcePush] do
+    unless mine.contains n do throwError "{n} is not a theorem of this file"
+  let mut bad : Array MessageData := #[]
+  for n in mine do
     for a in ← collectAxioms n do
       unless standard.contains a do
-        throwError "{n} depends on the axiom {a}"
+        bad := bad.push m!"{n} depends on the axiom {a}"
+  unless bad.isEmpty do throwError MessageData.joinSep bad.toList "\n"
 
 end MitosGate.Land
