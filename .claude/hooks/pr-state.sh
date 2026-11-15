@@ -202,10 +202,20 @@ while read -r n sha; do
   if grep -qx "$n" "$dir/full_thread_prs"; then
     mergeable='?'
     if [ ! -e "$dir/pull-$n.failed" ]; then
-      mergeable=$(jq -r 'if (.mergeable | type) != "boolean" and (.mergeable | type) != "null" then error("bad mergeable")
+      # Branch protection is strict, so only "clean", "unstable" and "has_hooks" can merge: a PR that is
+      # behind main or blocked cannot, for anyone. Anything else, or a head other than the list's, holds.
+      mergeable=$(jq -r --arg sha "$sha" 'if (.mergeable | type) != "boolean" and (.mergeable | type) != "null" then error("bad mergeable")
         elif (.mergeable_state | type) != "string" and (.mergeable_state | type) != "null" then error("bad state")
+        elif (.rebaseable | type) != "boolean" and (.rebaseable | type) != "null" then error("bad rebaseable")
+        elif (.head.sha | type) != "string" and (.head.sha | type) != "null" then error("bad head")
+        elif (.head.sha | type) == "string" and .head.sha != $sha then "head-moved"
         elif .mergeable == false or .mergeable_state == "dirty" then "dirty"
-        elif .mergeable == true then "clean"
+        elif .mergeable == null then "unknown"
+        elif (.head.sha | type) != "string" then error("no head")
+        elif .rebaseable == false then "not-rebaseable"
+        elif .mergeable_state == "behind" then "behind"
+        elif .mergeable_state == "blocked" then "blocked"
+        elif (.mergeable_state | IN("clean", "unstable", "has_hooks")) then "clean"
         else "unknown" end' "$dir/pull-$n.json" 2>/dev/null) || mergeable='?'
       [ -n "$mergeable" ] || mergeable='?'
     fi
@@ -320,7 +330,7 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
         ($verdicts | if . == null then null else .[$n] end) as $vi |
         ($e.trust_critical != "no" or (.labels | any(. == "spec-approved"))) as $trust_critical |
         ($v != "?" and $v != "none" and ($e.sha | startswith($v))) as $h |
-        (if (.labels | any(. == "needs-rebase")) then "needs-rebase" elif $e.mergeable == "dirty" then "dirty" elif $e.mergeable == "unknown" then "not-computed" elif $e.mergeable == "?" then "unreadable" else null end) as $cf |
+        (if (.labels | any(. == "needs-rebase")) then "needs-rebase" elif ($e.mergeable | IN("dirty", "behind", "blocked", "not-rebaseable", "head-moved")) then $e.mergeable elif $e.mergeable == "unknown" then "not-computed" elif $e.mergeable == "?" then "unreadable" else null end) as $cf |
         {v: $v, u: $u, head: $h, cf: $cf, hold: (if $h then merge_hold_reason($vi; $trust_critical) else null end)} end) as $r |
      "open #\($n) head \(.sha) \(if .draft then "draft" else "ready" end) labels=\(.labels | lst) assignees=\(.who | lst)\(
        if $r == null then ""
