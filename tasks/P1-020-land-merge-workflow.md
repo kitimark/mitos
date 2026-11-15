@@ -3,7 +3,7 @@
 phase: 1
 goal: On a `merge` plan, `land.yml`'s `apply` job reads the pull request and its conversation again and makes the one pinned rebase-merge call with the updater app's token, and `report` answers each change of answer to an owner word, so a kept pull request lands on the owner's typed `/land <commit>` with no Claude session calling the merge.
 statement: none locked (workflow tooling). It acts on P1-018's `PlannedMergeIsGated` (15) and P1-019's `KeptMergeIsTheOwnersTypedApproval`, and adds the gate statements under `statements` below.
-touches: .github/workflows/land.yml, .github/workflows/update-prs.yml (its mint step and the two `uses:` pins of that job only, #284 O3), .github/workflows/ci.yml (three test steps, and the name of the protection test's step), .github/scripts/land-decide.sh, .github/scripts/land-decide.test.sh, .github/scripts/land-digest.sh, .github/scripts/land-apply.sh, .github/scripts/land-apply.test.sh, .github/scripts/land-report.sh, .github/scripts/land-report.test.sh, .github/scripts/land-workflow.lib.sh, .github/scripts/app-token.test.sh, .github/scripts/land-protection.test.sh (its `land.yml` pins narrow to the `decide` job), gate/MitosGate/LandAnswer.lean, gate/MitosGate/LandCli.lean, gate/Main.lean, gate/MitosGate/Land.lean (two comments), gate/MitosGate/Snapshot/Types.lean, gate/MitosGate/Snapshot/Fields.lean, gate/MitosGate/Snapshot/Obs.lean, gate/MitosGate/Snapshot/Fixtures.lean, gate/MitosGate/Snapshot.lean, gate/MitosGate/SnapshotCli.lean, gate/snapshot-test.sh, gate/MitosGate/Shadow/Types.lean, gate/MitosGate/Shadow/Reading.lean, gate/MitosGate/Shadow/Seat.lean, gate/MitosGate/Shadow/Finding.lean, gate/MitosGate/Shadow.lean, gate/MitosGate/ShadowCli/Read.lean, gate/shadow-fetch.sh, gate/shadow-test.sh, gate/shadow-fixtures/, gate/land-test.sh, this file, ops/runs/
+touches: .github/workflows/land.yml, .github/workflows/update-prs.yml (its mint step and the two `uses:` pins of that job only, #284 O3), .github/workflows/ci.yml (three test steps, and the name of the protection test's step), .github/scripts/land-decide.sh, .github/scripts/land-decide.test.sh, .github/scripts/land-digest.sh, .github/scripts/land-apply.sh, .github/scripts/land-apply.test.sh, .github/scripts/land-report.sh, .github/scripts/land-report.test.sh, .github/scripts/land-workflow.lib.sh, .github/scripts/app-token.test.sh, .github/scripts/land-protection.test.sh (its `land.yml` pins narrow to the `decide` job), gate/MitosGate/LandAnswer.lean, gate/MitosGate/LandCli.lean, gate/Main.lean, gate/MitosGate/Land.lean (two comments), gate/MitosGate/Snapshot/Types.lean, gate/MitosGate/Snapshot/Fields.lean, gate/MitosGate/Snapshot/Obs.lean, gate/MitosGate/Snapshot/Fixtures.lean, gate/MitosGate/Snapshot.lean, gate/MitosGate/SnapshotCli.lean, gate/snapshot-test.sh, gate/MitosGate/Shadow/Types.lean, gate/MitosGate/Shadow/Reading.lean, gate/MitosGate/Shadow/Seat.lean, gate/MitosGate/Shadow/Finding.lean, gate/MitosGate/Shadow.lean, gate/MitosGate/ShadowCli/Read.lean, gate/MitosGate/ShadowCli.lean (repository owner caller migration), gate/shadow-fetch.sh, gate/shadow-test.sh, gate/shadow-fixtures/, gate/land-test.sh, this file, ops/runs/
 must_not_touch: statements.lock, models.lock, core/, eval/cheats/, models, .claude/, .cursor/, CLAUDE.md, docs/process.md, plan/, .github/scripts/rebase-prs.sh, .github/workflows/land-protection.yml, .github/scripts/land-protection.sh, gate/snapshot-fetch.sh (this row adds no read to `decide`), gate/MitosGate/Speech/ (the comment reader stays P1-019's)
 checks: actionlint, shellcheck, land-decide.test.sh, land-apply.test.sh, land-report.test.sh, land-protection.test.sh, app-token.test.sh, every gate/*-test.sh, lake build (each module's axiom check: no `sorry`, no new axiom), cheats (in ci), the real runs under `fixtures`
 budget: 30 iterations · 10h wall · 3M tokens, the real runs included (was 25 · 8h · 2.5M; the folded #319, #303 and #284 items add about a fifth)
@@ -1473,14 +1473,42 @@ Section 6, the bullets about this row:
 - **Shadow evidence for A3.** In the scorer's report on #191, every kept PR that the owner merged in the window reads `agrees`. With only owner entries in the queue, that reading is the `merge` plan at the merged head. Each `disagrees` is explained in A3's PR body.
 - **Rollback, lightest first.** `/hold` on one PR. Then the owner disables the `land` workflow (`gh workflow disable land.yml`), or merges by hand a one-line PR that sets the constant off. Then revert A4 and A3. A1 and A2 stay, because nothing acts on a `merge` plan then. The owner can merge by hand at any time, as today.
 
+## Build notes
+
+The implementation follows design head 9241871 with the corrections below.
+
+- `land-answers` prints its JSON directly. The copied `ciLine` wrapper changed JSON escapes such
+  as `\n` into non-JSON `\u{005C}n`, which the actual CLI test rejected. Answers contain fixed
+  wording, validated alphanumeric commits and natural numbers; JSON escaping keeps the output
+  on one line and the object prefix prevents a workflow command. The recorded `land` CLI is
+  unchanged.
+- Issue #290 item 5 requires a fresh `spec-approved` read. `Handoff.requiresSpec` carries the
+  reader's `Snapshot.specPath` result to `apply` as `requires_spec`, validated as `true` or `false`.
+  `HandoffIsThePlannedMerge` proves it comes from the selected observation. When true, `apply`
+  checks the label in its existing fresh pull request read and stops `label` if absent. No read
+  was added to `decide`. `report` explains that stop.
+- An emptied owner `COMMENTED` review with no linked comment retires every typed approval. The
+  proposed shadow design treated it as silent and could report `oneWordAway` where the reader
+  rejects the fresh word. Both callers now use `Snapshot.reviewsSpeak`, which combines a text
+  summary with `emptied`. Shadow evidence includes flattened `reviewComments` alongside `reviews`
+  and `repo.json`; `shadow-fetch.sh` reads the extra comment route for each merge. The regression
+  also keeps ordinary empty footer thread replies eligible. This changes only shadow reads.
+- The predicate originally called `emptied` is named `ownerReviewWithoutPost`. It observes the
+  present routes and does not prove that content was deleted. All callers use the new name.
+- `ShadowCli.lean` needs the repository owner before parsing merges. Its three-line caller
+  migration was omitted from the original file list and is included in `touches` above.
+
+The build uses the pinned Lean 4.35.0 toolchain. The pre-merge API check intercepts every merge
+call locally. The owner-only post-merge runs R1 to R16 remain prerequisites for closing #297.
+
 ## Done when
-- [ ] `land-apply.test.sh`, `land-report.test.sh` and `app-token.test.sh` pass, and run in ci
-- [ ] `land-decide.test.sh`, `land-protection.test.sh` and every `gate/*-test.sh` pass;
+- [x] `land-apply.test.sh`, `land-report.test.sh` and `app-token.test.sh` pass, and run in ci
+- [x] `land-decide.test.sh`, `land-protection.test.sh` and every `gate/*-test.sh` pass;
       actionlint and shellcheck report nothing
-- [ ] `lake build` passes with each module's axiom check: the statements under `statements` proved,
+- [x] `lake build` passes with each module's axiom check: the statements under `statements` proved,
       no `sorry`, no new axiom
 - [ ] R0b ran, and the shadow evidence is posted on #191, with each `disagrees` explained in the PR
       body
 - [ ] after the merge: R1 to R16, reported on #179
-- [ ] all `checks` pass locally
-- [ ] run-log record written (ops/runs/)
+- [x] all `checks` pass locally
+- [x] run-log record written (ops/runs/)
