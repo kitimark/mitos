@@ -1,6 +1,7 @@
 import MitosGate.Accept
 import MitosGate.Cheats
 import MitosGate.CheatsAggregate
+import MitosGate.CheatsFixture
 import MitosGate.CheatsShard
 import MitosGate.Util
 
