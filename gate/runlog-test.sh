@@ -116,7 +116,7 @@ expect "a new day file fails" 1 "^::error file=$h/d2.ndjson,line=1::a new day fi
 
 fresh order
 { rec A 1; rec B 1; rec C 1; } >"$b/d1.ndjson"
-{ rec X 1; rec C 1; rec Y 1; rec A 1; rec B 1; } >"$h/d1.ndjson"
+{ rec C 1; rec A 1; rec B 1; } >"$h/d1.ndjson"
 expect "a reordered day file fails" 1 "^::error file=$h/d1.ndjson,line=1::line 1 of the merge-base version differs" --base "$b" --head "$h"
 
 fresh nonl
@@ -377,6 +377,11 @@ done
 
 repo="$tmp/replay"
 mkdir -p "$repo/ops/runs"
+for attr in .gitattributes ops/.gitattributes ops/runs/.gitattributes; do
+  if [ -f "$root/$attr" ]; then
+    cp "$root/$attr" "$repo/$attr"
+  fi
+done
 g() { git -C "$repo" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "$@"; }
 g init -q -b main
 { rec A 1; rec B 1 "wrong"; } >"$repo/ops/runs/d1.ndjson"
@@ -419,6 +424,11 @@ gate() {
 repo="$tmp/replay-files"
 runs="$repo/ops/runs"
 mkdir -p "$runs" "$repo/src"
+for attr in .gitattributes ops/.gitattributes ops/runs/.gitattributes; do
+  if [ -f "$root/$attr" ]; then
+    cp "$root/$attr" "$repo/$attr"
+  fi
+done
 g init -q -b main
 printf 'one\ntwo\nthree\n' >"$repo/src/a.txt"
 rec M 1 >"$runs/2026-11-09.ndjson"

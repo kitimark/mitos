@@ -80,7 +80,15 @@ for change in "binary byte:printf 'bin\\0arY\\377\\r\\n' >blob.bin" \
   "carriage return:printf 'b1\\r\\nb2\\n' >B.lean" \
   "mode:chmod +x tool.sh" "symlink:rm tool.sh; ln -s A.lean tool.sh" \
   "new empty file:: >empty.txt" "deleted file:rm B.lean" \
-  "file under ops/runs/sub:mkdir -p ops/runs/sub; echo x >ops/runs/sub/x.ndjson"; do
+  "file under ops/runs/sub:mkdir -p ops/runs/sub; echo x >ops/runs/sub/x.ndjson" \
+  "appended day-file record:rec D 1 >>ops/runs/d1.ndjson" \
+  "new day file:rec E 1 >ops/runs/d2.ndjson" \
+  "edited day-file record:rec A 2 >ops/runs/d1.ndjson; rec B 1 >>ops/runs/d1.ndjson" \
+  "deleted day-file line:rec B 1 >ops/runs/d1.ndjson" \
+  "deleted day file:rm ops/runs/d1.ndjson" \
+  "day-file mode:chmod +x ops/runs/d1.ndjson" \
+  "day-file symlink:ln -s ../../A.lean ops/runs/d3.ndjson" \
+  "day-file type:rm ops/runs/d1.ndjson; ln -s ../../A.lean ops/runs/d1.ndjson"; do
   g checkout -qB var pr
   (cd "$repo" && eval "${change#*:}")
   g add -A
@@ -98,20 +106,38 @@ if g merge-base main pr >/dev/null 2>&1; then bad "  (the graft should hide the 
 same "a graft in info/grafts does not change the id" "$id_pr" "$(cid main pr)"
 rm "$repo/.git/info/grafts"
 
+g checkout -qB eol1 base
+rec D 1 >>"$repo/ops/runs/d1.ndjson"
+g commit -qam eol1
+g checkout -qB eol2 base
+rec D 1 | tr -d '\n' >>"$repo/ops/runs/d1.ndjson"
+g commit -qam eol2
+differ "a run-log record with and without a final newline gives two ids" "$(cid main eol1)" "$(cid main eol2)"
+g checkout -qB eol3 base
+rec D 1 | sed 's/$/\r/' >>"$repo/ops/runs/d1.ndjson"
+g commit -qam eol3
+differ "a run-log record with and without a carriage return gives two ids" "$(cid main eol1)" "$(cid main eol3)"
+
+g checkout -qB order base
+{ rec A 1; rec D 1; rec B 1; rec C 1; } >"$repo/ops/runs/d1.ndjson"
+g commit -qam order1
+o1=$(cid main order)
+{ rec A 1; rec B 1; rec C 1; rec D 1; } >"$repo/ops/runs/d1.ndjson"
+g commit -qam order2
+differ "reordering day-file lines changes the id" "$o1" "$(cid main order)"
+
 g checkout -q main
 printf 'b1\nb2\nb3\n' >"$repo/B.lean"
 g commit -qam "main: B.lean"
 g checkout -qB rebased pr
 g rebase -q main
 same "a rebase over a file the PR does not touch keeps the id" "$id_pr" "$(cid main rebased)"
-# main adds lines far above the PR's hunk: the hunk moves, the id stays.
 g checkout -q main
 { printf -- '-- header %s\n' 1 2 3 4 5 6 7 8 9 10; cat "$repo/A.lean"; } >"$repo/A2" && mv "$repo/A2" "$repo/A.lean"
 g commit -qam "main: lines at the top of A.lean"
 g checkout -qB moved pr
 g rebase -q main
 same "a rebase that moves the PR's hunk keeps the id" "$id_pr" "$(cid main moved)"
-# main changes a line within the PR hunk's three context lines: the id changes.
 g checkout -q main
 sed -i 's/^def v19 : Nat := 19$/def v19 : Nat := 190/' "$repo/A.lean"
 g commit -qam "main: context of the PR's hunk"
@@ -236,6 +262,14 @@ ref=$(pdiff "$mb" norl | LC_ALL=C grep -av '^index ' | LC_ALL=C sed 's/^@@ .*/@@
 same "rest is the SHA-256 of the normalized diff (shell reference)" "$ref" "$(sed -n 's/^rest \([0-9a-f]*\) .*/\1/p' "$out")"
 pre=$(printf 'rest %s\nruns\n' "$ref" | sha256sum | cut -d' ' -f1)
 same "the id is the SHA-256 of 'rest <rest>' and an empty runs list" "$pre" "$(cid main norl)"
+mb=$(g merge-base main pr)
+ref=$(pdiff "$mb" pr | LC_ALL=C grep -av '^index ' | LC_ALL=C sed 's/^@@ .*/@@ 0/' | sha256sum |
+  cut -d' ' -f1)
+(cd "$repo" && "$bin" content-id --verbose main pr >/dev/null 2>"$out") || true
+same "rest includes the day-file diff" "$ref" "$(sed -n 's/^rest \([0-9a-f]*\) .*/\1/p' "$out")"
+pre=$(printf 'rest %s\nruns\n' "$ref" | sha256sum | cut -d' ' -f1)
+same "the day-file diff contributes to the id" "$pre" "$(cid main pr)"
+differ "removing the day-file diff changes the id" "$(cid main norl)" "$(cid main pr)"
 
 got=0; (cd "$repo" && "$bin" content-id main >"$out" 2>&1) || got=$?
 if [ "$got" = 2 ]; then ok "one argument is a usage error"; else bad "one argument is a usage error (exit $got)"; fi
