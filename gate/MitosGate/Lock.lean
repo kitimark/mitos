@@ -76,9 +76,14 @@ partial def unlistedDeps (env : Environment) (unlisted : Name → Bool) (es : Li
         | some ci => unlistedDeps env unlisted (pinned ci) (seen.insert n)
         | none => seen
 
-def importRoot (root : Name) : IO Environment := do
+structure ImportedRoot where
+  private mk ::
+  root : Name
+  env : Environment
+
+def importRoot (root : Name) : IO ImportedRoot := do
   initSearchPath (← findSysroot)
-  importModules #[{ module := root }] {} (trustLevel := 0)
+  return ⟨root, ← importModules #[{ module := root }] {} (trustLevel := 0)⟩
 
 def entries (env : Environment) (prefixes : List Name) : IO (Array String) := do
   let inCore (n : Name) : Bool := match env.getModuleIdxFor? n with
@@ -124,12 +129,15 @@ theorem unreached_eq_nil_iff (sources : List Name) (reached : Name → Bool) :
     unreached sources reached = [] ↔ ∀ m ∈ sources, reached m = true := by
   simp [unreached, List.filter_eq_nil_iff]
 
+def moduleDir (base : System.FilePath) (root : Name) : System.FilePath :=
+  modToFilePath base root ""
+
 /-- Lake's
 `Glob.forEachModuleIn` walks the folder with this same `forEachModuleInDir`, so a file is here
 exactly when the library's glob names it as a module. -/
-def sourceModules (dir : System.FilePath) (root : Name) : IO (Array Name) := do
+def sourceModules (base : System.FilePath) (root : Name) : IO (Array Name) := do
   let out ← IO.mkRef #[]
-  forEachModuleInDir dir fun m => out.modify (·.push (root ++ m))
+  forEachModuleInDir (moduleDir base root) fun m => out.modify (·.push (root ++ m))
   return (← out.get).qsort (·.toString < ·.toString)
 
 end MitosGate.Lock

@@ -21,12 +21,12 @@ tree() {
 }
 
 expect() {
-  local name=$1 dir=$2 code=$3 yes=$4 no=$5 got=0
+  local name=$1 dir=$2 code=$3 want=$4 forbid=$5 got=0
   shift 5
   (cd "$tmp/$dir" && "$bin" "$@" >"$out" 2>&1) || got=$?
   if [ "$got" != "$code" ]; then echo "  exit $got, expected $code"; bad "$name"; return; fi
-  if ! grep -qE -- "$yes" "$out"; then echo "  no line matches /$yes/"; bad "$name"; return; fi
-  if [ -n "$no" ] && grep -qE -- "$no" "$out"; then echo "  a line matches /$no/"; bad "$name"; return; fi
+  if ! grep -qE -- "$want" "$out"; then echo "  no line matches /$want/"; bad "$name"; return; fi
+  if [ -n "$forbid" ] && grep -qE -- "$forbid" "$out"; then echo "  a line matches /$forbid/"; bad "$name"; return; fi
   if grep -q 'uncaught exception' "$out"; then bad "$name"; return; fi
   ok "$name"
 }
