@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Seconds to wait for the checkout lock while building main's tool, and the default wait of `ready`.
+readonly MAIN_TOOL_BUILD_WAIT=1800
+readonly MAIN_TOOL_READY_WAIT_DEFAULT=30
+
 main_tool_inputs=(gate core lakefile.toml lake-manifest.json lean-toolchain .github/workflows/land.yml)
 
 main_tool_dir() {
@@ -24,8 +28,8 @@ main_tool_fresh() {
 main_tool() {
   local mode=$1 dir=${2:-} at=${3:-} proj=${CLAUDE_PROJECT_DIR:-.} bin stamp wait try
   case $mode in
-    ensure) wait=1800 ;;
-    ready) wait=${MAIN_TOOL_READY_WAIT:-30} ;;
+    ensure) wait=$MAIN_TOOL_BUILD_WAIT ;;
+    ready) wait=${MAIN_TOOL_READY_WAIT:-$MAIN_TOOL_READY_WAIT_DEFAULT} ;;
     *) main_tool_why "main_tool takes ensure or ready"; return 1 ;;
   esac
   [ -n "$dir" ] || { main_tool_why "main_tool takes the folder main_tool_dir prints"; return 1; }
@@ -52,7 +56,7 @@ main_tool() {
     return 1
   fi
   command -v lake >/dev/null 2>&1 || { main_tool_why "lake is not installed"; return 1; }
-  flock -x -w 1800 "$MAIN_TOOL_FD" || { main_tool_why "the checkout stayed busy"; return 1; }
+  flock -x -w "$MAIN_TOOL_BUILD_WAIT" "$MAIN_TOOL_FD" || { main_tool_why "the checkout stayed busy"; return 1; }
   if ! main_tool_fresh "$proj" "$stamp" "$at" "$bin"; then
     rm -f -- "$stamp"
     if [ -e "$dir/.git" ]; then

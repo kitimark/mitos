@@ -3,8 +3,7 @@
 #
 # It prints one line, `coderabbit #<pr>: <state>`:
 #   reviewed <head>                            its check at the head passed, or, with no run going,
-#                                              its newest review is of the head; the only state
-#                                              that exits 0
+#                                              its newest review is of the head
 #   reviewed <head> (carried from <sha>)       its newest review is of an earlier commit <sha>, the
 #                                              state would be paused, behind or pending, and
 #                                              `carry.sh --no-build` says <sha> covers the head.
