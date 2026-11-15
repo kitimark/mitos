@@ -229,10 +229,14 @@ def resolveDir (root : System.FilePath) (specified : Option String) : System.Fil
     let path := System.FilePath.mk p
     if path.isAbsolute then path else root / path
 
-/-- A symlink is not a log, even when its target is a regular file. `metadata` would follow it. -/
-def isRegular (p : System.FilePath) : IO Bool := do
+/-- `metadata` follows a symlink, so a link never counts as its target's type. -/
+def isSymlinkFree (p : System.FilePath) (t : IO.FS.FileType) : IO Bool := do
   if !(← p.pathExists) then return false
-  return (← p.symlinkMetadata).type == .file
+  return (← p.symlinkMetadata).type == t
+
+/-- A symlink is not a log, even when its target is a regular file. -/
+def isRegular (p : System.FilePath) : IO Bool :=
+  isSymlinkFree p .file
 
 def artifactCases : String := "shard-cases"
 def artifactExit : String := "shard-exit"
@@ -321,7 +325,7 @@ def readText (p : System.FilePath) : IO (Option String) := do
   if ← isRegular p then return some (← IO.FS.readFile p) else return none
 
 def readSlot (dir : System.FilePath) : IO CheatsAggregate.ShardSlot := do
-  if !(← dir.isDir) then return .absent
+  if !(← isSymlinkFree dir .dir) then return .absent
   let mut regular : List String := []
   for e in ← dir.readDir do
     if ← isRegular e.path then regular := e.fileName :: regular

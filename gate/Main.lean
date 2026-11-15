@@ -38,10 +38,11 @@ def usage : String := "usage:
   mitos-gate cheats [--jobs N] [--timeout S] [case]...
                                                  run the cheat corpus (eval/cheats/), N runs at a time
                                                  (default 4), each stopped after S seconds (default 600)
-  mitos-gate cheats --shard k/n [--list] [--cases <dir>]
-                                                 the cases whose index mod n is k, from eval/cheats/
-                                                 (or <dir> with --list). Refuses an empty residue,
-                                                 because no names would run the whole corpus
+  mitos-gate cheats --shard k/n [--jobs N] [--timeout S] [--list] [--cases <dir>]
+                                                 run the cases whose index mod n is k, from eval/cheats/
+                                                 (or <dir> with --list). N runs at a time (default 4),
+                                                 each stopped after S seconds (default 600). Refuses an
+                                                 empty residue, because no names would run the whole corpus
   mitos-gate cheats aggregate --checks <s> --shards <s> --merged <dir> [--cases <dir>] <shard>...
                                                  accept the shard records only when both jobs
                                                  succeeded and the records are the partition of the

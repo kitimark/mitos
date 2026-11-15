@@ -6,29 +6,41 @@ namespace MitosGate.CheatsAggregate
 open MitosGate.CheatsShard
 open MitosGate.IndexMod
 
-def witnessFail (k : Nat) (files : List String) (timing name : String) : CorpusReject :=
+/-- The first witness check that fails, or `none` when timing, both logs and the table all hold.
+The shard index is only the reject text: `none` does not depend on it. -/
+def witnessFault (k : Nat) (files : List String) (timing table name : String) : Option CorpusReject :=
   if !(timingHas timing name modeFull) || !(timingHas timing name modeComparator) then
-    .timingDrops k name
+    some (.timingDrops k name)
   else if !files.contains (logName name modeFull) then
-    .missingLog k name modeFull
+    some (.missingLog k name modeFull)
   else if !files.contains (logName name modeComparator) then
-    .missingLog k name modeComparator
+    some (.missingLog k name modeComparator)
+  else if !tableOk table name then
+    some (.tableDrops k name)
   else
-    .tableDrops k name
+    none
 
 def witnessOk (files : List String) (timing table name : String) : Bool :=
-  timingHas timing name modeFull && timingHas timing name modeComparator &&
-    files.contains (logName name modeFull) && files.contains (logName name modeComparator) &&
-    tableOk table name
+  (witnessFault 0 files timing table name).isNone
+
+theorem witnessOk_iff (k : Nat) (files : List String) (timing table name : String) :
+    witnessOk files timing table name = true ↔ witnessFault k files timing table name = none := by
+  unfold witnessOk
+  have hsame :
+      (witnessFault 0 files timing table name).isNone =
+        (witnessFault k files timing table name).isNone := by
+    simp only [witnessFault]
+    repeat (first | rfl | split)
+  rw [hsame]
+  cases witnessFault k files timing table name <;> simp
 
 def witnessProblem (k : Nat) (files : List String) (timing table : String) :
     List String → Option CorpusReject
   | [] => none
   | name :: names =>
-    if witnessOk files timing table name then
-      witnessProblem k files timing table names
-    else
-      some (witnessFail k files timing name)
+    match witnessFault k files timing table name with
+    | some r => some r
+    | none => witnessProblem k files timing table names
 
 def slotFault (directory : List String) (count : Nat) (f : ShardFiles) (k : Nat) :
     Option CorpusReject :=
@@ -144,6 +156,29 @@ theorem slotFault_none_iff (directory : List String) (count : Nat) (f : ShardFil
     rcases hex with ⟨t, ct, timing, table, he, hok, hc, hlist, hti, hta, hw⟩
     simpa [slotFault_witness he hok hc hlist hti hta] using hw
 
+theorem witnessFault_none_iff (k : Nat) (files : List String) (timing table name : String) :
+    witnessFault k files timing table name = none ↔
+      timingHas timing name modeFull = true ∧ timingHas timing name modeComparator = true ∧
+        files.contains (logName name modeFull) = true ∧
+        files.contains (logName name modeComparator) = true ∧
+        tableOk table name = true := by
+  unfold witnessFault
+  constructor
+  · intro h
+    split at h
+    · simp at h
+    · split at h
+      · simp at h
+      · split at h
+        · simp at h
+        · split at h
+          · simp at h
+          · simp_all
+  · intro h
+    rcases h with ⟨h1, h2, h3, h4, h5⟩
+    simp only [List.contains_eq_mem, decide_eq_true_eq] at h3 h4
+    simp [h1, h2, h3, h4, h5]
+
 theorem witness_none_iff (k : Nat) (files : List String) (timing table : String) (names : List String) :
     witnessProblem k files timing table names = none ↔
       ∀ name ∈ names,
@@ -154,23 +189,25 @@ theorem witness_none_iff (k : Nat) (files : List String) (timing table : String)
   induction names with
   | nil => simp [witnessProblem]
   | cons name names ih =>
-    unfold witnessProblem
-    split
-    · rename_i hcond
+    cases hf : witnessFault k files timing table name with
+    | some r =>
+      constructor
+      · intro h
+        simp [witnessProblem, hf] at h
+      · intro hall
+        have hn :=
+          (witnessFault_none_iff k files timing table name).mpr
+            (hall name (List.mem_cons_self (a := name)))
+        simp [hf] at hn
+    | none =>
+      simp only [witnessProblem, hf]
       constructor
       · intro hrest n hmem
         rcases List.mem_cons.mp hmem with rfl | hmem
-        · simpa [witnessOk, Bool.and_eq_true, and_assoc] using hcond
+        · exact (witnessFault_none_iff k files timing table n).mp hf
         · exact (ih.mp hrest) n hmem
       · intro hall
-        exact ih.mpr (fun n hmem => hall n (List.mem_cons_of_mem name hmem))
-    · rename_i hcond
-      constructor
-      · intro h
-        cases h
-      · intro hall
-        exact (hcond (by simpa [witnessOk, Bool.and_eq_true, and_assoc] using
-          (hall name (List.mem_cons_self)))).elim
+        exact ih.mpr fun n hmem => hall n (List.mem_cons_of_mem name hmem)
 
 theorem slotProblem_none_iff (directory : List String) (count : Nat) (slot : ShardSlot) (k : Nat) :
     slotProblem directory count slot k = none ↔

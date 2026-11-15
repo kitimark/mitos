@@ -223,14 +223,17 @@ jobs:
             echo "::error::mitos-gate needs a Lean shared library; prove would have to build or pack one"
             exit 1
           fi
-          strip "$bin"
+          # Strip a copy. The build output stays as Lake linked it, so a later
+          # build in this job, and the cache saved on main, keep those bytes.
+          strip -o "$RUNNER_TEMP/mitos-gate" "$bin"
 
       - name: Upload the gate binary for prove
         uses: actions/upload-artifact@v4
         with:
           name: mitos-gate-bin
-          path: .lake/build/bin/mitos-gate
+          path: ${{ runner.temp }}/mitos-gate
           if-no-files-found: error
+          retention-days: 1
           overwrite: true
 
       - name: land-decide.sh records each outcome and holds no key
