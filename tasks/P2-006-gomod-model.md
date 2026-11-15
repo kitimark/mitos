@@ -743,16 +743,40 @@ Write `Tokens.lean` with `tokens.go_anchor` proved, then `GoMod.lean`, then `who
 adequacy line. Run the probe with `--paranoid` to time the five kernels on the 142-byte file
 before writing the other eleven.
 
+### Build notes
+
+Built from `main` at 0892ce4 on Lean v4.35.0.
+- Every definition and statement of the sketch is its text above; only the `sorry`s changed.
+  Two helpers are new, in `Tokens.lean`, for the proof route "a word comes only out of `endWord`,
+  and `punctuation` gives none": `endWord_word` and `punctuation_not_word`.
+- Lines against the budgets: `Tokens.lean` 93 (90), `GoMod.lean` 151 (150), `Examples.lean` 89
+  (90), `Adequacy.lean` 79 (85). No file outgrew its topic.
+- The record moves `core_sha256` as well as `models_lock_sha256`. `core/` is unchanged here, but
+  four commits changed `core/Mitos` after the record was last written (f4e0ea4): cabbc2f,
+  fe55e33, c72192e and f225ac6. The new value is that of `main`'s core.
+- Kernel cost, each from one run on 4 vCPU and 15 GiB: `Models.GoMod.Adequacy` elaborates in
+  6.8 s. The probe accept with `--paranoid` takes 2 min 10 s wall, and the toy accept with
+  `--paranoid --record` 1 min 31 s. Gate 6 alone (`--keep`, then
+  `lake comparator --config=adequacy.json --paranoid` with the build cached) takes 59 s, and its
+  largest proof, `wholeFile`'s, takes lean4lean 2.3 s. All five kernels accept, so the adequacy
+  module keeps the `String` literals.
+- The differential run (recommended, not a gate), one run against `go mod edit -json` of Go
+  1.24.7: the 19 go.mod files of the distribution and the go.mod sections of its test archives,
+  883 distinct texts. Go accepts 869. 851 give the same facts, in the same order. 14 differ only
+  by a quoted path, and 4 only because Go prints the empty module path for a file with no
+  `module` line. The model gives no fact Go lacks, and each of its 1,368 spans is the key's bytes.
+  The 19 go.mod files give 84 facts, with no difference.
+
 ## Done when
-- [ ] `cd examples/acme && lake build` passes with no `sorry`
-- [ ] `lake exe mitos-gate lock-models --workspace examples/acme --check` says 7 models
-- [ ] the toy accept with `--paranoid --record` is ACCEPTED, and the diff of
-      `accepted/ToyRequire.json` is its `models_lock_sha256` line
-- [ ] the probe accept with `--paranoid` is ACCEPTED, its gate 6 line names
+- [x] `cd examples/acme && lake build` passes with no `sorry`
+- [x] `lake exe mitos-gate lock-models --workspace examples/acme --check` says 7 models
+- [x] the toy accept with `--paranoid --record` is ACCEPTED, and the diff of
+      `accepted/ToyRequire.json` is its `models_lock_sha256` line (and `core_sha256`, Build notes)
+- [x] the probe accept with `--paranoid` is ACCEPTED, its gate 6 line names
       `Models.GoMod.model.adequate`, and the PR body states its wall time and that it is one run
 - [ ] `lake exe mitos-gate cheats`: every case as its `expect` says (ci)
-- [ ] recommended before hand-over, not a gate: `Models.GoMod.facts` from a scratch script on the
+- [x] recommended before hand-over, not a gate: `Models.GoMod.facts` from a scratch script on the
       go.mod files of a Go distribution, compared with `go mod edit -json`
-- [ ] all `checks` pass locally
-- [ ] no `sorry`, no new axioms
-- [ ] run-log record written (ops/runs/)
+- [x] all `checks` pass locally
+- [x] no `sorry`, no new axioms
+- [x] run-log record written (ops/runs/)
