@@ -1,0 +1,1 @@
+{"task":"P1-018-021-issues","role":"owner","model":"claude-sonnet-5-5","attempt":1,"iterations":1,"wall_min":10,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Opened issues #295 to #298 for P1-018 to P1-021 and linked them in the plan Issue column; plan-tasks.test.sh passes."}
