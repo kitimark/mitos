@@ -109,7 +109,7 @@ def commentsOf (j : Json) : Option (List Speech.Comment) :=
 def reviewCommentsOf (j : Json) : Option (List Post) :=
   pages j >>= (·.mapM fun c => do
     return ⟨← login "user" c, none, ← stamp "created_at" c, ← stamp "updated_at" c,
-      ← strNullAsEmpty "body" c⟩)
+      ← strNullAsEmpty "body" c, some (← nat "pull_request_review_id" c)⟩)
 
 /-- A pending review is the owner's draft, not yet posted, and has no time. -/
 def reviewsOf (j : Json) : Option (List Review) := do
@@ -296,10 +296,12 @@ def run (dir : System.FilePath) : IO UInt32 := do
   let mut out : Array Json := #[]
   for p in pulls.mergeSort (fun a b => a.number ≤ b.number) do
     let k := toString p.number
+    let reviews := (← load dir s!"reviews-{k}").bind reviewsOf
+    let reviewComments := (← load dir s!"review-comments-{k}").bind reviewCommentsOf
     let r : Reads :=
       { comments := (← load dir s!"comments-{k}").bind commentsOf,
-        reviewComments := (← load dir s!"review-comments-{k}").bind reviewCommentsOf,
-        reviews := (← load dir s!"reviews-{k}").bind reviewsOf,
+        reviewComments := do submittedPosts (← reviews) (← reviewComments),
+        reviews,
         activity := (← load dir s!"activity-{k}").bind activityOf,
         files := (← load dir s!"files-{k}").bind filesOf,
         checks := (← load dir s!"checks-{k}").bind checksOf }

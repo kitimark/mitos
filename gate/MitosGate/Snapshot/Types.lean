@@ -36,13 +36,13 @@ structure Check where
   status : String
   conclusion : String
 
-/-- The review routes have no app field. -/
 structure Post where
   login : String
   slug : Option String
   created : Stamp
   updated : Stamp
   body : String
+  review : Option Nat
 
 structure Review where
   id : Nat

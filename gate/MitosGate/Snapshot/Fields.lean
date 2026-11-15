@@ -85,9 +85,56 @@ def counts (v : Review) : Bool :=
   v.state == "APPROVED" || v.state == "CHANGES_REQUESTED" || !v.body.isEmpty
 
 def posts (r : Reads) : List Post :=
-  (r.comments.getD []).map (fun c => ⟨c.login, c.slug, c.created, c.updated, c.body⟩) ++
+  (r.comments.getD []).map (fun c => ⟨c.login, c.slug, c.created, c.updated, c.body, none⟩) ++
     r.reviewComments.getD [] ++
-    ((r.reviews.getD []).filter counts).map fun v => ⟨v.login, none, v.submitted, v.submitted, v.body⟩
+    ((r.reviews.getD []).filter counts).map fun v => ⟨v.login, none, v.submitted, v.submitted, v.body, none⟩
+
+/-- A review comment speaks no earlier than its review was submitted: a draft's comments keep the
+time they were drafted. `none` when a comment names a review the reviews route did not list. -/
+def submittedPosts (vs : List Review) (ps : List Post) : Option (List Post) :=
+  ps.mapM fun p =>
+    match p.review with
+    | none => some p
+    | some id => (vs.find? (·.id == id)).map fun v => { p with updated := max p.updated v.submitted }
+
+def ReviewCommentsSpeakWhenSubmitted : Prop :=
+  ∀ vs ps ps', submittedPosts vs ps = some ps' → ∀ p ∈ ps', ∀ id, p.review = some id →
+    ∃ v ∈ vs, v.id = id ∧ v.submitted ≤ p.lastSpoke
+
+theorem mapM_mem {f : α → Option β} : ∀ {l : List α} {l' : List β}, l.mapM f = some l' →
+    ∀ y ∈ l', ∃ x ∈ l, f x = some y
+  | [], l', h, y, hy => by simp at h; subst h; cases hy
+  | a :: as, l', h, y, hy => by
+    rw [List.mapM_cons] at h
+    cases ha : f a with
+    | none => simp [ha] at h
+    | some b =>
+      cases hr : as.mapM f with
+      | none => simp [ha, hr] at h
+      | some bs =>
+        simp [ha, hr] at h
+        subst h
+        rcases List.mem_cons.1 hy with rfl | hy
+        · exact ⟨a, List.mem_cons_self .., ha⟩
+        · obtain ⟨x, hx, hfx⟩ := mapM_mem hr y hy
+          exact ⟨x, List.mem_cons_of_mem _ hx, hfx⟩
+
+theorem reviewCommentsSpeakWhenSubmitted : ReviewCommentsSpeakWhenSubmitted := by
+  intro vs ps ps' h p hp id hid
+  obtain ⟨a, -, ha⟩ := mapM_mem h p hp
+  cases har : a.review with
+  | none => simp [har] at ha; subst ha; simp [har] at hid
+  | some j =>
+    simp only [har] at ha
+    cases hf : vs.find? (·.id == j) with
+    | none => simp [hf] at ha
+    | some v =>
+      simp only [hf, Option.map_some, Option.some.injEq] at ha
+      subst ha
+      have hj : j = id := by simpa [har] using hid
+      subst hj
+      refine ⟨v, List.mem_of_find?_eq_some hf, by simpa using List.find?_some hf, ?_⟩
+      exact Nat.le_trans (Nat.le_max_right a.updated v.submitted) (Nat.le_max_right _ _)
 
 def specPath (p : String) : Bool :=
   p == "statements.lock" || p == "models.lock" || p.endsWith "/statements.lock" ||

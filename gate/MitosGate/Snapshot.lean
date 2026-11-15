@@ -12,7 +12,7 @@ open Lean in
   for n in [``failedReadHolds, ``enforcedNeedsProtection, ``updatableNeedsTheGuard,
       ``unreadFilesAreKept, ``onlyTheOwnerQueues, ``greenIsTheNewestGateRun,
       ``pushesAreTheActivity, ``verdictsFromTheCell, ``passNamesNoFail,
-      ``restNeedsAnswersAndTheLabel, ``keptMergeIsTheOwnersTypedApproval] ++ fixtures.toList do
+      ``reviewCommentsSpeakWhenSubmitted, ``restNeedsAnswersAndTheLabel, ``keptMergeIsTheOwnersTypedApproval] ++ fixtures.toList do
     for a in ← collectAxioms n do
       unless standard.contains a do
         throwError "{n} depends on the axiom {a}"
