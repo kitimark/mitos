@@ -51,7 +51,12 @@ revisit_when: three re-checks, each by the Architect.
   read-only run against the fetch that landed.
 - After A1 merges: `land.sh` reads `.step` of the decision and, of its own pull request, `head`,
   `gate` and the fields of `as_read`. Check that they keep their names, and replace `as_read` by
-  the tool's own "why an owner word does not stand".
+  the tool's own "why an owner word does not stand". Also, once A1 has merged, PR 2's fixture for
+  a bare `/land` on a kept path expects `.stop .noEntry`, not `.present hC`, because A1 reads that
+  `/land` with `approves := false` and it is no entry. Its name becomes
+  `bareOwnerLandOnAKeptPathIsNoEntryForTheOrchestrator`. If PR 2 is still open, it writes that
+  value; if PR 2 merged first, A1 changes the fixture (P1-018, revisit_when). Either may merge
+  first.
 - After A2 merges, if PR 2 is still open: A2 edits `Speech/Comment.lean` and `Snapshot/Obs.lean`
   too.
 
@@ -949,6 +954,13 @@ theorem ownerLandOnAKeptPathIsPresentedToTheOrchestrator :
   decide +kernel
 ```
 
+- `ownerLandOnAKeptPathIsPresentedToTheOrchestrator` assumes that A1 has not merged: on `main`
+  today a bare `/land` on a kept path is the owner's entry, so `step` presents it. Once A1 has
+  merged, the same `/land` is no entry, and the fixture is
+  `bareOwnerLandOnAKeptPathIsNoEntryForTheOrchestrator`, `= .stop .noEntry`, under revisit_when.
+  Both values were checked with `decide +kernel` in round 3 of the plan PR
+  (`tasks/P1-018-land-approval.md`, Build notes at plan time). The other seven fixtures hold
+  either way.
 - `gate/MitosGate/Snapshot.lean`'s axiom-check list names `onlyTheOwnerOrADelegateQueues` in
   place of `onlyTheOwnerQueues`.
 - The statement keeps what the old one gave the owner: on a kept path, or with the paths unread,

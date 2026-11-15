@@ -3,8 +3,8 @@
 phase: 1
 goal: `plan` names a `merge` only for the pull request that is next on the owner's own entry, which on a kept path must approve (statements 15 to 18 proved, standard axioms only), and `mitos-gate land` reads and prints the new shapes, while nothing acts on a `merge` plan yet.
 statement: none locked (`gate/` is not in `statements.lock`); the new `Land` statements are under Design, statements
-touches: gate/MitosGate/Land.lean, gate/MitosGate/LandCli.lean, gate/MitosGate/Shadow/Reading.lean, gate/MitosGate/ShadowCli/Report.lean (one arm), gate/MitosGate/Speech/Comment.lean (`Read.word` only), gate/MitosGate/Snapshot/Obs.lean (`abouts` only), gate/MitosGate/SnapshotCli.lean (`wordJson` only), gate/MitosGate/Snapshot/Fixtures.lean, gate/land-fixtures/queue.json, gate/land-test.sh, gate/snapshot-test.sh, gate/shadow-fixtures/window/records/1003-1.json, this file, ops/runs/
-must_not_touch: statements.lock, models.lock, eval/cheats/, models, .github/, .claude/, gate/MitosGate/Speech.lean, gate/MitosGate/Speech/Words.lean, gate/MitosGate/Speech/Syntax.lean, gate/MitosGate/Speech/Commit.lean, gate/MitosGate/SpeechCli.lean, gate/snapshot-fetch.sh, gate/shadow-fetch.sh, gate/speech-test.sh
+touches: gate/MitosGate/Land.lean, gate/MitosGate/LandCli.lean, gate/MitosGate/Shadow/Reading.lean, gate/MitosGate/ShadowCli/Report.lean (one arm), gate/MitosGate/Speech/Comment.lean (`Read.word` only), gate/MitosGate/Speech.lean only under revisit_when (one fixture), gate/MitosGate/Snapshot/Obs.lean (`abouts` only), gate/MitosGate/SnapshotCli.lean (`wordJson` only), gate/MitosGate/Snapshot/Fixtures.lean, gate/land-fixtures/queue.json, gate/land-test.sh, gate/snapshot-test.sh, gate/shadow-fixtures/window/records/1003-1.json, this file, ops/runs/
+must_not_touch: statements.lock, models.lock, eval/cheats/, models, .github/, .claude/, gate/MitosGate/Speech/Words.lean, gate/MitosGate/Speech/Syntax.lean, gate/MitosGate/Speech/Commit.lean, gate/MitosGate/SpeechCli.lean, gate/snapshot-fetch.sh, gate/shadow-fetch.sh, gate/speech-test.sh
 checks: build (`lake build`, which proves every fixture and runs each module's axiom check), the axiom check (standard axioms only), every gate/*-test.sh, shellcheck, cheats (in ci)
 budget: 15 iterations · 4h wall · 1.5M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
@@ -41,15 +41,23 @@ plan time). The `Obs.word` sketch below, which says why an owner word does not s
 and type-checked at plan time, with its statement proved and six fixtures. Contract only: how
 `LandCli` prints it.
 
-revisit_when: none. Steps 1 and 2 are merged; nothing this row needs is open.
+revisit_when: one case, for this row's PR owner. Steps 1 and 2 are merged; nothing this row needs
+is open. If P1-013's PR 2 has merged first, its fixture
+`ownerLandOnAKeptPathIsPresentedToTheOrchestrator` in `gate/MitosGate/Speech.lean` expects
+`.present hC` for a bare `/land` on `.claude/scripts/land.sh`, a kept path. This row reads that
+`/land` with `approves := false`, so it is no entry and the step is `.stop .noEntry`. This row then
+changes that one fixture to expect `.stop .noEntry`, renamed
+`bareOwnerLandOnAKeptPathIsNoEntryForTheOrchestrator`, and nothing else in that file. Either row may
+merge first: the one that merges second writes `.stop .noEntry` (P1-013, revisit_when). Both values
+were checked with `decide +kernel` (Build notes at plan time).
 
 modules: one topic per file. Each edit stays in the file that owns its topic, and no file is added.
 - `gate/MitosGate/Land.lean`: the decision over a snapshot. It gains `Mark.approves`,
-  `Word.ownerSpoke`, `Word.decides`, `spokeSince`, `Obs.unnamed`, `OwnerWord` and `Obs.word`, the
-  `merge` plan and its `plan` arm, statements 15 to 18 and `WordStandsIsTheEntry` with their proofs,
-  and 43 fixtures (111 today, 148 in the judge's file, 154 with `Obs.word`'s six). About 1,680
-  lines (1,388 today). It keeps its own layout: statements, proofs, `namespace Fixture`, then the
-  axiom check, whose list gains the new statements.
+  `Word.ownerSpoke` with its `Word.said` arm, `Word.decides`, `spokeSince`, `Obs.unnamed`,
+  `OwnerWord` and `Obs.word`, the `merge` plan and its `plan` arm, statements 15 to 18 and
+  `WordStandsIsTheEntry` with their proofs, and 43 fixtures (111 today, 148 in the judge's file,
+  154 with `Obs.word`'s six). About 1,680 lines (1,388 today). It keeps its own layout: statements,
+  proofs, `namespace Fixture`, then the axiom check, whose list gains the new statements.
 - `gate/MitosGate/LandCli.lean`: the JSON of `land`. It reads `approves` (an absent key reads
   false) and `ownerSpoke`, prints the `merge` plan and the `word` field. About 330 lines (304).
 - `gate/MitosGate/Shadow/Reading.lean`: the assumed word, which now approves. 16 lines change.
@@ -57,6 +65,9 @@ modules: one topic per file. Each edit stays in the file that owns its topic, an
   merge is no push.
 - `gate/MitosGate/Speech/Comment.lean`: `Read.word` (218) passes `false` for both marks. Two lines.
   The reader that sets `approves` is P1-019's.
+- `gate/MitosGate/Speech.lean`: only if P1-013's PR 2 has merged first (revisit_when). Its fixture
+  `ownerLandOnAKeptPathIsPresentedToTheOrchestrator` becomes
+  `bareOwnerLandOnAKeptPathIsNoEntryForTheOrchestrator`, `= .stop .noEntry`. Three lines.
 - `gate/MitosGate/Snapshot/Obs.lean`: one `abouts` arm (30), `.ownerSpoke _ :: ws => abouts ws`.
 - `gate/MitosGate/SnapshotCli.lean`: one `wordJson` arm (243),
   `.ownerSpoke s => kind "ownerSpoke" [("said", n s)]`. It prints no `approves` yet, since every
@@ -104,11 +115,13 @@ def Obs.word (o : Obs) : OwnerWord :=
   | _ => .none
 ```
 
-`Mark` and `Plan` as they become. The quote names their changes only in its comments, so here
-they are as code. They were added in round 2 of the plan PR and type-checked beside `main`'s
-`Land`, together with the uses that the quote and Build notes give them: `⟨said, o.head, true⟩`,
-`⟨n, s, false⟩`, `.merge o.pr o.head` and `m.approves`. `Plan.push` keeps its doc comment from
-`main`.
+`Mark`, `Plan` and `Word.said` as they become. The quote names the changes to `Mark` and `Plan`
+only in its comments, and `Word.said`, which needs an arm for `ownerSpoke`, not at all, so here they
+are as code. `Mark` and `Plan` were added in round 2 of the plan PR and type-checked beside
+`main`'s `Land`, together with the uses that the quote and Build notes give them:
+`⟨said, o.head, true⟩`, `⟨n, s, false⟩`, `.merge o.pr o.head` and `m.approves`. `Word.said` was
+added in round 3 and built with the rest of the sketch (Build notes). `Plan.push` keeps its doc
+comment from `main`.
 
 ```lean
 structure Mark where
@@ -116,6 +129,12 @@ structure Mark where
   about : Sha
   approves : Bool
   deriving DecidableEq
+
+def Word.said : Word → Nat
+  | .ownerLand m => m.said
+  | .ownerHold s => s
+  | .ownerSpoke s => s
+  | .agentLand _ m => m.said
 
 inductive Plan
   | push (pr : Pr) (expect replay : Sha)
@@ -304,7 +323,20 @@ order:
   - `ShadowCli/Report.lean` `pushes`: a `merge` arm.
   `Speech.lean` (106 fixtures), `Speech/Words.lean`, `SpeechCli`, `Shadow/*` and `ShadowCli/*`
   build unchanged. The judge's `Obs.lean` has the `abouts` arm; the last two edits are new, because
-  the judge built neither `SnapshotCli` nor `ShadowCli`.
+  the judge built neither `SnapshotCli` nor `ShadowCli`. P1-013's PR 2 was not on that `main`; the
+  next bullet checks its one fixture that this row changes (revisit_when).
+- The fixture under revisit_when, in round 3 of the plan PR, on `main` at 48bb997 with P1-013 PR 2's
+  `delegates` and its eight `Speech` fixtures, each module compiled alone with `lean -o`:
+  - `main`'s `Land`: `stepAs orchestrator [typed 112 12 "/land"] [".claude/scripts/land.sh"]` is
+    `.present hC` and not `.stop .noEntry`, so PR 2's fixture holds while this row is open.
+  - `main`'s `Land` definitions with the sketch's changes (`Mark` and `Plan` as code above, the
+    `ownerSpoke` arm of `Word.said`, `Word.decides`, `spokeSince`, the `Obs.entries` arm, the
+    `plan` arm), `newestOwner_none`, `newestOwner_max`, `eq_of_said_eq` and `newestOwner_eq_some`
+    reading `Word.decides`, and `Read.word` passing `false`: the same step is `.stop .noEntry` and
+    not `.present hC`. So after this row the fixture expects `.stop .noEntry`, whichever row merged
+    first.
+  - Each value is a `decide +kernel` theorem on the three standard axioms. PR 2's other seven
+    fixtures, and `Speech.lean`'s 106, build on both.
 - `Snapshot/Fixtures.lean` fails on nine fixtures until it changes: `theOwnersLandIsTheEntry` needs
   `⟨1800, hB, false⟩`, and eight that expected `.present hB` now give `.stop .noEntry`, because the
   base comment is a bare `/land` on `gate/Main.lean`: `allReadAndCoveredIsPresented`,
