@@ -299,6 +299,16 @@ for route in review-comments reviews; do
   fi
 done
 fresh
+echo '[[]]' >"$d/comments-7.json"
+said9 "$typed9"
+jq -n '[[{user: {login: "owner"}, created_at: "2026-11-14T07:59:00Z", updated_at: "2026-11-14T08:01:00Z",
+    body: "rename"}]]' >"$d/review-comments-9.json"
+if snap && [ "$(words9)" = "$spoke9" ]; then
+  ok "the owner's review comment edited after the approval is an ownerSpoke in the snapshot"
+else
+  bad "the owner's review comment edited after the approval is an ownerSpoke in the snapshot" "$(words9)" "$(cat "$tmp/snap.err")"
+fi
+fresh
 echo '[[]]' >"$d/comments-9.json"
 jq -n --arg q "$q1" '[[{user: {login: "owner"}, created_at: "2026-11-14T08:00:00Z", updated_at: "2026-11-14T08:00:00Z",
     body: ("/land " + $q)}]]' >"$d/review-comments-9.json"
