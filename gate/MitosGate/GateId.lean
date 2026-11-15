@@ -13,9 +13,6 @@ def GateId.name : GateId → String
   | .statements => "statements" | .axioms => "axioms" | .kernels => "kernels"
   | .adequacy => "model adequacy"
 
-/-- Why a gate rejected. `judged`: it judged the plugin or the model. `ioError`: it stopped on an I/O
-error. `noJudgment`: the comparator ended without judging, as when Lake or Lean was killed or could
-not start. Only a `judged` rejection counts for a cheat case. -/
 inductive Cause
   | judged
   | ioError

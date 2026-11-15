@@ -343,24 +343,15 @@ def ciCount : Nat := (ciCases "").length
 /-! ## The cheat runner's timeout
 
 At a run's timeout, `CheatsRun.runChild` sends SIGKILL to the run's whole process group through
-`Child.kill`, whose docstring says SIGTERM. The group holds `unshare` and the first process of the
-run's PID namespace, and when that process dies, the kernel kills the rest of the namespace. Each
-case runs a `bash` child through `CheatsRun.inRunDir` and `runChild` with a 1 s timeout. The child
-ignores SIGTERM and starts a grandchild that ignores it too, holds the pipes and sleeps for 30 s
-and a fraction no other process uses, by which the test finds it in the host's `/proc`. Every
-process would exit on its own after 30 s. So on a toolchain whose `Child.kill` sent SIGTERM, or
-with a runner that cannot reach a grandchild in a session of its own, a run would end only after
-30 s, or with another code, and the case would fail rather than hang. -/
+`Child.kill`, whose docstring says SIGTERM. Each case runs a `bash` child through
+`CheatsRun.inRunDir` and `runChild` with a 1 s timeout. -/
 
 structure TimeoutCase where
   name : String
-  /-- The child's script, given the grandchild's command. -/
   script : String → String
   code : UInt32
   timedOut : Bool
 
-/-- A grandchild that ignores SIGTERM, prints a line and sleeps `30.<tag>` s holding the pipes. It
-creates `$TMPDIR/gc` once it has printed, so the child can wait for it. -/
 def grandchild (tag : String) : String :=
   "bash -c 'trap \"\" TERM; echo grandchild; : > \"$TMPDIR/gc\"; exec sleep 30." ++ tag ++ "'"
 
@@ -443,12 +434,7 @@ def timeoutCase (c : TimeoutCase) (tag : String) : IO (List String) := do
   | none => errs := errs.push "no run directory was made"
   return errs.toList
 
-/-! ## The verdict is the last line of the gate's stdout
-
-`Cheats.Run.verdict` reads a run's verdict from its stdout alone, and only from the last line. Each
-case runs a `bash` child through `CheatsRun.runChild` that prints a verdict line, and checks what
-the runner reads from it. The first prints what the Lean runtime prints for an uncaught exception
-whose message holds a verdict line: the message on stderr, and exit 1. -/
+/-! ## The verdict is the last line of the gate's stdout -/
 
 def verdictCases : List (String × String × Option Cheats.Verdict) :=
   [ ("an uncaught exception's message holds a verdict line",
@@ -471,11 +457,7 @@ def verdictCase (script : String) (want : Option Cheats.Verdict) : IO (List Stri
   return [s!"read {verdictText got}, not {verdictText want}, from stdout {repr run.stdout} " ++
     s!"and stderr {repr run.stderr}"]
 
-/-! ## A log that is not on disk fails its row
-
-`CheatsRun.runJob` writes each run's log and reads it back, and a run whose log does not hold its
-output has no verdict, so its row fails. Each run here is a stub gate that prints a rejection at
-gate 0: once into a log folder it can write, once into one where the log's path is a folder. -/
+/-! ## A log that is not on disk fails its row -/
 
 def logWrite : IO (List String) := do
   let dir ← IO.FS.createTempDir
