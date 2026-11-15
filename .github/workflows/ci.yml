@@ -160,6 +160,9 @@ jobs:
       - name: The spec-label check fails closed
         run: .github/scripts/ci-trust.test.sh
 
+      - name: The protection reader holds the only key, scoped to administration read, and pairs with land's decide
+        run: .github/scripts/land-protection.test.sh
+
       # Restore on a pull request. Save on a push to main, which is the only
       # push this workflow runs. #168 turns this pair into the setup action.
       - uses: actions/cache/restore@v4
