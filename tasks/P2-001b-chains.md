@@ -167,17 +167,18 @@ this map reports it as a deviation and does not split silently.
 - `core/Mitos/Impl/Resolve.lean`: the resolver. 27 → 70. Full text under `types`.
 - `core/Mitos/Impl/Impact.lean`: `fires` reads `through`. 23 → 25.
 - `core/Mitos/Proofs/Resolve/Basic.lean`: what `resolve` lists, and how the ends of a requirement
-  match its derivations. 27 → 120 after the cache equivalence helpers. It stays the only proof file that imports `Mitos.Impl.Resolve`
+  match its derivations. 27 → 124 in the build (120 in the reviewed sketch), after the cache equivalence helpers. It stays the only proof file that imports `Mitos.Impl.Resolve`
   (`cheat_proofs_own_hole` replaces that import).
-- `core/Mitos/Proofs/Resolve/Edges.lean`: sound, complete, unresolved-exact, total. 49 → 44.
+- `core/Mitos/Proofs/Resolve/Edges.lean`: sound, complete, unresolved-exact, total. 49 → 47 in the build (44 in the sketch).
 - `core/Mitos/Proofs/Resolve/Assumptions.lean`: assumptions-exact, status-honest, retract-exact.
   58 → 92.
-- `core/Mitos/Proofs/Resolve/Nodup.lean`: no-duplicates. 66 → 81.
+- `core/Mitos/Proofs/Resolve/Nodup.lean`: no-duplicates. 66 → 83 in the build (81 in the sketch).
 - `core/Mitos/Proofs/Impact.lean`: impact-correct. 72 → 76. `Proofs/Impact/Nodup.lean` keeps every
   byte (it reads only `(fires_iff.mp _).2`).
 - Generated at the head: `statements.lock`, `examples/acme/accepted/ToyRequire.json`,
   `examples/acme/accepted/GoMod.json`.
-- Mutant files: the nine `mutant` files and one `Refute.lean` under "Mutant migration".
+- Mutant files: the eleven `mutant` files and one `Refute.lean` under "Mutant migration" (nine in
+  the plan-time design, and #311's two cases).
 
 ### Usage (caller's view)
 
@@ -675,8 +676,8 @@ Run-level fixtures the builder reports. "Measured" means the judged sketch produ
   bytes as on `main`, with no edit to `eval/score/`. Measured: 868 bytes, identical to `main`'s.
 - `mutants-build`: `lake --dir eval/mutants build`, `warningAsError` on, with no edit outside the
   migration table. Measured.
-- `all-cases-as-expected`: every one of the 42 cases as expected, 22 refuted and 20 cheat cases
-  rejected, default and `--paranoid`, one case per invocation (several cases in one invocation were
+- `all-cases-as-expected`: every one of the 44 cases as expected (42 at design time, and #311's
+  two), 24 refuted and 20 cheat cases rejected, default and `--paranoid`, one case per invocation (several cases in one invocation were
   killed by the container's memory limit at about 5 GB RSS, V4 on #276). Measured on the judged
   sketch: default mode, all 42 as expected (22 refuted, no known gap, 20 cheat cases rejected);
   `--paranoid` for the original six edited cases, all as expected (`cheat_proofs_own_hole` is UNBOUND, rejected
@@ -718,7 +719,8 @@ PR body lists the regenerated diff against this list.
 
 ### Mutant migration
 
-21 distinct `find=` texts on `main`; 8 move, each to the text the new line holds, and every `why=`,
+21 distinct `find=` texts on `main` at design time; 8 move, each to the text the new line holds, and
+#311's two cases, added since, move too (the last two rows). Every `why=`,
 `breaks=`, `survives=` and `rejects=` line keeps its text.
 
 | Case | Edit |
@@ -733,13 +735,21 @@ PR body lists the regenerated diff against this list.
 | `unresolved_lists_provisions` | `find=if isRequirement r && allEnds.isEmpty then [r.id] else []`, `replace=if allEnds.isEmpty then [r.id] else []` |
 | `cheat_proofs_own_hole` | the `replace=` copy of the implementation takes the same change as `Impl/Resolve.lean` (P2-005a, rule R6): it becomes the new file on one line. Appendix A5 has a command that regenerates it (whitespace runs become one space, `, ` goes before `unresolved :=`) and a check that it is current; the flattened payload must also compile before its mutant is run |
 | `impact_includes_self` | `Refute.lean`: `not_affects_nil`'s `induction` gains `\| through he => simp at he` after its `step` line |
+| `impact_repeats_repo` (#311, added after design) | `find=!seen.contains e.requiringRepo`, `replace=true`: `fires` now spans three lines, so its old anchor `seen.contains e.providingRepo) && !seen.contains e.requiringRepo` is gone; the new pair still drops the guard |
+| `unresolved_duplicated` (#311, added after design) | `find=unresolved := rows.flatMap Prod.snd`, `replace=unresolved := (rows ++ rows).flatMap Prod.snd`: the old filter it anchored on is gone; the new pair still walks the facts twice |
 
 The other 13 distinct texts each still occur exactly once (checked by script on the cached sketch). The `Edge` literals
-in 16 `Refute.lean` and `mutant` files build unchanged, because `through` has a default. Each moved
-case was run on the judged sketch and kept its result: `ai_ignored` and `status_requirer_only`
-refuted (`resolve_status_honest`), `unresolved_dropped` and `unresolved_inverted` refuted
-(`resolve_unresolved_exact`, `resolve_total`), `impact_includes_self` refuted (`impact_correct`),
-`cheat_proofs_own_hole` UNBOUND, rejected at values.
+in 16 `Refute.lean` and `mutant` files build unchanged, because `through` has a default. At plan
+time, before the review round cached each row, the first four moved cases, `impact_includes_self`
+and `cheat_proofs_own_hole` were run on the judged sketch and kept their results. The four anchors
+the cache moved (`first_provider_only`, `edges_duplicated`, `first_fact_skipped`,
+`unresolved_lists_provisions`) had no recorded run at design time (#308), and the review round ran
+no case after it added `inductive EndSummary`, which the mutant lint refuses. The builder runs every
+case at the head, one per invocation, default and `--paranoid` (`all-cases-as-expected`). On this
+branch, before its first push, the first three cases (`ai_ignored`, `all_confirmed`, `assumptions_branches_swapped`)
+were refuted in both modes, and the other 41 are still to run. After #311 merged, a script that
+applies the 44 cases' 61 edits in order, as the runner does, finds every `find=` exactly once in
+the text it applies to.
 
 ### Order of edits
 
@@ -754,7 +764,7 @@ package and read by another build of the gate gave 31 different lock lines.
 | 3 | `Spec/Derivations.lean`; `Sound`; the `obtain` patterns in `Adequacy.lean` and `Repo.lean`; `Impl/Resolve.lean`; `Proofs/Resolve/*` | `cd core && lake build && lake check && lake comparator --paranoid` |
 | 4 | The chain fixtures at the end of `Spec/Adequacy.lean` (D2's fallback; the plan-time step wrote `Spec/Chains.lean` and its import in `Core.lean`) | `lake build && lake exe mitos-gate imports`; `cd core && lake check` |
 | 5 | `lake exe mitos-gate lock` | `lock`, `lock-lists-chains` |
-| 6 | The nine `mutant` files (`cheat_proofs_own_hole`'s copy by the command in Appendix A5) | `mutants-build`; `all-cases-as-expected`, one case per invocation |
+| 6 | The eleven `mutant` files (`cheat_proofs_own_hole`'s copy by the command in Appendix A5) | `mutants-build`; `all-cases-as-expected`, one case per invocation |
 | 7 | After the last rebase: the lock again if `main` moved, both accept records, this file, the run log `ops/runs/<UTC date>/P2-001b-builder-<attempt>.json` | the gate |
 
 The builder stops and reports when:
@@ -793,7 +803,8 @@ line for `GoMod.json` and none for `ToyRequire.json`.
 
 cut_line: ships `FactKind.binds`, the bound rule, `Edge.through`, `Affects.through`, the restated
 `Sound`, the laws, the chain fixtures, the resolver and impact with all twelve proofs, the
-regenerated lock and both accept records, and the ten mutant-file edits. The PR says `Closes #204`.
+regenerated lock and both accept records, and the twelve mutant-file edits (ten in the plan-time
+design, and #311's two cases). The PR says `Closes #204`.
 It leaves out new mutant cases (P2-005b), a chain fixture for the scorer and its labels (P2-009a),
 the union view's status rule in the scorer (P2-009a), the derivation count (P2-010), chains longer
 than one binding (a later constructor), an extractor that emits `binds` (YAML is a later phase), and
