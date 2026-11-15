@@ -63,6 +63,8 @@ runs_of() {
   { jq -s . "$tmp/runs" >"$out/$file"; } 2>/dev/null || unwritten "$file"
 }
 
+api "repos/$repo" >"$out/repo.json" || failed "the repository"
+
 runs_of "$workflow" '{id, attempt: .run_attempt, event, conclusion, created: .created_at,
   started: .run_started_at, updated: .updated_at}' runs.json
 runs_of ci.yml '{id, event, actor: (.triggering_actor.login // "")}' baseline.json
@@ -103,7 +105,15 @@ while read -r merge; do
   if [[ $after =~ ^[0-9a-f]{40}$ ]]; then
     tree=$(api "repos/$repo/git/commits/$after" --jq .tree.sha) || failed "the commit $after"
   fi
-  { jq -c --arg tree "$tree" 'del(.after) + {tree: $tree}' <<<"$merge" >>"$tmp/merges"; } \
+  pr=$(jq -r .pr <<<"$merge")
+  by_number "repos/$repo/pulls/$pr/reviews?per_page=100" . false >"$tmp/reviews" \
+    || failed "the reviews of #$pr"
+  by_number "repos/$repo/pulls/$pr/comments?per_page=100" . false >"$tmp/review-comments" \
+    || failed "the review comments of #$pr"
+  { jq -c --arg tree "$tree" --slurpfile reviews "$tmp/reviews" \
+      --slurpfile comments "$tmp/review-comments" \
+      'del(.after) + {tree: $tree, reviews: $reviews, reviewComments: $comments}' \
+      <<<"$merge" >>"$tmp/merges"; } \
     2>/dev/null || unwritten "a scratch file"
 done <"$tmp/merged"
 { jq -s . "$tmp/merges" >"$out/merges.json"; } 2>/dev/null || unwritten merges.json

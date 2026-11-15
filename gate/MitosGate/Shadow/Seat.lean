@@ -90,7 +90,7 @@ def seat (m : Merge) (rs : List Record) : Seat :=
     match r.prs.find? (·.pr == m.pr) with
     | none => .unlisted r.run
     | some o =>
-      .sat { run := r.run, age := m.time.seconds - r.read.seconds, reading := reading r.prs o,
+      .sat { run := r.run, age := m.time.seconds - r.read.seconds, reading := reading m.summary r.prs o,
              lacks := lacks o, head := headOf r o m, authorKnown := o.author.isSome,
              updaterPushes := (o.pushes.filter (·.byUpdater)).length }
 
@@ -221,7 +221,7 @@ def rec (run read : Nat) (main : Option Sha) (prs : List Obs) : Record :=
   { run, trigger := .mainMoved, read := ⟨read⟩, main, tool := "t", cost := ⟨20, 12, 1, 0, 36⟩,
     prs, trees := [⟨"br", "tb"⟩] }
 def merged : Merge :=
-  { pr := 149, time := ⟨100⟩, before := some "m1", head := "b2", tree := some "tb" }
+  { pr := 149, time := ⟨100⟩, before := some "m1", head := "b2", tree := some "tb", summary := .silent }
 
 theorem theNewestRecordBeforeTheMergeIsUsed :
     (match seat { merged with head := "bbb" }

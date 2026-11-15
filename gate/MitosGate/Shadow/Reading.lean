@@ -1,4 +1,4 @@
-import MitosGate.Land
+import MitosGate.Shadow.Types
 
 namespace MitosGate.Shadow
 
@@ -32,13 +32,16 @@ inductive Reading
 def Reading.step : Reading → Step
   | .asRead s | .oneWordAway s => s
 
-def reading (os : List Obs) (o : Obs) : Reading :=
+def reading (s : Summary) (os : List Obs) (o : Obs) : Reading :=
   match step (outsider o).1 (queueOf os) o with
   | .stop .noEntry =>
-    let o' := withWord (fresh os) o
-    .oneWordAway
-      (step (outsider o').1 (queueOf (os.map fun x => if x.pr == o.pr then o' else x)) o')
-  | s => .asRead s
+    match s with
+    | .spoke => .asRead (.stop .noEntry)
+    | .silent =>
+      let o' := withWord (fresh os) o
+      .oneWordAway
+        (step (outsider o').1 (queueOf (os.map fun x => if x.pr == o.pr then o' else x)) o')
+  | x => .asRead x
 
 def ReadyIsOneWordFromLanding : Prop :=
   ∀ (me : Teammate) (q : Queue) (o : Obs) (said : Nat),
@@ -46,8 +49,9 @@ def ReadyIsOneWordFromLanding : Prop :=
     landable (⟨o.pr, ⟨said, o.head, true⟩, .owner⟩, withWord said o) = true
 
 def TheWordIsOnlyAssumedWhenReady : Prop :=
-  ∀ (os : List Obs) (o : Obs),
-    (∃ s, reading os o = .oneWordAway s) ↔ step (outsider o).1 (queueOf os) o = .stop .noEntry
+  ∀ (summary : Summary) (os : List Obs) (o : Obs),
+    (∃ s, reading summary os o = .oneWordAway s) ↔
+      summary = .silent ∧ step (outsider o).1 (queueOf os) o = .stop .noEntry
 
 theorem walk_self (v : String) (ps : List Carry.Push) : Carry.walk v v ps = true := by
   cases ps <;> simp [Carry.walk]
@@ -117,14 +121,15 @@ theorem readyIsOneWordFromLanding : ReadyIsOneWordFromLanding := by
     simp [hst]
 
 theorem theWordIsOnlyAssumedWhenReady : TheWordIsOnlyAssumedWhenReady := by
-  intro os o
+  intro s os o
   unfold reading
   split
-  · rename_i h; simp [h]
+  · rename_i h
+    cases s <;> simp [h]
   · rename_i h
     constructor
-    · rintro ⟨s, hs⟩; cases hs
-    · intro h'; exact absurd h' (h)
+    · rintro ⟨x, hx⟩; cases hx
+    · rintro ⟨-, h'⟩; exact absurd h' h
 
 namespace Fixture
 
@@ -134,24 +139,29 @@ def unsaid : Obs := { agentBehind with words := [] }
 def unsaidOnMain : Obs := { agentOnMain with words := [] }
 
 theorem readyBehindIsOneWordFromThePush :
-    reading [unsaid] unsaid = .oneWordAway (.awaitPush "bbb") := by decide +kernel
+    reading .silent [unsaid] unsaid = .oneWordAway (.awaitPush "bbb") := by decide +kernel
 theorem readyOnMainGreenIsOneWordFromPresent :
-    reading [unsaidOnMain] unsaidOnMain = .oneWordAway (.present "bbb") := by decide +kernel
+    reading .silent [unsaidOnMain] unsaidOnMain = .oneWordAway (.present "bbb") := by decide +kernel
 theorem aHoldIsReadAsItIs :
-    reading [ownerKeptHeld] ownerKeptHeld = .asRead (.stop .held) := by decide +kernel
+    reading .silent [ownerKeptHeld] ownerKeptHeld = .asRead (.stop .held) := by decide +kernel
 theorem aTypedWordIsReadAsItIs :
-    reading [ownerKeptPushed] ownerKeptPushed = .asRead (.present "ar") := by decide +kernel
+    reading .silent [ownerKeptPushed] ownerKeptPushed = .asRead (.present "ar") := by decide +kernel
 theorem newContentIsNotAssumed :
-    reading [{ ownerKeptNewContent with words := [] }] { ownerKeptNewContent with words := [] } =
+    reading .silent [{ ownerKeptNewContent with words := [] }] { ownerKeptNewContent with words := [] } =
       .asRead (.stop .notEligible) := by decide +kernel
 theorem anotherWordAheadMakesTheAssumedWordWait :
-    reading [ownerKeptPushed, unsaid] unsaid = .oneWordAway (.wait 153) := by decide +kernel
+    reading .silent [ownerKeptPushed, unsaid] unsaid = .oneWordAway (.wait 153) := by decide +kernel
 
 def delegatesAnyName : Obs := { unsaid with delegates := [⟨"shadow", "observer"⟩, orchestrator] }
 
 theorem theReaderIsNoDelegate :
-    reading [delegatesAnyName] delegatesAnyName = .oneWordAway (.awaitPush "bbb") := by
+    reading .silent [delegatesAnyName] delegatesAnyName = .oneWordAway (.awaitPush "bbb") := by
   decide +kernel
+
+theorem aSummaryWithTextIsNotOneWordAway :
+    reading .spoke [unsaid] unsaid = .asRead (.stop .noEntry) := by decide +kernel
+theorem aSummaryLeavesATypedWordAsRead :
+    reading .spoke [ownerKeptPushed] ownerKeptPushed = .asRead (.present "ar") := by decide +kernel
 
 end Fixture
 

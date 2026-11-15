@@ -2,6 +2,7 @@ import Lean.Data.Json
 import MitosGate.Shadow
 import MitosGate.LandCli
 import MitosGate.Carry
+import MitosGate.SnapshotCli
 
 open Lean (Json)
 
@@ -127,12 +128,26 @@ def run? (run : Nat) (j : Json) : Except Unscored Run := do
       throw (.drifted s!"it printed {d.printed.compress}, and this build decides {now.compress}")
     return .decided (d.record s.prs)
 
-private def merge : D Merge := fun j => do
-  return { pr := ← at' "pr" nat j, time := ← at' "time" stamp j,
-           before := ← at' "before" shaOrUnread j, head := ← at' "head" sha j,
-           tree := ← at' "tree" shaOrUnread j }
+def repositoryOwner : D String := at' "owner" (at' "login" str)
 
-def merges : D (List Merge) := list merge
+private def merge (owner : String) : D Merge := fun j => do
+  let time ← at' "time" stamp j
+  let reviewJson ← at' "reviews" pure j
+  let commentJson ← at' "reviewComments" pure j
+  let some reviews := SnapshotCli.reviewsOf (.arr #[reviewJson])
+    | throw ".reviews: expected review route items"
+  let some comments := SnapshotCli.reviewCommentsOf (.arr #[commentJson])
+    | throw ".reviewComments: expected review comment route items"
+  let reviews := reviews.filter fun v => v.submitted ≤ time.digits
+  let comments := comments.filter fun c => c.created ≤ time.digits
+  let g : Snapshot.Global := ⟨"", owner, none, none, none⟩
+  let r : Snapshot.Reads := ⟨none, some comments, some reviews, none, none, none⟩
+  let summary := if Snapshot.reviewsSpeak g r then Summary.spoke else .silent
+  return { pr := ← at' "pr" nat j, time,
+           before := ← at' "before" shaOrUnread j, head := ← at' "head" sha j,
+           tree := ← at' "tree" shaOrUnread j, summary }
+
+def merges (owner : String) : D (List Merge) := list (merge owner)
 
 structure Job where
   id : Nat
