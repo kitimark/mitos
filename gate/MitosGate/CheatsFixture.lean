@@ -131,13 +131,32 @@ theorem tableFailRejects :
       some (.tableDrops 0 "one") := by
   decide
 
+theorem tableOmitsCaseRejects :
+    rejectOf (verdict (edit good 0 fun f => { f with tableText := some "CASE FULL\n" })) =
+      some (.tableDrops 0 "one") := by
+  decide
+
+theorem missingFullLogRejects :
+    rejectOf (verdict (edit good 0 fun f =>
+      { f with regularFiles := [logName "one" modeComparator] })) =
+      some (.missingLog 0 "one" modeFull) := by
+  decide
+
+theorem timingDropsFull :
+    rejectOf (verdict (edit good 0 fun f =>
+      { f with timingText := some (timingTextOf "one" [modeComparator]) })) =
+      some (.timingDrops 0 "one") := by
+  decide
+
+theorem timingForOtherCaseRejects :
+    rejectOf (verdict (edit good 0 fun f =>
+      { f with timingText := some (timingTextOf "other" [modeFull, modeComparator]) })) =
+      some (.timingDrops 0 "one") := by
+  decide
+
 theorem droppedCaseCannotHide :
     rejectOf (verdict { good with directory := ["one", "three", "two", "four"] }) =
-      some (.emptyShard 0) ∨
-      rejectOf (verdict { good with directory := ["one", "three", "two", "four"] }) =
-        some (.caseList 0) ∨
-      rejectOf (verdict { good with directory := ["one", "three", "two", "four"] }) =
-        some .notTheDirectory := by
+      some (.caseList 0) := by
   decide
 
 theorem swappedShardsReject :
@@ -167,13 +186,11 @@ end Fixture
 open Lean in
 #eval show CoreM Unit from do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  -- Every `MitosGate` theorem in this file's import closure. A new imported module
+  -- is scanned without editing a prefix list. Theorems outside that closure are
+  -- not in this environment.
   let theorems := (← getEnv).constants.fold (fun acc n c =>
-    if c.isTheorem &&
-        ((`MitosGate.IndexMod).isPrefixOf n ||
-          (`MitosGate.DecideList).isPrefixOf n ||
-          (`MitosGate.CheatsShard).isPrefixOf n ||
-          (`MitosGate.CheatsAggregate).isPrefixOf n)
-      then acc.push n else acc) #[]
+    if c.isTheorem && (`MitosGate).isPrefixOf n then acc.push n else acc) #[]
   let fixtures := theorems.filter fun n =>
     (`MitosGate.IndexMod.Fixture).isPrefixOf n ||
       (`MitosGate.CheatsShard.Fixture).isPrefixOf n ||
