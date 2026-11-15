@@ -175,7 +175,9 @@ which covers what no kernel term references, such as a structure field's default
 | Core imports only `Init`, `Std`, `Mitos.*`; the spec never imports implementations | `lake exe mitos-gate imports` | ✓ | ✓ | ✓ | yes |
 | Lock matches the compiled core. The first two lines of `statements.lock` match `MitosGate.Lock.header` | `lake exe mitos-gate lock --check` | ✓ | ✓ | ✓ | yes |
 | `pr-state.sh`, `watch-github.sh` and the files they source run `gh` only as `gh api` in their wrappers, and never name GraphQL | `.claude/scripts/gh-api-rest.test.sh` | ✓ | ✓ | | yes |
-| `hook-state.sh` and `origin-repo.sh` name bash with a shebang | `.claude/scripts/sourced-bash.test.sh` | ✓ | ✓ | | yes |
+| `hook-state.sh` and every `.claude/scripts/lib/*.sh` name bash with a shebang, and `shellcheck -x` follows the scripts that source them | `.claude/scripts/sourced-bash.test.sh` | ✓ | ✓ | | yes |
+| `main-tool.sh` finds and builds main's tool in a checkout inside the git directory, builds only when a tool input changed, and `ensure` waits out another caller's build | `.claude/scripts/main-tool.test.sh` | ✓ | | | no |
+| `carry.sh` asks `mitos-gate carry` of main's tool whether a commit covers a PR's head, and `bot-review.sh` reads `reviewed … (carried from <sha>)` only when it does | `.claude/scripts/carry.test.sh`, `.claude/scripts/bot-review.test.sh` | ✓ | | | no |
 | `usage-sum.sh` counts each message id once per journal and sums calls, input, output, cache-read and cache-creation tokens per file, per workflow run and in total | `.claude/scripts/usage-sum.test.sh` | ✓ | | | no |
 | Every `plan/phase-N.md` row that links an issue has a `tasks/<id>-*.md` or `tasks/<id>.md` with a Design block or `Design: n/a (<reason>)`, unless `.claude/scripts/plan-tasks.pending` lists it; a listed row with a valid file fails, and so does an id added to the list since the merge base with `origin/main` (not checked in the PR that adds the list, where the base has none), so the list only shrinks | `.claude/scripts/plan-tasks.test.sh` | ✓ | ✓ | | yes |
 | Core: no `sorry`, standard axioms only | `cd core && lake check` | ✓ | ✓ | ✓ | yes |

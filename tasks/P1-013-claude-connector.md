@@ -454,6 +454,29 @@ esac
   bot review and hides nothing.
 - The header comment's state table gains the carried answer and the suffix.
 
+### PR 1, as built (on `main` at b6a9bfe)
+
+The sketches above went in as written, with these differences.
+- **One selection (#290, item 4).** `bot-review.sh` asks `carry.sh` from the newest CodeRabbit
+  review with a body, the commit `Snapshot.botAt` names, and never from the summary's "Last
+  reviewed commit". The printed `last reviewed` stays the summary's. If the summary names C and
+  the newest review names B, only a carry from B reads `reviewed (carried from B)`, and a carry
+  from C alone stays `paused`. A review of the head itself, while the run goes, stays `pending` and
+  asks no carry. Real case: #257, where `main`'s script read `paused: last reviewed fd8f40c`, the
+  summary's commit, and the newest review is of 07ef9c9.
+- **`ensure` waits out a build (#290, item 1).** `main_tool ensure` waits up to 1800 s for the
+  shared lock, as long as it waits for the exclusive one, while `ready` still gives up after 30 s
+  (`MAIN_TOOL_READY_WAIT`, so a test can shorten it). `ensure` also tries `git fetch origin main`
+  three times, a second apart, because two callers that fetch at once lock the same
+  remote-tracking ref and the loser failed with "cannot fetch origin main". Both have cases in
+  `main-tool.test.sh`, and each fails when its fix is taken out.
+- **`carry.sh` reads an exit of 124 or 137 from the tool as "timed out"** and says so, where the
+  sketch called every exit but 0 and 1 "did not answer".
+- **Left to later:** a CodeRabbit pass that left no review, only a summary comment (#234's first
+  case), has no commit to carry from, as `botAt` reads it, so it stays `behind`. #242 asks for a
+  carry from the check run of an earlier head; that needs one more read per earlier head and
+  `botAt` does not use it, so a change there is Lean's and lands with `land`.
+
 ### `land.sh` and `lib/land-snapshot.sh` (PR 3 starts from these files)
 
 Ran here, on the sketches before their answers left the globals: 59 cases pass against the real

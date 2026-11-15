@@ -5,6 +5,12 @@
 #   reviewed <head>                            its check at the head passed, or, with no run going,
 #                                              its newest review is of the head; the only state
 #                                              that exits 0
+#   reviewed <head> (carried from <sha>)       its newest review is of an earlier commit <sha>, the
+#                                              state would be paused, behind or pending, and
+#                                              `carry.sh --no-build` says <sha> covers the head, as
+#                                              when the updater only rebased it. <sha> is the commit
+#                                              `Snapshot.botAt` names, so `land` agrees. Exits 0 and
+#                                              posts no request, with or without --request
 #   paused: last reviewed <sha>, head <head>   it paused reviews on the branch after many pushes
 #                                              (`reviews.auto_review.auto_pause_after_reviewed_commits`)
 #   behind: last reviewed <sha>, head <head>   its run at the head ended without a review: cancelled,
@@ -18,7 +24,12 @@
 #                                              before the run ends; or it has not started
 # The other states exit 1. `<sha>` is `none` when it has never reviewed the PR. The last reviewed
 # commit is the one its summary comment names under "Reviews paused", else the commit of its newest
-# review with a body; a review with an empty body is only its reply in a thread.
+# review with a body; a review with an empty body is only its reply in a thread. The cover check
+# starts from the newest review only, never from the summary's commit.
+#
+# When the cover check cannot answer, a paused, behind or pending line ends with
+# `; carry not checked: <why>`. The check never builds main's tool, so a clone that has not built
+# it runs `carry.sh` once first.
 #
 # --request, on paused or behind, on an open PR: posts one `@coderabbitai review` comment that ends
 # with the Claude Code footer, and prints `coderabbit #<pr>: requested a review in comment <id>`.
@@ -117,19 +128,32 @@ out=$(jq -n -r --arg head "$head" --arg bot 'coderabbitai[bot]' \
       ([$summary | capture("## Review skipped[ \\t]*\\n(>[ \\t]*\\n)*>?[ \\t]*(?<r>[^\\n]+)")] | .[0].r // "") as $r
       | if ($r | limit) then ["refused", ($r | clean)] else ["behind", ""] end
     else ["pending", ""] end
-  | [.[0], $last, .[1], $open, ($pr[0].state | tostring | clean)] | join("\u001f")' 2>/dev/null) \
+  | [.[0], $last, .[1], $open, ($pr[0].state | tostring | clean), ($review.commit_id // "")]
+  | join("\u001f")' 2>/dev/null) \
   || die "unexpected JSON from GitHub for PR #$pr"
-IFS=$'\x1f' read -r state last reason open prstate <<<"$out"
+IFS=$'\x1f' read -r state last reason open prstate newest <<<"$out"
 [[ -z $last || $last =~ ^[0-9a-f]{40}$ ]] && [[ -z $open || $open =~ ^[0-9]+$ ]] \
-  || die "unexpected JSON from GitHub for PR #$pr"
+  && [[ -z $newest || $newest =~ ^[0-9a-f]{40}$ ]] || die "unexpected JSON from GitHub for PR #$pr"
+
+carried='' unchecked=''
+if [[ $state == paused || $state == behind || $state == pending ]] && [ -n "$newest" ] && [ "$newest" != "$head" ]; then
+  timeout -k 5 120 "$(dirname "${BASH_SOURCE[0]}")/carry.sh" --no-build "$pr" "$newest" >/dev/null 2>"$w/carry.err"
+  case $? in
+    0) state=reviewed carried=" (carried from ${newest:0:7})" ;;
+    1) ;;
+    *)
+      why=$(head -n 1 "$w/carry.err" | sed 's/^carry: //' | tr -c "A-Za-z0-9 .,:;()/#_'\n-" ' ' | cut -c1-80)
+      unchecked="; carry not checked: ${why:-carry.sh gave no reason}" ;;
+  esac
+fi
 
 h=${head:0:7}
 l=${last:0:7}
 [ -z "$last" ] && l=none
 case $state in
-  reviewed) echo "coderabbit #$pr: reviewed $h"; exit 0 ;;
+  reviewed) echo "coderabbit #$pr: reviewed $h$carried"; exit 0 ;;
   refused) echo "coderabbit #$pr: refused: $reason"; exit 1 ;;
-  paused | behind | pending) echo "coderabbit #$pr: $state: last reviewed $l, head $h" ;;
+  paused | behind | pending) echo "coderabbit #$pr: $state: last reviewed $l, head $h$unchecked" ;;
   *) die "unexpected state for PR #$pr" ;;
 esac
 
