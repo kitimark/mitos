@@ -653,7 +653,7 @@ Run-level fixtures the builder reports. "Measured" means the judged sketch produ
   rejected, default and `--paranoid`, one case per invocation (several cases in one invocation were
   killed by the container's memory limit at about 5 GB RSS, V4 on #276). Measured on the judged
   sketch: default mode, all 42 as expected (22 refuted, no known gap, 20 cheat cases rejected);
-  `--paranoid` for the six edited cases, all as expected (`cheat_proofs_own_hole` is UNBOUND, rejected
+  `--paranoid` for the original six edited cases, all as expected (`cheat_proofs_own_hole` is UNBOUND, rejected
   at values, with the evidence line `Const does not match between challenge and target
   'Mitos.Impl.mkEdge'`). The builder runs the other 36 with `--paranoid` too.
 - `cheat-evidence-unchanged`: the `.refutation.log` of `cheat_own_hole` and `cheat_namespace_shadow`
@@ -728,7 +728,7 @@ package and read by another build of the gate gave 31 different lock lines.
 | 3 | `Spec/Derivations.lean`; `Sound`; the `obtain` patterns in `Adequacy.lean` and `Repo.lean`; `Impl/Resolve.lean`; `Proofs/Resolve/*` | `cd core && lake build && lake check && lake comparator --paranoid` |
 | 4 | `Spec/Chains.lean`; its import in `Core.lean` | `lake build && lake exe mitos-gate imports`; `cd core && lake check` |
 | 5 | `lake exe mitos-gate lock` | `lock`, `lock-lists-chains` |
-| 6 | The five `mutant` files (`cheat_proofs_own_hole`'s copy by the command in Appendix A5) | `mutants-build`; `all-cases-as-expected`, one case per invocation |
+| 6 | The nine `mutant` files (`cheat_proofs_own_hole`'s copy by the command in Appendix A5) | `mutants-build`; `all-cases-as-expected`, one case per invocation |
 | 7 | After the last rebase: the lock again if `main` moved, both accept records, this file, the run log `ops/runs/<UTC date>/P2-001b-builder-<attempt>.json` | the gate |
 
 The builder stops and reports when:
@@ -1022,7 +1022,7 @@ other sessions): `cd core && lake build` after a clean of `.lake/build` (23 jobs
 `lake exe mitos-gate imports` (0 violations); `lake exe mitos-gate lock --check` (206 → 252
 declarations, 20 `-` and 66 `+`, the list under "Lock prediction"); `fact-step` on `main` with
 only `Fact.lean` changed; `lake --dir eval/mutants build`; all 42 mutant cases in default mode and
-the six edited ones with `--paranoid`; `cd examples/acme && lake build`; both plugins accepted with
+the original six edited ones with `--paranoid`; `cd examples/acme && lake build`; both plugins accepted with
 `--paranoid`; the scorer on `eval/fixtures/toy` (868 bytes, identical to `main`'s); the chain-run
 `decide` checks and the Usage `impact` example. Not run: the cheat corpus (`mitos-gate cheats`, CI
 runs it), `mitos-lint-test`, and `--record` (it would edit the records).
