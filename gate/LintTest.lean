@@ -448,6 +448,7 @@ def recordWrite : IO (List String) := do
         unless (← IO.FS.readFile other) == "target" do
           errs := errs.push "a planted symlink was followed"
     IO.FS.removeFile tmp
+    IO.FS.writeFile file "old record"
     Accept.writeByRename tmp file "record"
     unless (← IO.FS.readFile file) == "record" do
       errs := errs.push "the renamed file is not what this run wrote"
