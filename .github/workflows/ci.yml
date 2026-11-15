@@ -154,6 +154,9 @@ jobs:
       - name: A never-started jobless run does not fail cancel-superseded
         run: .github/scripts/cancel-superseded.test.sh
 
+      - name: Cached logs cannot reach this run
+        run: .github/scripts/cache-logs.test.sh
+
       - name: The cheat corpus is partitioned across the shard matrix
         run: .github/scripts/cheat-shard.test.sh
 
@@ -187,6 +190,7 @@ jobs:
 
       # #168's setup action owns this rm. A restored .lake can hold another run's logs.
       - name: Drop restored cheat and mutant logs
+        if: always()
         run: rm -rf .lake/cheats .lake/mutants
 
       - name: Install elan if the cache has none (pinned, checked, retried)
@@ -343,6 +347,7 @@ jobs:
           restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
 
       - name: Drop restored cheat and mutant logs
+        if: always()
         run: rm -rf .lake/cheats .lake/mutants
 
       - name: Install elan if the cache has none (pinned, checked, retried)

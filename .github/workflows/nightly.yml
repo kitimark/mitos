@@ -15,9 +15,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
 
-      - name: Clear cached cheat logs
+      - name: Drop restored cheat and mutant logs
         if: always()
-        run: rm -rf .lake/cheats
+        run: rm -rf .lake/cheats .lake/mutants
 
       - run: lake build
       - run: lake exe mitos-gate imports
