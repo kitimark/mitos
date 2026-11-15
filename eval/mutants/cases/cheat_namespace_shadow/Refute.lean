@@ -13,14 +13,15 @@ def fs : List Located := [loc 0 "a" .requires, loc 1 "b" .provides]
 def bogus : Edge :=
   { requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩,
     scope := (loc 0 "a" .requires).fact.scope,
-    requiringFactId := 0, providingFactId := 1, assumes := [], status := .inferred }
+    key := .direct 0 1, assumes := [], status := .inferred }
 
 def Impl.resolve : Resolver := fun _ => { edges := [bogus], unresolved := [] }
 
 theorem resolve_assumptions_exact : ¬ Spec.AssumptionsExact Impl.resolve := by
   intro h
   have := h fs (by unfold WellFormed; decide) bogus (List.mem_singleton_self _)
-    (loc 0 "a" .requires) (by simp [fs]) (loc 1 "b" .provides) (by simp [fs]) rfl rfl (.extractor "x")
-  simp [bogus, loc] at this
+    (Chain.direct (loc 0 "a" .requires) (loc 1 "b" .provides)) (by decide) rfl
+  revert this
+  decide
 
 end Mitos.Refute

@@ -5,4 +5,4 @@ file=Mitos/Impl/Resolve.lean
 find=requiringRepo := r.repo, providingRepo := p.repo
 replace=requiringRepo := p.repo, providingRepo := r.repo
 find=end Mitos.Impl
-replace=end Mitos.Impl def Mitos.Mitos.Impl.resolve : Mitos.Resolver := fun _ => { edges := [{ requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, requiringFactId := 0, providingFactId := 1, assumes := [], status := .inferred }], unresolved := [] }
+replace=end Mitos.Impl def Mitos.Mitos.Impl.resolve : Mitos.Resolver := fun _ => { edges := [{ requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime, key := .direct 0 1, assumes := [], status := .inferred }], unresolved := [] }

@@ -14,14 +14,13 @@ def fs : List Located := [req, prov]
 
 theorem resolve_assumptions_exact : ¬ Spec.AssumptionsExact Impl.resolve := by
   intro h
-  have := h fs (by unfold WellFormed; decide) (Impl.mkEdge fs req prov) (by decide)
-    req (by decide) prov (by decide) rfl rfl prov.origin
+  have := h fs (by unfold WellFormed; decide)
   revert this
   decide
 
 theorem resolve_retract_exact : ¬ Spec.RetractExact Impl.resolve := by
   intro h
-  have := h fs prov.origin (by unfold WellFormed; decide) (0, 1)
+  have := h fs prov.origin (by unfold WellFormed; decide) (.direct 0 1)
   revert this
   decide
 
