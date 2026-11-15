@@ -523,15 +523,23 @@ def adequacyFailure (model : String) (cause : Cause) : Failure → String
     if cause == .judged then s!"{adequacyModule model} does not build"
     else "the adequacy proof could not be judged"
 
+structure ModelFailure where
+  reason : String
+  output : String
+  cause : Cause
+
 def judgeModel (c : Config) (m : LockedModels) (dir : System.FilePath) :
-    IO (Except (String × String × Cause) Unit) := do
-  if let .error e := ← examplesLayout m then return .error (e, "", .judged)
+    IO (Except ModelFailure Unit) := do
+  if let .error reason := ← examplesLayout m then
+    return .error { reason, output := "", cause := .judged }
   let ex ← runComparator c dir "examples.json"
   if let .failed f := ex.outcome then
-    return .error (examplesFailure m.model (ex.cause f) f, ex.output, ex.cause f)
+    let cause := ex.cause f
+    return .error { reason := examplesFailure m.model cause f, output := ex.output, cause }
   let ad ← runComparator c dir "adequacy.json"
   if let .failed f := ad.outcome then
-    return .error (adequacyFailure m.model (ad.cause f) f, ad.output, ad.cause f)
+    let cause := ad.cause f
+    return .error { reason := adequacyFailure m.model cause f, output := ad.output, cause }
   return .ok ()
 
 def comparatorTail (out : String) : List String :=
@@ -555,12 +563,12 @@ def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
   report .axioms true (String.intercalate ", " permittedAxioms)
   report .kernels true (if c.paranoid then "lean4lean, nanoda, con-leche, con-ron, paranoid" else "Lean kernel only (use --paranoid for independent kernels)")
 
-def adequacyGate (m : LockedModels) (j : Except (String × String × Cause) Unit)
+def adequacyGate (m : LockedModels) (j : Except ModelFailure Unit)
     (rebuilt : Option String) : GateM Unit := do
-  if let .error (reason, out, cause) := j then
-    report .adequacy false reason
-    unless out.isEmpty do showComparatorTail out
-    throw (.adequacy, cause)
+  if let .error f := j then
+    report .adequacy false f.reason
+    unless f.output.isEmpty do showComparatorTail f.output
+    throw (.adequacy, f.cause)
   if let some why := rebuilt then
     report .adequacy false
       s!"gates 3 and 6 may not have judged one elaboration of the model: {why}"
