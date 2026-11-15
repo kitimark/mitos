@@ -95,11 +95,21 @@ structure Scorecard where
   labels     : List RepoKey
   unresolved : List Located
 
+def knownLabelKind (facts : List Located) (label : RepoKey) : Bool :=
+  facts.any fun l => l.fact.ident.kind == label.ident.kind
+
+def absentLabelKind (facts : List Located) (labels : List RepoKey) : Option String :=
+  labels.findSome? fun label =>
+    if knownLabelKind facts label then none else some label.ident.kind
+
 def score (files : List SourceFile) (labels : List RepoKey) : Except String Scorecard := do
   let facts ← ingest files
-  let r := Mitos.Impl.resolve facts
-  return { facts, labels, predicted := collapse r.edges,
-           unresolved := facts.filter (r.unresolved.contains ·.id) }
+  match absentLabelKind facts labels with
+  | some kind => throw s!"label kind {repr kind} is not among the extracted facts"
+  | none =>
+    let r := Mitos.Impl.resolve facts
+    return { facts, labels, predicted := collapse r.edges,
+             unresolved := facts.filter (r.unresolved.contains ·.id) }
 
 def Scorecard.render (c : Scorecard) (name : String) : String := Id.run do
   let pred := c.predicted.map (·.1)
