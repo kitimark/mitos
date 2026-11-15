@@ -35,9 +35,13 @@ window() {
   rm -rf "$dir"
   mkdir -p "$dir/records"
   for r in "$@"; do cp "$r" "$dir/records/$n-1.json"; n=$((n + 1)); done
-  jq -n --arg m "${BEFORE-$main}" --arg h "$head257" \
-    '[{pr: 257, time: "2026-11-14T13:37:18Z", before: $m, head: $h, tree: ""}]' >"$dir/merges.json"
-  echo '[]' >"$dir/runs.json"
+  if [ -n "${MERGES-}" ]; then
+    printf '%s\n' "$MERGES" >"$dir/merges.json"
+  else
+    jq -n --arg m "${BEFORE-$main}" --arg h "$head257" \
+      '[{pr: 257, time: "2026-11-14T13:37:18Z", before: $m, head: $h, tree: ""}]' >"$dir/merges.json"
+  fi
+  printf '%s\n' "${RUNS-[]}" >"$dir/runs.json"
   echo '[]' >"$dir/baseline.json"
 }
 scores() {
@@ -120,6 +124,42 @@ scores "the runs of each trigger are counted" \
   "$(edited t3 '.trigger = {kind: "gateDone", head: ("a" * 40), conclusion: "success"}')" \
   "$(edited t4 '.trigger = {kind: "comment", pr: 257, id: 9}')"
 
+scores "the merges line counts the word assumed for the one seat that reads one word away" \
+  'merges: agrees 0, waits 1, disagrees 0, other tree 0, blind 0; a word was assumed for 1; no author 0; updater pushes 2' \
+  "$idle"
+r302="$fx/window/records/1002-1.json"
+m302=$(jq -c 'map(select(.pr == 302))' "$fx/window/merges.json")
+scores "a push that two records plan is counted once" \
+  'pushes: the updater started 0 ci runs; the plans name 1 distinct pushes' "$r302" "$r302"
+RUNS='[{"id": 9001, "conclusion": "cancelled"}, {"id": 9100, "conclusion": "cancelled"}]' \
+  scores "a cancelled run that left a record was not superseded while pending" \
+  'runs: .*; 1 superseded while pending, 0 skipped by the filter' "$idle"
+MERGES=$m302 scores "the control: a replay whose tree merged agrees" \
+  '#302 at f302f30: agrees\. awaitPush; its replay merged; record of run 9001, 30 s old; 2 updater pushes' \
+  "$r302"
+MERGES=$m302 scores "a replay whose tree the record did not read is blind, not another tree" \
+  '#302 at f302f30: blind\. awaitPush; another head merged; record of run 9001, 30 s old; 2 updater pushes' \
+  "$(jq -c '.outcome.trees = []' "$r302" >"$tmp/no-tree.json"; echo "$tmp/no-tree.json")"
+MERGES=$m302 scores "a tree the record read for another commit is not the replay's" \
+  '#302 at f302f30: blind\. .*' \
+  "$(jq -c '.outcome.trees[0].commit = ("b" * 40)' "$r302" >"$tmp/other-commit.json"; echo "$tmp/other-commit.json")"
+MERGES=$(jq -c '.[0].tree = ""' <<<"$m302") scores "a merge whose tree was not read is blind, not another tree" \
+  '#302 at f302f30: blind\. .*' "$r302"
+MERGES=$(jq -c '.[0].tree = ("e" * 40)' <<<"$m302") scores "a replay whose tree did not merge is another tree" \
+  '#302 at f302f30: other tree\. awaitPush; another tree merged; .*' "$r302"
+
+window "$tmp/w"
+cp "$idle" "$tmp/w/records/999-1.json"
+cp "$idle" "$tmp/w/records/1000-1.json"
+got=0
+"$bin" shadow "$tmp/w" >"$tmp/out" 2>"$tmp/err" || got=$?
+if [ "$got" = 0 ] && grep -qxE '#257 at d7616ac: waits\. .*; record of run 1000, 5 s old; .*' "$tmp/out"; then
+  ok "of two records read in one second, the later run is used, whatever the file order"
+else
+  bad "of two records read in one second, the later run is used, whatever the file order" \
+    "exit $got: $(cat "$tmp/err")" "$(cat "$tmp/out")"
+fi
+
 window "$tmp/w" "$idle"
 mv "$tmp/w/records/9001-1.json" "$tmp/w/records/latest.json"
 got=0
@@ -170,6 +210,7 @@ mkdir -p "$fake"
 cat >"$fake/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$FAKE_LOG"
+if [ -n "${FAKE_FAIL:-}" ] && [[ $* == *"$FAKE_FAIL"* ]]; then exit 1; fi
 run() { printf '{"id":%s,"run_attempt":1,"event":"push","conclusion":"%s","created_at":"x","run_started_at":"x","updated_at":"x"}' "$1" "$2"; }
 case "$*" in
   *"actions/workflows/land.yml/runs"*"&page=1")
@@ -189,12 +230,14 @@ case "$*" in
     printf '[{"number":257,"merged_at":"%sT23:59:59Z","updated_at":"%sT23:59:59Z","merge_commit_sha":"%s","head":{"sha":"%s"}},{"number":6,"merged_at":null,"updated_at":"%sT23:59:58Z","merge_commit_sha":null,"head":{"sha":"%s"}},{"number":5,"merged_at":"2000-01-01T00:00:00Z","updated_at":"2000-01-01T00:00:00Z","merge_commit_sha":"%s","head":{"sha":"%s"}}]' \
       "$FAKE_DAY" "$FAKE_DAY" "$FAKE_MERGE" "$FAKE_HEAD" "$FAKE_DAY" "$FAKE_HEAD" "$FAKE_MERGE" "$FAKE_HEAD" ;;
   "api -i repos/"*"/activity?ref=refs/heads/main&direction=desc&per_page=100")
-    [ -n "${FAKE_NO_ACTIVITY:-}" ] && exit 1
     printf 'HTTP/1.1 200 OK\r\nLink: <https://api.github.com/repositories/1/activity?ref=refs%%2Fheads%%2Fmain&per_page=100&after=Y3Vy_c29y-1>; rel="next"\r\n\r\n'
     printf '[{"before":"x1","after":"x2","timestamp":"%sT23:59:59Z"}]' "$FAKE_DAY" ;;
   "api -i repos/"*"/activity?ref=refs/heads/main&direction=desc&per_page=100&after=Y3Vy_c29y-1")
-    printf 'HTTP/1.1 200 OK\r\n\r\n[{"before":"%s","after":"%s","timestamp":"%sT23:59:59Z"},{"before":"x","after":"y","timestamp":"2000-01-01T00:00:00Z"}]' \
+    printf 'HTTP/1.1 200 OK\r\nLink: <https://api.github.com/repositories/1/activity?ref=refs%%2Fheads%%2Fmain&per_page=100&after=Zm9v-2>; rel="next"\r\n\r\n'
+    printf '[{"before":"%s","after":"%s","timestamp":"%sT23:59:59Z"},{"before":"x","after":"y","timestamp":"2000-01-01T00:00:00Z"}]' \
       "$FAKE_MAIN" "$FAKE_MERGE" "$FAKE_DAY" ;;
+  "api -i repos/"*"/activity?ref=refs/heads/main&direction=desc&per_page=100&after=Zm9v-2")
+    printf 'HTTP/1.1 200 OK\r\n\r\n[]' ;;
   *"git/commits/"*)
     [ -n "${FAKE_BLOCK:-}" ] && mkdir -p "$FAKE_BLOCK"
     printf 'dddddddddddddddddddddddddddddddddddddddd\n' ;;
@@ -202,14 +245,22 @@ case "$*" in
 esac
 EOF
 chmod +x "$fake/gh"
+cat >"$fake/timeout" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$FAKE_TIMEOUT_LOG"
+exec "$REAL_TIMEOUT" "$@"
+EOF
+chmod +x "$fake/timeout"
+real_timeout=$(command -v timeout)
 fetch() {
   local got=0
   PATH="$fake:$PATH" FAKE_LOG="$tmp/gh.log" FAKE_ZIP="$art/record.zip" FAKE_DAY="$day" \
     FAKE_MERGE="$merge_sha" FAKE_HEAD="$head257" FAKE_MAIN="$main" \
-    "$root/gate/shadow-fetch.sh" "$@" >"$tmp/fetch.out" 2>"$tmp/fetch.err" || got=$?
+    FAKE_TIMEOUT_LOG="$tmp/timeout.log" REAL_TIMEOUT="$real_timeout" \
+    "$real_timeout" 60 "$root/gate/shadow-fetch.sh" "$@" >"$tmp/fetch.out" 2>"$tmp/fetch.err" || got=$?
   return "$got"
 }
-rm -f "$tmp/gh.log"
+rm -f "$tmp/gh.log" "$tmp/timeout.log"
 if fetch owner/mitos "$day" "$tmp/f"; then
   have=$(cd "$tmp/f" && find . -type f | sort | paste -sd' ' -)
   want="./baseline.json ./merges.json ./records/9001-1.json ./runs.json"
@@ -241,8 +292,15 @@ if fetch owner/mitos "$day" "$tmp/f"; then
   else
     bad "fetch: only an unexpired artifact of the run itself is read" "$(cat "$tmp/gh.log")"
   fi
+  reads=$(grep -c '' "$tmp/gh.log")
+  if [ "$reads" -gt 0 ] && [ "$(grep -c '^-k 5 120 gh api ' "$tmp/timeout.log")" = "$reads" ]; then
+    ok "fetch: every read is bounded by a timeout"
+  else
+    bad "fetch: every read is bounded by a timeout" "$reads reads" "$(cat "$tmp/timeout.log")"
+  fi
   if [ "$(jq length "$tmp/f/runs.json")" = 103 ] && ! grep -q -- '--paginate' "$tmp/gh.log" \
-    && grep -q 'after=Y3Vy_c29y-1$' "$tmp/gh.log" && ! grep -q 'page=2$' <(grep 'pulls?' "$tmp/gh.log"); then
+    && grep -q 'after=Y3Vy_c29y-1$' "$tmp/gh.log" && ! grep -q 'after=Zm9v-2' "$tmp/gh.log" \
+    && ! grep -q 'page=2$' <(grep 'pulls?' "$tmp/gh.log"); then
     ok "fetch: pages by number and by cursor, and stops at the window"
   else
     bad "fetch: pages by number and by cursor, and stops at the window" "$(cat "$tmp/gh.log")"
@@ -259,13 +317,20 @@ if fetch owner/mitos "$day" "$tmp/f"; then
 else
   bad "fetch: one file per input, and one record per artifact" "exit non-zero: $(cat "$tmp/fetch.err")"
 fi
-got=0
-FAKE_NO_ACTIVITY=1 fetch owner/mitos "$day" "$tmp/g" || got=$?
-if [ "$got" = 1 ] && [ "$(cat "$tmp/fetch.err")" = 'shadow-fetch: the read of the activity of main failed' ]; then
-  ok "fetch: a failed read is exit 1, with one line"
-else
-  bad "fetch: a failed read is exit 1, with one line" "exit $got: $(cat "$tmp/fetch.err")"
-fi
+fails() {
+  local what=$1 route=$2 got=0
+  rm -rf "$tmp/g"
+  FAKE_FAIL=$route fetch owner/mitos "$day" "$tmp/g" || got=$?
+  if [ "$got" = 1 ] && [ "$(cat "$tmp/fetch.err")" = "shadow-fetch: the read of $what failed" ]; then
+    ok "fetch: a failed read of $what is exit 1, with one line"
+  else
+    bad "fetch: a failed read of $what is exit 1, with one line" "exit $got: $(cat "$tmp/fetch.err")"
+  fi
+}
+fails "the activity of main" '/activity?'
+fails "the runs of land.yml on $day" "land.yml/runs?created=$day&per_page=100&page=2"
+fails "the artifacts named land-record-9001-1" 'artifacts?name=land-record-9001-1&'
+fails "the commit $merge_sha" 'git/commits/'
 got=0
 FAKE_BLOCK="$tmp/k/merges.json" fetch owner/mitos "$day" "$tmp/k" || got=$?
 if [ "$got" = 1 ] && [ "$(cat "$tmp/fetch.err")" = 'shadow-fetch: merges.json was not written' ]; then

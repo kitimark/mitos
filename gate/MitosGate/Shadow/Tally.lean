@@ -34,6 +34,14 @@ def TallyCountsEveryMergeOnce : Prop :=
     let t := tally ms rs
     t.agrees + t.waits + t.disagrees + t.otherTree + t.blind = ms.length
 
+def Seat.assumed : Seat → Bool
+  | .sat s => (s.reading matches .oneWordAway _)
+  | _ => false
+
+def TheAssumedCountIsTheMergesOneWordAway : Prop :=
+  ∀ (ms : List Merge) (rs : List Record),
+    (tally ms rs).assumed = ms.countP fun m => (seat m rs).assumed
+
 def Tally.total (t : Tally) : Nat := t.agrees + t.waits + t.disagrees + t.otherTree + t.blind
 
 theorem add_total (t : Tally) (s : Seat) : (t.add s).total = t.total + 1 := by
@@ -52,5 +60,27 @@ theorem tallyCountsEveryMergeOnce : TallyCountsEveryMergeOnce := by
   intro ms rs
   have := foldl_total rs ms {}
   simpa [tally, Tally.total] using this
+
+theorem add_assumed (t : Tally) (s : Seat) :
+    (t.add s).assumed = t.assumed + if s.assumed then 1 else 0 := by
+  unfold Tally.add
+  cases s with
+  | sat x =>
+    obtain ⟨_, _, reading, _, _, _, _⟩ := x
+    cases reading <;> (simp only [Seat.assumed]; split <;> simp)
+  | _ => dsimp only [Seat.assumed]; split <;> simp
+
+theorem foldl_assumed (rs : List Record) :
+    ∀ (ms : List Merge) (t : Tally),
+      (ms.foldl (fun t m => t.add (seat m rs)) t).assumed =
+        t.assumed + ms.countP fun m => (seat m rs).assumed
+  | [], t => by simp
+  | m :: ms, t => by
+    simp only [List.foldl_cons, List.countP_cons]
+    rw [foldl_assumed rs ms, add_assumed]; omega
+
+theorem theAssumedCountIsTheMergesOneWordAway : TheAssumedCountIsTheMergesOneWordAway := by
+  intro ms rs
+  simpa [tally] using foldl_assumed rs ms {}
 
 end MitosGate.Shadow

@@ -11,7 +11,9 @@ open Lean in
   if fixtures.isEmpty then throwError "no fixture theorem found"
   for n in [``readyIsOneWordFromLanding, ``theWordIsOnlyAssumedWhenReady,
       ``lacksNothingIffEligible, ``pairedRecordPrecedesTheMerge, ``agreesMeansTheMergedContent,
-      ``seatIgnoresRecordOrder, ``tallyCountsEveryMergeOnce, ``peakBoundsEveryWindow] ++
+      ``seatIgnoresRecordOrder, ``tallyCountsEveryMergeOnce, ``peakBoundsEveryWindow,
+      ``theReplayMergedIffItsTreeDid, ``anotherTreeIsTwoTreesRead,
+      ``theAssumedCountIsTheMergesOneWordAway] ++
       fixtures.toList do
     for a in ← collectAxioms n do
       unless standard.contains a do

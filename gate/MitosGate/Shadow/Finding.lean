@@ -48,6 +48,15 @@ theorem theReplayThatMergedAgrees :
 theorem anotherTreeIsNotAgreement :
     finding (seat { merged with tree := some "tx" } [rec 1 90 (some "m1") [unsaid]]) =
       .otherTree := by decide +kernel
+theorem aReplayWhoseTreeWasNotReadIsBlind :
+    finding (seat merged [{ rec 1 90 (some "m1") [unsaid] with trees := [] }]) = .blind := by
+  decide +kernel
+theorem aTreeOfAnotherCommitIsNotTheReplays :
+    finding (seat merged [{ rec 1 90 (some "m1") [unsaid] with trees := [⟨"bx", "tb"⟩] }]) =
+      .blind := by decide +kernel
+theorem aMergeWhoseTreeWasNotReadIsBlind :
+    finding (seat { merged with tree := none } [rec 1 90 (some "m1") [unsaid]]) = .blind := by
+  decide +kernel
 theorem aRecordOfAnotherMainIsUnseen :
     finding (seat merged [rec 1 90 (some "m0") [unsaid]]) = .blind := by decide +kernel
 theorem aRecordAfterTheMergeIsUnseen :
