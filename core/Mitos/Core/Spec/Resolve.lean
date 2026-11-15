@@ -3,31 +3,31 @@ import Mitos.Core.Spec.Derivations
 namespace Mitos.Spec
 
 def Sound (R : Resolver) : Prop :=
-  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∃ r ∈ fs, ∃ p ∈ fs,
-    r.id = e.requiringFactId ∧ p.id = e.providingFactId ∧ matchesB r p = true ∧
-    e.requiringRepo = r.repo ∧ e.providingRepo = p.repo ∧ e.ident = r.fact.ident ∧ e.scope = r.fact.scope
+  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∃ c ∈ derivations fs,
+    c.key = e.key ∧ c.repoKey = e.repoKey
 
 def Complete (R : Resolver) : Prop :=
-  ∀ fs, WellFormed fs → ∀ r ∈ fs, ∀ p ∈ fs, matchesB r p = true →
-    ∃ e ∈ (R fs).edges, e.requiringFactId = r.id ∧ e.providingFactId = p.id
+  ∀ fs, WellFormed fs → ∀ c ∈ derivations fs, ∃ e ∈ (R fs).edges, e.key = c.key
 
 def UnresolvedExact (R : Resolver) : Prop :=
   ∀ fs, WellFormed fs → ∀ i, i ∈ (R fs).unresolved ↔
-    ∃ r ∈ fs, r.id = i ∧ r.fact.kind = .requires ∧ ∀ p ∈ fs, matchesB r p = false
+    ∃ r ∈ fs, r.id = i ∧ r.fact.kind = .requires ∧
+      ∀ c ∈ derivations fs, c.requirement.id ≠ r.id
 
 def Total (R : Resolver) : Prop :=
   ∀ fs, WellFormed fs → ∀ r ∈ fs, r.fact.kind = .requires →
     (∃ e ∈ (R fs).edges, e.requiringFactId = r.id) ∨ r.id ∈ (R fs).unresolved
 
 def AssumptionsExact (R : Resolver) : Prop :=
-  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∀ r ∈ fs, ∀ p ∈ fs,
-    r.id = e.requiringFactId → p.id = e.providingFactId →
-    ∀ a, a ∈ e.assumes ↔ (a = r.origin ∨ a = p.origin)
+  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∀ c ∈ derivations fs, c.key = e.key →
+    (∀ a ∈ e.assumes, a ∈ c.origins) ∧ ∀ a ∈ c.origins, a ∈ e.assumes
 
 def StatusHonest (R : Resolver) : Prop :=
-  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∀ r ∈ fs, r.id = e.requiringFactId →
+  ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges,
     (e.status = .confirmed ↔
-      ((∀ a ∈ e.assumes, a.isAI = false) ∧ (fs.filter (matchesB r)).length = 1))
+      ((∀ a ∈ e.assumes, a.isAI = false) ∧
+        ∀ c ∈ derivations fs, c.requirement.id = e.requiringFactId →
+          c.provision.id = e.providingFactId))
 
 def RetractExact (R : Resolver) : Prop :=
   ∀ fs a, WellFormed fs → ∀ k,

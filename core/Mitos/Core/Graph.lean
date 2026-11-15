@@ -44,13 +44,14 @@ structure RepoKey where
   deriving DecidableEq, Repr
 
 structure Edge extends repoKey : RepoKey where
-  requiringFactId  : Nat
-  providingFactId  : Nat
-  assumes          : List Assumption
-  status           : Status
+  key     : Derivation
+  assumes : List Assumption
+  status  : Status
   deriving DecidableEq, Repr
 
-def Edge.key (e : Edge) : Nat × Nat := (e.requiringFactId, e.providingFactId)
+def Edge.requiringFactId (e : Edge) : Nat := e.key.requiringFactId
+
+def Edge.providingFactId (e : Edge) : Nat := e.key.providingFactId
 
 structure Resolution where
   edges      : List Edge

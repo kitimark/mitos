@@ -14,7 +14,7 @@ def statusOf (fs : List Located) (r : Located) (assumes : List Assumption) : Sta
 
 def mkEdge (fs : List Located) (r p : Located) : Edge :=
   { requiringRepo := r.repo, providingRepo := p.repo, ident := r.fact.ident, scope := r.fact.scope,
-    requiringFactId := r.id, providingFactId := p.id,
+    key := .direct r.id p.id,
     assumes := assumptionsOf r p,
     status := statusOf fs r (assumptionsOf r p) }
 
