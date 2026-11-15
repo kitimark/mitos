@@ -346,6 +346,271 @@ refuses owner 43 "$tmp/g"
 refuses owner/mitos 0 "$tmp/g"
 refuses owner/.. 43 "$tmp/g"
 refuses owner/mitos 43 "$tmp/f"
+for knob in SNAPSHOT_PROTECTION_WAIT=-1 SNAPSHOT_PROTECTION_WAIT=1m SNAPSHOT_PROTECTION_POLL=0; do
+  got=0
+  env PATH="$fake:$PATH" FAKE_LOG="$tmp/gh.log" FAKE_SHA="$p1" "$knob" "$root/gate/snapshot-fetch.sh" \
+    owner/mitos 43 "$tmp/k" >/dev/null 2>"$tmp/fetch.err" || got=$?
+  if [ "$got" = 2 ] && grep -q "^snapshot-fetch: ${knob%%=*} is not a number of seconds\$" "$tmp/fetch.err"; then
+    ok "fetch refuses: $knob"
+  else
+    bad "fetch refuses: $knob" "exit $got: $(cat "$tmp/fetch.err")"
+  fi
+done
+
+# Main's protection comes from the reader's artifact (gate/snapshot-fetch.sh, the freshness rule).
+command -v zip >/dev/null 2>&1 || { echo "FAIL zip is not installed"; exit 1; }
+pd="$tmp/pd"
+pfake="$tmp/pfake"
+mkdir -p "$pfake"
+cat >"$pfake/gh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$P_DIR/gh.log"
+[ "$1" = api ] || exit 64
+case "$2" in
+  --paginate) printf '[[]]' ;;
+  repos/owner/mitos/branches/main) printf '{"commit":{"sha":"%s"}}' "$P_MAIN" ;;
+  "repos/owner/mitos/actions/runs/$P_SELF") printf '{"id":%s,"run_started_at":"%s"}' "$P_SELF" "$P_SINCE" ;;
+  "repos/owner/mitos/actions/workflows/land-protection.yml/runs?branch=main&exclude_pull_requests=true&per_page=30")
+    n=$(($(cat "$P_DIR/lists" 2>/dev/null || echo 0) + 1))
+    echo "$n" >"$P_DIR/lists"
+    if [ -f "$P_DIR/runs-$n.json" ]; then cat "$P_DIR/runs-$n.json"; else cat "$P_DIR/runs.json"; fi ;;
+  repos/owner/mitos/actions/runs/*/artifacts\?name=*) cat "$P_DIR/artifacts.json" ;;
+  repos/owner/mitos/actions/artifacts/900/zip) cat "$P_DIR/artifact.zip" ;;
+  *) printf '{}' ;;
+esac
+EOF
+rfake="$tmp/rfake"
+mkdir -p "$rfake"
+cat >"$rfake/gh" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = "api repos/owner/mitos/branches/main/protection" ] || exit 64
+cat "$R_PROTECTION"
+EOF
+chmod +x "$pfake/gh" "$rfake/gh"
+past=2000-01-01T00:00:00Z
+future=2999-01-01T00:00:00Z
+# run <id> <attempt> <status> <conclusion> <updated_at> [jq filter]: one run of the reader
+run() {
+  jq -cn --argjson id "$1" --argjson a "$2" --arg st "$3" --arg c "$4" --arg u "$5" --arg main "$m2" \
+    '{id: $id, run_attempt: $a, status: $st, conclusion: (if $c == "" then null else $c end),
+      updated_at: $u, path: ".github/workflows/land-protection.yml", head_branch: "main",
+      head_sha: $main, event: "workflow_run", head_repository: {full_name: "owner/mitos"},
+      repository: {full_name: "owner/mitos"}}' | jq -c "${6:-.}"
+}
+runs() { jq -cn '{total_count: ($ARGS.positional | length), workflow_runs: [$ARGS.positional[] | fromjson]}' --args "$@"; }
+# artifact <run> <attempt> [jq filter on read.json]: the reader's artifact, made by the reader itself
+artifact() {
+  rm -rf "$pd/r"
+  PATH="$rfake:$PATH" R_PROTECTION="$b/protection.json" GITHUB_REF=refs/heads/main \
+    GITHUB_RUN_ID="$1" GITHUB_RUN_ATTEMPT="$2" "$root/.github/scripts/land-protection.sh" owner/mitos "$pd/r" \
+    >/dev/null || { echo "FAIL the reader wrote no file"; exit 1; }
+  jq -c "${3:-.}" "$pd/r/read.json" >"$pd/r/x" && mv "$pd/r/x" "$pd/r/read.json"
+  rm -f "$pd/artifact.zip"
+  (cd "$pd/r" && zip -qX "$pd/artifact.zip" read.json)
+  jq -cn --arg name "land-protection-$1-$2" --argjson run "$1" --argjson size "$(wc -c <"$pd/artifact.zip")" \
+    '{total_count: 1, artifacts: [{id: 900, name: $name, expired: false, size_in_bytes: $size,
+      workflow_run: {id: $run, head_branch: "main"}}]}' >"$pd/artifacts.json"
+}
+pstart() { rm -rf "$pd"; mkdir -p "$pd"; }
+pfetch() {
+  rm -rf "$tmp/pf" "$pd/lists" "$pd/gh.log"
+  local got=0 t0=$SECONDS
+  timeout -k 5 60 env PATH="$pfake:$PATH" P_DIR="$pd" P_MAIN="$m2" P_SELF=77 GITHUB_RUN_ID=77 P_SINCE="$past" \
+    SNAPSHOT_PROTECTION_WAIT=0 SNAPSHOT_PROTECTION_POLL=1 "$@" "$root/gate/snapshot-fetch.sh" owner/mitos 43 "$tmp/pf" \
+    >"$tmp/pf.out" 2>"$tmp/pf.err" || got=$?
+  took=$((SECONDS - t0))
+  lists=$(cat "$pd/lists" 2>/dev/null || echo 0)
+  return "$got"
+}
+said() { grep '^snapshot-fetch: the read of protection' "$tmp/pf.err"; }
+stale_line="snapshot-fetch: the read of protection is stale: no successful land-protection run at $m2 read it at or after"
+unzipped() { grep -c 'actions/artifacts/900/zip' "$pd/gh.log"; }
+into_snapshot() {
+  fresh
+  rm -f "$d/protection.json"
+  [ ! -f "$tmp/pf/protection.json" ] || cp "$tmp/pf/protection.json" "$d/protection.json"
+}
+
+pstart
+runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+artifact 501 1
+if pfetch && [ -z "$(said)" ] && [ "$(jq -c . "$tmp/pf/protection.json" 2>/dev/null)" = "$(jq -c . "$b/protection.json")" ]; then
+  ok "protection: a fresh read by main's reader is main's protection"
+else
+  bad "protection: a fresh read by main's reader is main's protection" "$(cat "$tmp/pf.err")"
+fi
+into_snapshot
+if snap && [ ! -s "$tmp/snap.err" ]; then
+  ok "protection: the snapshot reads the reader's file as the route's response"
+else
+  bad "protection: the snapshot reads the reader's file as the route's response" "$(cat "$tmp/snap.err")"
+fi
+expect_land "protection: with the reader's file, the owner's /land goes first" "$me7" \
+  '{"next":9,"plan":{"kind":"idle"},"step":{"ahead":9,"kind":"wait"}}'
+if grep -qx "api repos/owner/mitos/actions/runs/77" "$pd/gh.log" \
+  && grep -qx "api repos/owner/mitos/actions/runs/501/artifacts?name=land-protection-501-1&per_page=100" "$pd/gh.log" \
+  && ! grep -q 'branches/main/protection' "$pd/gh.log" && [ "$(grep -c '^api ' "$pd/gh.log")" = "$(grep -c '' "$pd/gh.log")" ]; then
+  ok "protection: REST only, and the fetch never reads the protection route itself"
+else
+  bad "protection: REST only, and the fetch never reads the protection route itself" "$(cat "$pd/gh.log")"
+fi
+
+pstart
+runs "$(run 501 1 completed success 2999-01-01T00:00:10Z)" >"$pd/runs.json"
+artifact 501 1
+pfetch P_SINCE="$future"
+if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $future" ] && [ "$(unzipped)" = 1 ]; then
+  ok "protection: a read that began before this run started is stale"
+else
+  bad "protection: a read that began before this run started is stale" "$(cat "$tmp/pf.err")"
+fi
+into_snapshot
+holds "protection: a stale read holds every pull request" "^snapshot: #9 holds: unread protection\$"
+pstart
+runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+artifact 501 1 '.read = "1999-12-31T23:59:59Z"'
+pfetch
+if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $past" ]; then
+  ok "protection: the file's own read time decides, not the run's"
+else
+  bad "protection: the file's own read time decides, not the run's" "$(cat "$tmp/pf.err")"
+fi
+pstart
+runs "$(run 501 1 completed success 2998-12-31T23:59:59Z)" >"$pd/runs.json"
+artifact 501 1
+pfetch P_SINCE="$future"
+if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $future" ] && [ "$(unzipped)" = 0 ]; then
+  ok "protection: a run that finished before this run started is not downloaded"
+else
+  bad "protection: a run that finished before this run started is not downloaded" "$(cat "$tmp/pf.err")"
+fi
+
+pstart
+runs >"$pd/runs.json"
+pfetch
+if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $past" ]; then
+  ok "protection: no reader run is a missing file, and holds"
+else
+  bad "protection: no reader run is a missing file, and holds" "$(cat "$tmp/pf.err")"
+fi
+into_snapshot
+holds "protection: a missing file holds every pull request" "^snapshot: #9 holds: unread protection\$"
+pstart
+runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+echo '{"total_count":0,"artifacts":[]}' >"$pd/artifacts.json"
+pfetch
+if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "snapshot-fetch: the read of protection failed" ]; then
+  ok "protection: a successful run without its artifact holds"
+else
+  bad "protection: a successful run without its artifact holds" "$(cat "$tmp/pf.err")"
+fi
+pstart
+runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+artifact 501 1
+jq '.artifacts[0].expired = true' "$pd/artifacts.json" >"$pd/x" && mv "$pd/x" "$pd/artifacts.json"
+pfetch
+if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "snapshot-fetch: the read of protection failed" ]; then
+  ok "protection: an expired artifact holds"
+else
+  bad "protection: an expired artifact holds" "$(cat "$tmp/pf.err")"
+fi
+
+for other in '.head_branch = "feature"' '.event = "pull_request"' '.event = "schedule"' \
+  '.head_repository.full_name = "fork/mitos"' '.repository.full_name = "fork/mitos"' \
+  ".head_sha = \"$m1\"" '.path = ".github/workflows/other.yml"' '.conclusion = "failure"' \
+  '.status = "completed" | .conclusion = "cancelled"'; do
+  pstart
+  runs "$(run 501 1 completed success 2026-11-15T06:00:20Z "$other")" >"$pd/runs.json"
+  artifact 501 1
+  pfetch
+  if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $past" ] && [ "$(unzipped)" = 0 ]; then
+    ok "protection: a run with $other is not read"
+  else
+    bad "protection: a run with $other is not read" "$(cat "$tmp/pf.err")"
+  fi
+done
+for other in '.ref = "refs/heads/feature"' '.ref = "refs/tags/main"' '.repo = "fork/mitos"' '.run = 502' \
+  '.attempt = 2' '.v = 2'; do
+  pstart
+  runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+  artifact 501 1 "$other"
+  pfetch
+  if [ ! -e "$tmp/pf/protection.json" ] \
+    && [ "$(said)" = "snapshot-fetch: the read of protection is from another run, repository or ref than run 501, attempt 1" ]; then
+    ok "protection: a file with $other holds"
+  else
+    bad "protection: a file with $other holds" "$(cat "$tmp/pf.err")"
+  fi
+done
+for broken in '.protection = []' 'del(.read)' '.read = "2026-11-15 06:00:30"'; do
+  pstart
+  runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+  artifact 501 1 "$broken"
+  pfetch
+  if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "snapshot-fetch: the read of protection failed" ]; then
+    ok "protection: a file with $broken holds"
+  else
+    bad "protection: a file with $broken holds" "$(cat "$tmp/pf.err")"
+  fi
+done
+
+pstart
+runs "$(run 502 1 completed success 2026-11-15T06:00:40Z)" "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+artifact 502 1
+pfetch
+if [ -e "$tmp/pf/protection.json" ] && grep -q 'actions/runs/502/artifacts' "$pd/gh.log" \
+  && ! grep -q 'actions/runs/501/artifacts' "$pd/gh.log"; then
+  ok "protection: the newest successful run wins"
+else
+  bad "protection: the newest successful run wins" "$(cat "$tmp/pf.err" "$pd/gh.log")"
+fi
+pstart
+runs "$(run 501 2 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+artifact 501 2
+pfetch
+if [ -e "$tmp/pf/protection.json" ] && grep -q 'artifacts?name=land-protection-501-2&' "$pd/gh.log"; then
+  ok "protection: a re-run is read from its own attempt"
+else
+  bad "protection: a re-run is read from its own attempt" "$(cat "$tmp/pf.err" "$pd/gh.log")"
+fi
+
+pstart
+runs "$(run 501 1 in_progress '' 2026-11-15T06:00:10Z)" >"$pd/runs-1.json"
+runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+artifact 501 1
+pfetch SNAPSHOT_PROTECTION_WAIT=30
+if [ -e "$tmp/pf/protection.json" ] && [ -z "$(said)" ] && [ "$lists" = 2 ]; then
+  ok "protection: the fetch waits for a reader run still running, then reads it"
+else
+  bad "protection: the fetch waits for a reader run still running, then reads it" "lists $lists" "$(cat "$tmp/pf.err")"
+fi
+pstart
+runs "$(run 501 1 queued '' 2026-11-15T06:00:10Z)" >"$pd/runs.json"
+pfetch SNAPSHOT_PROTECTION_WAIT=2
+if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $past" ] && [ "$lists" -ge 2 ] \
+  && [ "$lists" -le 4 ] && [ "$took" -le 8 ]; then
+  ok "protection: the wait ends at its deadline, and holds"
+else
+  bad "protection: the wait ends at its deadline, and holds" "lists $lists, took $took s" "$(cat "$tmp/pf.err")"
+fi
+pstart
+runs "$(run 501 1 queued '' 2026-11-15T06:00:10Z)" >"$pd/runs.json"
+pfetch
+if [ "$(said)" = "$stale_line $past" ] && [ "$lists" = 1 ]; then
+  ok "protection: with no wait, one list of runs"
+else
+  bad "protection: with no wait, one list of runs" "lists $lists" "$(cat "$tmp/pf.err")"
+fi
+pstart
+runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+artifact 501 1
+pfetch GITHUB_RUN_ID=
+if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "snapshot-fetch: the read of protection failed" ] \
+  && ! grep -q 'actions/' "$pd/gh.log"; then
+  ok "protection: no run id to measure freshness by holds"
+else
+  bad "protection: no run id to measure freshness by holds" "$(cat "$tmp/pf.err" "$pd/gh.log")"
+fi
 
 echo
 echo "$pass passed, $fail failed"
