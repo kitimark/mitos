@@ -16,7 +16,7 @@
       ],
       "botAt": "aaa",
       "delegates": [ { "provider": "claude", "name": "orchestrator" } ],
-      "words": [ { "kind": "ownerLand", "said": 900, "about": "aaa" } ],
+      "words": [ { "kind": "ownerLand", "said": 900, "about": "aaa", "approves": true } ],
       "rest": true
     },
     {

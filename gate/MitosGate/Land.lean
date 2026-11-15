@@ -40,17 +40,20 @@ structure Author where
 structure Mark where
   said : Nat
   about : Sha
+  approves : Bool
   deriving DecidableEq
 
 inductive Word
   | ownerLand (m : Mark)
   | ownerHold (said : Nat)
+  | ownerSpoke (said : Nat)
   | agentLand (who : Teammate) (m : Mark)
   deriving DecidableEq
 
 def Word.said : Word → Nat
   | .ownerLand m => m.said
   | .ownerHold s => s
+  | .ownerSpoke s => s
   | .agentLand _ m => m.said
 
 inductive Base
@@ -136,12 +139,21 @@ def Word.byOwner : Word → Bool
   | .agentLand _ _ => false
   | _ => true
 
+def Word.decides : Word → Bool
+  | .ownerLand _ | .ownerHold _ => true
+  | _ => false
+
 def newestOwner : List Word → Option Word
   | [] => none
   | w :: ws =>
     match newestOwner ws with
-    | some x => if w.byOwner && x.said < w.said then some w else some x
-    | none => if w.byOwner then some w else none
+    | some x => if w.decides && x.said < w.said then some w else some x
+    | none => if w.decides then some w else none
+
+def spokeSince (ws : List Word) (n : Nat) : Bool :=
+  ws.any fun
+    | .ownerSpoke s => decide (n < s)
+    | _ => false
 
 inductive Lander
   | owner
@@ -164,8 +176,29 @@ def Obs.entries (o : Obs) : List Entry :=
     | _ => none
   match newestOwner o.words with
   | some (.ownerHold _) => []
-  | some (.ownerLand m) => ⟨o.pr, m, .owner⟩ :: agents
+  | some (.ownerLand m) =>
+    if (!o.kept || m.approves) && !spokeSince o.words m.said then ⟨o.pr, m, .owner⟩ :: agents
+    else agents
   | _ => agents
+
+def Obs.unnamed (o : Obs) : Bool :=
+  match newestOwner o.words with
+  | some (.ownerLand m) => o.kept && !m.approves
+  | _ => false
+
+inductive OwnerWord
+  | none | held | unnamed | spoke | stale | stands
+  deriving DecidableEq
+
+def Obs.word (o : Obs) : OwnerWord :=
+  match newestOwner o.words with
+  | some (.ownerHold _) => .held
+  | some (.ownerLand m) =>
+    if o.kept && !m.approves then .unnamed
+    else if spokeSince o.words m.said then .spoke
+    else if !o.carries m.about then .stale
+    else .stands
+  | _ => .none
 
 def Entry.valid (e : Entry) (o : Obs) : Bool :=
   o.entries.contains e && o.eligibleBeforeRebase && o.carries e.mark.about
@@ -208,13 +241,15 @@ inductive Plan
   /-- Push the replay with `--force-with-lease=<ref>:<expect>`, if it has the tree of `replay`. -/
   | push (pr : Pr) (expect replay : Sha)
   | idle
+  | merge (pr : Pr) (head : Sha)
   deriving DecidableEq
 
 def plan (q : Queue) : Plan :=
   match next q with
-  | some (_, o) =>
+  | some (e, o) =>
     match o.base with
     | .clean r => .push o.pr o.head r
+    | .current => if e.lander.isOwner && o.gate == .success then .merge o.pr o.head else .idle
     | _ => .idle
   | none => .idle
 
@@ -320,6 +355,29 @@ def MergeIsGated : Prop :=
   ∀ me q o h, step me q o = .merge h →
     h = o.head ∧ o.base = .current ∧ o.gate = .success ∧ o.enforced = true ∧
       o.kept = false ∧ me ∈ o.delegates ∧ o.Covered
+
+def PlannedMergeIsGated : Prop :=
+  ∀ q p h, plan q = .merge p h →
+    ∃ e o, next q = some (e, o) ∧ o.pr = p ∧ h = o.head ∧ o.base = .current ∧ o.gate = .success ∧
+      o.enforced = true ∧ o.updatable = true ∧ o.Covered ∧ o.reviewed = true ∧ o.rest = true ∧
+      e.lander = .owner ∧ newestOwner o.words = some (.ownerLand e.mark) ∧
+      (∀ s, Word.ownerSpoke s ∈ o.words → s ≤ e.mark.said) ∧
+      o.carries e.mark.about = true ∧ (o.kept = true → e.mark.approves = true)
+
+def OwnerEntryIsTheirLastWord : Prop :=
+  ∀ (o : Obs) (e : Entry), e ∈ o.entries → e.lander = .owner →
+    e.pr = o.pr ∧ newestOwner o.words = some (.ownerLand e.mark) ∧
+      (∀ s, Word.ownerSpoke s ∈ o.words → s ≤ e.mark.said) ∧
+      (o.kept = true → e.mark.approves = true)
+
+def KeptEntryIsTheOwners : Prop :=
+  ∀ (o : Obs) (e : Entry), e ∈ o.entries → o.kept = true → e.lander = .owner
+
+def OnlyLandOrHoldChangesTheWord : Prop :=
+  ∀ ws : List Word, newestOwner ws = newestOwner (ws.filter (·.decides))
+
+def WordStandsIsTheEntry : Prop :=
+  ∀ o : Obs, o.word = .stands ↔ ∃ e ∈ o.entries, e.lander = .owner ∧ o.carries e.mark.about = true
 
 def UnenforcedLandsNothing : Prop :=
   ∀ (o : Obs), o.enforced = false →
@@ -475,6 +533,7 @@ theorem pushOnlyNext : PushOnlyNext := by
       · split at h2
         · next hk => exact hk
         · cases h2
+    · split at h <;> cases h
     · cases h
   · cases h
 
@@ -647,6 +706,133 @@ theorem step_cases (me : Teammate) (q : Queue) (o : Obs) :
       left
       exact ⟨hen', by simp [hen']⟩
 
+theorem entries_agent {o : Obs} {e : Entry}
+    (he : e ∈ o.words.filterMap (fun
+      | .agentLand t m => if o.mayMerge t then some (⟨o.pr, m, .agent t⟩ : Entry) else none
+      | _ => none)) : ∃ t, e.lander = .agent t ∧ o.mayMerge t = true := by
+  simp only [List.mem_filterMap] at he
+  obtain ⟨w, _, hw⟩ := he
+  cases w with
+  | agentLand t m =>
+    simp only at hw
+    split at hw
+    · next hm => cases hw; exact ⟨t, rfl, hm⟩
+    · cases hw
+  | ownerLand m => cases hw
+  | ownerHold c => cases hw
+  | ownerSpoke c => cases hw
+
+theorem spokeSince_false {ws : List Word} {n : Nat} (h : spokeSince ws n = false) :
+    ∀ s, Word.ownerSpoke s ∈ ws → s ≤ n := by
+  intro s hs
+  simp only [spokeSince, List.any_eq_false] at h
+  simpa using h _ hs
+
+theorem entries_cases {o : Obs} {e : Entry} (he : e ∈ o.entries) :
+    (∃ t, e.lander = .agent t ∧ o.mayMerge t = true) ∨
+      (e.lander = .owner ∧ e.pr = o.pr ∧ newestOwner o.words = some (.ownerLand e.mark) ∧
+        spokeSince o.words e.mark.said = false ∧ (o.kept = true → e.mark.approves = true)) := by
+  simp only [Obs.entries] at he
+  split at he
+  · cases he
+  · next m hm =>
+    split at he
+    · next hk =>
+      rcases List.mem_cons.1 he with rfl | he
+      · simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hk
+        refine .inr ⟨rfl, rfl, hm, hk.2, fun hkept => ?_⟩
+        rcases hk.1 with hk1 | hk1
+        · rw [hkept] at hk1; cases hk1
+        · exact hk1
+      · exact .inl (entries_agent he)
+    · exact .inl (entries_agent he)
+  · exact .inl (entries_agent he)
+
+theorem ownerEntryIsTheirLastWord : OwnerEntryIsTheirLastWord := by
+  intro o e he hl
+  rcases entries_cases he with ⟨t, ht, _⟩ | ⟨_, hp, hw, hs, ha⟩
+  · rw [hl] at ht; cases ht
+  · exact ⟨hp, hw, spokeSince_false hs, ha⟩
+
+theorem keptEntryIsTheOwners : KeptEntryIsTheOwners := by
+  intro o e he hk
+  rcases entries_cases he with ⟨t, _, hm⟩ | ⟨hl, _⟩
+  · simp only [Obs.mayMerge, Bool.and_eq_true, Bool.not_eq_true'] at hm
+    rw [hk] at hm; cases hm.1
+  · exact hl
+
+theorem plannedMergeIsGated : PlannedMergeIsGated := by
+  intro q p h hp
+  simp only [plan] at hp
+  split at hp
+  · next e o hn =>
+    have hl := next_landable hn
+    split at hp
+    · cases hp
+    · next hb =>
+      split at hp
+      · next hc =>
+        cases hp
+        simp only [Bool.and_eq_true, beq_iff_eq] at hc
+        obtain ⟨how, hg⟩ := hc
+        simp only [landable, Entry.valid, Obs.eligibleBeforeRebase, Bool.and_eq_true,
+          List.contains_iff_mem] at hl
+        obtain ⟨⟨⟨hmem, hel⟩, hcar⟩, _⟩ := hl
+        have hlan : e.lander = .owner := by
+          cases hx : e.lander with
+          | owner => rfl
+          | agent t => rw [hx] at how; cases how
+        obtain ⟨_, hw, hs, ha⟩ := ownerEntryIsTheirLastWord o e hmem hlan
+        exact ⟨e, o, hn, rfl, rfl, hb, hg, hel.1.1.1.2, hel.1.1.1.1, of_decide_eq_true hel.1.1.2,
+          hel.1.2, hel.2, hlan, hw, hs, hcar, ha⟩
+      · cases hp
+    · cases hp
+  · cases hp
+
+theorem onlyLandOrHoldChangesTheWord : OnlyLandOrHoldChangesTheWord := by
+  intro ws
+  induction ws with
+  | nil => rfl
+  | cons w ws ih =>
+    by_cases hw : w.decides = true
+    · simp only [List.filter, hw, newestOwner, ← ih]
+    · have hw' : w.decides = false := by simpa using hw
+      simp only [List.filter, hw', newestOwner, ← ih]
+      cases newestOwner ws <;> simp
+
+theorem wordStandsIsTheEntry : WordStandsIsTheEntry := by
+  intro o
+  constructor
+  · intro h
+    simp only [Obs.word] at h
+    split at h
+    · cases h
+    · next m hm =>
+      split at h
+      · cases h
+      · next hk =>
+        split at h
+        · cases h
+        · next hs =>
+          split at h
+          · cases h
+          · next hc =>
+            refine ⟨⟨o.pr, m, .owner⟩, ?_, rfl, by simpa using hc⟩
+            simp only [Obs.entries, hm]
+            have : ((!o.kept || m.approves) && !spokeSince o.words m.said) = true := by
+              cases hko : o.kept <;> cases ha : m.approves <;> simp_all
+            simp [this]
+    · cases h
+  · rintro ⟨e, he, hl, hc⟩
+    rcases entries_cases he with ⟨t, ht, _⟩ | ⟨_, _, hw, hs, ha⟩
+    · rw [hl] at ht; cases ht
+    · simp only [Obs.word, hw]
+      have hk : (o.kept && !e.mark.approves) = false := by
+        cases hko : o.kept
+        · rfl
+        · simp [ha hko]
+      simp [hk, hs, hc]
+
 theorem mergeIsGated : MergeIsGated := by
   intro me q o h hs
   rcases step_cases me q o with ⟨c, _, h1⟩ | ⟨_, h1⟩
@@ -693,11 +879,12 @@ theorem agentKeepsOwnerWord : AgentKeepsOwnerWord := by
     by_cases hw : w.byOwner = true
     · simp only [List.filter, hw, newestOwner, ← ih]
     · have hw' : w.byOwner = false := by simpa using hw
-      simp only [List.filter, hw', newestOwner, ← ih]
+      have hd : w.decides = false := by cases w <;> simp_all [Word.decides, Word.byOwner]
+      simp only [List.filter, hw', newestOwner, ← ih, hd]
       cases newestOwner ws <;> simp
 
 theorem newestOwner_none {ws : List Word} (h : newestOwner ws = none) :
-    ∀ x ∈ ws, x.byOwner = false := by
+    ∀ x ∈ ws, x.decides = false := by
   induction ws with
   | nil => intro x hx; cases hx
   | cons y ys ih =>
@@ -713,13 +900,13 @@ theorem newestOwner_none {ws : List Word} (h : newestOwner ws = none) :
       intro x hx
       rcases List.mem_cons.1 hx with hxy | hx
       · subst hxy
-        by_cases hb : x.byOwner = true
+        by_cases hb : x.decides = true
         · simp [hb] at h
         · simpa using hb
       · exact ih hr x hx
 
 theorem newestOwner_max {ws : List Word} {w : Word} (h : newestOwner ws = some w) :
-    w ∈ ws ∧ w.byOwner = true ∧ ∀ x ∈ ws, x.byOwner = true → x.said ≤ w.said := by
+    w ∈ ws ∧ w.decides = true ∧ ∀ x ∈ ws, x.decides = true → x.said ≤ w.said := by
   induction ws generalizing w with
   | nil => simp [newestOwner] at h
   | cons y ys ih =>
@@ -773,7 +960,7 @@ theorem eq_of_said_eq : ∀ {ws : List Word}, (ws.map Word.said).Nodup → ∀ {
 
 theorem newestOwner_eq_some {ws : List Word} {w : Word} (hn : (ws.map Word.said).Nodup) :
     newestOwner ws = some w ↔
-      w ∈ ws ∧ w.byOwner = true ∧ ∀ x ∈ ws, x.byOwner = true → x.said ≤ w.said := by
+      w ∈ ws ∧ w.decides = true ∧ ∀ x ∈ ws, x.decides = true → x.said ≤ w.said := by
   constructor
   · exact newestOwner_max
   · rintro ⟨hm, hb, hx⟩
@@ -808,31 +995,11 @@ theorem toCarry_updaterForcePush (p : Push) : p.toCarry.updaterForcePush = p.byU
 
 theorem onlyMergersQueue : OnlyMergersQueue := by
   intro o e t he hl
-  have hag : ∀ e' ∈ o.words.filterMap (fun
-      | .agentLand t m => if o.mayMerge t then some (⟨o.pr, m, .agent t⟩ : Entry) else none
-      | _ => none), ∀ t', e'.lander = .agent t' → o.kept = false ∧ t' ∈ o.delegates := by
-    intro e' he' t' hl'
-    simp only [List.mem_filterMap] at he'
-    obtain ⟨w, _, hw⟩ := he'
-    cases w with
-    | agentLand t'' m =>
-      simp only at hw
-      split at hw
-      · next hm =>
-        cases hw
-        simp only at hl'
-        cases hl'
-        simpa [Obs.mayMerge] using hm
-      · cases hw
-    | ownerLand m => cases hw
-    | ownerHold c => cases hw
-  simp only [Obs.entries] at he
-  split at he
-  · cases he
-  · rcases List.mem_cons.1 he with rfl | he
-    · cases hl
-    · exact hag e he t hl
-  · exact hag e he t hl
+  rcases entries_cases he with ⟨t', ht, hm⟩ | ⟨ho, _⟩
+  · rw [hl] at ht
+    cases ht
+    simpa [Obs.mayMerge] using hm
+  · rw [hl] at ho; cases ho
 
 theorem nextNeverWaits : NextNeverWaits := by
   intro me q o e g ahead hn hpr hs
@@ -968,9 +1135,9 @@ def undelegated : Teammate := ⟨"grok", "worker"⟩
 def verifier : Teammate := ⟨"claude", "verifier"⟩
 def verifierOpus : Teammate := ⟨"claude", "verifier-opus"⟩
 def grokBuilder : Teammate := ⟨"grok", "builder"⟩
-def ownerKeptMark : Mark := ⟨900, "aaa"⟩
-def agentMark : Mark := ⟨800, "bbb"⟩
-def agentPushedMark : Mark := ⟨700, "ccc"⟩
+def ownerKeptMark : Mark := ⟨900, "aaa", true⟩
+def agentMark : Mark := ⟨800, "bbb", false⟩
+def agentPushedMark : Mark := ⟨700, "ccc", false⟩
 
 def ownerKeptBehind : Obs :=
   { pr := 153, updatable := true, enforced := true, head := "aaa", pushes := [],
@@ -1010,7 +1177,7 @@ theorem agentCannotEnterOnKeptPath :
     step orchestrator [] { ownerKeptBehind with words := [] } = .stop .noEntry := by
   decide +kernel
 theorem agentWordOnKeptPathIsNoEntry :
-    ({ ownerKeptBehind with words := [.agentLand orchestrator ⟨910, "aaa"⟩] } : Obs).entries =
+    ({ ownerKeptBehind with words := [.agentLand orchestrator ⟨910, "aaa", false⟩] } : Obs).entries =
       [] := by decide +kernel
 theorem ownerLandPushesFirst :
     plan (queueOf [ownerKeptBehind, agentBehind, agentPushedGatePending]) =
@@ -1026,8 +1193,10 @@ theorem behindAgentWaitsForLandingInFlight :
 theorem landingInFlightAwaitsItsGate :
     step orchestrator (queueOf [agentBehind, agentPushedGatePending]) agentPushedGatePending =
       .awaitGate "cc2" := by decide +kernel
-theorem afterPushNothingIsPushedAgain :
-    plan (queueOf [ownerKeptPushed, agentBehind]) = .idle := by decide +kernel
+theorem afterPushTheApprovedLandingIsMergedNotPushedAgain :
+    plan (queueOf [ownerKeptPushed, agentBehind]) = .merge 153 "ar" := by decide +kernel
+theorem afterPushNothingIsPushedWhileTheGateRuns :
+    plan (queueOf [ownerKeptJustPushed, agentBehind]) = .idle := by decide +kernel
 theorem pushedHeadAwaitsItsGate :
     step orchestrator (queueOf [ownerKeptJustPushed, agentBehind]) ownerKeptJustPushed =
       .awaitGate "ar" := by decide +kernel
@@ -1038,12 +1207,12 @@ theorem agentWaitsBehindPresentedOwnerLand :
     step orchestrator (queueOf [ownerKeptPushed, agentBehind]) agentBehind = .wait 153 := by
   decide +kernel
 theorem newOwnerLandNamesThePresentedHead :
-    (⟨153, ⟨950, "ar"⟩, .owner⟩ : Entry).valid
-      { ownerKeptPushed with words := [.ownerLand ownerKeptMark, .ownerLand ⟨950, "ar"⟩] } =
+    (⟨153, ⟨950, "ar", true⟩, .owner⟩ : Entry).valid
+      { ownerKeptPushed with words := [.ownerLand ownerKeptMark, .ownerLand ⟨950, "ar", true⟩] } =
       true := by decide +kernel
 theorem ownerLandNamingAnUnknownCommitStandsForNothing :
-    (⟨153, ⟨950, "zzz"⟩, .owner⟩ : Entry).valid
-      { ownerKeptPushed with words := [.ownerLand ownerKeptMark, .ownerLand ⟨950, "zzz"⟩] } =
+    (⟨153, ⟨950, "zzz", true⟩, .owner⟩ : Entry).valid
+      { ownerKeptPushed with words := [.ownerLand ownerKeptMark, .ownerLand ⟨950, "zzz", true⟩] } =
       false := by decide +kernel
 theorem delegateMergesOffKeptPathPinnedToHead :
     step orchestrator (queueOf [agentOnMain]) agentOnMain = .merge "bbb" := by decide +kernel
@@ -1087,7 +1256,7 @@ theorem headAlreadyOnMainLetsTheLineMoveOn :
 def agentBehindNewer : Obs :=
   { agentBehind with pr := 147, head := "ddd", ids := [("ddd", "id-d"), ("dr", "id-d")],
                      base := .clean "dr", verdicts := [⟨760, "ddd", verifier, "sonnet", .pass⟩],
-                     botAt := some "ddd", words := [.agentLand orchestrator ⟨820, "ddd"⟩] }
+                     botAt := some "ddd", words := [.agentLand orchestrator ⟨820, "ddd", false⟩] }
 theorem olderAgentEntryIsPushedFirst :
     plan (queueOf [agentBehindNewer, agentBehind]) = .push 149 "bbb" "br" := by decide +kernel
 theorem newContentRetiresTheOwnerWord :
@@ -1106,7 +1275,7 @@ theorem unverifiedIsNotEligible :
       { agentBehind with verdicts := [] } = .stop .notEligible := by decide +kernel
 theorem undelegatedTeammateCannotQueue :
     ({ agentBehind with words := [.agentLand orchestrator agentMark,
-        .agentLand undelegated ⟨810, "bbb"⟩] } : Obs).entries =
+        .agentLand undelegated ⟨810, "bbb", false⟩] } : Obs).entries =
       [⟨149, agentMark, .agent orchestrator⟩] := by decide +kernel
 theorem unreadPathsAreKept : ({ agentBehind with paths := none } : Obs).kept = true := by
   decide +kernel
@@ -1129,7 +1298,7 @@ def opusWrittenReady : Obs :=
     ids := [("h", "id-h"), ("g", "id-g")], paths := some ["core/Mitos/Chain.lean"],
     base := .current, gate := .success, author := some ⟨holderOpus, "opus"⟩,
     verdicts := [⟨10, "h", verifierSonnet, "sonnet", .pass⟩], botAt := some "h",
-    delegates := [orchestrator], words := [.agentLand orchestrator ⟨30, "h"⟩], rest := true }
+    delegates := [orchestrator], words := [.agentLand orchestrator ⟨30, "h", false⟩], rest := true }
 def onTrustPath (o : Obs) : Obs := { o with paths := some ["gate/Main.lean"] }
 def behindMain (o : Obs) : Obs :=
   { o with base := .clean "h2", ids := [("h", "id-h"), ("h2", "id-h")] }
@@ -1216,8 +1385,8 @@ theorem opusFailBlocks :
       opusWrittenReady.verdicts ++ [⟨11, "h", verifierOpus, "opus", .fail⟩] } : Obs).covered =
       false := by decide +kernel
 theorem criticalOwnerLandIsPresentedNotMerged :
-    step orchestrator (queueOf [{ criticalTwoPasses with words := [.ownerLand ⟨30, "h"⟩] }])
-      { criticalTwoPasses with words := [.ownerLand ⟨30, "h"⟩] } = .present "h" := by
+    step orchestrator (queueOf [{ criticalTwoPasses with words := [.ownerLand ⟨30, "h", true⟩] }])
+      { criticalTwoPasses with words := [.ownerLand ⟨30, "h", true⟩] } = .present "h" := by
   decide +kernel
 def wordingOnlyByRoot : Obs :=
   { opusWrittenReady with verdicts := [⟨10, "h", root, "opus", .wordingOnly⟩] }
@@ -1250,7 +1419,7 @@ theorem newerPassFromTheSameJudgeRetiresItsWordingOnly :
       wordingOnlyByRoot.verdicts ++ [⟨20, "h", root, "opus", .pass⟩] } : Obs).covered =
       false := by decide +kernel
 def ownerLandedTwoPasses : Obs :=
-  { criticalTwoPasses with paths := opusWrittenReady.paths, words := [.ownerLand ⟨30, "h"⟩] }
+  { criticalTwoPasses with paths := opusWrittenReady.paths, words := [.ownerLand ⟨30, "h", true⟩] }
 def ownerLandedWithoutAuthor : Obs := { ownerLandedTwoPasses with author := none }
 theorem ownerLandedTwoPassesAreCovered : ownerLandedTwoPasses.covered = true := by
   decide +kernel
@@ -1267,17 +1436,17 @@ theorem noKnownAuthorBehindMainIsNotPushed :
     plan (queueOf [behindMain ownerLandedWithoutAuthor]) = .idle := by decide +kernel
 
 theorem newestOwnerIsTheGreatestIdListedFirst :
-    newestOwner [.ownerHold 950, .ownerLand ⟨900, "aaa"⟩] = some (.ownerHold 950) := by
+    newestOwner [.ownerHold 950, .ownerLand ⟨900, "aaa", true⟩] = some (.ownerHold 950) := by
   decide +kernel
 theorem newestOwnerIsTheGreatestIdListedLast :
-    newestOwner [.ownerLand ⟨900, "aaa"⟩, .ownerHold 950] = some (.ownerHold 950) := by
+    newestOwner [.ownerLand ⟨900, "aaa", true⟩, .ownerHold 950] = some (.ownerHold 950) := by
   decide +kernel
 theorem holdListedFirstStillHolds :
     ({ ownerKeptBehind with words := [.ownerHold 950, .ownerLand ownerKeptMark] } :
       Obs).entries = [] := by decide +kernel
 theorem newerLandListedFirstStillStands :
-    ({ ownerKeptBehind with words := [.ownerLand ⟨960, "aaa"⟩, .ownerHold 950] } :
-      Obs).entries = [⟨153, ⟨960, "aaa"⟩, .owner⟩] := by decide +kernel
+    ({ ownerKeptBehind with words := [.ownerLand ⟨960, "aaa", true⟩, .ownerHold 950] } :
+      Obs).entries = [⟨153, ⟨960, "aaa", true⟩, .owner⟩] := by decide +kernel
 
 theorem conflictOnCoveredWorkWakesTheHolder :
     wake (fun _ => false) (fun _ => false) (fun _ => true) (.conflictFound 126) =
@@ -1359,8 +1528,133 @@ theorem snapshotGreenGateOnAStuckEntryWakesNobody :
   decide +kernel
 theorem snapshotOwnerAndAgentWordsWakeTheLander :
     wakeOf [{ agentBehind with words :=
-      [.agentLand orchestrator agentMark, .ownerLand ⟨810, "bbb"⟩] }] (.gateDone 149 .success) =
+      [.agentLand orchestrator agentMark, .ownerLand ⟨810, "bbb", true⟩] }] (.gateDone 149 .success) =
       .lander 149 := by decide +kernel
+
+def bare : Mark := ⟨900, "aaa", false⟩
+def bareKeptBehind : Obs := { ownerKeptBehind with words := [.ownerLand bare] }
+def bareKeptOnMain : Obs := { ownerKeptPushed with words := [.ownerLand bare] }
+def offKeptOwnerLanded : Obs := { agentOnMain with words := [.ownerLand ⟨810, "bbb", false⟩] }
+def approvedThenNewContent : Obs :=
+  { ownerKeptPushed with head := "fff", pushes := [⟨false, "ar", "fff"⟩, ⟨true, "aaa", "ar"⟩],
+                         ids := [("aaa", "id-a"), ("ar", "id-a"), ("fff", "id-f")],
+                         verdicts := [⟨870, "fff", verifierOpus, "opus", .pass⟩,
+                           ⟨871, "fff", verifier, "sonnet", .pass⟩], botAt := some "fff" }
+def approvedJudgedOnTheAuthorsModel : Obs :=
+  { ownerKeptPushed with paths := some ["core/Mitos/Chain.lean", "CLAUDE.md"],
+                         author := some ⟨grokBuilder, "sonnet"⟩,
+                         verdicts := [⟨851, "aaa", verifier, "sonnet", .pass⟩] }
+def secondApproved : Obs :=
+  { ownerKeptBehind with pr := 154, words := [.ownerLand ⟨901, "aaa", true⟩] }
+
+theorem bareLandOnAKeptPathIsNoEntry : bareKeptBehind.entries = [] := by decide +kernel
+theorem bareLandOnAKeptPathIsNotPushed :
+    plan (queueOf [bareKeptBehind, agentBehind]) = .push 149 "bbb" "br" := by decide +kernel
+theorem bareLandOnAKeptPathIsNotMerged : plan (queueOf [bareKeptOnMain]) = .idle := by
+  decide +kernel
+theorem bareLandOnAKeptPathIsAskedForTheCommit : bareKeptOnMain.unnamed = true := by
+  decide +kernel
+theorem bareLandOnAKeptPathDoesNotHoldTheLine :
+    plan (queueOf [bareKeptOnMain, secondApproved]) = .push 154 "aaa" "ar" := by decide +kernel
+theorem bareLandOnUnreadPathsIsNotMerged :
+    plan (queueOf [{ bareKeptOnMain with paths := none }]) = .idle := by decide +kernel
+theorem bareLandOffEveryKeptPathIsMerged :
+    plan (queueOf [offKeptOwnerLanded]) = .merge 149 "bbb" := by decide +kernel
+theorem agentStepOnAnApprovedKeptPathIsStillPresent :
+    step orchestrator (queueOf [ownerKeptPushed]) ownerKeptPushed = .present "ar" := by
+  decide +kernel
+theorem agentEntryIsNeverThePlannedMerge : plan (queueOf [agentOnMain]) = .idle := by
+  decide +kernel
+theorem agentWordOnAKeptPathMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with words := [.agentLand orchestrator ownerKeptMark] }]) =
+      .idle := by decide +kernel
+theorem approvalOfAnOlderCommitDoesNotReachNewContent :
+    plan (queueOf [approvedThenNewContent]) = .idle := by decide +kernel
+theorem approvalOfTheNewContentMerges :
+    plan (queueOf [{ approvedThenNewContent with words := [.ownerLand ownerKeptMark,
+      .ownerLand ⟨960, "fff", true⟩] }]) = .merge 153 "fff" := by decide +kernel
+theorem approvalNamingAnUnknownCommitMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with words := [.ownerLand ⟨900, "zzz", true⟩] }]) =
+      .idle := by decide +kernel
+theorem holdAfterTheApprovalMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with words := [.ownerLand ownerKeptMark,
+      .ownerHold 950] }]) = .idle := by decide +kernel
+theorem laterOwnerCommentRetiresTheApproval :
+    plan (queueOf [{ ownerKeptPushed with words := [.ownerLand ownerKeptMark,
+      .ownerSpoke 950] }]) = .idle := by decide +kernel
+theorem approvalTypedAgainAfterSpeakingMerges :
+    plan (queueOf [{ ownerKeptPushed with words := [.ownerLand ownerKeptMark, .ownerSpoke 950,
+      .ownerLand ⟨960, "ar", true⟩] }]) = .merge 153 "ar" := by decide +kernel
+def heldThenSpoke : Obs :=
+  { agentOnMain with words := [.agentLand orchestrator agentMark, .ownerHold 900,
+      .ownerSpoke 950] }
+theorem laterOwnerCommentDoesNotLiftAHold :
+    step orchestrator (queueOf [heldThenSpoke]) heldThenSpoke = .stop .held := by decide +kernel
+theorem laterOwnerCommentLeavesAHeldPullRequestWithNoEntry : heldThenSpoke.entries = [] := by
+  decide +kernel
+theorem laterOwnerCommentDoesNotLetAHeldBranchBePushed :
+    plan (queueOf [{ agentBehind with words := [.agentLand orchestrator agentMark, .ownerHold 900,
+      .ownerSpoke 950] }]) = .idle := by decide +kernel
+theorem laterOwnerCommentDoesNotReviveAnOlderApproval :
+    plan (queueOf [{ ownerKeptPushed with words := [.ownerLand ownerKeptMark,
+      .ownerLand ⟨940, "zzz", true⟩, .ownerSpoke 950] }]) = .idle := by decide +kernel
+theorem ownerCommentBeforeTheApprovalDoesNotRetireIt :
+    plan (queueOf [{ ownerKeptPushed with words := [.ownerSpoke 850,
+      .ownerLand ownerKeptMark] }]) = .merge 153 "ar" := by decide +kernel
+theorem laterOwnerCommentRetiresABareLandOffKeptPathsToo :
+    plan (queueOf [{ offKeptOwnerLanded with words := [.ownerLand ⟨810, "bbb", false⟩,
+      .ownerSpoke 950] }]) = .idle := by decide +kernel
+theorem bareLandAfterAnApprovalStandsForNothing :
+    plan (queueOf [{ ownerKeptPushed with words := [.ownerLand ownerKeptMark,
+      .ownerLand ⟨950, "ar", false⟩] }]) = .idle := by decide +kernel
+theorem holdThenOwnerCommentStaysHeldOnAKeptPath :
+    step orchestrator
+      (queueOf [{ ownerKeptPushed with words := [.ownerLand ownerKeptMark, .ownerHold 950,
+        .ownerSpoke 960] }])
+      { ownerKeptPushed with words := [.ownerLand ownerKeptMark, .ownerHold 950,
+        .ownerSpoke 960] } = .stop .held := by decide +kernel
+theorem laterOwnerCommentLeavesAnAgentLandingAlone :
+    step orchestrator
+      (queueOf [{ agentOnMain with words := [.agentLand orchestrator agentMark,
+        .ownerSpoke 950] }])
+      { agentOnMain with words := [.agentLand orchestrator agentMark, .ownerSpoke 950] } =
+        .merge "bbb" := by decide +kernel
+theorem missingSpecLabelOrUnansweredCommentMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with rest := false }]) = .idle := by decide +kernel
+theorem draftForkOrStackMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with updatable := false }]) = .idle := by decide +kernel
+theorem botReviewMissingMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with botAt := none }]) = .idle := by decide +kernel
+theorem redGateMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with gate := .failure }]) = .idle := by decide +kernel
+theorem cancelledGateMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with gate := .cancelled }]) = .idle := by decide +kernel
+theorem unenforcedProtectionMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with enforced := false }]) = .idle := by decide +kernel
+theorem verdictFromTheAuthorsModelOnlyMergesNothing :
+    plan (queueOf [approvedJudgedOnTheAuthorsModel]) = .idle := by decide +kernel
+theorem verdictFromAnotherModelLetsTheRulePathMerge :
+    plan (queueOf [{ approvedJudgedOnTheAuthorsModel with
+      author := some ⟨grokBuilder, "grok"⟩ }]) = .merge 153 "ar" := by decide +kernel
+theorem trustPathWithoutAnOpusPassMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with
+      verdicts := [⟨851, "aaa", verifier, "sonnet", .pass⟩] }]) = .idle := by decide +kernel
+theorem laterFailMergesNothing :
+    plan (queueOf [{ ownerKeptPushed with
+      verdicts := ownerKeptPushed.verdicts ++ [⟨990, "ar", verifier, "sonnet", .fail⟩] }]) =
+      .idle := by decide +kernel
+theorem oneMergeAtATimeTheLandingOnMainFirst :
+    plan (queueOf [secondApproved, ownerKeptPushed]) = .merge 153 "ar" := by decide +kernel
+
+theorem aBareLandOnAKeptPathIsUnnamed : bareKeptOnMain.word = .unnamed := by decide +kernel
+theorem anApprovalStands : ownerKeptPushed.word = .stands := by decide +kernel
+theorem aLaterCommentIsSpoke :
+    ({ ownerKeptPushed with words := [.ownerLand ownerKeptMark, .ownerSpoke 950] } : Obs).word =
+      .spoke := by decide +kernel
+theorem anApprovalOfOlderContentIsStale : approvedThenNewContent.word = .stale := by decide +kernel
+theorem aHoldIsHeld : ownerKeptHeld.word = .held := by decide +kernel
+theorem noOwnerWordIsNone : agentBehind.word = .none := by decide +kernel
+
 
 end Fixture
 
@@ -1377,10 +1671,11 @@ open Lean in
     if (`MitosGate.Land.Fixture).isPrefixOf n && c.isTheorem then acc.push n else acc) #[]
   if fixtures.isEmpty then throwError "no fixture theorem found"
   for n in [``pushOnlyNext, ``noEntryNoPush, ``oneLandingAtATime, ``pushKeepsCover,
-      ``pushIsNotRepeated, ``mergeIsGated, ``unenforcedLandsNothing, ``holdWins,
-      ``agentKeepsOwnerWord, ``onlyMergersQueue, ``stuckDoesNotBlock, ``nextNeverWaits,
-      ``nextIgnoresListingOrder, ``quietAfterRebase, ``mem_queueOf, ``newestOwner_perm,
-      ``toCarry_updaterForcePush] ++ fixtures.toList do
+      ``pushIsNotRepeated, ``mergeIsGated, ``plannedMergeIsGated, ``ownerEntryIsTheirLastWord,
+      ``keptEntryIsTheOwners, ``onlyLandOrHoldChangesTheWord, ``wordStandsIsTheEntry,
+      ``unenforcedLandsNothing, ``holdWins, ``agentKeepsOwnerWord, ``onlyMergersQueue,
+      ``stuckDoesNotBlock, ``nextNeverWaits, ``nextIgnoresListingOrder, ``quietAfterRebase,
+      ``mem_queueOf, ``newestOwner_perm, ``toCarry_updaterForcePush] ++ fixtures.toList do
     for a in ← collectAxioms n do
       unless standard.contains a do
         throwError "{n} depends on the axiom {a}"

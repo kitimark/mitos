@@ -267,8 +267,8 @@ def stepOf (g : Global := g) (p : Pull := pull) (r : Reads := reads) (x : Git :=
 def step0 : Land.Step := stepOf
 def carried : String := "PASS opus-xhigh carried from `5c258d6`, author sonnet"
 
-theorem allReadAndCoveredIsPresented : step0 = .present hB := by decide +kernel
-theorem theOwnersLandIsTheEntry : o0.words = [.ownerLand ⟨1800, hB⟩] := by decide +kernel
+theorem allReadAndCoveredIsPresented : step0 = .stop .noEntry := by decide +kernel
+theorem theOwnersLandIsTheEntry : o0.words = [.ownerLand ⟨1800, hB, false⟩] := by decide +kernel
 theorem unreadCommentsHold : stepOf (r := { reads with comments := none }) = .stop .held := by
   decide +kernel
 theorem unreadReviewCommentsHold :
@@ -321,14 +321,14 @@ theorem anOpusAuthorIsNotCoveredByItsOwnModel :
 theorem noAuthorNoteIsNotEligible :
     stepOf (g := withRow "PASS opus-xhigh at `85b0781`") = .stop .notEligible := by decide +kernel
 theorem aVerdictOnAnOlderHeadCarriesOverTheUpdatersPush :
-    stepOf (g := withRow carried) = .present hB := by decide +kernel
+    stepOf (g := withRow carried) = .stop .noEntry := by decide +kernel
 theorem aVerdictOnOtherContentDoesNotCarry :
     stepOf (g := withRow carried) (x := ⟨[(hB, "id-1"), (hA, "id-2")], .current⟩) =
       .stop .notEligible := by decide +kernel
 theorem anOwnerQuestionWithoutAnswerIsNotEligible :
     stepOf (r := withComments [question, land]) = .stop .notEligible := by decide +kernel
 theorem anAnsweredOwnerQuestionIsEligible :
-    stepOf (r := withComments [question, answer 20261114075930, land]) = .present hB := by
+    stepOf (r := withComments [question, answer 20261114075930, land]) = .stop .noEntry := by
   decide +kernel
 theorem anAnswerInTheSameSecondIsNoAnswer :
     stepOf (r := withComments [question, answer 20261114075900, land]) = .stop .notEligible := by
@@ -337,11 +337,11 @@ theorem anUnansweredReviewCommentIsNotEligible :
     stepOf (r := withReviewComments [⟨owner, none, 20261114075900, 20261114075900, "rename"⟩]) =
       .stop .notEligible := by decide +kernel
 theorem aLandAfterAByteOrderMarkNeedsNoAnswer :
-    stepOf (r := withComments [{ land with body := "﻿/land" }]) = .present hB := by
+    stepOf (r := withComments [{ land with body := "﻿/land" }]) = .stop .noEntry := by
   decide +kernel
 theorem anOtherLoginsCommentNeedsNoAnswer :
     stepOf (r := withReviewComments [⟨"someone", none, 20261114075900, 20261114075900, "rename"⟩]) =
-      .present hB := by decide +kernel
+      .stop .noEntry := by decide +kernel
 theorem aBodyWithoutTheFooterIsNotEligible :
     stepOf (p := { pull with body := "Why." }) = .stop .notEligible := by decide +kernel
 theorem aBodyWithTwoFootersIsNotEligible :
@@ -349,7 +349,7 @@ theorem aBodyWithTwoFootersIsNotEligible :
   decide +kernel
 theorem aSummaryBelowTheFooterIsPresented :
     stepOf (p := { pull with body := "Why." ++ footer ++ "\n\n## Summary by CodeRabbit\n" }) =
-      .present hB := by decide +kernel
+      .stop .noEntry := by decide +kernel
 theorem aSessionLinkIsNotEligible :
     stepOf (p := { pull with body := "Why. " ++ String.ofList sessionLink ++ "x" ++ footer }) =
       .stop .notEligible := by decide +kernel
@@ -358,7 +358,7 @@ theorem aSpecPathWithoutTheLabelIsNotEligible :
       .stop .notEligible := by decide +kernel
 theorem aSpecPathWithTheLabelIsPresented :
     stepOf (p := { pull with labels := ["spec-approved"] })
-      (r := { reads with files := some ["examples/acme/models.lock"] }) = .present hB := by
+      (r := { reads with files := some ["examples/acme/models.lock"] }) = .stop .noEntry := by
   decide +kernel
 theorem noBotReviewIsNotEligible :
     stepOf (r := { reads with reviews := some [] }) = .stop .notEligible := by decide +kernel
@@ -367,7 +367,7 @@ theorem aReviewByAnotherLoginIsNoBotReview :
       .stop .notEligible := by decide +kernel
 theorem aPassedRabbitCheckAtTheHeadIsAReview :
     stepOf (r := withChecks [gateRun, ⟨11, "CodeRabbit", "coderabbitai", hB, "completed", "success"⟩]) =
-      .present hB := by decide +kernel
+      .stop .noEntry := by decide +kernel
 theorem aRabbitCheckFromAnotherAppIsNoReview :
     botAt hB [⟨13, "CodeRabbit", "other-app", hB, "completed", "success"⟩] [] = none := by
   decide +kernel

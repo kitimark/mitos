@@ -243,6 +243,7 @@ def resultName : Result → String
 def wordJson : Word → Json
   | .ownerLand m => kind "ownerLand" [("said", n m.said), ("about", .str m.about)]
   | .ownerHold s => kind "ownerHold" [("said", n s)]
+  | .ownerSpoke s => kind "ownerSpoke" [("said", n s)]
   | .agentLand t m => kind "agentLand" [("who", teamJson t), ("said", n m.said), ("about", .str m.about)]
 
 def verdictJson (v : Verdict) : Json :=

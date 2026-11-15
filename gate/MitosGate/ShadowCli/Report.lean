@@ -75,7 +75,7 @@ def spreadText (s : Spread) : String := s!"{s.median} ({s.min}, p90 {s.p90}, {s.
 def pushes (rs : List Record) : Nat :=
   (rs.filterMap fun r => match plan (queueOf r.prs) with
     | .push p e x => some (p, e, x)
-    | .idle => none).eraseDups.length
+    | .merge _ _ | .idle => none).eraseDups.length
 
 def costLine (rs : List Record) : String :=
   let cs := rs.map (·.cost)

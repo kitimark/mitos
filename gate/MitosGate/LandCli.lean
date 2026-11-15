@@ -24,12 +24,14 @@ A pull request has the fields of `Land.Obs`: `pr`, `updatable`, `enforced`, `hea
 `base` (`{kind: current | conflict | mergedMain | unread}` or `{kind: clean, replay}`), `gate`,
 `author` (`{who, model}`, absent: not known), `verdicts` (each `{said, head, judge, model,
 result}`), `botAt` (absent: the bot has not reviewed), `delegates`, `words` (each `{kind:
-ownerLand, said, about}`, `{kind: ownerHold, said}` or `{kind: agentLand, who, said, about}`, in
-ascending comment id) and `rest`. An absent optional field says the safe thing: nothing is known,
-so nothing is covered, reviewed or unkept.
+ownerLand, said, about, approves}`, `{kind: ownerHold, said}`, `{kind: ownerSpoke, said}` or
+`{kind: agentLand, who, said, about}`, in ascending comment id) and `rest`. An absent optional
+field says the safe thing: nothing is known, so nothing is covered, reviewed, approved or unkept.
 
-The decision is `{"next": <pr or null>, "plan": ..., "step": ..., "wake": ...}`. `step` is there
-when the snapshot names `me` and `pr`, and `wake` when it names an `event`.
+The decision is `{"next": <pr or null>, "plan": ..., "step": ..., "word": ..., "wake": ...}`.
+`step` and `word` are there when the snapshot names `me` and `pr`, and `wake` when it names an
+`event`. `word` is `Land.Obs.word` of that pull request: `none`, `held`, `unnamed`, `spoke`,
+`stale` or `stands`.
 
 What this module checks, and the decision does not: every object has only the keys it defines and
 every value its type; a commit is 1 to 64 letters and digits (so no printed line holds text that a
@@ -135,11 +137,13 @@ private def author : D Author := fun j => do
   return ⟨← at' "who" teammate j, ← at' "model" str j⟩
 
 private def word : D Word := tagged
-  [("ownerLand", ["said", "about"], fun j => do
-      return .ownerLand ⟨← at' "said" nat j, ← at' "about" sha j⟩),
+  [("ownerLand", ["said", "about", "approves"], fun j => do
+      return .ownerLand ⟨← at' "said" nat j, ← at' "about" sha j,
+        (← opt "approves" bool j).getD false⟩),
    ("ownerHold", ["said"], fun j => return .ownerHold (← at' "said" nat j)),
+   ("ownerSpoke", ["said"], fun j => return .ownerSpoke (← at' "said" nat j)),
    ("agentLand", ["who", "said", "about"], fun j => do
-      return .agentLand (← at' "who" teammate j) ⟨← at' "said" nat j, ← at' "about" sha j⟩)]
+      return .agentLand (← at' "who" teammate j) ⟨← at' "said" nat j, ← at' "about" sha j, false⟩)]
 
 private def base : D Base := tagged
   [("current", [], fun _ => return .current),
@@ -214,14 +218,14 @@ def Snapshot.check (s : Snapshot) : Except String Unit := do
 structure Decision where
   next : Option Pr
   plan : Plan
-  step : Option Step
+  step : Option (Step × OwnerWord)
   wake : Option Wake
 
 def Snapshot.decide (s : Snapshot) : Decision :=
   let q := queueOf s.prs
   { next := (Land.next q).map (·.2.pr), plan := plan q,
     step := match s.me, s.pr with
-      | some me, some p => (s.prs.find? (·.pr == p)).map (step me q)
+      | some me, some p => (s.prs.find? (·.pr == p)).map fun o => (step me q o, o.word)
       | _, _ => none,
     wake := s.event.map (wakeOf s.prs) }
 
@@ -234,6 +238,7 @@ def planJson : Plan → Json
   | .push pr expect replay =>
     kind "push" [("pr", n pr), ("expect", .str expect), ("replay", .str replay)]
   | .idle => kind "idle"
+  | .merge pr head => kind "merge" [("pr", n pr), ("head", .str head)]
 
 def stuckName : Stuck → String
   | .conflict => "conflict" | .contentChanged => "contentChanged" | .red => "red"
@@ -255,6 +260,10 @@ def stepJson : Step → Json
   | .present head => kind "present" [("head", .str head)]
   | .stop why => stopJson why
 
+def wordName : OwnerWord → String
+  | .none => "none" | .held => "held" | .unnamed => "unnamed" | .spoke => "spoke"
+  | .stale => "stale" | .stands => "stands"
+
 def wakeJson : Wake → Json
   | .nobody => kind "nobody"
   | .lander pr => kind "lander" [("pr", n pr)]
@@ -264,7 +273,7 @@ def wakeJson : Wake → Json
 def Decision.json (d : Decision) : Json :=
   Json.mkObj <|
     [("next", d.next.elim Json.null n), ("plan", planJson d.plan)] ++
-    (d.step.map fun s => [("step", stepJson s)]).getD [] ++
+    (d.step.map fun (s, w) => [("step", stepJson s), ("word", .str (wordName w))]).getD [] ++
     (d.wake.map fun w => [("wake", wakeJson w)]).getD []
 
 def read (text : String) : Except String Snapshot := do

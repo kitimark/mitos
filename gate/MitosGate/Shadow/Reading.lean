@@ -22,7 +22,7 @@ def outsider (o : Obs) : { t : Teammate // o.mayMerge t = false } :=
 def fresh (os : List Obs) : Nat := (os.flatMap fun o => o.words.map Word.said).foldr max 0 + 1
 
 def withWord (said : Nat) (o : Obs) : Obs :=
-  { o with words := o.words ++ [.ownerLand ⟨said, o.head⟩] }
+  { o with words := o.words ++ [.ownerLand ⟨said, o.head, true⟩] }
 
 inductive Reading
   | asRead (step : Step)
@@ -43,7 +43,7 @@ def reading (os : List Obs) (o : Obs) : Reading :=
 def ReadyIsOneWordFromLanding : Prop :=
   ∀ (me : Teammate) (q : Queue) (o : Obs) (said : Nat),
     step me q o = .stop .noEntry → (∀ w ∈ o.words, w.said < said) →
-    landable (⟨o.pr, ⟨said, o.head⟩, .owner⟩, withWord said o) = true
+    landable (⟨o.pr, ⟨said, o.head, true⟩, .owner⟩, withWord said o) = true
 
 def TheWordIsOnlyAssumedWhenReady : Prop :=
   ∀ (os : List Obs) (o : Obs),
@@ -55,7 +55,7 @@ theorem walk_self (v : String) (ps : List Carry.Push) : Carry.walk v v ps = true
 theorem newestOwner_append_land (m : Mark) :
     ∀ ws : List Word, (∀ w ∈ ws, w.said < m.said) →
       newestOwner (ws ++ [.ownerLand m]) = some (.ownerLand m)
-  | [], _ => by simp [newestOwner, Word.byOwner]
+  | [], _ => by simp [newestOwner, Word.decides]
   | w :: ws, h => by
     have ih := newestOwner_append_land m ws (fun x hx => h x (List.mem_cons_of_mem _ hx))
     have hw : w.said < m.said := h w (List.mem_cons_self ..)
@@ -99,10 +99,16 @@ theorem readyIsOneWordFromLanding : ReadyIsOneWordFromLanding := by
     simp only [Obs.eligibleBeforeRebase, Bool.and_eq_true] at he
     exact he.1.1.2
   have hid := covered_head_id hcov
-  have hn := newestOwner_append_land ⟨said, o.head⟩ o.words hs
+  have hn := newestOwner_append_land ⟨said, o.head, true⟩ o.words hs
+  have hsp : spokeSince (o.words ++ [.ownerLand ⟨said, o.head, true⟩]) said = false := by
+    simp only [spokeSince, List.any_append, List.any_cons, List.any_nil, Bool.or_false,
+      List.any_eq_false]
+    intro w hw
+    have := hs w hw
+    cases w <;> simp_all [Word.said] <;> omega
   simp only [landable, Entry.valid, Bool.and_eq_true]
   refine ⟨⟨⟨?_, he⟩, ?_⟩, ?_⟩
-  · simp only [Obs.entries, withWord, hn]
+  · simp only [Obs.entries, withWord, hn, hsp]
     simp
   · show (Carry.walk o.head o.head (o.pushes.map Push.toCarry) && (o.id? o.head).isSome &&
       o.id? o.head == o.id? o.head) = true
