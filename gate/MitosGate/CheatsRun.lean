@@ -225,9 +225,10 @@ def resolveDir (root : System.FilePath) (specified : Option String) : System.Fil
     let path := System.FilePath.mk p
     if path.isAbsolute then path else root / path
 
+/-- A symlink is not a log, even when its target is a regular file. `metadata` would follow it. -/
 def isRegular (p : System.FilePath) : IO Bool := do
   if !(← p.pathExists) then return false
-  return (← p.metadata).type == .file
+  return (← p.symlinkMetadata).type == .file
 
 def runShard (o : Options) (usage : String) : IO UInt32 := do
   if !o.cases.isEmpty then
