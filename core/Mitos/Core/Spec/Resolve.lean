@@ -1,4 +1,4 @@
-import Mitos.Core.Graph
+import Mitos.Core.Spec.Derivations
 
 namespace Mitos.Spec
 

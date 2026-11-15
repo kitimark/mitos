@@ -15,10 +15,6 @@ theorem total_of_complete_unresolved {R : Resolver} (hc : Spec.Complete R)
     · rfl
     · exact absurd ⟨p, hp, hm⟩ h
 
-theorem wellFormed_retract {fs : List Located} (a : Assumption) (wf : WellFormed fs) :
-    WellFormed (retract a fs) :=
-  List.Nodup.sublist (List.Sublist.map _ List.filter_sublist) wf
-
 theorem contains_false_iff {l : List Assumption} {a : Assumption} :
     (!l.contains a) = true ↔ a ∉ l := by
   simp
