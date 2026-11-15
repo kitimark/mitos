@@ -1,0 +1,1 @@
+{"task":"mutants-216-231","role":"owner","model":"claude-sonnet-5-5","attempt":1,"iterations":2,"wall_min":25,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Retargeted impact_reversed to the post-215 guard (#216) and added unresolved_duplicated and impact_repeats_repo (#231); each case refuted by its own theorem."}
