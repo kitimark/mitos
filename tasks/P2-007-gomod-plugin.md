@@ -5,7 +5,7 @@ goal: `GoMod.extractor` emits exactly the facts `Models.GoMod.model` holds, in f
 statement: `GoMod.anchored`, `GoMod.sound` and `GoMod.complete`, as the gate's generated Challenge states them; the plugin's own `GoMod.run_eq`
 touches: examples/acme/Plugins/GoMod.lean, examples/acme/accepted/GoMod.json (written by the gate, last), this file, ops/runs/
 must_not_touch: examples/acme/Models/, examples/acme/models.lock, examples/acme/accepted/ToyRequire.json, core/, statements.lock, gate/, eval/, .github/, plan/
-checks: acme build, plugin lint, `lock-models --check`, the record check (check 6), the golden run (F3), the Go run (F4), accept GoMod with --paranoid --record at the head after the last rebase
+checks: acme build, plugin lint, `lock-models --check`, the changed paths (check 5), the record check (check 6), the golden run (F3), the Go run (F4), the run-log check (check 8), `plan-tasks.test.sh` (check 9), accept GoMod with --paranoid --record at the head after the last rebase
 budget: 15 iterations · 2h wall · 1M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
@@ -361,8 +361,8 @@ From the repository root, at the head after the last rebase.
    empty. The verifier makes that second run in its own worktree.
 5. `git diff --name-only origin/main...HEAD` prints only `examples/acme/Plugins/GoMod.lean`,
    `examples/acme/accepted/GoMod.json`, `tasks/P2-007-gomod-plugin.md` and files under `ops/runs/`.
-6. The record names the inputs of the head `h` itself. This needs no build and no checkout, only
-   a clone that has the commit, and it prints nothing:
+6. The record names the inputs of the head `h` itself, and says the run was `--paranoid`. This
+   needs no build and no checkout, only a clone that has the commit, and it prints nothing:
 
 ```
 h=<head>
@@ -373,11 +373,12 @@ core() {
     while IFS= read -r f; do printf '%s\n' "${f#core/}"; git show "$h:$f"; done
 }
 diff <(git show "$h:examples/acme/accepted/$p.json" |
-         jq -r '.toolchain, .plugin_sha256, .models_lock_sha256, .core_sha256') \
+         jq -r '.toolchain, .plugin_sha256, .models_lock_sha256, .core_sha256, .paranoid') \
      <(git show "$h:lean-toolchain"
        git show "$h:examples/acme/Plugins/$p.lean" | sha
        git show "$h:examples/acme/models.lock" | sha
-       core | sha)
+       core | sha
+       echo true)
 ```
 
    A printed line means the record is stale at `h`: run check 4 at that head and push the record.
@@ -409,7 +410,7 @@ The gate writes nine fields (`Accept.writeRecord`). At `main` a222e99:
 | `core_sha256` | `8ae154a0…edfb184`, as in `ToyRequire.json` | any `.lean` file under `core/Mitos/` changes; #277 moves it to `f7d74757…5e6cb9e` |
 | `challenge_sha256` | `f8358eed694771f11fcb8d9458b3c2b851e7e06b9181d492dbc01edd6e0d1eca` | `Accept.challenge` changes (`gate/`) |
 | `adequacy_challenge_sha256` | `092eb667328ff8b84068aa5987151963e1be324bf6e5c6e0b3a62d4360203b79` | `Accept.adequacyChallenge` changes (`gate/`) |
-| `paranoid` | `true` | a run without `--paranoid` writes `false`, which fails Done when |
+| `paranoid` | `true` | a run without `--paranoid` writes `false`, which fails check 6 and Done when |
 
 ### Risks and stop conditions
 
@@ -475,11 +476,11 @@ deferrals:
   or weakens it breaks P2-008's build. #275 item 3 (Go's lax parser) is recorded there.
 - To P2-009b (#211): the call site under Usage. Identity kind `go-module`, scope `runtime`
   (P2-006's deferrals).
-- To this PR's follow-up issue, no row (`core/Mitos/Core/Obligations.lean` is spec, and `gate/`
-  is the owner's): the three obligations are about membership, so the gate accepts a plugin that
-  reorders or repeats the model's facts (fixtures, wrong folds). The toy plugin has the same
-  freedom. Here `run_eq` pins order and count, and only a reader checks that it is there and
-  says what it should. Whether acceptance itself should pin them is the owner's call.
+- To #282, no row (`core/Mitos/Core/Obligations.lean` is spec, and `gate/` is the owner's): the
+  three obligations are about membership, so the gate accepts a plugin that reorders or repeats
+  the model's facts (fixtures, wrong folds). The toy plugin has the same freedom. Here `run_eq`
+  pins order and count, and only a reader checks that it is there and says what it should.
+  Whether acceptance itself should pin them is the owner's call.
 - From P2-006: its probe plugin, `run := Models.GoMod.facts`, is the smaller plugin of O1.
 - From #275: item 1 is check 6 and R1 here, and P2-012's step. Item 2 is wording in P2-006's
   task file, which this row does not touch. Item 3 is P2-008's.
@@ -488,12 +489,14 @@ owner_decisions:
 - Settled by the plan: the plugin is a fold over `Mitos.lines`; it proves anchored, sound and
   complete; `accepted/GoMod.json` is written last; an agent merges it. P2-006 has merged (#272),
   so there is no stack and the PR opens on `main`.
-- **O1, open. Keep the fold?** The model is itself a walk, so `run := Models.GoMod.facts` passes
+- **O1. Keep the fold?** The model is itself a walk, so `run := Models.GoMod.facts` passes
   the same gates with one-line proofs. Measured: the fold is 59 lines, and the probe is 18 as
   `tasks/P2-006-gomod-model.md` has it. The fold's accept took 2 min 12 s to 3 min 1 s over five
   runs, and the probe's 2 min 10 s, one run (F1), so these runs show no difference in time. The
-  fold proves the same list. Default: keep the fold, as the plan says, until the owner says
-  otherwise on #208.
+  fold proves the same list. The root took the default, keep the fold, when the row was built.
+  Reason: the plan names a fold over `Mitos.lines`, the runs show no cost in time, and nobody
+  asked otherwise on #208. This is the root's default, not an owner ruling, and #208's body
+  records it. If the owner answers "drop the fold" there, `revisit_when` says what changes.
 - This design's defaults, not owner rulings:
   - The fold's state is the structure `Scan`, not the contract's pair. Reason: the reversed list
     gets a name, at a cost of three lines.
@@ -543,16 +546,20 @@ and the obligations. The helpers are `private`.
 
 ### Alternatives considered
 
-- The pair state.
-- `foldr` with a function of the mode as its result.
-- A `foldl` that appends each fact (quadratic).
+- The pair state. Only the proof knew that its list is newest first; `Scan` names it.
+- `foldr` with a function of the mode as its result. The mode flows forward from the first line,
+  so each step returns a function, and the proof reasons about functions instead of a state.
+- A `foldl` that appends each fact (quadratic). Each append copies the list; consing and one
+  final `reverse` is linear.
 - Plain recursion. It copies `readingsFrom`, and it is not the fold the plan names.
-- `run := Models.GoMod.facts` (O1).
-- A plugin with its own tokenizer.
+- `run := Models.GoMod.facts` (O1). The plan names a fold, and O1 took its default.
+- A plugin with its own tokenizer. It states go.mod's rules a second time, which Problem rules
+  out; the fold calls `Mode.step`.
 
 ### Open questions and risks
 
-- O1 is open on #208, with its default as the Design states.
+- O1 took its default, keep the fold, as the root's default (owner_decisions); #208's body
+  records it.
 - Should acceptance itself pin order and count? That is filed as #282.
 - Not verified: the cheat corpus with the plugin present, CI, go.mod files outside one Go
   distribution, and accept times on an idle machine.
@@ -561,14 +568,34 @@ and the obligations. The helpers are `private`.
 
 Run S1, write the plugin from the sketch and the routes, then run check 1.
 
+### Build notes
+
+Built from `main` at 8f648ce on Lean v4.35.0, then rebased onto a7a666d, which changes
+`gate/MitosGate/ContentId.lean` and `eval/mutants/` only. S1 printed nothing at both, and
+`examples/acme`, `core/` and `lean-toolchain` are the same as at a222e99.
+- The plugin is the sketch with the five routes written in, and nothing else: 59 lines. Every
+  route closed as written, so `foldl_scanLine` kept its statement. No file outgrew its topic.
+- O1 took its default (owner_decisions).
+- Check 1 built `Plugins.GoMod` with no warning. Check 2: `0 violation(s)`. Check 3: 7 models.
+- F1, on 4 vCPU and 15 GiB, two runs: ACCEPTED in 3 min 11 s at 8f648ce (load average 15.5 at
+  its start) and in 3 min 29 s after the rebase (7.0), five kernels named on gate 5 each time. The
+  second run left `git status --porcelain examples/acme/accepted/` empty. The record's
+  `challenge_sha256` and `adequacy_challenge_sha256` are the values of the record table, and its
+  `models_lock_sha256` and `core_sha256` are `ToyRequire.json`'s.
+- F3 printed its three lines. F4, against `go mod edit -json` of Go 1.24.7: 19 files, 84 facts on
+  each side, no difference.
+- Not run locally: the cheat corpus, because no `gate/` or `eval/` file changes (CI runs it), and
+  `cd core && lake check` and `lake comparator --paranoid`, because `core/` does not change. The
+  fixture scorecard imports only `Plugins.ToyRequire`, so it cannot move.
+
 ## Done when
-- [ ] `VERDICT: ACCEPTED` for `--plugin GoMod --model Models.GoMod.model --paranoid --record` at
+- [x] `VERDICT: ACCEPTED` for `--plugin GoMod --model Models.GoMod.model --paranoid --record` at
       the head after the last rebase, with five kernels named on gate 5
-- [ ] `examples/acme/accepted/GoMod.json` committed as that run wrote it
-- [ ] the scratch run against `go mod edit -json` reported in the PR body
-- [ ] all `checks` pass locally
-- [ ] `GoMod.run_eq` as stated, with the three obligations proved through it
-- [ ] check 6 prints nothing at the head
-- [ ] F3 prints its three lines; F4: 19 files, 84 facts, no difference
-- [ ] no `sorry`, no new axioms
-- [ ] run-log record written (ops/runs/)
+- [x] `examples/acme/accepted/GoMod.json` committed as that run wrote it
+- [x] the scratch run against `go mod edit -json` reported in the PR body
+- [x] all `checks` pass locally
+- [x] `GoMod.run_eq` as stated, with the three obligations proved through it
+- [x] check 6 prints nothing at the head
+- [x] F3 prints its three lines; F4: 19 files, 84 facts, no difference
+- [x] no `sorry`, no new axioms
+- [x] run-log record written (ops/runs/)
