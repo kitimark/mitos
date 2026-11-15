@@ -1275,6 +1275,57 @@ Each new fixture fails on a mutant that brings the old shape back:
 - a refused snapshot read as `unreadable` fails the case "a snapshot this build refuses is drift"
   of `shadow-test.sh`.
 
+### Build notes, #263
+
+The follow-ups that #262's verifiers and CodeRabbit left in #263 and that lie in `Shadow/`,
+`shadow-test.sh` and its fixtures, built on `main` b6a9bfe. Items 4 (the runs line) and 7 (stamps
+that are no dates) of #263's comment stay there: their fix is in `ShadowCli/`.
+- `headOf` compares two trees that were read. `Record.tree?` is the tree the record read for a
+  commit, `none` when the recorder could not read it and left it out. A clean base gives
+  `replayedAsPlanned` when the record's tree for the replay and the merge's tree are both read and
+  equal, `replayedOtherwise` when both are read and differ, and `other`, which is blind, when
+  either is unread. The sketch's body, kept until now, gave `replayedOtherwise` for an unread tree,
+  so the report counted an other tree that the record does not show. The report still prints
+  `other` as "another head merged", which holds: the merged head is not the one the record saw.
+  `theReplayMergedIffItsTreeDid` and `anotherTreeIsTwoTreesRead` state both cases;
+  `aReplayWhoseTreeWasNotReadIsBlind`, `aTreeOfAnotherCommitIsNotTheReplays` and
+  `aMergeWhoseTreeWasNotReadIsBlind` pin them, and `anotherTreeIsNotAgreement` is still
+  `otherTree`.
+- `last` breaks a tie on `read` by the run (`Record.newer`): of two records read in one second,
+  the higher run's is used. Before, the later file in name order was, and names sort as text, so
+  run 999 won over run 1000. `PairedRecordPrecedesTheMerge` bounds the run on a tie, and
+  `SeatIgnoresRecordOrder` assumes only that no two records share both the second and the run.
+  `aTieOnReadGoesToTheLaterRun` and `aTieOnReadGoesToTheLaterRunInEitherOrder`.
+- `PeakBoundsEveryWindow` holds for every start, not only a recorded read: a window holds no more
+  than the window that starts at its first read (`exists_first`, `sum_filter_le`).
+- `theAssumedCountIsTheMergesOneWordAway`: the tally's `assumed` counts the merges whose seat
+  reads one word away.
+- `shadow-test.sh` adds 13 cases: the merges line of the real record; a push that two records
+  plan, counted once; a cancelled run that left a record, not superseded; five cases of a replay's
+  tree (merged, unread in the record, read for another commit, unread in the merge, another tree);
+  a tie on `read` between runs 999 and 1000; every read of `shadow-fetch.sh` under
+  `timeout -k 5 120`; and a failed read of the runs, the artifacts list and a merge's commit. The
+  fake's second activity page links a third, which the pager must not read.
+
+Each change fails on a mutant that brings the old shape back:
+- the old `headOf` body fails `theReplayMergedIffItsTreeDid` and `anotherTreeIsTwoTreesRead`, and
+  with those removed, three cases of `shadow-test.sh` (the unread trees and the other commit);
+- `last` without the run fails `last_some` and `aTieOnReadGoesToTheLaterRun`, and with those
+  removed, the case of runs 999 and 1000;
+- the `assumed` count flipped in `Tally.add` fails `theAssumedCountIsTheMergesOneWordAway`, and
+  with it removed, the case of the merges line;
+- `pushes` without `eraseDups`, and the superseded count without the recorded check, each fail
+  their case;
+- `shadow-fetch.sh` with no `timeout` in `api`, no `|| failed` on the tree read, a failed
+  artifacts list or runs page read ignored, or no stop at the window in the activity pager each
+  fail one case.
+
+`window.expected` is byte-identical. Over the real records of 2026-11-15 (144 records, 21
+merges), this build and `main`'s print the same report: no seated record had a clean base whose
+head differed from the merged one. A real record of that day with a clean base (#283, run
+43693776396), paired with a merge of its replay, reads "its replay merged" on both builds; with
+its tree removed, `main` reads "other tree" and this build reads "blind".
+
 ## Done when
 - [ ] PR 1 merged: a dispatch run of `decide` on `main` leaves a record whose `unread` lists what
       the workflow token cannot read, and a comment from another login starts no job

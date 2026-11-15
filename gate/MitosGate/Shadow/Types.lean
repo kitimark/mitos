@@ -13,6 +13,9 @@ instance : LT Stamp := ⟨fun a b => a.digits < b.digits⟩
 instance : LE Stamp := ⟨fun a b => a.digits ≤ b.digits⟩
 instance (a b : Stamp) : Decidable (a < b) := inferInstanceAs (Decidable (a.digits < b.digits))
 
+theorem Stamp.eq_iff {a b : Stamp} : a = b ↔ a.digits = b.digits :=
+  ⟨congrArg Stamp.digits, fun h => by cases a; cases b; cases h; rfl⟩
+
 def days (y m d : Nat) : Nat :=
   let y := if m ≤ 2 then y - 1 else y
   let era := y / 400
