@@ -296,10 +296,11 @@ theorem Outcome.parse_judged {code : UInt32} {out : String} {f : Failure}
   · simp only [h1, Bool.false_eq_true, ↓reduceIte] at h
     exact absurd (Outcome.failed.inj h).symm hf
 
-/-! Each outcome, from the last lines of a real run as the gate prints them, without its `  | `
-prefix. Unless its comment says otherwise, the text is from the named log in CI's `cheat-logs`
-artifact for main at c79e03f. The exit codes are the ones Lake's `CLI/Check.lean` returns: 0 for an
-accepted run, 1 for any error once the run has started. -/
+/-! Each outcome, from the last lines of a run as the gate prints them, without its `  | ` prefix.
+An example whose comment names a log takes its text from that log in CI's `cheat-logs` artifact
+for main at c79e03f, unless the comment says otherwise. The other examples are not from a cheat
+log. The exit codes are the ones Lake's `CLI/Check.lean` returns: 0 for an accepted run, 1 for any
+error once the run has started. -/
 
 -- The `cd core && lake comparator --paranoid` step of the same CI run: the gate prints no
 -- comparator output for an accepted run.
