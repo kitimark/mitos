@@ -26,19 +26,6 @@ inductive Status where
   | inferred
   deriving DecidableEq, Repr
 
-structure Edge where
-  requiringRepo    : String
-  providingRepo    : String
-  ident            : Identity
-  scope            : Scope
-  requiringFactId  : Nat
-  providingFactId  : Nat
-  assumes          : List Assumption
-  status           : Status
-  deriving DecidableEq, Repr
-
-def Edge.key (e : Edge) : Nat × Nat := (e.requiringFactId, e.providingFactId)
-
 inductive Derivation where
   | direct (requiringFactId providingFactId : Nat)
   deriving DecidableEq, Repr
@@ -55,6 +42,15 @@ structure RepoKey where
   ident         : Identity
   scope         : Scope
   deriving DecidableEq, Repr
+
+structure Edge extends repoKey : RepoKey where
+  requiringFactId  : Nat
+  providingFactId  : Nat
+  assumes          : List Assumption
+  status           : Status
+  deriving DecidableEq, Repr
+
+def Edge.key (e : Edge) : Nat × Nat := (e.requiringFactId, e.providingFactId)
 
 structure Resolution where
   edges      : List Edge
