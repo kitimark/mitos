@@ -217,7 +217,8 @@ four reads, the one `PUT` and the one read-back):
   or cache; no `github.event` in the job; `LAND_MERGE: 'on'` appears once, at workflow level.
 
 `land-report.test.sh` (stub `gh` allows only the comment reads and one post per pull request):
-- `each-answer-posts-its-body`, `the-same-first-line-posts-nothing` (both smoke-checked),
+- `each-answer-posts-its-body` with real newlines, `the-same-answer-posts-nothing`, and
+  `a-bare-land-after-a-push-posts-the-new-head` (all three smoke-checked),
   `the-newest-report-decides`, `one-post-per-pull-request-per-run`.
 - `a-forged-marker-is-ignored`: a marker comment from another login, from a user named like the
   bot, or without app `github-actions` does not suppress a post.
@@ -309,7 +310,11 @@ owner_decisions:
      `LAND_MERGE` is `on`, always with Workflows write, so a pull request that edits a workflow can
      merge.
   5. `LAND_MERGE: 'on'` is quoted, so no YAML 1.1 reader takes it for `true`.
-  6. A not-eligible answer joins its clauses on the first line, so a change of clause posts again.
+  6. `report` compares the whole body with the newest report, not only its first line (the
+     plan-time contract compared first lines; the amendment says one comment per change of
+     answer). So a bare `/land` answered again after a push posts the new head's line, and a
+     change of clause posts again. A line that carries the run link ("Merge call failed", "a read
+     failed") posts once per run that ends that way.
   7. `report` posts "Not merged yet" on an `apply` stop that may get no further trigger (digest,
      approval, a failed read) and once on the switch off; it stays silent on 405, 409 and a moved,
      closed or drafted pull request, whose next trigger plans again.
@@ -378,7 +383,7 @@ This PR touches a path you keep. To approve and merge it, comment only this line
 |---|---|---|---|---|
 | `decide` | no key; read-only `contents`, `pull-requests`, `issues`, `checks`, `actions`, as today | as today, no new read | the record (shape unchanged) and the outputs | Lean: `land` (recorded), then `land-answers` |
 | `apply` | the app key in `trusted`, minted only when `LAND_MERGE` is `on`; `github.token` with `contents`, `pull-requests`, `issues` read; group `land-apply`; runs only on `main`, on attempt 1, when `pr` is set | the pull request, then its three comment routes, with `github.token` | one `PUT` with the app token; `outcome` | only equality: its inputs against what it reads |
-| `report` | `contents: read`, `pull-requests: write`, no key, no group; runs when `decide` succeeded and there is an answer or a planned merge | each answered pull request's issue comments, just before posting | at most one comment per pull request | only "is the first line new?" |
+| `report` | `contents: read`, `pull-requests: write`, no key, no group; runs when `decide` succeeded and there is an answer or a planned merge | each answered pull request's issue comments, just before posting | at most one comment per pull request | only "is this answer new?" (the whole body) |
 
 `report`'s answer for the planned pull request, which `decide` does not answer:
 
@@ -558,8 +563,9 @@ run writes no output, so nothing acts):
 handoff() {
   local merge pr='' head='' approval='' digest='' answers
   "$gate" land-answers "$out/snapshot.json" >"$out/answers.json" 2>"$out/answers.err" || return 1
+  jq -e 'type == "object" and has("merge") and has("answers")' "$out/answers.json" >/dev/null || return 1
   answers=$(jq -ce '.answers | arrays' "$out/answers.json") && [ "${#answers}" -le 65536 ] || return 1
-  merge=$(jq -ce '.merge' "$out/answers.json") || return 1
+  merge=$(jq -c '.merge' "$out/answers.json") || return 1   # null when nothing merges: no -e
   # land's plan and land-answers' handoff name the same merge, or neither names one
   jq -e --argjson m "$merge" 'if .plan.kind == "merge"
     then $m != null and $m.pr == .plan.pr and $m.head == .plan.head else $m == null end' \
@@ -576,7 +582,10 @@ handoff() {
 handoff || { cat "$out/answers.err" >&2; printf 'land-decide: the handoff was not written\n' >&2; exit 1; }
 ```
 
-`land-decide.sh` still makes exactly two `gh` calls; the digest reads only the saved reads.
+`land-decide.sh` still makes exactly two `gh` calls; the digest reads only the saved reads. The
+function ran on fake reads: idle gives empty outputs and `answers=[]`; a merge gives `pr`, `head`,
+`approval` and the digest `apply` computes from the same reads; a disagreement with `land`, or a
+missing key, exits 1 with no output.
 
 `.github/scripts/land-apply.sh` (new; shellcheck-clean; every case marked smoke-checked above ran
 against a stub `gh`):
@@ -673,9 +682,8 @@ outcome '{kind: "failed", status: "none"}'
 #!/usr/bin/env bash
 # shellcheck disable=SC2016
 # Usage: .github/scripts/land-report.sh <owner/name>
-# land.yml's report: posts at most one comment per pull request, an answer whose first line differs
-# from that of the newest <!-- land-report --> comment github-actions posted there (amendment #178,
-# section 4). Env: GH_TOKEN, GITHUB_SERVER_URL, GITHUB_RUN_ID, LAND_ANSWERS (decide's list of
+# land.yml's report: posts at most one comment per pull request, an answer that differs from the
+# newest <!-- land-report --> comment github-actions posted there (amendment #178, section 4). Env: GH_TOKEN, GITHUB_SERVER_URL, GITHUB_RUN_ID, LAND_ANSWERS (decide's list of
 # {pr, line, body}), LAND_PR and LAND_HEAD (decide's planned merge, empty if none),
 # LAND_APPLY_RESULT and LAND_APPLIED (apply's job result and outcome).
 # Exit 0: every answer was read and posted as needed. Exit 1: a read or a post failed, or the merge
@@ -697,7 +705,7 @@ answers=$(jq -ce --arg m "$marker" --arg p "$pr" 'if type == "array" and length 
     type == "object" and keys == ["body", "line", "pr"] and (.pr | type == "number" and . >= 1
     and floor == .) and (.pr | tostring) != $p and (.line | type == "string" and length > 0
     and (contains("\n") | not)) and (.body | type == "string" and (contains("@") | not))
-    and (.body == $m + "\n" + .line or (.body | startswith($m + "\n" + .line + "\n"))))
+    and (.line as $l | .body == $m + "\n" + $l or (.body | startswith($m + "\n" + $l + "\n"))))
     and ([.[].pr] | length == (unique | length)) then sort_by(.pr) else error("bad") end' \
   <<<"${LAND_ANSWERS:-[]}" 2>/dev/null) || die "the answers are not of their shape"
 
@@ -727,27 +735,25 @@ fi
 
 tmp=$(mktemp -d) || die "cannot make a scratch folder"
 trap 'rm -rf -- "$tmp"' EXIT
-# post_due <pr> <first line> <body>: one read of the comments, then at most one post.
+# post_due <pr> <body>: one read of the comments, then a post unless the newest report is this body.
 post_due() {
-  local last
   timeout -k 5 120 gh api --paginate --slurp "repos/$repo/issues/$1/comments?per_page=100" \
     >"$tmp/c.json" 2>/dev/null </dev/null || return 1
-  last=$(jq -r --arg m "$marker" '[.[][] | select(.user.login == "github-actions[bot]"
+  jq -e 'type == "array" and all(.[]; type == "array")' "$tmp/c.json" >/dev/null 2>&1 || return 1
+  jq -e --arg m "$marker" --arg b "$2" '[.[][] | select(.user.login == "github-actions[bot]"
       and .user.type == "Bot" and .performed_via_github_app.slug == "github-actions"
-      and (.body | type == "string" and startswith($m + "\n")))] | max_by(.id)
-    | (.body // "") | split("\n")[1] // ""' "$tmp/c.json" 2>/dev/null) || return 1
-  [ "$last" = "$2" ] && return 0
-  timeout -k 5 120 gh api -X POST "repos/$repo/issues/$1/comments" -f "body=$3" \
+      and (.body | type == "string" and startswith($m + "\n")))] | max_by(.id) | .body == $b' \
+    "$tmp/c.json" >/dev/null 2>&1 && return 0
+  timeout -k 5 120 gh api -X POST "repos/$repo/issues/$1/comments" -f "body=$2" \
     >/dev/null 2>&1 </dev/null
 }
 problems=0
-while IFS=$'\t' read -r n line body; do
-  [ -n "$n" ] || continue
-  post_due "$n" "$line" "$(jq -r . <<<"$body")" \
-    || { printf 'land-report: #%s was not answered\n' "$n" >&2; problems=1; }
-done < <(jq -r '.[] | [.pr, .line, (.body | tojson)] | @tsv' <<<"$answers")
+while IFS= read -r item; do
+  n=$(jq -r .pr <<<"$item") body=$(jq -r .body <<<"$item")
+  post_due "$n" "$body" || { printf 'land-report: #%s was not answered\n' "$n" >&2; problems=1; }
+done < <(jq -c '.[]' <<<"$answers")
 if [ -n "$planned" ]; then
-  post_due "$pr" "${planned%%$'\n'*}" "$marker"$'\n'"$planned" \
+  post_due "$pr" "$marker"$'\n'"$planned" \
     || { printf 'land-report: #%s was not answered\n' "$pr" >&2; problems=1; }
 fi
 [ "$problems" = 0 ] && [ "$failed" = 0 ]
