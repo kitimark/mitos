@@ -25,7 +25,7 @@ def spokeInReview (g : Global) (r : Reads) (ws : List Word) : Bool :=
   match Land.newestOwner ws with
   | some (.ownerLand m) =>
     (r.comments.getD []).any fun c => 2 * c.id == m.said &&
-      (reviewPosts r).any fun s => speaks g s && decide (c.created ≤ max s.created s.updated)
+      (reviewPosts r).any fun s => speaks g s && decide (c.created ≤ s.lastSpoke)
   | _ => false
 
 def withReviewSpeech (g : Global) (p : Pull) (r : Reads) (ws : List Word) : List Word :=
@@ -172,7 +172,7 @@ theorem keptMergeIsTheOwnersTypedApproval : KeptMergeIsTheOwnersTypedApproval :=
     rcases Nat.lt_or_ge s.created c.created with hlt | hge
     · exact hlt
     · exact absurd (List.any_eq_true.2
-        ⟨s, hsm, by simp [hsp, Nat.le_trans hge (Nat.le_max_left _ _)]⟩) h4
+        ⟨s, hsm, by simp [hsp, Post.lastSpoke, Nat.le_trans hge (Nat.le_max_left _ _)]⟩) h4
 
 theorem failedReadHolds : FailedReadHolds := by
   intro g p r x hc
