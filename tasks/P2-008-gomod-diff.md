@@ -47,7 +47,7 @@ depth: build. The files under `types` are the whole runner and its two scripts, 
 every proof written: no `sorry`. The vendored data is named with the commands that fetch it, and
 each fetched `module.mod` is pinned by its go.sum hash. Built from a copy of `main` at `85981fe` on
 Lean v4.35.0: `lake --dir eval/diff build` succeeded (46 jobs, no warning under `warningAsError`),
-and the run printed the report under Usage. The named fixtures are F0 to F5 and T1 to T16.
+and the run printed the report under Usage. The named fixtures are F0 to F5 and T1 to T28.
 
 revisit_when: none. P2-006 and P2-007 have merged, and the names under `types` are theirs on
 `main`. Two later events touch this row, and neither is a redesign:
@@ -69,6 +69,8 @@ map reports it as a deviation and does not split silently.
   outputs. `--refresh` reads it, and it is the format `actions/setup-go` reads with
   `go-version-file` (A3).
 - `eval/diff/pins.tsv`: one header line and 13 pins (under `types`). The one list of cases.
+- `eval/diff/licences.tsv`: reviewed source URLs and SHA256 for LICENSE and each required NOTICE,
+  keyed to the pin's case, module, version and SPDX claim; no additional cases.
 - `eval/diff/triage.tsv`: one header line and the 2 rsc-quote lines (under `types`).
 - `eval/diff/cases/.gitattributes`: `* -text`, the line of `eval/fixtures/toy/.gitattributes`
   (plan, Shared files 5), so git never rewrites a vendored byte.
@@ -77,7 +79,7 @@ map reports it as a deviation and does not split silently.
   written by `--refresh` only. `LICENSE`, and `NOTICE` for grpc and prometheus: the repository's
   files at the version's tag. 110,605 bytes of go.mod, 206,746 of JSON, 80,851 of licence text.
 - `eval/diff/Diff/Compare.lean`: what one go.mod says as two ordered key lists, and the comparison
-  of two such, 67 lines. Pure, no imports. Copies the order of
+  of two such, 80 lines. Pure, no imports. Copies the order of
   `examples/acme/Plugins/GoMod.lean`: one namespace, the definitions, then the statements.
 - `eval/diff/Diff/Pins.lean`: the `pins.tsv` format, 24 lines. Copies
   `parseLabels` in `eval/score/Score.lean`.
@@ -94,9 +96,10 @@ map reports it as a deviation and does not split silently.
 - `eval/diff/Main.lean`: the shell, 64 lines: the `eval/diff` layout, the case
   list and the exit codes. Copies `eval/score/Main.lean`: a usage string, one directory argument,
   IO only.
-- `eval/diff/check-pins.sh` (39 lines, executable): the pins against their
-  bytes, with no Go; `--online` adds sum.golang.org.
-- `eval/diff/selftest.sh` (117 lines, executable): the exit codes and the
+- `eval/diff/check-pins.sh` (80 lines, executable): the pins against their
+  bytes and reviewed licence/NOTICE sources, with no Go; `--online` adds sum.golang.org and
+  refetches each source URL against its reviewed hash.
+- `eval/diff/selftest.sh` (162 lines, executable): the exit codes and the
   scripts, with no Go and no network.
 
 ### Usage (caller's view)
@@ -174,7 +177,9 @@ Call sites:
   printed under "Stale triage lines" and fails the run too, so the file only holds live findings.
 - Adding a pin (C is the case name, M the module path in lower case, V the version): the three
   fetches below, a row in `pins.tsv` whose hash column is the third field of the
-  sum.golang.org line, then `--refresh` and `check-pins.sh --online`.
+  sum.golang.org line, a reviewed `licences.tsv` row binding M/V and SPDX to the source URL and
+  SHA256 of LICENSE plus each required NOTICE, then `--refresh` and `check-pins.sh --online`.
+  Review the source grant and notice conditions first; an unclear licence stops at S3.
 
 ```
 mkdir eval/diff/cases/C
@@ -307,6 +312,28 @@ traefik	github.com/traefik/traefik/v3	v3.7.19	h1:cWOaosHycDsgqDQ3goeY6UxE47EfJ74
 zap	go.uber.org/zap	v1.28.0	h1:rDLpOi171uODNm/mxFcuYWxDsqWSAVkFdX4XojSKg/Q=	https://github.com/uber-go/zap	MIT
 ```
 
+`eval/diff/licences.tsv`, tab-separated. These reviewed source URLs, SPDX claims and exact bytes
+bind the licence decision to each module version. A builder verifies the licence grant and notices
+at each source before accepting or changing a row; a hash preserves that review, not a legal
+classification inferred by the checker. An absent or ambiguous grant still stops at S3.
+
+```text
+# case	module	version	licence (SPDX)	LICENSE URL	LICENSE SHA256	NOTICE URL (- if none)	NOTICE SHA256 (- if none)
+argo-cd	github.com/argoproj/argo-cd/v3	v3.6.1	Apache-2.0	https://raw.githubusercontent.com/argoproj/argo-cd/v3.6.1/LICENSE	c996fc213c94f4a4a838407d355b081226caa7b103a4f239bb87fb8f1d8e3a60	-	-
+cobra	github.com/spf13/cobra	v1.10.2	Apache-2.0	https://raw.githubusercontent.com/spf13/cobra/v1.10.2/LICENSE.txt	5e3400b93bbb099e83e52bab885e7441750673c21f97988ca3f1240639b63283	-	-
+etcd	go.etcd.io/etcd/v3	v3.7.3	Apache-2.0	https://raw.githubusercontent.com/etcd-io/etcd/v3.7.3/LICENSE	43ca1b4bbf462789ba15b28373e0c536e510f49e4d05d85a7690cfee94de6f49	-	-
+gh-cli	github.com/cli/cli/v2	v2.104.0	MIT	https://raw.githubusercontent.com/cli/cli/v2.104.0/LICENSE	6da4adc42392c8485e40b4251c7e332fc3352df1947c9ffade71dd60b14a7a4f	-	-
+go-redis	github.com/redis/go-redis/v9	v9.23.0	BSD-2-Clause	https://raw.githubusercontent.com/redis/go-redis/v9.23.0/LICENSE	a3a7dff87da3927db65cb4c87b1cfbc96ca2755704461a485d457be7ae300a86	-	-
+gopls	golang.org/x/tools/gopls	v0.24.0	BSD-3-Clause	https://raw.githubusercontent.com/golang/tools/gopls/v0.24.0/LICENSE	911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad	-	-
+grpc	google.golang.org/grpc	v1.85.0	Apache-2.0	https://raw.githubusercontent.com/grpc/grpc-go/v1.85.0/LICENSE	cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30	https://raw.githubusercontent.com/grpc/grpc-go/v1.85.0/NOTICE.txt	693ff28ec216d5112ac1bbfe64ef539005867d1c7bd427b57d579683293b947f
+kubernetes	k8s.io/kubernetes	v1.37.2	Apache-2.0	https://raw.githubusercontent.com/kubernetes/kubernetes/v1.37.2/LICENSE	cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30	-	-
+prometheus	github.com/prometheus/prometheus	v0.316.0	Apache-2.0	https://raw.githubusercontent.com/prometheus/prometheus/v0.316.0/LICENSE	c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4	https://raw.githubusercontent.com/prometheus/prometheus/v0.316.0/NOTICE	ac9e304462a58a4d71b6488423d4447e614c8b31d517fe24345016522c102a78
+rsc-quote	rsc.io/quote	v1.5.2	BSD-3-Clause	https://raw.githubusercontent.com/rsc/quote/v1.5.2/LICENSE	2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067	-	-
+tailscale	tailscale.com	v1.104.7	BSD-3-Clause	https://raw.githubusercontent.com/tailscale/tailscale/v1.104.7/LICENSE	a7ca6186a7963a0a60740f6047760eecd7a0234e8c38bd7e1e0bbcb324bda45b	-	-
+traefik	github.com/traefik/traefik/v3	v3.7.19	MIT	https://raw.githubusercontent.com/traefik/traefik/v3.7.19/LICENSE.md	c33e29340498ccde22ba0ab9537d6eb0aa3a2eae0dda61bb6df31df6a032fa5b	-	-
+zap	go.uber.org/zap	v1.28.0	MIT	https://raw.githubusercontent.com/uber-go/zap/v1.28.0/LICENSE	c2b97b3281be272711909076c8402499b4b5a3216196af47a25b1d3674d86152	-	-
+```
+
 `eval/diff/triage.tsv`, where `#<n>` is the issue of S2 (a builder writes the number; the sketch
 was built with `#999`):
 
@@ -352,7 +379,7 @@ LIST
   Versions are not read (the plan's subset), and a fact's span is proved anchored by the plugin, so
   keys are all there is to compare. An empty `Module.Path` means no `module` line, so no key.
 - A `Mismatch` is a path only Go has or only the plugin has (`onlyIn`, repeats counted), or the
-  same paths in another order (`order`). `Finding` adds the case. `Triage` adds the issue. A triage
+  shared paths in another order (`order`). `Finding` adds the case. `Triage` adds the issue. A triage
   line covers every occurrence of its mismatch.
 - An `UnreadLine` is a 1-based line number and the line's text, for each line the model reads as
   `Reading.unread`. The opener and the closer of a block the model does not read (`replace (`,
@@ -385,13 +412,17 @@ inductive Mismatch where
 
 def unmatched (xs ys : List String) : List String := ys.foldl List.erase xs
 
+def shared (xs ys : List String) : List String :=
+  (unmatched xs.reverse (unmatched xs ys)).reverse
+
 def compareList (directive : Directive) (plugin go : List String) : List Mismatch :=
   if plugin = go then []
   else
     let onlyGo := unmatched go plugin
     let onlyPlugin := unmatched plugin go
     if onlyGo.isEmpty && onlyPlugin.isEmpty then [.order directive]
-    else onlyGo.map (.onlyIn .go directive) ++ onlyPlugin.map (.onlyIn .plugin directive)
+    else onlyGo.map (.onlyIn .go directive) ++ onlyPlugin.map (.onlyIn .plugin directive) ++
+      if shared plugin go = shared go plugin then [] else [.order directive]
 
 def compare (plugin go : Keys) : List Mismatch :=
   compareList .module plugin.modules go.modules ++
@@ -408,7 +439,7 @@ theorem compareList_eq_nil {directive : Directive} {plugin go : List String} :
     · rename_i hne
       intro hnil
       simp only [List.append_eq_nil_iff, List.map_eq_nil_iff] at hnil
-      simp [hnil.1, hnil.2] at hne
+      simp [hnil.1.1, hnil.1.2] at hne
 
 theorem compare_eq_nil {plugin go : Keys} : compare plugin go = [] ↔ plugin = go := by
   rw [compare, List.append_eq_nil_iff, compareList_eq_nil, compareList_eq_nil]
@@ -426,6 +457,15 @@ theorem compare_eq_nil {plugin go : Keys} : compare plugin go = [] ↔ plugin = 
 
 #guard compare ⟨["m"], ["a", "x"]⟩ ⟨["m"], ["a", "y"]⟩ ==
   [.onlyIn .go .require "y", .onlyIn .plugin .require "x"]
+
+#guard compare ⟨["m"], ["a", "b"]⟩ ⟨["m"], ["b", "a", "c"]⟩ ==
+  [.onlyIn .go .require "c", .order .require]
+
+#guard compare ⟨["m"], ["a", "b", "x"]⟩ ⟨["m"], ["b", "a", "c"]⟩ ==
+  [.onlyIn .go .require "c", .onlyIn .plugin .require "x", .order .require]
+
+#guard compare ⟨["m"], ["a", "b", "a"]⟩ ⟨["m"], ["a", "b"]⟩ ==
+  [.onlyIn .plugin .require "a"]
 
 end Diff
 ```
@@ -686,7 +726,7 @@ theorem verdict_clean {reports : List CaseReport} {triage : List Triage} :
 def Mismatch.describe : Mismatch → String
   | .onlyIn .go directive path => s!"{directive.name} `{path}`: only in Go"
   | .onlyIn .plugin directive path => s!"{directive.name} `{path}`: only in the plugin"
-  | .order directive => s!"{directive.name}: the same paths in another order"
+  | .order directive => s!"{directive.name}: shared paths in another order"
 
 def Keys.count (k : Keys) : Nat := k.modules.length + k.requires.length
 
@@ -821,8 +861,40 @@ fi
 status=0
 problem() { echo "$1: $2" >&2; status=1; }
 [ -r pins.tsv ] || { echo "check-pins.sh: cannot read pins.tsv" >&2; exit 2; }
+[ -r licences.tsv ] || { echo "check-pins.sh: cannot read licences.tsv" >&2; exit 2; }
+declare -A modules versions spdx licence_urls licence_hashes notice_urls notice_hashes used
+while IFS=$'\t' read -r c m v l lu lh nu nh extra || [ -n "$c" ]; do
+  case $c in ''|'#'*) continue ;; esac
+  case $c in *[!a-zA-Z0-9_-]*) echo "check-pins.sh: bad licence case $c" >&2; exit 2 ;; esac
+  if [ -n "${modules[$c]+listed}" ] || [ -n "$extra" ] ||
+      [ -z "$m" ] || [ -z "$v" ] || [ -z "$l" ] ||
+      [ -z "$lu" ] || [ -z "$lh" ] || [ -z "$nu" ] || [ -z "$nh" ]; then
+    echo "check-pins.sh: malformed or duplicate licence row for $c" >&2; exit 2
+  fi
+  modules[$c]=$m; versions[$c]=$v; spdx[$c]=$l
+  licence_urls[$c]=$lu; licence_hashes[$c]=$lh; notice_urls[$c]=$nu; notice_hashes[$c]=$nh
+done < licences.tsv
+check_source() {
+  local c=$1 name=$2 url=$3 hash=$4 actual
+  if [ ! -s "cases/$c/$name" ]; then problem "$c" "no $name"; return; fi
+  actual=$(sha256sum < "cases/$c/$name" | cut -d' ' -f1)
+  [ "$actual" = "$hash" ] || problem "$c" "$name differs from reviewed source $url"
+  if $online; then
+    if actual=$(curl -sSf --retry 3 "$url" | sha256sum | cut -d' ' -f1); then
+      [ "$actual" = "$hash" ] || problem "$c" "$name source differs from reviewed hash: $url"
+    else problem "$c" "cannot fetch $name source: $url"; fi
+  fi
+}
+count=0
 while IFS=$'\t' read -r c m v h _ l || [ -n "$c" ]; do
   case $c in ''|'#'*) continue ;; esac
+  case $c in *[!a-zA-Z0-9_-]*) echo "check-pins.sh: bad pin case $c" >&2; exit 2 ;; esac
+  count=$((count + 1))
+  if [ -z "${modules[$c]+listed}" ]; then problem "$c" "no reviewed licence row"; continue; fi
+  used[$c]=yes
+  if [ "$m" != "${modules[$c]}" ] || [ "$v" != "${versions[$c]}" ] || [ "$l" != "${spdx[$c]}" ]; then
+    problem "$c" "pin does not match reviewed licence metadata"
+  fi
   f=cases/$c/module.mod
   if [ ! -f "$f" ]; then problem "$c" "no module.mod"; continue; fi
   got="h1:$(printf '%s  go.mod\n' "$(sha256sum < "$f" | cut -d' ' -f1)" | openssl dgst -sha256 -binary | base64)"
@@ -831,7 +903,12 @@ while IFS=$'\t' read -r c m v h _ l || [ -n "$c" ]; do
     sum=$(curl -sSf --retry 3 "https://sum.golang.org/lookup/$m@$v" | grep -F "$m $v/go.mod " | cut -d' ' -f3)
     [ "$sum" = "$h" ] || problem "$c" "pins.tsv says $h, sum.golang.org says $sum"
   fi
-  [ -s "cases/$c/LICENSE" ] || problem "$c" "no LICENSE"
+  check_source "$c" LICENSE "${licence_urls[$c]}" "${licence_hashes[$c]}"
+  if [ "${notice_urls[$c]}" != - ]; then
+    check_source "$c" NOTICE "${notice_urls[$c]}" "${notice_hashes[$c]}"
+  elif [ "${notice_hashes[$c]}" != - ]; then
+    problem "$c" "NOTICE hash without a source URL"
+  fi
   case $l in
     Apache-2.0|BSD-2-Clause|BSD-3-Clause|MIT) ;;
     *) problem "$c" "licence $l is not one of the four the design allows; the owner decides" ;;
@@ -840,6 +917,10 @@ while IFS=$'\t' read -r c m v h _ l || [ -n "$c" ]; do
     *[A-Z]*) problem "$c" "module path has an upper-case letter, which the proxy escapes" ;;
   esac
 done < pins.tsv
+[ "$count" -gt 0 ] || { echo "check-pins.sh: pins.tsv has no pins" >&2; exit 2; }
+for c in "${!modules[@]}"; do
+  [ -n "${used[$c]+checked}" ] || problem "$c" "reviewed licence row has no pin"
+done
 exit "$status"
 ```
 
@@ -905,7 +986,7 @@ printf 'ok\tonly-in-go\trequire\texample.com/gone\t#7\n' > "$d/triage.tsv"
 expect 1 "Stale triage lines, which match no mismatch"
 
 fresh; pin pair "$pairmod" "$swappedjson"
-expect 1 "require: the same paths in another order"
+expect 1 "require: shared paths in another order"
 
 fresh; pin ok "$okmod" "$okjson"; rm "$d/cases/ok/module.json"
 expect 2 "module.json"
@@ -942,6 +1023,7 @@ cp "$here/check-pins.sh" "$tmp/check-pins.sh"
 mkdir -p "$tmp/cases"
 cp -r "$here/cases/cobra" "$tmp/cases/cobra"
 awk -F'\t' '$1 == "cobra"' "$here/pins.tsv" > "$tmp/pins.tsv"
+awk -F'\t' '$1 == "cobra"' "$here/licences.tsv" > "$tmp/licences.tsv"
 "$tmp/check-pins.sh" > /dev/null
 echo "ok: check-pins.sh accepts a pin as committed"
 printf '\n' >> "$tmp/cases/cobra/module.mod"
@@ -960,9 +1042,53 @@ got=0
 grep -qF "cannot read pins.tsv" "$tmp/err"
 echo "ok: check-pins.sh refuses a missing pins.tsv"
 awk -F'\t' '$1 == "cobra"' "$here/pins.tsv" | sed 's/\tApache-2.0$/\tGPL-3.0/' | tr -d '\n' > "$tmp/pins.tsv"
-if "$tmp/check-pins.sh" 2> "$tmp/err"; then echo "FAIL: check-pins.sh skipped a last row with no newline" >&2; exit 1; fi
+got=0
+"$tmp/check-pins.sh" 2> "$tmp/err" || got=$?
+[ "$got" = 1 ] || { echo "FAIL: check-pins.sh exited $got for a last row with no newline, wanted 1" >&2; exit 1; }
 grep -qF "licence GPL-3.0" "$tmp/err"
 echo "ok: check-pins.sh checks a last row with no newline"
+
+mixedjson='{"Module":{"Path":"example.com/app"},"Require":[{"Path":"example.com/b","Version":"v1.0.0"},{"Path":"example.com/a","Version":"v1.0.0"},{"Path":"example.com/c","Version":"v1.0.0"}],"Exclude":null,"Replace":null,"Retract":null,"Tool":null}'
+fresh; pin mixed "$pairmod" "$mixedjson"
+expect 1 "require: shared paths in another order"
+grep -qF 'require `example.com/c`: only in Go' "$tmp/out"
+printf 'mixed\tonly-in-go\trequire\texample.com/c\t#7\n' > "$d/triage.tsv"
+expect 1 "$(printf 'mixed\torder\trequire\t-\t#?')"
+printf 'mixed\torder\trequire\t-\t#8\n' >> "$d/triage.tsv"
+expect 0 "Stale triage lines: none."
+
+pinexpect() {
+  local want=$1 needle=$2 got=0
+  "$tmp/check-pins.sh" 2> "$tmp/err" || got=$?
+  [ "$got" = "$want" ] || { echo "FAIL: $needle: exit $got, wanted $want" >&2; exit 1; }
+  grep -qF "$needle" "$tmp/err"
+  echo "ok: exit $want, $needle"
+}
+awk -F'\t' '$1 == "cobra"' "$here/pins.tsv" > "$tmp/pins.tsv"
+printf 'GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n' > "$tmp/cases/cobra/LICENSE"
+pinexpect 1 "LICENSE differs from reviewed source"
+sed -i 's/\tApache-2.0$/\tMIT/' "$tmp/pins.tsv"
+pinexpect 1 "pin does not match reviewed licence metadata"
+cp -r "$here/cases/grpc" "$tmp/cases/grpc"
+awk -F'\t' '$1 == "grpc"' "$here/pins.tsv" > "$tmp/pins.tsv"
+awk -F'\t' '$1 == "grpc"' "$here/licences.tsv" > "$tmp/licences.tsv"
+rm "$tmp/cases/grpc/NOTICE"
+pinexpect 1 "no NOTICE"
+printf 'changed notice\n' > "$tmp/cases/grpc/NOTICE"
+pinexpect 1 "NOTICE differs from reviewed source"
+: > "$tmp/pins.tsv"
+pinexpect 2 "pins.tsv has no pins"
+printf '# header only\n' > "$tmp/pins.tsv"
+pinexpect 2 "pins.tsv has no pins"
+awk -F'\t' '$1 == "grpc"' "$here/pins.tsv" > "$tmp/pins.tsv"
+cat "$tmp/licences.tsv" >> "$tmp/licences.tsv.copy"
+cat "$tmp/licences.tsv.copy" >> "$tmp/licences.tsv"
+pinexpect 2 "malformed or duplicate licence row"
+: > "$tmp/licences.tsv"
+pinexpect 1 "no reviewed licence row"
+awk -F'\t' '$1 == "grpc" || $1 == "cobra"' "$here/licences.tsv" > "$tmp/licences.tsv"
+cp "$here/cases/grpc/NOTICE" "$tmp/cases/grpc/NOTICE"
+pinexpect 1 "reviewed licence row has no pin"
 ```
 
 statements: every proof is in the files above and closes on v4.35.0. What each says:
@@ -1018,12 +1144,12 @@ fixtures:
 |---|---|---|
 | `laxBlockOpener` | `Plugin.lean` | the model reads `require a (` as requiring `a` (F3): modules `example.com/app`, requires `a` and `c/d` |
 | a file with no `module` line | `Plugin.lean` | no module key, one require key |
-| five `compare` cases | `Compare.lean` | equal lists give no mismatch; a rotation gives `order`; a path Go lists twice is `onlyIn go`; an empty module list against `,` is `onlyIn go module`; a swapped pair is `onlyIn go` for Go's path, then `onlyIn plugin` for the plugin's |
+| eight `compare` cases | `Compare.lean` | equal lists give no mismatch; a rotation gives `order`; a path Go lists twice is `onlyIn go`; an empty module list against `,` is `onlyIn go module`; a swapped pair is `onlyIn go` for Go's path, then `onlyIn plugin` for the plugin's; shared order is independent of both membership differences; an excess duplicate preserves first shared occurrences |
 | `Module.Path` of `""` and `Require: null` | `Go.lean` | both read as empty lists (Go prints these for a file with no `module` or no `require`) |
 | a `Require` entry with an `Indirect` field | `Go.lean` | only the paths are read |
 | a JSON with no `Module`, and one whose `Require` is a number | `Go.lean` | `Keys.ofGoJson` fails, so the run exits 2 |
 
-- T1 to T16, `eval/diff/selftest.sh`, one script with no Go and no network. It builds throwaway
+- T1 to T28, `eval/diff/selftest.sh`, one script with no Go and no network. It builds throwaway
   case folders whose go.mod and Go output are fixed text (the outputs are `go mod edit -json` of
   Go 1.24.7, compacted; F4), and for `--refresh` puts a stand-in `go` first on `PATH` that prints
   a version, rejects a file that says `reject-me`, or prints the output it is given. It runs from
@@ -1035,7 +1161,7 @@ fixtures:
 | T2 | a quoted path Go has and the plugin lacks, no triage | 1 | the line to add is printed, ending in `#?` |
 | T3 | the same, with its triage line | 0 | `(#7)` is printed beside the mismatch |
 | T4 | a triage line that matches nothing | 1 | "Stale triage lines, which match no mismatch" |
-| T5 | Go's requires in the other order | 1 | `require: the same paths in another order` |
+| T5 | Go's requires in the other order | 1 | `require: shared paths in another order` |
 | T6 | a pin with no `module.json` | 2 | the IO error names the file |
 | T7 | a triage line with an unknown mismatch word | 2 | `triage.tsv:1` |
 | T8 | a case directory `pins.tsv` does not list | 2 | `cases/ holds [...], pins.tsv lists [...]` |
@@ -1046,7 +1172,19 @@ fixtures:
 | T13 | the same, one byte appended to `module.mod` | 1 | `module.mod hashes to h1:...` |
 | T14 | the same, the licence column set to `GPL-3.0` | 1 | `licence GPL-3.0 is not one of the four` |
 | T15 | the same, `pins.tsv` removed | 2 | `cannot read pins.tsv`, and the exit status is exactly 2 |
-| T16 | the same, a one-row `pins.tsv` with no final newline and the licence `GPL-3.0` | 1 | `licence GPL-3.0`: the last row is checked |
+| T16 | the same, a one-row `pins.tsv` with no final newline and the licence `GPL-3.0` | 1 | `licence GPL-3.0`: the last row is checked, and the exit status is exactly 1 |
+| T17 | plugin `[a,b]`, Go `[b,a,c]` | 1 | both `only in Go c` and `shared paths in another order` |
+| T18 | T17 with only the membership finding triaged | 1 | the order finding remains untriaged |
+| T19 | T18 with the order finding triaged too | 0 | no stale or untriaged findings |
+| T20 | correct cobra pin/metadata, LICENSE replaced with GPL text | 1 | `LICENSE differs from reviewed source` |
+| T21 | T20 with `pins.tsv` claiming MIT | 1 | `pin does not match reviewed licence metadata` |
+| T22 | correct grpc pin, required NOTICE removed | 1 | `no NOTICE` |
+| T23 | the same, NOTICE changed | 1 | `NOTICE differs from reviewed source` |
+| T24 | empty `pins.tsv` | 2 | `pins.tsv has no pins` |
+| T25 | header-only `pins.tsv` | 2 | `pins.tsv has no pins` |
+| T26 | duplicate licence manifest row | 2 | `malformed or duplicate licence row` |
+| T27 | pin with no licence manifest row | 1 | `no reviewed licence row` |
+| T28 | licence manifest row with no pin | 1 | `reviewed licence row has no pin` |
 
 - F1, `--refresh` with Go 1.24.7 on `PATH`: exit 0 in 0.6 s, every `module.json` byte the same
   (`diff -r` of `cases` before and after is empty), the 13 files together hash to `45b45018c442…`
@@ -1106,7 +1244,7 @@ From the repository root, at the head after the last rebase.
    `cd eval/diff && lake env lean <scratch>/Axioms.lean`.
 5. `eval/diff/check-pins.sh --online` prints nothing and exits 0. It needs `curl`, `openssl` and the
    network, not Go. Without `--online` it needs neither network nor `curl`.
-6. `eval/diff/selftest.sh` prints sixteen `ok:` lines and exits 0.
+6. `eval/diff/selftest.sh` prints twenty-eight `ok:` lines and exits 0.
 7. With Go 1.24.7 on `PATH` (`go version` prints `go1.24.7`),
    `lake --dir eval/diff exe mitos-diff eval/diff --refresh` exits 0, and then
    `git status --porcelain eval/diff` prints nothing. Measured: the 13 files hash to
@@ -1172,7 +1310,7 @@ git diff --stat 85981fe origin/main -- examples/acme core/Mitos lean-toolchain e
   the fix is a model change, so `spec-approved`. The two triage lines cite it. The report lists
   the issue's id.
 - S3. A pin's licence is not one of Apache-2.0, BSD-2-Clause, BSD-3-Clause and MIT, or the
-  licence file is missing: stop, and the root asks the owner (plan, class C). None of the 13.
+  licence file is missing, differs from its reviewed source bytes, or a required NOTICE differs: stop, and the root asks the owner (plan, class C). None of the 13.
 - S4. Check 5 prints a line, or Go 1.24.7 rejects a pin: drop or replace that pin, never the check.
   Report the change. A hash that differs from `pins.tsv` means the version was re-tagged: stop and
   report which pin.
@@ -1234,7 +1372,7 @@ deferrals:
   would be one too (fixtures, "Not pinned").
 - From P2-007: `Keys.ofPlugin_eq_model` cites `GoMod.run_eq`.
 - From #160 item 2: the pins, the Go version and the licences are named here and in `pins.tsv`,
-  and `check-pins.sh` checks the licences against the allowlist.
+  and `check-pins.sh` checks the SPDX allowlist, pin-to-licence metadata and reviewed LICENSE/NOTICE bytes.
 - From #285 item 6: no `match` on `FactKind` (check 2 greps for the name).
 
 owner_decisions:
@@ -1246,7 +1384,7 @@ owner_decisions:
   row over, as it did for #208, and an owner answer there replaces a default:
   - O1. Licences. Keep a go.mod and Go's output of it with the repository's licence file beside
     them (and its root NOTICE), for modules under Apache-2.0, BSD-2-Clause, BSD-3-Clause and MIT
-    only (`check-pins.sh`'s allowlist). Each licence's notice condition then holds for the copied
+    only (`check-pins.sh`'s allowlist and reviewed `licences.tsv` source hashes). Each licence's notice condition then holds for the copied
     file. A go.mod is a list of module paths and versions, which may not be a copyrightable work
     at all; the licence file is kept so that no reading of the licences needs that argument. Cost:
     81 KB.
@@ -1281,7 +1419,7 @@ And nothing in CI builds this project until P2-012, so its own build has to carr
   paths, each in file order. Both sides are parsed into it at the boundary: Go's JSON in
   `Diff.Go`, the plugin's facts in `Diff.Plugin`. Nothing after that sees JSON or `Fact`.
 - `compare` returns the mismatches of two `Keys` as lists, repeats counted, and an `order`
-  mismatch when the same paths come in another order. `compare_eq_nil` states what an empty answer
+  mismatch when shared paths come in another order, even when membership also differs. `compare_eq_nil` states what an empty answer
   means. `verdict_clean` states what exit 0 means. The rest of the report is presentation.
 - The plugin side cites `GoMod.run_eq`, so this build is a second guard on #282's gap, and a
   mismatch speaks about the model. If someone drops the citation too, the run itself shows the
@@ -1444,7 +1582,7 @@ vendor and refresh; a verifier can re-run every claim with no Go), and checked b
 - The row says "pinned repos". A pin here is a module version, which names its repository and tag
   in `pins.tsv`. `main` has no list.
 - The Owns cell lists "the pinned go.mod files and their vendored outputs". The design adds the
-  licences, `pins.tsv`, `triage.tsv`, `.go-version` and two scripts, all under `eval/diff/`.
+  licences, `pins.tsv`, `licences.tsv`, `triage.tsv`, `.go-version` and two scripts, all under `eval/diff/`.
 - P2-006's deferrals said a file Go rejects is "reported as rejected". Here `--refresh` reports it
   and writes nothing, so a rejected file never reaches the comparison.
 - P2-006 deferred quoted paths "to a follow-up issue", and none exists on GitHub. S2 files it.
@@ -1475,7 +1613,13 @@ each unless said. The runners' own measurements, on `68e37a9`, agreed.
   (the report then prints both lines ending in `#?`). F1, F2 and F3 as listed.
 - `eval/diff/check-pins.sh`: exit 0 in 0.3 s; with `--online`, exit 0 in 2.3 s, all 13 hashes equal
   to sum.golang.org's go.mod lines. `shellcheck` clean on both scripts.
-- `eval/diff/selftest.sh`: sixteen `ok:` lines in 3.8 s.
+- Original sketch: `eval/diff/selftest.sh` printed sixteen `ok:` lines in 3.8 s.
+- Review revision: the extracted project builds all 46 jobs without warnings; real Go 1.24.7
+  `--refresh` keeps the 13-case report and its two triaged findings; the offline and online pin
+  checks pass, including all 15 reviewed source documents. All 28 selftests pass. Restoring the
+  old comparator makes T17 fail; mutating `problem` to status 2 is accepted by the old T16 fragment
+  and rejected by the exact-status T16; removing byte checks fails T20; removing the nonempty-pin
+  check fails T24. Each mutant was restored before the final passing run.
 - The vendoring commands of `types`, run in a scratch folder: 28 files, byte for byte the
   committed ones.
 - Candidates left out: gitea v1.27.3 and lazygit (Go 1.24.7 rejects their `ignore` block, measured
@@ -1491,7 +1635,7 @@ each unless said. The runners' own measurements, on `68e37a9`, agreed.
       eval/diff/Diff eval/diff/Main.lean` prints nothing
 - [ ] the plain run exits 0 with the table of Usage, also with no `go` on `PATH`
 - [ ] `--refresh` with Go 1.24.7 leaves `git status --porcelain eval/diff` empty
-- [ ] `eval/diff/check-pins.sh --online` prints nothing, and `eval/diff/selftest.sh` prints sixteen
+- [ ] `eval/diff/check-pins.sh --online` prints nothing, and `eval/diff/selftest.sh` prints twenty-eight
       `ok:` lines
 - [ ] each pin's `LICENSE` is one of the allowlist; the PR body states O1 and the F0 numbers
 - [ ] `eval/diff/lean-toolchain` reads `leanprover/lean4:v4.35.0`, as P2-011 expects

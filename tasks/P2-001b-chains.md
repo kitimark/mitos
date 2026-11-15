@@ -17,7 +17,7 @@ touches: core/Mitos/Core/Fact.lean, core/Mitos/Core/Graph.lean,
   core/Mitos/Core/Spec/Chains.lean (new), core/Mitos/Core.lean (one import line),
   core/Mitos/Impl/Resolve.lean, core/Mitos/Impl/Impact.lean,
   core/Mitos/Proofs/Resolve/{Basic,Edges,Assumptions,Nodup}.lean, core/Mitos/Proofs/Impact.lean,
-  the six mutant files in the table under "Mutant migration", statements.lock and
+  the ten mutant files in the table under "Mutant migration", statements.lock and
   examples/acme/accepted/ToyRequire.json and examples/acme/accepted/GoMod.json (all three
   generated), this file, ops/runs/
 must_not_touch: core/Challenge/, core/comparator.json, core/lakefile.toml,
@@ -67,8 +67,11 @@ escalation: hint → automation → stronger model → pair → split → revisi
 - Where the plan and `main` disagree (the root settles D1 and D2 with the owner before the builder
   starts, or the builder takes the fallbacks; D3 to D8 need no ruling):
   - **D1. The Owns cell allows "the `find=` lines its `Impl/` edit moves", and the design moves
-    more in `eval/mutants/cases/`.** Four `find=` texts move (`ai_ignored`, `status_requirer_only`,
-    `unresolved_dropped`, `unresolved_inverted`). The `replace=` copy of `Impl/Resolve.lean` inside
+    more in `eval/mutants/cases/`.** Eight `find=` texts move (`ai_ignored`, `status_requirer_only`,
+    `unresolved_dropped`, `unresolved_inverted`, `first_provider_only`, `edges_duplicated`,
+    `first_fact_skipped`, `unresolved_lists_provisions`), together with their paired `replace=`
+    texts except `unresolved_dropped`'s unchanged `[]`. Four additional anchors move because the
+    review fix caches each row; the replacements preserve each mutant's original fault. The `replace=` copy of `Impl/Resolve.lean` inside
     `cheat_proofs_own_hole` is not a `find=` line and must be regenerated, or the case fails at the
     build and pins nothing (P2-005a, rule R6); it has no fallback. A new `Affects` constructor makes
     `impact_includes_self/Refute.lean` miss an `induction` alternative, so it gains one line.
@@ -145,10 +148,10 @@ this map reports it as a deviation and does not split silently.
   one consequence theorem per statement whose meaning extends).
 - `core/Mitos/Core.lean`: one import line, `Mitos.Core.Spec.Chains`, last. Without it the file
   builds but is never locked (#276 item 1).
-- `core/Mitos/Impl/Resolve.lean`: the resolver. 27 → 43. Full text under `types`.
+- `core/Mitos/Impl/Resolve.lean`: the resolver. 27 → 73. Full text under `types`.
 - `core/Mitos/Impl/Impact.lean`: `fires` reads `through`. 23 → 25.
 - `core/Mitos/Proofs/Resolve/Basic.lean`: what `resolve` lists, and how the ends of a requirement
-  match its derivations. 27 → 72. It stays the only proof file that imports `Mitos.Impl.Resolve`
+  match its derivations. 27 → 120 after the cache equivalence helpers. It stays the only proof file that imports `Mitos.Impl.Resolve`
   (`cheat_proofs_own_hole` replaces that import).
 - `core/Mitos/Proofs/Resolve/Edges.lean`: sound, complete, unresolved-exact, total. 49 → 44.
 - `core/Mitos/Proofs/Resolve/Assumptions.lean`: assumptions-exact, status-honest, retract-exact.
@@ -158,7 +161,7 @@ this map reports it as a deviation and does not split silently.
   byte (it reads only `(fires_iff.mp _).2`).
 - Generated at the head: `statements.lock`, `examples/acme/accepted/ToyRequire.json`,
   `examples/acme/accepted/GoMod.json`.
-- Mutant files: the five `mutant` files and one `Refute.lean` under "Mutant migration".
+- Mutant files: the nine `mutant` files and one `Refute.lean` under "Mutant migration".
 
 ### Usage (caller's view)
 
@@ -207,6 +210,11 @@ def statusOf (fs : List Located) (r p : Located) (assumes : List Assumption) : S
   if assumes.all (fun a => !a.isAI) && (ends fs r).all (·.id == p.id) then .confirmed
   else .inferred
 ```
+
+The usage above states the canonical status rule. The implementation caches `summarizeEnds`
+once per row and passes its O(1) `accepts` result through the optional `same` argument of the
+edge constructors. `summarizeEnds_accepts` and `resolve_eq` preserve that rule for every input,
+including duplicate IDs. Proofs use the canonical expansion in `resolve_eq`; runtime uses rows.
 
 Impact analysis follows bindings: a change in the repo that holds the binding reaches the
 requirer.
@@ -323,10 +331,28 @@ def providers (fs : List Located) (r : Located) : List Located :=
   fs.filter (matchesB r)
 
 def boundProviders (fs : List Located) (r b : Located) : List Located :=
-  fs.filter (boundB r b)
+  match b.fact.kind with
+  | .binds _ => fs.filter (boundB r b)
+  | _ => []
 
 def ends (fs : List Located) (r : Located) : List Located :=
   providers fs r ++ fs.flatMap (boundProviders fs r)
+
+inductive EndSummary where
+  | empty
+  | same (id : Nat)
+  | mixed
+
+def summarizeEnds (ps : List Located) : EndSummary :=
+  match ps with
+  | [] => .empty
+  | p :: rest => if rest.all (·.id == p.id) then .same p.id else .mixed
+
+def EndSummary.accepts (s : EndSummary) (id : Nat) : Bool :=
+  match s with
+  | .empty => true
+  | .same candidate => candidate == id
+  | .mixed => false
 
 def assumptionsOf (r p : Located) : List Assumption :=
   if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
@@ -334,28 +360,40 @@ def assumptionsOf (r p : Located) : List Assumption :=
 def assumptionsVia (r b p : Located) : List Assumption :=
   (assumptionsOf r p).insert b.origin
 
-def statusOf (fs : List Located) (r p : Located) (assumes : List Assumption) : Status :=
-  if assumes.all (fun a => !a.isAI) && (ends fs r).all (·.id == p.id) then .confirmed
+def statusOf (fs : List Located) (r p : Located) (assumes : List Assumption)
+    (same : Bool := (ends fs r).all (·.id == p.id)) : Status :=
+  if assumes.all (fun a => !a.isAI) && same then .confirmed
   else .inferred
 
-def mkEdge (fs : List Located) (r p : Located) : Edge :=
+def mkEdge (fs : List Located) (r p : Located)
+    (same : Bool := (ends fs r).all (·.id == p.id)) : Edge :=
   { requiringRepo := r.repo, providingRepo := p.repo, ident := r.fact.ident, scope := r.fact.scope,
     key := .direct r.id p.id,
     assumes := assumptionsOf r p,
-    status := statusOf fs r p (assumptionsOf r p) }
+    status := statusOf fs r p (assumptionsOf r p) same }
 
-def mkBoundEdge (fs : List Located) (r b p : Located) : Edge :=
-  { mkEdge fs r p with
+def mkBoundEdge (fs : List Located) (r b p : Located)
+    (same : Bool := (ends fs r).all (·.id == p.id)) : Edge :=
+  { mkEdge fs r p same with
     key := .bound r.id b.id p.id, through := [b.repo],
     assumes := assumptionsVia r b p,
-    status := statusOf fs r p (assumptionsVia r b p) }
+    status := statusOf fs r p (assumptionsVia r b p) same }
 
 def isRequirement (l : Located) : Bool := l.fact.kind == .requires
 
+def resolveOne (fs : List Located) (r : Located) : List Edge × List Nat :=
+  let direct := providers fs r;
+  let groups := fs.map fun b => (b, boundProviders fs r b);
+  let allEnds := direct ++ groups.flatMap Prod.snd;
+  let summary := summarizeEnds allEnds;
+  (direct.map (fun p => mkEdge fs r p (summary.accepts p.id)) ++
+    groups.flatMap (fun (b, ps) => ps.map fun p => mkBoundEdge fs r b p (summary.accepts p.id)),
+   if isRequirement r && allEnds.isEmpty then [r.id] else [])
+
 def resolve : Resolver := fun fs =>
-  { edges := fs.flatMap fun r => (providers fs r).map (mkEdge fs r) ++
-      fs.flatMap fun b => (boundProviders fs r b).map (mkBoundEdge fs r b)
-    unresolved := ((fs.filter isRequirement).filter fun r => (ends fs r).isEmpty).map (·.id) }
+  let rows := fs.map (resolveOne fs);
+  { edges := rows.flatMap Prod.fst
+    unresolved := rows.flatMap Prod.snd }
 
 end Mitos.Impl
 ```
@@ -531,7 +569,7 @@ Proof routes (Appendix A4 has the ones that are not a two-case copy of `main`):
   rule. Its direct case is `main`'s text; its bound case is the same text with `Chain.bound r b p`,
   `mkBoundEdge fs r b p` and `mem_assumptionsVia`.
 - `mem_assumptionsVia`: `List.mem_insert_iff`, `mem_assumptionsOf` and `or_left_comm`.
-- `resolve_unresolved_exact`: `main`'s proof with `no_derivation_iff_no_end` in place of
+- `resolve_unresolved_exact`: rewrite `resolve_eq`, then `main`'s proof with `no_derivation_iff_no_end` in place of
   `no_derivation_iff_no_provider`; it follows from `ends_derivations` at `P := fun _ => False`.
 - `resolve_total`: from `resolve_complete`, `derivations_key_ends` and `resolve_unresolved_exact`.
 - `resolve_status_honest`: both cases are `statusOf_confirmed wf hr _`, which is
@@ -654,19 +692,23 @@ PR body lists the regenerated diff against this list.
 
 ### Mutant migration
 
-21 distinct `find=` texts on `main`; 4 move, each to the text the new line holds, and every `why=`,
+21 distinct `find=` texts on `main`; 8 move, each to the text the new line holds, and every `why=`,
 `breaks=`, `survives=` and `rejects=` line keeps its text.
 
 | Case | Edit |
 |---|---|
-| `ai_ignored` | `find=if assumes.all (fun a => !a.isAI) && (ends fs r)`, `replace=if (ends fs r)` |
+| `ai_ignored` | `find=if assumes.all (fun a => !a.isAI) && same`, `replace=if same` |
 | `status_requirer_only` | `find=status := statusOf fs r p (assumptionsOf r p)`, `replace=status := statusOf fs r p [r.origin]` |
-| `unresolved_dropped` | `find=((fs.filter isRequirement).filter fun r => (ends fs r).isEmpty).map (·.id)` (its `replace=[]` stays) |
-| `unresolved_inverted` | `find=(ends fs r).isEmpty`, `replace=!(ends fs r).isEmpty` |
-| `cheat_proofs_own_hole` | the `replace=` copy of the implementation takes the same change as `Impl/Resolve.lean` (P2-005a, rule R6): it becomes the new file on one line. Appendix A5 has a command that regenerates it (whitespace runs become one space, `, ` goes before `unresolved :=`) and a check that it is current |
+| `unresolved_dropped` | `find=rows.flatMap Prod.snd` (its `replace=[]` stays) |
+| `unresolved_inverted` | `find=allEnds.isEmpty`, `replace=!allEnds.isEmpty` |
+| `first_provider_only` | `find=direct.map (fun p => mkEdge fs r p (summary.accepts p.id))`, `replace=(direct.take 1).map (fun p => mkEdge fs r p (summary.accepts p.id))` |
+| `edges_duplicated` | `find=edges := rows.flatMap Prod.fst`, `replace=edges := rows.flatMap Prod.fst ++ rows.flatMap Prod.fst` |
+| `first_fact_skipped` | `find=edges := rows.flatMap Prod.fst`, `replace=edges := rows.tail.flatMap Prod.fst` |
+| `unresolved_lists_provisions` | `find=if isRequirement r && allEnds.isEmpty then [r.id] else []`, `replace=if allEnds.isEmpty then [r.id] else []` |
+| `cheat_proofs_own_hole` | the `replace=` copy of the implementation takes the same change as `Impl/Resolve.lean` (P2-005a, rule R6): it becomes the new file on one line. Appendix A5 has a command that regenerates it (whitespace runs become one space, `, ` goes before `unresolved :=`) and a check that it is current; the flattened payload must also compile before its mutant is run |
 | `impact_includes_self` | `Refute.lean`: `not_affects_nil`'s `induction` gains `\| through he => simp at he` after its `step` line |
 
-The other 17 distinct texts each still occur exactly once (checked by script). The `Edge` literals
+The other 13 distinct texts each still occur exactly once (checked by script on the cached sketch). The `Edge` literals
 in 16 `Refute.lean` and `mutant` files build unchanged, because `through` has a default. Each moved
 case was run on the judged sketch and kept its result: `ai_ignored` and `status_requirer_only`
 refuted (`resolve_status_honest`), `unresolved_dropped` and `unresolved_inverted` refuted
@@ -692,7 +734,7 @@ package and read by another build of the gate gave 31 different lock lines.
 The builder stops and reports when:
 - `core/Challenge/`, `core/comparator.json`, `eval/score/` or `Proofs/Impact/Nodup.lean` needs an
   edit;
-- a `find=` text other than the four in the table would have to move, or a case changes its
+- a `find=` text other than the eight in the table would have to move, or a case changes its
   result;
 - a `Refute.lean` other than `impact_includes_self`'s needs an edit;
 - the regenerated lock differs from the prediction by a line it cannot explain, or prints a `-`
@@ -725,7 +767,7 @@ line for `GoMod.json` and none for `ToyRequire.json`.
 
 cut_line: ships `FactKind.binds`, the bound rule, `Edge.through`, `Affects.through`, the restated
 `Sound`, the laws, `Spec/Chains.lean`, the resolver and impact with all twelve proofs, the
-regenerated lock and both accept records, and the six mutant-file edits. The PR says `Closes #204`.
+regenerated lock and both accept records, and the ten mutant-file edits. The PR says `Closes #204`.
 It leaves out new mutant cases (P2-005b), a chain fixture for the scorer and its labels (P2-009a),
 the union view's status rule in the scorer (P2-009a), the derivation count (P2-010), chains longer
 than one binding (a later constructor), an extractor that emits `binds` (YAML is a later phase), and
@@ -777,8 +819,12 @@ deferrals:
   nothing makes the build fail when a new `Derivation` constructor gets no list in `derivations`;
   the `replace=` copy in `cheat_proofs_own_hole` is a hand-synced copy of `Impl/Resolve.lean`, and a
   runner that builds it from the file would end D1's second item for every later row; the reference
-  resolver is cubic in the number of facts and computes `ends` once per record (the plan defers the
-  HashMap resolver with an equivalence proof).
+  resolver enumerates at most O(n³) derivations for n facts. `resolveOne` scans providers once,
+  scans providers only for actual binding facts, and summarizes all endpoint IDs once per fact;
+  each emitted record then checks its provider ID and at most three origins in O(1). The rows
+  also supply unresolved IDs, so that output adds no endpoint scan. Time and output space are
+  O(n³), with O(n²) temporary endpoint/group data per row, treating fact-field comparisons as
+  constant cost. The plan defers the HashMap resolver with an equivalence proof.
 
 owner_decisions:
 
@@ -788,8 +834,8 @@ the binding's repo is impact; the status rule in the plan's refined form; this s
 implementation and proofs (P2-000).
 
 The plan's owner decision for this row, with this design's default. The plan lists it under "an
-owner decision comes first"; the root asks on #204 before the builder starts, or records the
-default as the root's call:
+owner decision comes first"; the root asks on #204 and the builder waits for the owner's
+explicit ruling before implementation. The default below is a review proposal, not approval:
 - O1. A binding from an identity to itself (#160 item 1). Default: keep it as an ordinary binding.
   It gives a requirement a direct and a bound chain to the same provider, two records with one
   repo-level key, and the plan's refined rule calls both `confirmed`
@@ -872,9 +918,9 @@ The implementation keeps its own enumeration, as in P2-001a, so `Sound` and `Com
 proofs and the mutants keep their anchors. It mirrors the spec's two rules: `providers` and
 `boundProviders` enumerate, `ends` is every fact some derivation of a requirement ends at, and
 `statusOf` asks that every end is the record's provider. That is the plan's status rule in the
-implementation's own terms, and `ends_derivations` is the one lemma that links the two. Status and
-the unresolved list both go through `ends`, and `ends` goes through `providers`, so a mutant that
-edits `providers` reaches edges, status and the unresolved list together, as on `main`.
+implementation's own terms, and `ends_derivations` is the one lemma that links the two. The proof expansion uses `ends`; runtime `resolveOne` shares the same direct and bound lists
+across edge construction, status summary and unresolved IDs. `resolve_eq` proves these outputs
+identical. A mutant that edits `providers` still reaches all three through the cached row.
 
 `mkBoundEdge` builds on `mkEdge`, so the repo-level fields have one writer: `src_dst_swapped` and
 `provider_scope` reach bound records too, and a later edit cannot let the two builders drift.
@@ -927,7 +973,7 @@ anchor cost; (4) fixture coverage of every statement whose meaning extends; (5) 
 |---|---|---|
 | 1 | Follows the contract; two readings differ in form | The same two |
 | 2 | One avoidable line moves (`instReprScope`) | None; found the `Identity` placement that avoids it |
-| 3 | Six case edits; the inline `let` in `mkBoundEdge` makes the `replace=` copy need a hand-made `;` | The same six; no `let`, so the copy regenerates mechanically |
+| 3 | Six case edits; the inline `let` in `mkBoundEdge` makes the `replace=` copy need a hand-made `;` | The same six; no `let` in the original sketch, so the copy regenerated mechanically; the reviewed cache now uses explicit `;` separators that survive A5 |
 | 4 | No fork fixture (the status rule's other half), no pin on the `through` default, no two-binding retraction | All three, and `NoBinds` on Phase 1's input |
 | 5 | `comparator --paranoid` on all five kernels, five `--paranoid` mutants, both accepts with `--paranoid` | Nothing with `--paranoid` |
 | 6 | 1098 lines; names read well (`ends`, `bindDb`); `derivations_without_bindings` restates the direct enumeration in a locked statement, and `derivations_single_provider` proves its own copy of the direct law | 1913 lines, the appendix is every file's diff; `bind` as a fixture name shadows Lean's `bind`; `provisions` and `providers` differ by one syllable |
@@ -982,7 +1028,7 @@ the six edited ones with `--paranoid`; `cd examples/acme && lake build`; both pl
 runs it), `mitos-lint-test`, and `--record` (it would edit the records).
 
 ### Tradeoffs accepted
-- We accept four moved `find=` texts, one rewritten `replace=` copy and one `Refute.lean` line in
+- We accept eight moved `find=` texts with their paired replacements, one rewritten `replace=` copy and one `Refute.lean` line in
   exchange for a status rule that reads the plan's rule directly (`(ends fs r).all (·.id == p.id)`)
   and one shared premise path for edges, status and the unresolved list.
 - We accept a default on `Edge.through` in exchange for the `Edge` literals in 16 files outside the
@@ -1058,7 +1104,16 @@ build, and show `fact-step`.
 
 ## Appendix: checked text
 
-Every block below was built on Lean v4.35.0 against `main` at c280558, in a scratch copy, with no `sorry`. The routine two-case proofs are not repeated; their routes are under `statements`.
+The original blocks were built on Lean v4.35.0 against `main` at c280558. The cached resolver,
+summary equivalence, row equivalence and binding-scan proof were rebuilt against that base in
+the review round, with no `sorry`. The routine two-case proofs are not repeated; their routes are under `statements`.
+
+The review round also filled the routine proof routes in scratch: all 23 core build jobs pass,
+and `lake check` plus `lake comparator --paranoid` accept with only the permitted axioms when
+run with `--inadvisably-no-sandbox`. The ordinary sandboxed commands cannot start in this
+container (`bwrap` cannot create its UID map or `/run/user`); that local result does not replace
+the builder's required sandboxed checks. All 42 mutant-file anchors match exactly once after
+migration, and A5's exact flattened replacement compiles with the explicit let separators.
 
 ### A1. `core/Mitos/Core/Fact.lean`
 
@@ -1456,6 +1511,62 @@ end Mitos.Spec.Chains
 `Proofs/Resolve/Basic.lean`:
 
 ```lean
+theorem summarizeEnds_accepts (ps : List Located) (id : Nat) :
+    (summarizeEnds ps).accepts id = ps.all (·.id == id) := by
+  cases ps with
+  | nil => rfl
+  | cons p rest =>
+    simp only [summarizeEnds, List.all_cons]
+    split
+    · rename_i h
+      simp only [EndSummary.accepts]
+      by_cases he : p.id = id
+      · subst id; simp [h]
+      · have hn : (p.id == id) = false := by simp [he]
+        simp [hn]
+    · rename_i h
+      simp only [EndSummary.accepts]
+      by_cases he : p.id = id
+      · subst id; simp_all
+      · simp [he]
+
+theorem resolveOne_eq (fs : List Located) (r : Located) :
+    resolveOne fs r =
+      ((providers fs r).map (mkEdge fs r) ++
+        fs.flatMap (fun b => (boundProviders fs r b).map (mkBoundEdge fs r b)),
+       if isRequirement r && (ends fs r).isEmpty then [r.id] else []) := by
+  simp only [resolveOne, List.flatMap_map, summarizeEnds_accepts]
+  rfl
+
+theorem resolve_eq (fs : List Located) :
+    resolve fs =
+      { edges := fs.flatMap fun r => (providers fs r).map (mkEdge fs r) ++
+          fs.flatMap fun b => (boundProviders fs r b).map (mkBoundEdge fs r b)
+        unresolved := ((fs.filter isRequirement).filter fun r => (ends fs r).isEmpty).map (·.id) } := by
+  simp only [resolve, List.flatMap_map, resolveOne_eq]
+  congr 1
+  have hflat : ∀ (xs : List Located),
+      xs.flatMap (fun r => if isRequirement r && (ends fs r).isEmpty then [r.id] else []) =
+        ((xs.filter isRequirement).filter fun r => (ends fs r).isEmpty).map (·.id) := by
+    intro xs
+    induction xs with
+    | nil => rfl
+    | cons x xs ih =>
+      cases hreq : isRequirement x <;> cases hempty : (ends fs x).isEmpty <;>
+        simp only [List.flatMap_cons, List.filter_cons, hreq, hempty, Bool.and_true, Bool.and_false, Bool.false_eq_true, ↓reduceIte,
+          List.map_cons, List.cons_append, List.nil_append, ih]
+  exact hflat fs
+theorem boundProviders_sublist (fs : List Located) (r b : Located) :
+    (boundProviders fs r b).Sublist fs := by
+  cases h : b.fact.kind <;> simp only [boundProviders, h]
+  · exact List.nil_sublist _
+  · exact List.nil_sublist _
+  · exact List.filter_sublist
+
+theorem mem_boundProviders {fs : List Located} {r b p : Located} :
+    p ∈ boundProviders fs r b ↔ p ∈ fs ∧ boundB r b p = true := by
+  cases h : b.fact.kind <;> simp [boundProviders, h, boundB]
+
 theorem mem_ends {fs : List Located} {r q : Located} :
     q ∈ ends fs r ↔ q ∈ fs ∧ (matchesB r q = true ∨ ∃ b ∈ fs, boundB r b q = true) := by
   simp only [ends, List.mem_append, List.mem_flatMap, mem_providers, mem_boundProviders]
@@ -1531,7 +1642,8 @@ theorem resolve_edges_nodup : Spec.EdgesNodup resolve := by
       (resolve fs).edges.map Edge.key =
         fs.flatMap fun r => (providers fs r).map (fun p => Derivation.direct r.id p.id) ++
           fs.flatMap fun b => (boundProviders fs r b).map fun p => Derivation.bound r.id b.id p.id := by
-    simp only [resolve, List.map_flatMap, List.map_append, List.map_map, Function.comp_def, mkEdge,
+    rw [resolve_eq]
+    simp only [List.map_flatMap, List.map_append, List.map_map, Function.comp_def, mkEdge,
       mkBoundEdge]
   have hids : fs.Pairwise (fun a b => a.id ≠ b.id) :=
     List.Pairwise.of_map (·.id) (fun _ _ h => h) wf
@@ -1551,7 +1663,7 @@ theorem resolve_edges_nodup : Spec.EdgesNodup resolve := by
     · exact List.Pairwise.map _ (fun _ _ hne heq => hne (Derivation.direct.inj heq).2)
         (hsub _ List.filter_sublist)
     · exact List.Pairwise.map _ (fun _ _ hne heq => hne (Derivation.bound.inj heq).2.2)
-        (hsub _ List.filter_sublist)
+        (hsub _ (boundProviders_sublist fs r b))
     · intro b b' hne x hx y hy heq
       obtain ⟨_, _, rfl⟩ := List.mem_map.mp hx
       obtain ⟨_, _, rfl⟩ := List.mem_map.mp hy
@@ -1565,7 +1677,9 @@ theorem resolve_edges_nodup : Spec.EdgesNodup resolve := by
     exact hne (by rw [← hreq _ x hx, ← hreq _ y hy, heq])
 ```
 
-`resolve_unresolved_nodup` is `main`'s with `(ends fs r).isEmpty` in `hempty`.
+`resolve_unresolved_nodup` is `main`'s with `rw [resolve_eq]` before its unfolding and
+`(ends fs r).isEmpty` in `hempty`. `mem_edges` and `mem_keys` likewise rewrite `resolve_eq` before
+expanding the canonical lists; the remaining Challenge proofs keep their stated routes.
 
 `Proofs/Impact.lean`:
 
@@ -1616,7 +1730,7 @@ theorem resolve_edges_nodup : Spec.EdgesNodup resolve := by
 
 ### A5. The regenerated `replace=` line of `cheat_proofs_own_hole`
 
-The six case edits are exact in the table under "Mutant migration". To write the one generated line after step 3, from the repository root:
+The ten case edits are exact in the table under "Mutant migration". To write the one generated line after step 3, from the repository root:
 
 ```bash
 python3 -I -c "
@@ -1637,3 +1751,11 @@ diff <(tr -s ' \n' ' ' < core/Mitos/Impl/Resolve.lean | sed 's/ *$//; s/ unresol
      <(grep '^replace=import Mitos.Core namespace' eval/mutants/cases/cheat_proofs_own_hole/mutant | sed 's/^replace=//')
 ```
 
+
+To compile A5's exact flattened payload, in scratch only:
+
+```bash
+sed -n 's/^replace=import Mitos.Core namespace/import Mitos.Core namespace/p' \
+  eval/mutants/cases/cheat_proofs_own_hole/mutant > <scratch>/OwnHole.lean
+(cd core && lake env lean <scratch>/OwnHole.lean)
+```
