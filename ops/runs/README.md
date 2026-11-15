@@ -62,7 +62,7 @@ check wants each one as it is on `main`, and drops the union line.
 
 ## Enforced by CI
 
-The `gate` job runs `lake exe mitos-gate runlog` on `ops/runs/`. It fails, with a `file:line`
+The `checks` job runs `lake exe mitos-gate runlog` on `ops/runs/`. It fails, with a `file:line`
 annotation, when:
 
 - a record file is not one line holding one record, is not named `<task>-<role>-<attempt>.json`

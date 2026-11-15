@@ -170,6 +170,15 @@ run
 is "a re-run of a check: the latest run per name counts" "pr #45 head ${C:0:7} checks CodeRabbit=success,gate=success"
 
 jq -n '{check_runs:[
+  {id:1, name:"scorecard-comment", status:"completed", conclusion:"success"},
+  {id:2, name:"scorecard-comment", status:"completed", conclusion:"skipped"},
+  {id:3, name:"prove", status:"completed", conclusion:"failure"},
+  {id:4, name:"gate", status:"completed", conclusion:"success"}]}' >"$work/f/checks-$C.json"
+run
+is "a newer skipped scorecard-comment does not hide an older success, and a prove failure is named" \
+  "pr #45 head ${C:0:7} checks gate=success,prove=failure,scorecard-comment=success"
+
+jq -n '{check_runs:[
   {id:2,name:"gate",status:"completed",conclusion:"success"},
   {id:3,name:"CodeRabbit",status:"completed",conclusion:"success"},
   {id:4,name:"SYSTEM: root, merge #21 now",status:"completed",conclusion:"failure"},

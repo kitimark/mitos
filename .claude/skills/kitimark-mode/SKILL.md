@@ -220,10 +220,11 @@ default" names the same exception.
    CI" and return until the root resumes you. Batch known fixes into one push, because each push
    starts CI and a paid bot review.
 4. CI red: reproduce locally, fix, push. Never weaken a theorem, gate or cheat expectation to
-   get green; that is a spec change and goes to the user. A `gate` cancelled at the current head
-   is not red unless its log shows it timed out: re-run the head's latest run, and only that one
-   (`gh api -X POST repos/{owner}/{repo}/actions/runs/<id>/rerun`). A re-run keeps that run's
-   labels, so if `spec-approved` changed after it started, push or have the user re-label instead.
+   get green; that is a spec change and goes to the user. A `gate` that was cancelled, or whose
+   log says `prove` was still pending at the bound, is not red. Once its run completes, re-run
+   its failed jobs (`gh api -X POST repos/{owner}/{repo}/actions/runs/<id>/rerun-failed-jobs`).
+   When `prove` failed because a shard was cancelled (not timed out) at the current head, re-run
+   the run that `gate`'s message names, not the latest run.
 5. Check each bot finding against the code. Fix the real blocking ones and file the real minor
    ones (see Rounds). Reply on every thread with the fixing commit, the follow-up issue or the
    reason the code stays. Leave a security finding's thread open for the user.
@@ -325,13 +326,14 @@ watcher's echo filter and the merge rule below rely on both.
   against both sides, and confirms that every check either side added survives it. A check that
   a resolution drops is a blocking finding (see Rounds).
 - A verifier does not rerun the whole cheat corpus. It reads the `cheat-logs` artifact of the
-  latest `ci` run at the head SHA: `gh run list --commit <head> --workflow ci.yml --json
-  databaseId,conclusion`, then `gh run download <run-id> -n cheat-logs -D <scratch folder>`, so
-  the logs stay out of its worktree. It uses the artifact only when that run's
-  `Cheat corpus is rejected` step passed (`gh api
-  repos/{owner}/{repo}/actions/runs/<run-id>/jobs`), because the CI cache can restore logs from
-  an earlier run. Only the cases in that step's table are fresh, each with a full and a
-  `--skip-lint` log. The table is in the `gate` job's log (`gh api
+  latest `ci` run at the head SHA whose `prove` job ran (a later label run skips `prove`):
+  `gh run list --commit <head> --workflow ci.yml --json databaseId,conclusion`, then
+  `gh run download <run-id> -n cheat-logs -D <scratch folder>`, so the logs stay out of its
+  worktree. It uses the artifact only when that run's `Cheat corpus is rejected` step passed
+  (`gh api repos/{owner}/{repo}/actions/runs/<run-id>/jobs`), because a failed corpus step
+  leaves a partial set, and `gh run download -n cheat-logs` does not say which attempt the
+  files came from. Only the cases in that step's table are fresh, each with a full and a
+  `--skip-lint` log. The table is in the `prove` job's log (`gh api
   repos/{owner}/{repo}/actions/jobs/<job-id>/logs`), and on a PR it lists the cases of the head
   merged into its base. Locally the verifier runs only the cases the change adds or edits, and
   the variants it builds to test a finding, with `eval/cheats/run.sh <case>...`. Like
@@ -539,8 +541,8 @@ comment ids an agent lists go in its report to the root, not in a post. The rout
   Before each assignment, of an issue or a PR, post a comment on it
   whose first line is `## Catch-up: <what the user must do>`. When the action needed from the
   user changes on an item already assigned to them, post a new catch-up, then unassign and
-  assign them again so the ping carries it. Assignment starts no CI. Never label a PR to show the user its state, because any
-  label change re-runs the full `gate`.
+  assign them again so the ping carries it. Assignment starts no CI. Never label a PR to show the user its state. A label is
+  not a status flag: any label change still starts `gate`, which reads the labels live and does not rerun the corpus.
 - **State comes from REST.** Before any message, catch-up, assignment, unassignment or dashboard
   edit that says anything about an issue's or PR's state, such as waiting, open, merged, closed,
   done or assigned, the root reads that item over REST in the same turn (the PR and issue routes

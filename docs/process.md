@@ -492,8 +492,9 @@ The owner catches up on GitHub, not in a chat session:
   through the owner's account, and GitHub does not notify a user of their own actions, so
   `.github/workflows/owner-ping.yml` posts an @mention as `github-actions[bot]` on each
   assignment of the owner made from the owner's account. An assignment that any other account
-  or a bot makes gets no ping. Never label a PR to show the owner its state, because any label
-  change re-runs the full `gate`.
+  or a bot makes gets no ping. Never label a PR to show the owner its state. A label is not a
+  status flag: any label change still starts `gate`, which reads the labels live and does not
+  rerun the corpus.
 - **`/no-comments` before a hand-over.** A PR whose diff adds comments goes to the owner only
   after the orchestrator's `/no-comments` pass over its head and the push of what the pass
   accepts. A verifier then gives a verdict at that cleaned head. A wording-only change still gets
