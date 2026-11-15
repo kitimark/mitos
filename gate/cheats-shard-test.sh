@@ -80,7 +80,7 @@ run_agg() {
   env "$@" "$bin" cheats aggregate \
     --checks "${CHECKS:-success}" --shards "${SHARDS:-success}" \
     --merged "$work/merged" --cases "$tiny" \
-    "$work/shards/cheat-shard-logs-0" \
+    "$work/shards/cheat-shard-logs-0${SHARD0_SUFFIX:-}" \
     "$work/shards/cheat-shard-logs-1" \
     "$work/shards/cheat-shard-logs-2" >"$work/agg.out" 2>"$work/agg.err"
   st=$?
@@ -145,6 +145,8 @@ mv "$work/shards/cheat-shard-logs-0" "$work/shards/real-0"
 ln -s real-0 "$work/shards/cheat-shard-logs-0"
 CHECKS=success SHARDS=success run_agg "missing shard" "symlinked shard dir"
 ok "a symlinked shard directory is not a shard"
+SHARD0_SUFFIX=/ CHECKS=success SHARDS=success run_agg "missing shard" "symlinked shard dir with a slash"
+ok "a symlinked shard directory named with a slash is not a shard"
 
 fill_good
 rm "$work/shards/cheat-shard-logs-0/one.full.log"
