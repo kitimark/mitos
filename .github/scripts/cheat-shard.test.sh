@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# The workflow still fails closed. The partition decisions live in Lean.
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
