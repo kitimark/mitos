@@ -299,11 +299,16 @@ def OutProblem.key : OutProblem → String × String
   | .extra n => ("extra", n)
   | .imports _ _ => ("imports", "")
 
+def variableLine : String := "variable (h : False) in include h in"
+def impactHole : String := "def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry"
+def totalLine : String :=
+  "theorem Mitos.Proofs.resolve_total : Mitos.Spec.Total Mitos.Impl.resolve := sorry"
+
 def hiddenVariableSource : String :=
-  "import Mitos.Core\n\ndef Mitos.Impl.resolve : Mitos.Resolver := sorry\n/-!\n-- -/\n/-- x -/\n-- -/ variable (h : False) in include h in\ndef Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry\ntheorem Mitos.Proofs.resolve_total : Mitos.Spec.Total Mitos.Impl.resolve := sorry\n"
+  s!"import Mitos.Core\n\n{resolveHole}\n{variableLine}\n{impactHole}\n{totalLine}\n"
 
 def trailingSource (code : String) : String :=
-  s!"import Mitos.Core\n\ndef Mitos.Impl.resolve : Mitos.Resolver := sorry\ndef Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry\ntheorem Mitos.Proofs.resolve_total : Mitos.Spec.Total Mitos.Impl.resolve := sorry\n/-!\n-- -/\n/-- x -/\n-- -/ {code}\n"
+  s!"import Mitos.Core\n\n{resolveHole}\n{impactHole}\n{totalLine}\n{code}\n"
 
 def probeDefs : List String := ["Mitos.Impl.resolve", "Mitos.Impl.impact"]
 
@@ -312,12 +317,14 @@ structure ParseProbe where
   source : String
   expect : List (String × Nat)
 
+def ParseProbe.lines (p : ParseProbe) : List Line := misread p.source
+
 def parseProbes : List ParseProbe := [
-  { name := "b1", source := hiddenVariableSource, expect := [("command", 7)] },
-  { name := "namespace", source := trailingSource "namespace Mitos.Impl", expect := [("command", 9)] },
-  { name := "exit", source := trailingSource "#exit", expect := [("command", 9)] },
-  { name := "decoy", source := decoySource, expect := [("command", 3), ("missing", 5), ("missing", 7)] },
-  { name := "reverse", source := reverseSource, expect := [("command", 3), ("missing", 5), ("missing", 7)] }]
+  { name := "b1", source := hiddenVariableSource, expect := [("command", 4), ("missing", 5)] },
+  { name := "namespace", source := trailingSource "namespace Mitos.Impl", expect := [("command", 6)] },
+  { name := "exit", source := trailingSource "#exit", expect := [("command", 6)] },
+  { name := "decoy", source := decoySource, expect := [("missing", 5)] },
+  { name := "reverse", source := reverseSource, expect := [("missing", 5)] }]
 
 structure OutProbe where
   path   : String
@@ -325,31 +332,27 @@ structure OutProbe where
   breaks : List String
   expect : List (String × String)
 
+def OutProbe.lines (p : OutProbe) : List Line := misread p.source
+
 def outProbes : List OutProbe := [
   { path := "Challenge/OutputProbeB1.lean", source := hiddenVariableSource, breaks := ["resolve_total"],
     expect := [("differs", "Mitos.Refute.resolve_total")] },
   { path := "Challenge/OutputProbeExit.lean", source := trailingSource "#exit",
     breaks := ["resolve_total"], expect := [("missing", holesName)] }]
 
-#guard parseProbes.all fun p => (readChallenge p.source).toOption.isSome
-#guard outProbes.all fun p => (readChallenge p.source).toOption.isSome
-#guard ((readChallenge hiddenVariableSource).toOption.map declLines) ==
-  some [(3, "def Mitos.Impl.resolve : Mitos.Resolver := sorry"),
-    (8, "def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry"),
-    (9, "theorem Mitos.Proofs.resolve_total : Mitos.Spec.Total Mitos.Impl.resolve := sorry")]
+#guard parseProbes.all fun p => (readChallenge p.source).toOption != some p.lines
+#guard outProbes.all fun p => (readChallenge p.source).toOption != some p.lines
+#guard (misread hiddenVariableSource)[3]? == some (.keep variableLine)
+#guard declLines (misread hiddenVariableSource) == [(3, resolveHole), (5, impactHole), (6, totalLine)]
 
-#guard ((readChallenge hiddenVariableSource).toOption.map fun ls =>
-    (parseProblems ls [] ["Mitos.Core"] [
-      { line := 3, col := 0, kind := declKind, text := "def Mitos.Impl.resolve : Mitos.Resolver := sorry" },
-      { line := 4, col := 0, kind := moduleDocKind, text := "" },
-      { line := 7, col := 6, kind := "Lean.Parser.Command.in", text := "variable (h : False) in" },
-      { line := 9, col := 0, kind := declKind,
-        text := "theorem Mitos.Proofs.resolve_total : Mitos.Spec.Total Mitos.Impl.resolve := sorry" }]).map
-      (·.key)) ==
-  some [("command", 7), ("missing", 8)]
-#guard ((readChallenge hiddenVariableSource).toOption.map fun ls =>
-    parseProblems ls [] ["Mitos.Core"] ((declLines ls).map fun (i, t) =>
-      { line := i, col := 0, kind := declKind, text := t })) == some []
+#guard (parseProblems (misread hiddenVariableSource) [] ["Mitos.Core"] [
+      { line := 3, col := 0, kind := declKind, text := resolveHole },
+      { line := 4, col := 0, kind := "Lean.Parser.Command.in", text := variableLine },
+      { line := 6, col := 0, kind := declKind, text := totalLine }]).map (·.key) ==
+  [("command", 4), ("missing", 5)]
+#guard parseProblems (misread hiddenVariableSource) [] ["Mitos.Core"]
+    ((declLines (misread hiddenVariableSource)).map fun (i, t) =>
+      { line := i, col := 0, kind := declKind, text := t }) == []
 #guard (parseProblems [.imp "import Mitos.Core", .hole "def Mitos.Impl.f : String := sorry"]
     ["a `prelude` keyword"] ["Mitos.Core", "Mitos.Impl"]
     [{ line := 2, col := 1, kind := declKind, text := "def Mitos.Impl.f : String := sorry" }]).map (·.key) ==
@@ -363,11 +366,11 @@ def outProbes : List OutProbe := [
       (·.key) ==
   [("differs", "Mitos.Refute.t"), ("missing", holesName), ("notTheorem", "Mitos.Refute.u"),
     ("extra", "Mitos.Impl.x"), ("imports", "")]
-#guard (((readChallenge hiddenVariableSource).toOption.map fun ls => refutationGen [] probeDefs ls ["resolve_total"]).map
-    fun g => g.toOption.map (·.wants)) ==
-  some (some [(holesName, .holes probeDefs), ("Mitos.Refute.resolve_total", .negated "resolve_total")])
-#guard ((readChallenge hiddenVariableSource).toOption.map fun ls => (valuesGen ["Mitos.Impl.Resolve"] ls).toOption.map
-    fun g => (g.wants, g.imports)) ==
-  some (some ([("Mitos.Proofs.resolve_total", .stated "resolve_total")], ["Mitos.Impl.Resolve", "Mitos.Core"]))
+#guard (refutationGen [] probeDefs (misread hiddenVariableSource) ["resolve_total"]).toOption.map
+    (·.wants) ==
+  some [(holesName, .holes probeDefs), ("Mitos.Refute.resolve_total", .negated "resolve_total")]
+#guard (valuesGen ["Mitos.Impl.Resolve"] (misread hiddenVariableSource)).toOption.map
+    (fun g => (g.wants, g.imports)) ==
+  some ([("Mitos.Proofs.resolve_total", .stated "resolve_total")], ["Mitos.Impl.Resolve", "Mitos.Core"])
 
 end Mutants.Output

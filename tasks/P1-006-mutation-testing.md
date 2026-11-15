@@ -477,6 +477,13 @@ reads (a `#guard`); the value line the reader refuses, so that probe reads it as
 looser reader would. On the approved Challenge the runner prints
 `challenge (reader against Lean's build): AGREE on 10 declarations, 3 probes caught`.
 
+Amended by P2-011 (#147). Lean v4.36 (lean4 PR 15064) reads a doc comment's opener as the reader
+does, so there the decoy and the reverse are no misreads of `readChallenge`, and the decoy's
+theorem is live code that does not build. Each probe now reads its source with
+`CrossCheck.misread`, which reads every line alone, as the misreads of rounds 6 to 10 did. The
+decoy and the reverse hide their line in a plain block comment, which every toolchain and the
+reader read alike, and a `#guard` pins that `readChallenge` reads no probe as its probe does.
+
 **The reader.** Its lexer stays as it is. It reads comments as `leanScan` does, which is not all
 of how Lean reads them; it is a fast first pass, and the cross-check is what stops the runner on a
 misread that changes a declaration (round 10 adds the checks for a misread that changes none).
@@ -580,6 +587,10 @@ named with `_root_`, so the output check rightly finds nothing there (below). Wi
 always true in a scratch build, the runner exits 2 (`the output check missed a known misread in
 Challenge/OutputProbeB1.lean`); with the parse reading only declarations, it exits 2 (`the parse
 check missed a known misread in probe b1`).
+
+Amended by P2-011 (#147): these seven probes read their sources with `CrossCheck.misread` too,
+and each source holds its command on a line of its own, with no comment around it. The expected
+problems are in P2-011's task file.
 
 **Evidence** (one local run each, default kernel). Each shape inserted into a copy of the
 repository's approved Challenge, with the case `r10_b1` (`breaks=resolve_total`, `Refute.lean`

@@ -253,34 +253,40 @@ def Problem.key : Problem → String × String
 structure Probe where
   path   : String
   source : String
-  lines  : List Line
   defs   : List String
   expect : List (String × String)
   deriving Inhabited
 
-def decoySource : String :=
-  "import Mitos.Core\n\n/--\n-- -/\ntheorem Mitos.Proofs.decoy : Mitos.Spec.Sound Mitos.Impl.resolve := sorry\n-- -/\ndef Mitos.Impl.resolve : Mitos.Resolver := sorry\n"
+def misreadLine (l : String) : Line :=
+  let cs := l.toList
+  if importForm cs then .imp l
+  else if "def Mitos.".toList.isPrefixOf cs && sorrySuffix.isSuffixOf cs then .hole l
+  else match theoremHole cs with
+    | some (n, s) => .thm n s l
+    | none => .keep l
 
-def reverseSource : String :=
-  "import Mitos.Core\n\n/--\n-- -/\ndef Mitos.Impl.extra : String := sorry\n-- -/\ndef Mitos.Impl.resolve : Mitos.Resolver := sorry\n"
+def misread (src : String) : List Line := (src.splitOn "\n").map misreadLine
+
+def Probe.lines (p : Probe) : List Line := misread p.source
+
+def resolveHole : String := "def Mitos.Impl.resolve : Mitos.Resolver := sorry"
+def decoyLine : String := "theorem Mitos.Proofs.decoy : Mitos.Spec.Sound Mitos.Impl.resolve := sorry"
+def extraHole : String := "def Mitos.Impl.extra : String := sorry"
+
+def hiddenIn (line : String) : String := s!"import Mitos.Core\n\n{resolveHole}\n/-\n{line}\n-/\n"
+
+def decoySource : String := hiddenIn decoyLine
+def reverseSource : String := hiddenIn extraHole
 
 def valueLine : String := "def Mitos.Impl.f : Nat → Nat | _ => 0 where g : Nat := sorry"
 
 def probes : List Probe := [
   { path := "Challenge/CrossCheckDecoy.lean", source := decoySource,
-    lines := [.imp "import Mitos.Core", .keep "", .keep "/--", .keep "-- -/",
-      .thm "decoy" "Mitos.Spec.Sound Mitos.Impl.resolve"
-        "theorem Mitos.Proofs.decoy : Mitos.Spec.Sound Mitos.Impl.resolve := sorry",
-      .keep "-- -/", .hole "def Mitos.Impl.resolve : Mitos.Resolver := sorry", .keep ""],
     defs := ["Mitos.Impl.resolve"], expect := [("undeclared", "Mitos.Proofs.decoy")] },
   { path := "Challenge/CrossCheckReverse.lean", source := reverseSource,
-    lines := [.imp "import Mitos.Core", .keep "", .keep "/--", .keep "-- -/",
-      .hole "def Mitos.Impl.extra : String := sorry", .keep "-- -/",
-      .hole "def Mitos.Impl.resolve : Mitos.Resolver := sorry", .keep ""],
     defs := ["Mitos.Impl.extra", "Mitos.Impl.resolve"],
     expect := [("undeclared", "Mitos.Impl.extra")] },
   { path := "Challenge/CrossCheckValue.lean", source := s!"import Mitos.Core\n\n{valueLine}\n",
-    lines := [.imp "import Mitos.Core", .keep "", .hole valueLine, .keep ""],
     defs := ["Mitos.Impl.f"],
     expect := [("differs", "Mitos.Impl.f"), ("unread", "Mitos.Impl.f.g")] }]
 
@@ -288,12 +294,14 @@ def Probe.caught (p : Probe) (imps : List String) (ds : List Decl) : Bool :=
   let found := (problems p.lines p.defs imps ds).map (·.key)
   p.expect.all found.contains
 
-#guard probes.map (fun p => (readChallenge p.source).toOption == some p.lines) == [true, true, false]
+#guard probes.all fun p => (readChallenge p.source).toOption != some p.lines
+#guard (readChallenge decoySource).toOption.map (·[4]?) == some (some (.keep decoyLine))
+#guard (readChallenge reverseSource).toOption.map (·[4]?) == some (some (.keep extraHole))
 #guard (readChallenge s!"import Mitos.Core\n\n{valueLine}\n").toOption == none
+#guard probes[2]!.lines == [.imp "import Mitos.Core", .keep "", .hole valueLine, .keep ""]
 
 #guard expected (probes.head!.lines) ==
-  [thmDecl 5 "decoy" "Mitos.Spec.Sound Mitos.Impl.resolve",
-    { name := "Mitos.Impl.resolve", pos := some (7, 4), kind := .hole }]
+  [holeDecl 3 resolveHole, thmDecl 5 "decoy" "Mitos.Spec.Sound Mitos.Impl.resolve"]
 #guard (thmDecl 5 "decoy" "Mitos.Spec.Sound Mitos.Impl.resolve").kind ==
   .thm (some ["Mitos.Spec.Sound", "Mitos.Impl.resolve"])
 #guard holeName valueLine == "Mitos.Impl.f"
@@ -301,8 +309,11 @@ def Probe.caught (p : Probe) (imps : List String) (ds : List Decl) : Bool :=
 #guard importNames (probes.head!.lines) == ["Mitos.Core"]
 
 #guard (problems (probes.head!.lines) ["Mitos.Impl.resolve"] ["Init", "Mitos.Core"]
-    [{ name := "Mitos.Impl.resolve", pos := some (7, 4), kind := .hole }]).map (·.key) ==
-  [("undeclared", "Mitos.Proofs.decoy")]
+    [holeDecl 3 resolveHole]).map (·.key) == [("undeclared", "Mitos.Proofs.decoy")]
+#guard !probes.head!.caught ["Init", "Mitos.Core"]
+    [holeDecl 3 resolveHole, thmDecl 5 "decoy" "Mitos.Spec.Sound Mitos.Impl.resolve"]
+#guard probes[1]!.caught ["Init", "Mitos.Core"] [holeDecl 3 resolveHole]
+#guard !probes[1]!.caught ["Init", "Mitos.Core"] [holeDecl 3 resolveHole, holeDecl 5 extraHole]
 #guard problems [.imp "import Mitos.Core", .hole "def Mitos.Impl.f : String := sorry",
     .thm "t" "Mitos.Spec.P Mitos.Impl.f" "theorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry"]
     ["Mitos.Impl.f"] ["Init", "Init", "Mitos.Core"]
