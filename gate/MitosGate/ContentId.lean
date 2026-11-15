@@ -581,7 +581,6 @@ def compute (base head : String) : M Result := do
   unless left.isEmpty do
     throw (msg "the diff has a file block that the --raw listing does not have")
   let restHex ← sha256Hex (latin1Bytes (String.join (rest.toList.map (· ++ "\n"))))
-  -- `runs` stays empty. Dropping the section would change the id of every diff.
   let id ← sha256Hex (latin1Bytes (preimage restHex []))
   return { mergeBase := mb, rest := restHex, restFiles, runs := [], id }
 
