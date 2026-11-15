@@ -1,6 +1,7 @@
 import Mitos.Core
 import Mitos.Impl.Resolve
 import Plugins.ToyRequire
+import Score.GoMod
 
 namespace Score
 
@@ -39,6 +40,7 @@ def declared (src : String) : List Fact :=
     else none
 
 def factsOf (f : SourceFile) : List (Fact × Assumption) :=
+  if GoMod.reads f.path then GoMod.facts f.text else
   let fromPlugin := (ToyRequire.extractor.run f.text).map (·, .extractor "ToyRequire")
   let fromDecl :=
     if f.path == "PROVIDES" then
