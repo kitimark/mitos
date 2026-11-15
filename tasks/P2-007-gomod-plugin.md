@@ -5,14 +5,14 @@ goal: `GoMod.extractor` emits exactly the facts `Models.GoMod.model` holds, in f
 statement: `GoMod.anchored`, `GoMod.sound` and `GoMod.complete`, as the gate's generated Challenge states them; the plugin's own `GoMod.run_eq`
 touches: examples/acme/Plugins/GoMod.lean, examples/acme/accepted/GoMod.json (written by the gate, last), this file, ops/runs/
 must_not_touch: examples/acme/Models/, examples/acme/models.lock, examples/acme/accepted/ToyRequire.json, core/, statements.lock, gate/, eval/, .github/, plan/
-checks: acme build, plugin lint, accept GoMod with --paranoid --record at the head after the last rebase
+checks: acme build, plugin lint, `lock-models --check`, the record check (check 6), the golden run (F3), the Go run (F4), accept GoMod with --paranoid --record at the head after the last rebase
 budget: 15 iterations · 2h wall · 1M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
 ## Context
-- Plan row P2-007 in `plan/phase-2.md` (go.mod track, wave W2), issue #208. It stacks on
-  P2-006's PR (#207, `tasks/P2-006-gomod-model.md`), and an agent merges it once P2-006 has
-  merged. P2-008 (#209) and P2-009b (#211) wait for it.
+- Plan row P2-007 in `plan/phase-2.md` (go.mod track, wave W2), issue #208. P2-006
+  (#207, `tasks/P2-006-gomod-model.md`) merged as #272, so this row branches from `main` with no
+  stack, and an agent merges it. P2-008 (#209) and P2-009b (#211) wait for it.
 - The sketch this row starts from is "go.mod plugin over the line layer" in
   [#156](https://github.com/kitimark/mitos/issues/156#issuecomment-6795051235). The owner's
   decisions are in
@@ -507,37 +507,59 @@ owner_decisions:
 
 ### Problem
 
-The plugin must emit what the reviewed model holds and prove it, without a second statement of
-any rule of the model.
+The plugin must emit what the model holds, in file order, and prove it with no second statement
+of a rule. The gate's three obligations are about membership, so order and count rest on the
+plugin's own `run_eq`. P2-008 needs the order.
 
 ### Shape
 
-`scanLine` calls the model's `Mode.step`, so the plugin holds the iteration and no rule. `foldl`
-builds the list in reverse, and `run` reverses it once. One lemma, `run_eq`, gives the three
-obligations.
+`scanLine` calls `Mode.step`. The state is `Scan`: the mode for the next line, and the facts
+newest first. `foldl_scanLine` says what the fold holds from any state. `run_eq` is that lemma at
+the start state, and the obligations go through `run_eq`. The interface is `extractor`, `run_eq`
+and the obligations. The helpers are `private`.
+
+### Synthesis decision
+
+- The base is the Fable runner's design: the `Scan` structure, plus fuller checks, a record
+  table, risks and stop conditions.
+- Grafted from the Opus runner: one scratch script for the golden run and the Go run, with the
+  Go side as a command; the traps about `lake build` with a `sorry` and about the unnamed case
+  split; P2-008 citing `run_eq`; a follow-up for the gate; not waiting for #277; a check that
+  only the row's paths changed.
+- Changed by the judge: `private` helpers; check 6 computed from the head's own files; evidence
+  that the gate accepts repeated facts as well as reordered ones; the commit names.
+- Rejected: the pair state; a full accept by the merging agent; comparing against the toy's
+  record; holding the merge for #277 (that is now a default).
 
 ### Tradeoffs accepted
 
-- We accept a second walk over the lines, in exchange for the plugin the plan names and a gate 3
-  that judges a proof with content.
+- A second walk over the lines, because the plan names this plugin.
+- A three-field structure, to give the newest-first list a name.
+- `private` helpers the toy does not have, so no caller can widen the interface.
+- `run_eq` outside the gate, so this row needs no gate change.
+- A proof that unfolds three model definitions, so no locked file gets a new lemma.
+- Check 6 repeats `writeRecord`'s hashing in shell. It gives a stale-record check with no build
+  until P2-012's step replaces it.
 
 ### Alternatives considered
 
-- `run := Models.GoMod.facts`. It is the smallest plugin, and gates 3 to 5 then judge three
-  one-line proofs. It is owner decision O1.
-- A plugin with its own tokenizer. It states every rule twice, and the plan puts the tokenizer
-  and the block state in the model.
+- The pair state.
+- `foldr` with a function of the mode as its result.
+- A `foldl` that appends each fact (quadratic).
+- Plain recursion. It copies `readingsFrom`, and it is not the fold the plan names.
+- `run := Models.GoMod.facts` (O1).
+- A plugin with its own tokenizer.
 
 ### Open questions and risks
 
-- If P2-006's PR changes `Mode.step` or `facts`, this contract changes with it (`revisit_when`).
-- Each later core PR moves `core_sha256`, so the record is stale until that PR re-records it
-  (deferrals).
+- O1 is open on #208, with its default as the Design states.
+- Should acceptance itself pin order and count? That is filed as #282.
+- Not verified: the cheat corpus with the plugin present, CI, go.mod files outside one Go
+  distribution, and accept times on an idle machine.
 
 ### Next implementation step
 
-After P2-006 merges, re-check the inputs against `main`. Then write `scanLine`, `extractor` and
-`run_eq`.
+Run S1, write the plugin from the sketch and the routes, then run check 1.
 
 ## Done when
 - [ ] `VERDICT: ACCEPTED` for `--plugin GoMod --model Models.GoMod.model --paranoid --record` at
@@ -545,5 +567,8 @@ After P2-006 merges, re-check the inputs against `main`. Then write `scanLine`, 
 - [ ] `examples/acme/accepted/GoMod.json` committed as that run wrote it
 - [ ] the scratch run against `go mod edit -json` reported in the PR body
 - [ ] all `checks` pass locally
+- [ ] `GoMod.run_eq` as stated, with the three obligations proved through it
+- [ ] check 6 prints nothing at the head
+- [ ] F3 prints its three lines; F4: 19 files, 84 facts, no difference
 - [ ] no `sorry`, no new axioms
 - [ ] run-log record written (ops/runs/)
