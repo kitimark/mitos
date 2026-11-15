@@ -1,5 +1,6 @@
 import MitosGate.Accept
 import MitosGate.Cheats
+import MitosGate.CheatsAggregate
 import MitosGate.CheatsShard
 import MitosGate.Util
 
@@ -230,6 +231,11 @@ def isRegular (p : System.FilePath) : IO Bool := do
   if !(← p.pathExists) then return false
   return (← p.symlinkMetadata).type == .file
 
+def artifactCases : String := "shard-cases"
+def artifactExit : String := "shard-exit"
+def artifactTiming : String := "timing.tsv"
+def artifactTable : String := "table.txt"
+
 def runShard (o : Options) (usage : String) : IO UInt32 := do
   if !o.cases.isEmpty then
     IO.eprintln (ciLine "a shard reads the case directory; do not also name cases")
@@ -258,7 +264,7 @@ def runShard (o : Options) (usage : String) : IO UInt32 := do
           return 2
         let logs := root / ".lake" / "cheats"
         IO.FS.createDirAll logs
-        IO.FS.writeFile (logs / CheatsShard.artifactCases)
+        IO.FS.writeFile (logs / artifactCases)
           (CheatsShard.renderCaseList chosen)
         runCorpus { o with cases := chosen }
   catch e =>
@@ -296,20 +302,20 @@ def parseAggArgs (args : List String) : Except String AggFlags :=
 def readText (p : System.FilePath) : IO (Option String) := do
   if ← isRegular p then return some (← IO.FS.readFile p) else return none
 
-def readSlot (dir : System.FilePath) : IO CheatsShard.ShardSlot := do
+def readSlot (dir : System.FilePath) : IO CheatsAggregate.ShardSlot := do
   if !(← dir.isDir) then return .absent
   let mut regular : List String := []
   for e in ← dir.readDir do
     if ← isRegular e.path then regular := e.fileName :: regular
   return .present {
-    exitText := ← readText (dir / CheatsShard.artifactExit)
-    casesText := ← readText (dir / CheatsShard.artifactCases)
-    timingText := ← readText (dir / CheatsShard.artifactTiming)
-    tableText := ← readText (dir / CheatsShard.artifactTable)
+    exitText := ← readText (dir / artifactExit)
+    casesText := ← readText (dir / artifactCases)
+    timingText := ← readText (dir / artifactTiming)
+    tableText := ← readText (dir / artifactTable)
     regularFiles := regular
   }
 
-def publish (merged : System.FilePath) (plan : CheatsShard.MergePlan) (slots : List System.FilePath) :
+def publish (merged : System.FilePath) (plan : CheatsAggregate.MergePlan) (slots : List System.FilePath) :
     IO Unit := do
   let work := System.FilePath.mk (merged.toString ++ ".work")
   let old := System.FilePath.mk (merged.toString ++ ".old")
@@ -319,7 +325,7 @@ def publish (merged : System.FilePath) (plan : CheatsShard.MergePlan) (slots : L
     match slots[c.shard]? with
     | none => throw <| IO.userError s!"shard {c.shard} is not a directory that was read"
     | some src => copyFile (src / c.file) (work / c.file)
-  IO.FS.writeFile (work / CheatsShard.artifactTiming) plan.timing
+  IO.FS.writeFile (work / artifactTiming) plan.timing
   if ← old.pathExists then IO.FS.removeDirAll old
   if ← merged.pathExists then IO.FS.rename merged old
   IO.FS.rename work merged
@@ -345,13 +351,13 @@ def aggregateCli (args : List String) : IO UInt32 := do
       if path.isAbsolute then path else root / path
     try
       let names ← listCases dir
-      let mut records : List CheatsShard.ShardSlot := []
+      let mut records : List CheatsAggregate.ShardSlot := []
       for slot in slots do
         records := records ++ [← readSlot slot]
-      let input : CheatsShard.AggregateInput := {
+      let input : CheatsAggregate.AggregateInput := {
         checks, shardsJob, count := slots.length, directory := names, shards := records
       }
-      match CheatsShard.verdict input with
+      match CheatsAggregate.verdict input with
       | .reject why =>
         IO.eprintln (ciLine why.render)
         return 1
