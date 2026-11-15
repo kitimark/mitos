@@ -389,11 +389,11 @@ chmod +x "$pfake/gh" "$rfake/gh"
 past=2000-01-01T00:00:00Z
 future=2999-01-01T00:00:00Z
 run() {
-  jq -cn --argjson id "$1" --argjson a "$2" --arg st "$3" --arg c "$4" --arg u "$5" --arg main "$m2" \
-    '{id: $id, run_attempt: $a, status: $st, conclusion: (if $c == "" then null else $c end),
-      updated_at: $u, path: ".github/workflows/land-protection.yml", head_branch: "main",
+  jq -cn --arg main "$m2" \
+    '{id: 501, run_attempt: 1, status: "completed", conclusion: "success", updated_at: "2026-11-15T06:00:20Z",
+      path: ".github/workflows/land-protection.yml", head_branch: "main",
       head_sha: $main, event: "workflow_run", head_repository: {full_name: "owner/mitos"},
-      repository: {full_name: "owner/mitos"}}' | jq -c "${6:-.}"
+      repository: {full_name: "owner/mitos"}}' | jq -c "${1:-.}"
 }
 runs() { jq -cn '{total_count: ($ARGS.positional | length), workflow_runs: [$ARGS.positional[] | fromjson]}' --args "$@"; }
 artifact() {
@@ -429,7 +429,7 @@ into_snapshot() {
 }
 
 pstart
-runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+runs "$(run)" >"$pd/runs.json"
 artifact 501 1
 if pfetch && [ -z "$(said)" ] && [ "$(jq -c . "$tmp/pf/protection.json" 2>/dev/null)" = "$(jq -c . "$b/protection.json")" ]; then
   ok "protection: a fresh read by main's reader is main's protection"
@@ -453,7 +453,7 @@ else
 fi
 
 pstart
-runs "$(run 501 1 completed success 2999-01-01T00:00:10Z)" >"$pd/runs.json"
+runs "$(run '.updated_at = "2999-01-01T00:00:10Z"')" >"$pd/runs.json"
 artifact 501 1
 pfetch P_SINCE="$future"
 if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $future" ] && [ "$(unzipped)" = 1 ]; then
@@ -464,7 +464,7 @@ fi
 into_snapshot
 holds "protection: a stale read holds every pull request" "^snapshot: #9 holds: unread protection\$"
 pstart
-runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+runs "$(run)" >"$pd/runs.json"
 artifact 501 1 '.read = "1999-12-31T23:59:59Z"'
 pfetch
 if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $past" ]; then
@@ -473,7 +473,7 @@ else
   bad "protection: the file's own read time decides, not the run's" "$(cat "$tmp/pf.err")"
 fi
 pstart
-runs "$(run 501 1 completed success 2998-12-31T23:59:59Z)" >"$pd/runs.json"
+runs "$(run '.updated_at = "2998-12-31T23:59:59Z"')" >"$pd/runs.json"
 artifact 501 1
 pfetch P_SINCE="$future"
 if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $future" ] && [ "$(unzipped)" = 0 ]; then
@@ -493,7 +493,7 @@ fi
 into_snapshot
 holds "protection: a missing file holds every pull request" "^snapshot: #9 holds: unread protection\$"
 pstart
-runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+runs "$(run)" >"$pd/runs.json"
 echo '{"total_count":0,"artifacts":[]}' >"$pd/artifacts.json"
 pfetch
 if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "snapshot-fetch: the read of protection failed" ]; then
@@ -502,7 +502,7 @@ else
   bad "protection: a successful run without its artifact holds" "$(cat "$tmp/pf.err")"
 fi
 pstart
-runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+runs "$(run)" >"$pd/runs.json"
 artifact 501 1
 jq '.artifacts[0].expired = true' "$pd/artifacts.json" >"$pd/x" && mv "$pd/x" "$pd/artifacts.json"
 pfetch
@@ -514,7 +514,7 @@ fi
 for other in '.artifacts[0].workflow_run.id = 502' '.artifacts += [.artifacts[0] | .id = 901]' \
   '.artifacts[0].size_in_bytes = 1048577' '.artifacts[0].name = "land-protection-501-2"'; do
   pstart
-  runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+  runs "$(run)" >"$pd/runs.json"
   artifact 501 1
   jq "$other" "$pd/artifacts.json" >"$pd/x" && mv "$pd/x" "$pd/artifacts.json"
   pfetch
@@ -531,7 +531,7 @@ for other in '.head_branch = "feature"' '.event = "pull_request"' '.event = "sch
   ".head_sha = \"$m1\"" '.path = ".github/workflows/other.yml"' '.conclusion = "failure"' \
   '.status = "completed" | .conclusion = "cancelled"'; do
   pstart
-  runs "$(run 501 1 completed success 2026-11-15T06:00:20Z "$other")" >"$pd/runs.json"
+  runs "$(run "$other")" >"$pd/runs.json"
   artifact 501 1
   pfetch
   if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $past" ] && [ "$(unzipped)" = 0 ]; then
@@ -543,7 +543,7 @@ done
 for other in '.ref = "refs/heads/feature"' '.ref = "refs/tags/main"' '.repo = "fork/mitos"' '.run = 502' \
   '.attempt = 2' '.v = 2'; do
   pstart
-  runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+  runs "$(run)" >"$pd/runs.json"
   artifact 501 1 "$other"
   pfetch
   if [ ! -e "$tmp/pf/protection.json" ] \
@@ -555,7 +555,7 @@ for other in '.ref = "refs/heads/feature"' '.ref = "refs/tags/main"' '.repo = "f
 done
 for broken in '.protection = []' 'del(.read)' '.read = "2026-11-15 06:00:30"'; do
   pstart
-  runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+  runs "$(run)" >"$pd/runs.json"
   artifact 501 1 "$broken"
   pfetch
   if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "snapshot-fetch: the read of protection failed" ]; then
@@ -566,7 +566,7 @@ for broken in '.protection = []' 'del(.read)' '.read = "2026-11-15 06:00:30"'; d
 done
 
 pstart
-runs "$(run 502 1 completed success 2026-11-15T06:00:40Z)" "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+runs "$(run '.id = 502 | .updated_at = "2026-11-15T06:00:40Z"')" "$(run)" >"$pd/runs.json"
 artifact 502 1
 pfetch
 if [ -e "$tmp/pf/protection.json" ] && grep -q 'actions/runs/502/artifacts' "$pd/gh.log" \
@@ -576,7 +576,7 @@ else
   bad "protection: the newest successful run wins" "$(cat "$tmp/pf.err" "$pd/gh.log")"
 fi
 pstart
-runs "$(run 501 2 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+runs "$(run '.run_attempt = 2')" >"$pd/runs.json"
 artifact 501 2
 pfetch
 if [ -e "$tmp/pf/protection.json" ] && grep -q 'artifacts?name=land-protection-501-2&' "$pd/gh.log"; then
@@ -586,8 +586,8 @@ else
 fi
 
 pstart
-runs "$(run 501 1 in_progress '' 2026-11-15T06:00:10Z)" >"$pd/runs-1.json"
-runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+runs "$(run '.status = "in_progress" | .conclusion = null | .updated_at = "2026-11-15T06:00:10Z"')" >"$pd/runs-1.json"
+runs "$(run)" >"$pd/runs.json"
 artifact 501 1
 pfetch SNAPSHOT_PROTECTION_WAIT=30
 if [ -e "$tmp/pf/protection.json" ] && [ -z "$(said)" ] && [ "$lists" = 2 ]; then
@@ -596,7 +596,7 @@ else
   bad "protection: the fetch waits for a reader run still running, then reads it" "lists $lists" "$(cat "$tmp/pf.err")"
 fi
 pstart
-runs "$(run 501 1 queued '' 2026-11-15T06:00:10Z)" >"$pd/runs.json"
+runs "$(run '.status = "queued" | .conclusion = null | .updated_at = "2026-11-15T06:00:10Z"')" >"$pd/runs.json"
 pfetch SNAPSHOT_PROTECTION_WAIT=2
 if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "$stale_line $past" ] && [ "$lists" -ge 2 ] \
   && [ "$lists" -le 4 ] && [ "$took" -le 8 ]; then
@@ -605,7 +605,7 @@ else
   bad "protection: the wait ends at its deadline, and holds" "lists $lists, took $took s" "$(cat "$tmp/pf.err")"
 fi
 pstart
-runs "$(run 501 1 queued '' 2026-11-15T06:00:10Z)" >"$pd/runs.json"
+runs "$(run '.status = "queued" | .conclusion = null | .updated_at = "2026-11-15T06:00:10Z"')" >"$pd/runs.json"
 pfetch
 if [ "$(said)" = "$stale_line $past" ] && [ "$lists" = 1 ]; then
   ok "protection: with no wait, one list of runs"
@@ -613,7 +613,7 @@ else
   bad "protection: with no wait, one list of runs" "lists $lists" "$(cat "$tmp/pf.err")"
 fi
 pstart
-runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+runs "$(run)" >"$pd/runs.json"
 artifact 501 1
 pfetch GITHUB_RUN_ID=
 if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "snapshot-fetch: the read of protection failed" ] \

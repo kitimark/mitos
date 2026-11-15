@@ -5,10 +5,11 @@
 # per read, `<dir>/<read>.json`, through `gh api` only: REST, never GraphQL. A read that fails
 # leaves no file, so the snapshot holds every pull request that needs it; a list is read with
 # `--paginate --slurp`, so a list with a failed page leaves no file either. The script parses only
-# the numbers, heads and branch names of the open pull requests, to name their routes, and skips a
-# route whose name it would have to build from anything else; `mitos-gate snapshot` checks every
-# response it reads. It prints one line on standard error per failed read and exits 0; a usage
-# error exits 2.
+# the numbers, heads and branch names of the open pull requests, to name their routes, and main's
+# SHA, this run's start time and the protection reader's run ids, attempt, artifact and file, to
+# take main's protection only from a fresh read; it skips a route whose name it would have to build
+# from anything else, and `mitos-gate snapshot` checks every response it reads. It prints one line
+# on standard error per failed read and exits 0; a usage error exits 2.
 set -u
 
 die() { printf 'snapshot-fetch: %s\n' "$1" >&2; exit 2; }
@@ -66,7 +67,7 @@ protection_from() {
     || ! since=$(jq -er --arg re "$stamp" '.run_started_at | select(type == "string" and test($re))' \
       "$s/own.json" 2>/dev/null); then
     echo failed
-    return
+    return 1
   fi
   deadline=$((SECONDS + wait_s))
   while :; do
@@ -76,7 +77,7 @@ protection_from() {
       || ! pick=$(jq -r --arg repo "$repo" --arg main "$main" --arg since "$since" --arg re "$stamp" \
         "$ours | $done_since"' | first | select(.) | "\(.id) \(.run_attempt)"' "$s/runs.json" 2>/dev/null); then
       echo failed
-      return
+      return 1
     fi
     if [ -n "$pick" ] && [ "$pick" != "$seen" ]; then
       seen=$pick
@@ -94,41 +95,38 @@ protection_from() {
         || ! jq -e --arg re "$stamp" 'type == "object" and (.read | type == "string" and test($re))
           and (.protection | type == "object")' "$s/read.json" >/dev/null 2>&1; then
         echo failed
-        return
+        return 1
       fi
       if ! jq -e --arg repo "$repo" --argjson id "$id" --argjson attempt "$attempt" \
         '.v == 1 and .repo == $repo and .ref == "refs/heads/main" and .run == $id
           and .attempt == $attempt' "$s/read.json" >/dev/null; then
         echo "is from another run, repository or ref than run $id, attempt $attempt"
-        return
+        return 1
       fi
       if jq -e --arg since "$since" '.read >= $since' "$s/read.json" >/dev/null; then
         if jq -c .protection "$s/read.json" >"$out/protection.part" \
           && mv -- "$out/protection.part" "$out/protection.json"; then
-          return
+          return 0
         fi
         rm -f -- "$out/protection.part"
         echo failed
-        return
+        return 1
       fi
     fi
     if [ "$SECONDS" -ge "$deadline" ] || ! jq -e --arg repo "$repo" --arg main "$main" \
       "$ours"' | any(.[]; .status != "completed")' "$s/runs.json" >/dev/null 2>&1; then
       echo "is stale: no successful land-protection run at $main read it at or after $since"
-      return
+      return 1
     fi
     sleep "$poll_s"
   done
 }
+unread() { printf 'snapshot-fetch: the read of protection %s\n' "$1" >&2; }
 protection() {
   local s why
-  if s=$(mktemp -d 2>/dev/null); then
-    why=$(protection_from "$s")
-    rm -rf -- "$s"
-  else
-    why=failed
-  fi
-  [ -z "$why" ] || printf 'snapshot-fetch: the read of protection %s\n' "$why" >&2
+  s=$(mktemp -d 2>/dev/null) || { unread failed; return; }
+  why=$(protection_from "$s") || unread "$why"
+  rm -rf -- "$s"
 }
 
 read_to repo "repos/$repo"
