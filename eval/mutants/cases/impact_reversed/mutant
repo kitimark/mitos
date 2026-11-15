@@ -1,7 +1,9 @@
-why=Walks edges forward, so it reports what the changed repo depends on instead of what depends on it.
+why=Walks edges forward, from requirer to provider, with the guard mirrored too, so it reports what the changed repo depends on instead of what depends on it.
 breaks=impact_correct
 file=Mitos/Impl/Impact.lean
 find=e.providingRepo == x || seen.contains e.providingRepo
 replace=e.requiringRepo == x || seen.contains e.requiringRepo
+find=!seen.contains e.requiringRepo
+replace=!seen.contains e.providingRepo
 find=(e.requiringRepo :: seen)
 replace=(e.providingRepo :: seen)

@@ -1,0 +1,5 @@
+why=Lets an edge fire for a repo already reported, so a repo that needs the changed one through two edges is listed twice.
+breaks=impact_nodup
+file=Mitos/Impl/Impact.lean
+find=seen.contains e.providingRepo) && !seen.contains e.requiringRepo
+replace=seen.contains e.providingRepo)
