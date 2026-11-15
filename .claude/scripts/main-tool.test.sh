@@ -20,7 +20,6 @@ g "$work/seed" push -q origin main 2>/dev/null
 git clone -q "$work/origin.git" "$work/clone"
 proj=$work/clone
 
-# A stub lake: it counts its builds, may sleep or fail, and leaves a binary where the real one would.
 mkdir "$work/bin"
 cat >"$work/bin/lake" <<'EOF'
 #!/usr/bin/env bash
@@ -40,8 +39,6 @@ builds() { grep -c '^build' "$LAKE_LOG"; }
 path_with="$work/bin:/usr/bin:/bin"
 path_without="/usr/bin:/bin"
 
-# mt <path> <mode> [commit]: main_tool in a fresh process; its standard error goes to $work/err,
-# its standard output to $work/stdout, as a caller of the library sends them.
 mt() {
   local p=$1 mode=$2 at=${3:-}
   (cd "$proj" && env PATH="$p" CLAUDE_PROJECT_DIR="$proj" bash -c '
@@ -168,7 +165,6 @@ git -C "$proj" worktree add -q --detach "$work/other" "$main3"
 check "another worktree of the clone shares the checkout" \
   "$(cd "$work/other" && env CLAUDE_PROJECT_DIR="$work/other" bash -c 'source "$1"; main_tool_dir' _ "$lib")" "$dir"
 
-# One process that calls twice holds one lock: the second call reuses the descriptor.
 twice=$(cd "$proj" && env PATH="$path_with" CLAUDE_PROJECT_DIR="$proj" bash -c '
   source "$1"
   dir=$(main_tool_dir)
@@ -186,7 +182,6 @@ inside=$(cd "$proj" && env PATH="$path_with" CLAUDE_PROJECT_DIR="$proj" bash -c 
 ' _ "$lib")
 check "the same call inside \$(...) leaves no lock in the caller" "$inside" unset
 
-# A build waits for a caller that still runs the binary.
 move_main gate/a.txt
 main4=$(git -C "$proj" ls-remote origin refs/heads/main | cut -f1)
 : >"$LAKE_LOG"
@@ -207,7 +202,6 @@ check "the build ran once" "$(builds)" 1
 check "the build began after the caller was done" "$(grep -c overlap "$LAKE_LOG")" 0
 check "the stamp names the new main" "$(cat "$dir/.lake/main-tool.built")" "$main4"
 
-# #290 item 1: two callers that find the build stale. The second waits out the first's build.
 move_main gate/a.txt
 main5=$(git -C "$proj" ls-remote origin refs/heads/main | cut -f1)
 : >"$LAKE_LOG"
@@ -226,7 +220,6 @@ check "the first caller built: exit 0" "$(cat "$work/first.code")" 0
 check "two callers, one build" "$(builds)" 1
 check "the stamp names main" "$(cat "$dir/.lake/main-tool.built")" "$main5"
 
-# Two callers that both fetch and find it stale at once: the loser of the ref lock tries again.
 move_main gate/a.txt
 : >"$LAKE_LOG"
 (LAKE_SLEEP=2 mt "$path_with" ensure; echo "$code" >"$work/a.code") &

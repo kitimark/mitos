@@ -7,10 +7,9 @@
 #                                              that exits 0
 #   reviewed <head> (carried from <sha>)       its newest review is of an earlier commit <sha>, the
 #                                              state would be paused, behind or pending, and
-#                                              `carry.sh --no-build` says <sha> covers the head, as
-#                                              when the updater only rebased it. <sha> is the commit
-#                                              `Snapshot.botAt` names, so `land` agrees. Exits 0 and
-#                                              posts no request, with or without --request
+#                                              `carry.sh --no-build` says <sha> covers the head.
+#                                              Exits 0 and posts no request, with or without
+#                                              --request
 #   paused: last reviewed <sha>, head <head>   it paused reviews on the branch after many pushes
 #                                              (`reviews.auto_review.auto_pause_after_reviewed_commits`)
 #   behind: last reviewed <sha>, head <head>   its run at the head ended without a review: cancelled,
@@ -24,12 +23,10 @@
 #                                              before the run ends; or it has not started
 # The other states exit 1. `<sha>` is `none` when it has never reviewed the PR. The last reviewed
 # commit is the one its summary comment names under "Reviews paused", else the commit of its newest
-# review with a body; a review with an empty body is only its reply in a thread. The cover check
-# starts from the newest review only, never from the summary's commit.
+# review with a body; a review with an empty body is only its reply in a thread.
 #
 # When the cover check cannot answer, a paused, behind or pending line ends with
-# `; carry not checked: <why>`. The check never builds main's tool, so a clone that has not built
-# it runs `carry.sh` once first.
+# `; carry not checked: <why>`.
 #
 # --request, on paused or behind, on an open PR: posts one `@coderabbitai review` comment that ends
 # with the Claude Code footer, and prints `coderabbit #<pr>: requested a review in comment <id>`.

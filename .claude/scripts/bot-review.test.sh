@@ -42,8 +42,6 @@ chmod +x "$work/bin/gh"
 path="$work/bin:/usr/bin:/bin"
 [ -x "$work/bin/gh" ] && [ "$(PATH=$path type -P gh)" = "$work/bin/gh" ] || { echo "FAIL  gh is not the fake"; exit 1; }
 
-# A real remote for acme/widgets with a branch of three commits (B, C, then the head A), and a
-# clone whose origin URL carries a credential that nothing may print.
 g() { git -C "$1" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "${@:2}"; }
 mkdir -p "$work/remotes/acme"
 git init -q --bare -b main "$work/remotes/acme/widgets.git"
@@ -64,8 +62,6 @@ git clone -q "$work/remotes/acme/widgets.git" "$work/repo"
 g "$work/repo" config "url.$work/remotes/.insteadOf" "http://x-access-token:SECRET123@127.0.0.1:1234/git/"
 g "$work/repo" remote set-url origin "http://x-access-token:SECRET123@127.0.0.1:1234/git/acme/widgets.git"
 
-# Main's tool as the library makes it: a stub lake builds a stub gate. The gate says a commit
-# covers the head only when GATE_COVERS lists it, GATE_FAIL makes it fail, and each call is logged.
 cat >"$work/bin/lake" <<'EOF'
 #!/usr/bin/env bash
 echo build >>"$FAKE_DIR/lake.log"
@@ -300,7 +296,6 @@ rm "$work/f/checks-$A.json"
 run 86
 is "CodeRabbit's review of the head with no check: reviewed" "coderabbit #86: reviewed ${A:0:7}" 0
 
-# The cover rule: the newest review is of an earlier commit, and carry covers the head from it.
 jq -n --arg a "$A" --arg b "$B" '[[
   {id:1,user:{login:"coderabbitai[bot]"},state:"COMMENTED",commit_id:$b,submitted_at:"2026-11-09T08:00:00Z",body:"**Actionable comments posted: 2**"},
   {id:2,user:{login:"coderabbitai[bot]"},state:"COMMENTED",commit_id:$a,submitted_at:"2026-11-09T09:30:00Z",body:""}]]' >"$work/f/reviews.json"
@@ -337,8 +332,6 @@ rm "$work/f/checks-$A.json"
 GATE_COVERS=$B run 86
 is "a head with no check that carry covers: reviewed" "$covered" 0
 
-# #290 item 4: the summary names C, the newest review names B. `Snapshot.botAt` names B, so the
-# cover check starts from B alone.
 summary "$summary_tag $paused_tag
 > ## Reviews paused
 > - Last reviewed commit: $C"

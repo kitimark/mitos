@@ -21,8 +21,6 @@ main_tool_fresh() {
     || git -C "$proj" diff --quiet "$built" "$at" -- "${main_tool_inputs[@]}" 2>/dev/null
 }
 
-# ensure waits out another caller's build (about ten minutes cold). ready gives up after
-# MAIN_TOOL_READY_WAIT seconds, because its caller never builds and must not stall.
 main_tool() {
   local mode=$1 dir=${2:-} at=${3:-} proj=${CLAUDE_PROJECT_DIR:-.} bin stamp wait try
   case $mode in
