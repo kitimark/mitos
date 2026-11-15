@@ -1,0 +1,3 @@
+full=2
+comparator_only=reject@2
+why=The plugin's completeness proof names `kernel_reject`, which does not exist, so its build fails. Its `#print` writes the comparator's kernel-rejection lines into the build log, and Lean's error echoes `kernel_reject`. A reading that looks for `kernel` and `reject` anywhere in the output reports the failed build as a kernel rejection at gate 5. Only the comparator's last line, here `error: Child exited with 1`, may decide the outcome.

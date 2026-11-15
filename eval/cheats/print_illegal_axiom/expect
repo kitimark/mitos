@@ -1,0 +1,3 @@
+full=3
+comparator_only=reject@3
+why=The plugin proves `True` under the obligation's name, which gate 3 rejects, and its `#print` writes the comparator's report `error: Illegal axiom detected: 'sorryAx'` as a line of the build log. A reading that matches the comparator's reports on any line reports the statement mismatch as an illegal axiom at gate 4. Only the comparator's last line, here its statement mismatch, may decide the outcome.

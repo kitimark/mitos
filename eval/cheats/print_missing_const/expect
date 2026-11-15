@@ -1,0 +1,3 @@
+full=2
+comparator_only=reject@2
+why=The plugin's completeness proof is a type error, so its build fails. Its `#print` writes the exporter's panic for a missing `ToyRequire.complete` and the comparator's `error: Child exited with 134` into the build log. A reading that finds the panic anywhere reports the failed build as a missing obligation at gate 3. The panic counts only when the comparator's last line is `error: Child exited with 134` and the exporter's own lines just before it hold the panic.
