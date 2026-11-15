@@ -1,0 +1,14 @@
+# case	module	version	go.mod hash (as go.sum and sum.golang.org print it)	repository	licence (SPDX)
+argo-cd	github.com/argoproj/argo-cd/v3	v3.6.1	h1:DUcIODAWqGVX6xq1xX4fSWxrPoLGwmdg6goKjEUp4P8=	https://github.com/argoproj/argo-cd	Apache-2.0
+cobra	github.com/spf13/cobra	v1.10.2	h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiTUUS4=	https://github.com/spf13/cobra	Apache-2.0
+etcd	go.etcd.io/etcd/v3	v3.7.3	h1:r2qRGHG1R+ShYe3BdDnxBRGLN0MouUagLt39lhPDxrw=	https://github.com/etcd-io/etcd	Apache-2.0
+gh-cli	github.com/cli/cli/v2	v2.104.0	h1:lddfsaCvL72knAc/M7mR0N3N4nSU3X92MPCZepXm4Wc=	https://github.com/cli/cli	MIT
+go-redis	github.com/redis/go-redis/v9	v9.23.0	h1:EWP2UUk+XDaI1s5nQB5mablZN6vccXlmBQTyfnF87D0=	https://github.com/redis/go-redis	BSD-2-Clause
+gopls	golang.org/x/tools/gopls	v0.24.0	h1:abHXJMs6FnwH1z/R1GrYVo/TBfxyDbSFMCKakBQURg0=	https://github.com/golang/tools	BSD-3-Clause
+grpc	google.golang.org/grpc	v1.85.0	h1:0rQrOD58yjal/0EaVbGBANindixsCZNQPDV3VKtaKuQ=	https://github.com/grpc/grpc-go	Apache-2.0
+kubernetes	k8s.io/kubernetes	v1.37.2	h1:zAK7e3i5feyBL/bhucQnA5VRKuyrS8F+ijHJkZzQaWw=	https://github.com/kubernetes/kubernetes	Apache-2.0
+prometheus	github.com/prometheus/prometheus	v0.316.0	h1:nd2m0IehYLgxV4yAmoQDsvV45I9Xerh+uTUeCioEMis=	https://github.com/prometheus/prometheus	Apache-2.0
+rsc-quote	rsc.io/quote	v1.5.2	h1:LzX7hefJvL54yjefDEDHNONDjII0t9xZLPXsUe+TKr0=	https://github.com/rsc/quote	BSD-3-Clause
+tailscale	tailscale.com	v1.104.7	h1:pNl682NgUoac2/Um3khv8pduX3D1YPBZTL067+zo8wY=	https://github.com/tailscale/tailscale	BSD-3-Clause
+traefik	github.com/traefik/traefik/v3	v3.7.19	h1:cWOaosHycDsgqDQ3goeY6UxE47EfJ74aDFwwgsFy5wY=	https://github.com/traefik/traefik	MIT
+zap	go.uber.org/zap	v1.28.0	h1:rDLpOi171uODNm/mxFcuYWxDsqWSAVkFdX4XojSKg/Q=	https://github.com/uber-go/zap	MIT

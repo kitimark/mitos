@@ -35,9 +35,8 @@ escalation: hint → automation → stronger model → pair → split → revisi
   `68e37a9`. The judge rebuilt the synthesis on `main` at `85981fe`; `examples/acme`, `core/Mitos`,
   `lean-toolchain` and `eval/score` are the same at both. The sketch type-checks and runs on Lean
   v4.35.0 with Go 1.24.7 (Rationale, Evidence).
-- The PR that lands this file also deletes the `P2-008` line from
-  `.claude/scripts/plan-tasks.pending`, or `plan-tasks.test.sh` fails on a listed row with a valid
-  file. That path is the owner's, so the owner merges that design PR, as with `a489a5f`.
+- The design PR landed this file and removed `P2-008` from
+  `.claude/scripts/plan-tasks.pending`. The builder leaves that owner path unchanged.
 
 ## Design
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
@@ -245,8 +244,8 @@ fails this build, and that PR updates this paragraph. The report says "strict pa
 - Deleting a triage line to get a green run, or adding one with an invented issue number. A needed
   line's absence is exit 1, a line that matches nothing is exit 1 (T4), and the verifier opens each
   issue number in `triage.tsv` (check 12).
-- The design-time placeholder `#<n>` in `triage.tsv`. The two lines cite the quoted-path issue the
-  builder files (S2).
+- The design-time placeholder `#<n>` in `triage.tsv`. The two lines cite the existing quoted-path
+  issue #328 (S2).
 - Letting git rewrite line endings under `cases/`. `cases/.gitattributes` holds `* -text`.
 - A comment in a Lean file or a script. The usage string is the runner's help, and the statements
   and fixtures carry the rules.
@@ -1051,7 +1050,7 @@ echo "ok: check-pins.sh checks a last row with no newline"
 mixedjson='{"Module":{"Path":"example.com/app"},"Require":[{"Path":"example.com/b","Version":"v1.0.0"},{"Path":"example.com/a","Version":"v1.0.0"},{"Path":"example.com/c","Version":"v1.0.0"}],"Exclude":null,"Replace":null,"Retract":null,"Tool":null}'
 fresh; pin mixed "$pairmod" "$mixedjson"
 expect 1 "require: shared paths in another order"
-grep -qF 'require `example.com/c`: only in Go' "$tmp/out"
+grep -qF "require \`example.com/c\`: only in Go" "$tmp/out"
 printf 'mixed\tonly-in-go\trequire\texample.com/c\t#7\n' > "$d/triage.tsv"
 expect 1 "$(printf 'mixed\torder\trequire\t-\t#?')"
 printf 'mixed\torder\trequire\t-\t#8\n' >> "$d/triage.tsv"
@@ -1307,8 +1306,8 @@ git diff --stat 85981fe origin/main -- examples/acme core/Mitos lean-toolchain e
 - S2. Before writing `triage.tsv`, file one issue, labelled `follow-up`, for the model's quoted
   paths, unless one exists by then: "go.mod model: a quoted path gives no fact". It names the
   rsc-quote findings, P2-006's evidence (14 of 850 go.mod texts that Go accepts hold one) and that
-  the fix is a model change, so `spec-approved`. The two triage lines cite it. The report lists
-  the issue's id.
+  the fix is a model change, so `spec-approved`. Issue #328 already holds this finding with the
+  `follow-up` label. The two triage lines cite it. The report lists the issue's id.
 - S3. A pin's licence is not one of Apache-2.0, BSD-2-Clause, BSD-3-Clause and MIT, or the
   licence file is missing, differs from its reviewed source bytes, or a required NOTICE differs: stop, and the root asks the owner (plan, class C). None of the 13.
 - S4. Check 5 prints a line, or Go 1.24.7 rejects a pin: drop or replace that pin, never the check.
@@ -1347,7 +1346,7 @@ deferrals:
   in case a route breaks. Its `revisit_when` ("after #209 merges") is when that file is amended.
   This row does not touch it.
 - To the quoted-path issue of S2: the two rsc-quote findings. It is also P2-006's deferral "Quoted
-  paths", which no issue held (a search of the `follow-up` issues' titles on `main` found none).
+  paths", which #328 now holds.
   Also to a model issue, no row, which the first agent that needs a triage row files: `module ,`
   and other lone punctuation paths (P2-006 O4), and `// indirect` as a flag (P2-006's deferrals).
   Changing any of them is a model PR with `spec-approved`, and then the guards of this row are
@@ -1585,10 +1584,10 @@ vendor and refresh; a verifier can re-run every claim with no Go), and checked b
   licences, `pins.tsv`, `licences.tsv`, `triage.tsv`, `.go-version` and two scripts, all under `eval/diff/`.
 - P2-006's deferrals said a file Go rejects is "reported as rejected". Here `--refresh` reports it
   and writes nothing, so a rejected file never reaches the comparison.
-- P2-006 deferred quoted paths "to a follow-up issue", and none exists on GitHub. S2 files it.
+- P2-006 deferred quoted paths "to a follow-up issue". Issue #328 now holds them, as S2 requires.
 - `docs/process.md`, "What runs where", has no command for the differential row, and
-  `.claude/scripts/plan-tasks.pending` still lists `P2-008`. Both are the owner's paths (Context,
-  deferrals).
+  the design PR removed `P2-008` from `.claude/scripts/plan-tasks.pending`. Both are the owner's
+  paths (Context, deferrals).
 - `tasks/P2-011-toolchain-readiness.md` re-pins `eval/diff/lean-toolchain`, but its step 8 does
   not build `eval/diff` and its touches do not list `eval/diff/Diff/` (deferrals).
 - `plan/phase-2.md` says the nightly "refreshes the outputs with Go, then runs the comparison".
@@ -1596,8 +1595,8 @@ vendor and refresh; a verifier can re-run every claim with no Go), and checked b
 
 ### Next implementation step
 
-Run S1, file the issue of S2, fetch the 13 pins and their licences, write the files under `types`,
-then run checks 2, 5, 6 and 7.
+Run S1, confirm the existing issue #328 for S2, fetch the 13 pins and their licences,
+write the files under `types`, then run checks 2, 5, 6 and 7.
 
 ### Evidence
 
@@ -1630,15 +1629,39 @@ each unless said. The runners' own measurements, on `68e37a9`, agreed.
   dependency graph (A8), and CI with these files present (no step reads them).
 
 ## Done when
-- [ ] the quoted-path issue filed (S2), and `triage.tsv` cites it
-- [ ] `lake --dir eval/diff build` succeeds with `warningAsError`, and `grep -rn 'sorry\|FactKind'
+- [x] the quoted-path issue filed (S2), and `triage.tsv` cites it
+- [x] `lake --dir eval/diff build` succeeds with `warningAsError`, and `grep -rn 'sorry\|FactKind'
       eval/diff/Diff eval/diff/Main.lean` prints nothing
-- [ ] the plain run exits 0 with the table of Usage, also with no `go` on `PATH`
-- [ ] `--refresh` with Go 1.24.7 leaves `git status --porcelain eval/diff` empty
-- [ ] `eval/diff/check-pins.sh --online` prints nothing, and `eval/diff/selftest.sh` prints twenty-eight
+- [x] the plain run exits 0 with the table of Usage, also with no `go` on `PATH`
+- [x] `--refresh` with Go 1.24.7 leaves `git status --porcelain eval/diff` empty
+- [x] `eval/diff/check-pins.sh --online` prints nothing, and `eval/diff/selftest.sh` prints twenty-eight
       `ok:` lines
-- [ ] each pin's `LICENSE` is one of the allowlist; the PR body states O1 and the F0 numbers
-- [ ] `eval/diff/lean-toolchain` reads `leanprover/lean4:v4.35.0`, as P2-011 expects
+- [x] each pin's `LICENSE` is one of the allowlist; the PR body states O1 and the F0 numbers
+- [x] `eval/diff/lean-toolchain` reads `leanprover/lean4:v4.35.0`, as P2-011 expects
 - [ ] all `checks` pass locally
-- [ ] no `sorry`, no new axioms
-- [ ] run-log record written (ops/runs/)
+- [x] no `sorry`, no new axioms
+- [x] run-log record written (ops/runs/)
+
+## Builder evidence
+
+Codex materialized the accepted design on `main` at `2277138`. The preferred sonnet model was
+unavailable to the agent tool, so this attempt used the inherited Codex model. S1 printed nothing.
+The implementation retains every designed statement, signature, guard, and module boundary.
+The header-only pin refusal and exact T16 exit status from #308 are present.
+
+- `lake --dir eval/diff build` completed all 46 jobs without warnings on Lean 4.35.0.
+- The 13-case run reports 2,065 plugin facts, 2,067 Go facts, two mismatches triaged to #328, and
+  109 lines outside the subset. The run exits 0 with no Go on `PATH` and prints identical bytes.
+- Go 1.24.7 refreshed all outputs. A repeat refresh leaves `git status --porcelain eval/diff` empty.
+- The offline and online pin checks exit 0 without output. The source grants are Apache-2.0,
+  BSD-2-Clause, BSD-3-Clause, and MIT. The copied files retain all licence and notice bytes.
+- All 28 selftests pass. The nine statement axiom reports contain only `propext`,
+  `Classical.choice`, and `Quot.sound`. The toolchain comparison and forbidden-token check pass.
+- `plan-tasks.test.sh` and `gh-api-rest.test.sh` pass.
+- The required core checks are blocked by this environment's bubblewrap setup. `lake check` and
+  `lake comparator --paranoid` fail before verification with a read-only uid-map error. An
+  unsandboxed `lake check` also fails while bubblewrap tries to create `/run/user`. CI must supply
+  these checks. No trust code or sandbox setting changed.
+
+The PR leaves the nightly job and CI build wiring to P2-012, as the cut line requires. The owner
+will merge this PR after independent verification.

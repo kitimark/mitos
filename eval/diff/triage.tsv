@@ -1,0 +1,3 @@
+# case	mismatch	directive	path	issue
+rsc-quote	only-in-go	module	rsc.io/quote	#328
+rsc-quote	only-in-go	require	rsc.io/sampler	#328

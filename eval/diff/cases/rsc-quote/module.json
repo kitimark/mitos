@@ -1,0 +1,15 @@
+{
+	"Module": {
+		"Path": "rsc.io/quote"
+	},
+	"Require": [
+		{
+			"Path": "rsc.io/sampler",
+			"Version": "v1.3.0"
+		}
+	],
+	"Exclude": null,
+	"Replace": null,
+	"Retract": null,
+	"Tool": null
+}

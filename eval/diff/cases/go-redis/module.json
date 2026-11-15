@@ -1,0 +1,67 @@
+{
+	"Module": {
+		"Path": "github.com/redis/go-redis/v9"
+	},
+	"Go": "1.26.0",
+	"Require": [
+		{
+			"Path": "github.com/bsm/ginkgo/v2",
+			"Version": "v2.12.0"
+		},
+		{
+			"Path": "github.com/bsm/gomega",
+			"Version": "v1.27.10"
+		},
+		{
+			"Path": "github.com/cespare/xxhash/v2",
+			"Version": "v2.3.0"
+		},
+		{
+			"Path": "github.com/zeebo/xxh3",
+			"Version": "v1.1.0"
+		},
+		{
+			"Path": "go.uber.org/atomic",
+			"Version": "v1.12.0"
+		},
+		{
+			"Path": "golang.org/x/sys",
+			"Version": "v0.48.0"
+		},
+		{
+			"Path": "github.com/klauspost/cpuid/v2",
+			"Version": "v2.4.0",
+			"Indirect": true
+		}
+	],
+	"Exclude": null,
+	"Replace": null,
+	"Retract": [
+		{
+			"Low": "v9.15.1",
+			"High": "v9.15.1",
+			"Rationale": "This version is used to retract v9.15.0"
+		},
+		{
+			"Low": "v9.15.0",
+			"High": "v9.15.0",
+			"Rationale": "This version was accidentally released. It is identical to 9.15.0-beta.2"
+		},
+		{
+			"Low": "v9.7.2",
+			"High": "v9.7.2",
+			"Rationale": "This version was accidentally released. Please use version 9.7.3 instead."
+		},
+		{
+			"Low": "v9.5.4",
+			"High": "v9.5.4",
+			"Rationale": "This version was accidentally released. Please use version 9.6.0 instead."
+		},
+		{
+			"Low": "v9.5.3",
+			"High": "v9.5.3",
+			"Rationale": "This version was accidentally released. Please use version 9.6.0 instead."
+		}
+	],
+	"Tool": null
+}
