@@ -188,7 +188,8 @@ fixtures:
   `main` off the kept paths, now expect `"plan":{"head":"$q1","kind":"merge","pr":9}` where they
   expected `idle`: "the owner's /land on a head already on main goes first, and nothing is pushed"
   (renamed: its plan is that merge), "a conflict is stuck", "an edited /land holds" and "an app's
-  /land is no entry". #278 (open) adds 43 cases to this file, so whichever lands second rebases.
+  /land is no entry". #278 merged first, and its case "protection: with the reader's file, the
+  owner's /land goes first" is a fifth. Every case that prints `step` also prints `word`.
 - `gate/MitosGate/Snapshot/Fixtures.lean`: the eight steps under Build notes.
 - `gate/shadow-test.sh`: the window still scores to its expected report once record 1003-1 prints
   this build's decision (Build notes).
@@ -363,10 +364,10 @@ order:
   corpus, and `LandCli`'s `word` field, which has no code yet.
 
 ## Done when
-- [ ] statements 15 to 18 and `WordStandsIsTheEntry` proved; the 14 old statements keep their text
-- [ ] `lake build` passes: 154 `Land` fixtures, and every other module's fixtures
-- [ ] every `gate/*-test.sh` passes, with the cases under `fixtures`
-- [ ] the PR body lists the three changed promises and each expected value that changed
-- [ ] all `checks` pass locally
-- [ ] no `sorry`, no new axioms
-- [ ] run-log record written (ops/runs/)
+- [x] statements 15 to 18 and `WordStandsIsTheEntry` proved; the 14 old statements keep their text
+- [x] `lake build` passes: 154 `Land` fixtures, and every other module's fixtures
+- [x] every `gate/*-test.sh` passes, with the cases under `fixtures`
+- [x] the PR body lists the three changed promises and each expected value that changed
+- [x] all `checks` pass locally, except the cheat corpus, which runs in CI
+- [x] no `sorry`, no new axioms
+- [x] run-log record written (ops/runs/)

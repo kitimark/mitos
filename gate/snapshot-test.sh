@@ -139,15 +139,15 @@ expect_land() {
   ok "$name"
 }
 fresh
-expect_land "the owner's /land on a head already on main goes first, and nothing is pushed" "$me7" \
-  '{"next":9,"plan":{"kind":"idle"},"step":{"ahead":9,"kind":"wait"}}'
+expect_land "the owner's /land on a head already on main goes first, and its plan is that merge" "$me7" \
+  "{\"next\":9,\"plan\":{\"head\":\"$q1\",\"kind\":\"merge\",\"pr\":9},\"step\":{\"ahead\":9,\"kind\":\"wait\"},\"word\":\"stands\"}"
 fresh
 echo '[[]]' >"$d/comments-9.json"
 expect_land "with no word on the head on main, the clean replay is pushed" "$me7" \
-  "{\"next\":7,\"plan\":{\"expect\":\"$p1\",\"kind\":\"push\",\"pr\":7,\"replay\":\"$replay\"},\"step\":{\"head\":\"$p1\",\"kind\":\"awaitPush\"}}"
+  "{\"next\":7,\"plan\":{\"expect\":\"$p1\",\"kind\":\"push\",\"pr\":7,\"replay\":\"$replay\"},\"step\":{\"head\":\"$p1\",\"kind\":\"awaitPush\"},\"word\":\"stands\"}"
 fresh
 expect_land "a conflict is stuck" '. + {me: {provider: "claude", name: "orchestrator"}, pr: 8}' \
-  '{"next":9,"plan":{"kind":"idle"},"step":{"kind":"stop","stuck":"conflict","why":"stuck"}}'
+  "{\"next\":9,\"plan\":{\"head\":\"$q1\",\"kind\":\"merge\",\"pr\":9},\"step\":{\"kind\":\"stop\",\"stuck\":\"conflict\",\"why\":\"stuck\"},\"word\":\"stands\"}"
 
 held='{"kind":"stop","why":"held"}'
 holds() {
@@ -226,19 +226,19 @@ done
 fresh
 jq '.enforce_admins.enabled = false' "$b/protection.json" >"$d/protection.json"
 expect_land "protection that lets admins bypass lands nothing" "$me7" \
-  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"unenforced"}}'
+  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"unenforced"},"word":"stands"}'
 fresh
 jq '.[0][0] |= (.updated_at = "2026-11-14T08:00:05Z")' "$b/comments-7.json" >"$d/comments-7.json"
 expect_land "an edited /land holds" "$me7" \
-  '{"next":9,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"held"}}'
+  "{\"next\":9,\"plan\":{\"head\":\"$q1\",\"kind\":\"merge\",\"pr\":9},\"step\":{\"kind\":\"stop\",\"why\":\"held\"},\"word\":\"held\"}"
 fresh
 jq '.[0][0].performed_via_github_app = {slug: "claude"}' "$b/comments-7.json" >"$d/comments-7.json"
 expect_land "an app's /land is no entry" "$me7" \
-  '{"next":9,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"noEntry"}}'
+  "{\"next\":9,\"plan\":{\"head\":\"$q1\",\"kind\":\"merge\",\"pr\":9},\"step\":{\"kind\":\"stop\",\"why\":\"noEntry\"},\"word\":\"none\"}"
 fresh
 sed 's/author sonnet/author opus/g' "$b/dashboard.json" >"$d/dashboard.json"
 expect_land "a pass on the author's model covers nothing" "$me7" \
-  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"}}'
+  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"stands"}'
 
 errs() {
   local name=$1 pat=$2 got=0
@@ -443,7 +443,7 @@ else
   bad "protection: the snapshot reads the reader's file as the route's response" "$(cat "$tmp/snap.err")"
 fi
 expect_land "protection: with the reader's file, the owner's /land goes first" "$me7" \
-  '{"next":9,"plan":{"kind":"idle"},"step":{"ahead":9,"kind":"wait"}}'
+  "{\"next\":9,\"plan\":{\"head\":\"$q1\",\"kind\":\"merge\",\"pr\":9},\"step\":{\"ahead\":9,\"kind\":\"wait\"},\"word\":\"stands\"}"
 if grep -qx "api repos/owner/mitos/actions/runs/77" "$pd/gh.log" \
   && grep -qx "api repos/owner/mitos/actions/runs/501/artifacts?name=land-protection-501-1&per_page=100" "$pd/gh.log" \
   && ! grep -q 'branches/main/protection' "$pd/gh.log" && [ "$(grep -c '^api ' "$pd/gh.log")" = "$(grep -c '' "$pd/gh.log")" ]; then

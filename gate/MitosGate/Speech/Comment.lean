@@ -216,10 +216,10 @@ def read (x : Ctx) (pushes : List Carry.Push) (c : Comment) : Read :=
     | none => ownerRead x pushes c.created c.body.toList
 
 def Read.word : Read → Nat → Option Word
-  | .land s, n => some (.ownerLand ⟨n, s⟩)
+  | .land s, n => some (.ownerLand ⟨n, s, false⟩)
   | .hold _, n => some (.ownerHold n)
   | .editHold, n => some (.ownerHold n)
-  | .agent t s, n => some (.agentLand t ⟨n, s⟩)
+  | .agent t s, n => some (.agentLand t ⟨n, s, false⟩)
   | .ignored _, _ => none
 
 def Read.byOwner : Read → Bool

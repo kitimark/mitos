@@ -32,6 +32,7 @@ def abouts : List Word → List Sha
   | .ownerLand m :: ws => m.about :: abouts ws
   | .agentLand _ m :: ws => m.about :: abouts ws
   | .ownerHold _ :: ws => abouts ws
+  | .ownerSpoke _ :: ws => abouts ws
 
 def contentIdCommits (o : Obs) : List Sha :=
   (o.head :: (match o.base with

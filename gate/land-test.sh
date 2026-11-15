@@ -49,55 +49,69 @@ only149='.prs = [.prs[1]] | .pr = 149'
 land149='{"next":149,"plan":{"expect":"bbb","kind":"push","pr":149,"replay":"br"}'
 
 decides "the owner's /land gives one push, of that pull request" '.' \
-  '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"head":"aaa","kind":"awaitPush"}}'
+  '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"head":"aaa","kind":"awaitPush"},"word":"stands"}'
 decides "a landing in flight goes before an agent's entry" 'del(.prs[0]) | .pr = 149' \
-  '{"next":159,"plan":{"kind":"idle"},"step":{"ahead":159,"kind":"wait"}}'
+  '{"next":159,"plan":{"kind":"idle"},"step":{"ahead":159,"kind":"wait"},"word":"none"}'
 decides "the step is of the pull request named, not of the first one listed" '.pr = 159' \
-  '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"ahead":153,"kind":"wait"}}'
+  '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"ahead":153,"kind":"wait"},"word":"none"}'
 decides "nothing landing: no next, no push, and the agent may enter" \
   '.prs = [.prs[1] | .words = []] | .pr = 149' \
-  '{"next":null,"plan":{"kind":"idle"},"step":{"about":"bbb","kind":"enter"}}'
+  '{"next":null,"plan":{"kind":"idle"},"step":{"about":"bbb","kind":"enter"},"word":"none"}'
 decides "/hold holds, and the line moves on" '.prs[0].words += [{"kind":"ownerHold","said":950}] | del(.prs[2])' \
-  "$land149"',"step":{"kind":"stop","why":"held"}}'
+  "$land149"',"step":{"kind":"stop","why":"held"},"word":"held"}'
 decides "a red gate stops the pull request, and the line moves on" '.prs[0].gate = "failure"' \
-  '{"next":159,"plan":{"kind":"idle"},"step":{"kind":"stop","stuck":"red","why":"stuck"}}'
+  '{"next":159,"plan":{"kind":"idle"},"step":{"kind":"stop","stuck":"red","why":"stuck"},"word":"stands"}'
 decides "a replay that would change the content id is not pushed" \
   '.prs[0].base = {"kind":"clean","replay":"xx"} | del(.prs[2])' \
-  "$land149"',"step":{"kind":"stop","stuck":"contentChanged","why":"stuck"}}'
+  "$land149"',"step":{"kind":"stop","stuck":"contentChanged","why":"stuck"},"word":"stands"}'
 decides "a conflict is passed over" '.prs[0].base = {"kind":"conflict"} | del(.prs[2])' \
-  "$land149"',"step":{"kind":"stop","stuck":"conflict","why":"stuck"}}'
+  "$land149"',"step":{"kind":"stop","stuck":"conflict","why":"stuck"},"word":"stands"}'
 decides "protection that does not bind admins lands nothing" '.prs |= map(.enforced = false)' \
-  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"unenforced"}}'
+  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"unenforced"},"word":"stands"}'
 decides "a pushed head on main waits for its gate" \
   '.prs[0] |= (.head = "ar" | .pushes = [{"byUpdater":true,"before":"aaa","after":"ar"}] | .base = {"kind":"current"} | .gate = "pending") | del(.prs[2])' \
-  '{"next":153,"plan":{"kind":"idle"},"step":{"head":"ar","kind":"awaitGate"}}'
-decides "green on main, a kept path: the owner merges, the tool presents" \
+  '{"next":153,"plan":{"kind":"idle"},"step":{"head":"ar","kind":"awaitGate"},"word":"stands"}'
+decides "green on main, a kept path: the workflow merges, the tool presents" \
   '.prs[0] |= (.head = "ar" | .pushes = [{"byUpdater":true,"before":"aaa","after":"ar"}] | .base = {"kind":"current"}) | del(.prs[2])' \
-  '{"next":153,"plan":{"kind":"idle"},"step":{"head":"ar","kind":"present"}}'
+  '{"next":153,"plan":{"head":"ar","kind":"merge","pr":153},"step":{"head":"ar","kind":"present"},"word":"stands"}'
 decides "green on main, off the kept paths: the allowed agent merges, pinned to the head" \
   "$only149"' | .prs[0] |= (.base = {"kind":"current"})' \
-  '{"next":149,"plan":{"kind":"idle"},"step":{"head":"bbb","kind":"merge"}}'
+  '{"next":149,"plan":{"kind":"idle"},"step":{"head":"bbb","kind":"merge"},"word":"none"}'
+decides "a /land on a kept path that does not approve is no entry, and its word is unnamed" \
+  'del(.prs[0].words[0].approves)' \
+  '{"next":159,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"noEntry"},"word":"unnamed"}'
+decides "approves false reads as an absent approves" '.prs[0].words[0].approves = false' \
+  '{"next":159,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"noEntry"},"word":"unnamed"}'
+decides "an owner comment after the approval leaves no entry, and its word is spoke" \
+  '.prs[0].words += [{"kind":"ownerSpoke","said":950}]' \
+  '{"next":159,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"noEntry"},"word":"spoke"}'
+decides "an owner comment before the approval does not retire it" \
+  '.prs[0].words = [{"kind":"ownerSpoke","said":850}] + .prs[0].words' \
+  '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"head":"aaa","kind":"awaitPush"},"word":"stands"}'
+decides "an owner push after the approval leaves it stale" \
+  '.prs[0] |= (.head = "fff" | .pushes = [{"byUpdater":false,"before":"aaa","after":"fff"}] | .ids += [{"sha":"fff","id":"id-f"}] | .base = {"kind":"current"})' \
+  '{"next":159,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"stale"}'
 
 decides "a standing fail from a judge on the author's model blocks" \
   "$only149"' | .prs[0].verdicts += [{"said":760,"head":"bbb","judge":{"provider":"claude","name":"reviewer"},"model":"grok","result":"fail"}]' \
-  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"}}'
+  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"none"}'
 decides "the same judge's newer pass lifts its fail" \
   "$only149"' | .prs[0].verdicts += [{"said":760,"head":"bbb","judge":{"provider":"claude","name":"reviewer"},"model":"grok","result":"fail"},{"said":770,"head":"bbb","judge":{"provider":"claude","name":"reviewer"},"model":"grok","result":"pass"}]' \
-  "$land149"',"step":{"head":"bbb","kind":"awaitPush"}}'
+  "$land149"',"step":{"head":"bbb","kind":"awaitPush"},"word":"none"}'
 decides "a pass on the author's model covers nothing" \
   "$only149"' | .prs[0].verdicts = [{"said":750,"head":"bbb","judge":{"provider":"claude","name":"verifier"},"model":"grok","result":"pass"}]' \
-  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"}}'
+  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"none"}'
 decides "with no known author nothing is covered" "$only149"' | del(.prs[0].author)' \
-  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"}}'
+  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"none"}'
 decides "a trust-critical diff needs a verifier-opus pass" \
   "$only149"' | .prs[0].paths = ["gate/Main.lean"]' \
-  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"}}'
+  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"none"}'
 decides "wording-only from a judge other than the author covers, with no second pass" \
   "$only149"' | .prs[0].verdicts = [{"said":750,"head":"bbb","judge":{"provider":"claude","name":"root"},"model":"opus","result":"wordingOnly"}]' \
-  "$land149"',"step":{"head":"bbb","kind":"awaitPush"}}'
+  "$land149"',"step":{"head":"bbb","kind":"awaitPush"},"word":"none"}'
 decides "a standing fail beats wording-only" \
   "$only149"' | .prs[0].verdicts = [{"said":740,"head":"bbb","judge":{"provider":"claude","name":"verifier"},"model":"sonnet","result":"fail"},{"said":750,"head":"bbb","judge":{"provider":"claude","name":"root"},"model":"opus","result":"wordingOnly"}]' \
-  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"}}'
+  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"none"}'
 
 decides "a green gate wakes the lander of a pull request in line on an agent's entry" \
   'del(.me, .pr) | .event = {"kind":"gateDone","pr":149,"gate":"success"}' \
@@ -114,10 +128,10 @@ decides "a red gate on a pull request in line only on the owner's word wakes the
 pushed153='.prs[0] |= (.head = "ar" | .pushes = [{"byUpdater":true,"before":"aaa","after":"ar"}] | .base = {"kind":"current"})'
 decides "a cancelled gate on the owner's word alone wakes the orchestrator to re-run it" \
   "$pushed153"' | .prs[0].gate = "cancelled" | del(.prs[2]) | .event = {"kind":"gateDone","pr":153,"gate":"cancelled"}' \
-  '{"next":153,"plan":{"kind":"idle"},"step":{"head":"ar","kind":"awaitGate"},"wake":{"kind":"orchestrator"}}'
+  '{"next":153,"plan":{"kind":"idle"},"step":{"head":"ar","kind":"awaitGate"},"wake":{"kind":"orchestrator"},"word":"stands"}'
 decides "a skipped gate on the owner's word alone wakes the orchestrator, while the agent behind waits" \
   "$pushed153"' | .prs[0].gate = "skipped" | del(.prs[2]) | .pr = 149 | .event = {"kind":"gateDone","pr":153,"gate":"skipped"}' \
-  '{"next":153,"plan":{"kind":"idle"},"step":{"ahead":153,"kind":"wait"},"wake":{"kind":"orchestrator"}}'
+  '{"next":153,"plan":{"kind":"idle"},"step":{"ahead":153,"kind":"wait"},"wake":{"kind":"orchestrator"},"word":"none"}'
 decides "an agent's entry beside the owner's word still wakes the lander on a green gate" \
   'del(.me, .pr) | .prs[1].words += [{"kind":"ownerLand","said":810,"about":"bbb"}] | .event = {"kind":"gateDone","pr":149,"gate":"success"}' \
   '{"next":149,"plan":{"expect":"bbb","kind":"push","pr":149,"replay":"br"},"wake":{"kind":"lander","pr":149}}'
@@ -125,7 +139,7 @@ decides "a move of main wakes nobody" 'del(.me, .pr) | .event = {"kind":"mainMov
   '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"wake":{"kind":"nobody"}}'
 decides "the step and the wake are both answered when both are asked" \
   '.event = {"kind":"updaterPushed","pr":153}' \
-  '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"head":"aaa","kind":"awaitPush"},"wake":{"kind":"nobody"}}'
+  '{"next":153,"plan":{"expect":"aaa","kind":"push","pr":153,"replay":"ar"},"step":{"head":"aaa","kind":"awaitPush"},"wake":{"kind":"nobody"},"word":"stands"}'
 
 echo '{"prs": [' >"$tmp/in"
 got=0
@@ -162,6 +176,17 @@ refuses "a pull request listed twice" '.prs[1].pr = 153' 'pull request 153 is li
 refuses "words out of order" \
   '.prs[0].words = [{"kind":"ownerHold","said":950},{"kind":"ownerLand","said":900,"about":"aaa"}]' \
   'pull request 153: the words are not in ascending comment id'
+refuses "an owner comment out of order" \
+  '.prs[0].words = [{"kind":"ownerSpoke","said":950}] + .prs[0].words' \
+  'pull request 153: the words are not in ascending comment id'
+refuses "approves that is not true or false" '.prs[0].words[0].approves = "yes"' \
+  'prs\[0\]\.words\[0\]\.approves: expected true or false'
+refuses "approves on an owner hold" '.prs[0].words = [{"kind":"ownerHold","said":900,"approves":true}]' \
+  'prs\[0\]\.words\[0\]\."approves": not a field here'
+refuses "approves on an owner comment" '.prs[0].words = [{"kind":"ownerSpoke","said":900,"approves":true}]' \
+  'prs\[0\]\.words\[0\]\."approves": not a field here'
+refuses "approves on an agent's word" '.prs[1].words[0].approves = true' \
+  'prs\[1\]\.words\[0\]\."approves": not a field here'
 refuses "one comment id on two words" '.prs[1].words[0].said = 900' 'comment 900 is used by two words'
 refuses "me without pr" 'del(.pr)' 'me and pr go together'
 refuses "a pr that is not listed" '.pr = 7' 'pr: pull request 7 is not in prs'
