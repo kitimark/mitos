@@ -214,9 +214,6 @@ got=0
 "$bin" land a b >"$tmp/out" 2>"$tmp/err" || got=$?
 if [ "$got" = 2 ] && [ ! -s "$tmp/out" ]; then ok "two arguments are a usage error"; else bad "two arguments are a usage error" "exit $got"; fi
 
-# A copy of Land.lean with a sorry in a statement's proof, in a lemma, in a private lemma and in a
-# fixture, and a fixture proved from a new axiom. The build-time axiom check must fail and name all
-# five.
 name="the axiom check names each sorry and each other axiom"
 mkdir "$tmp/planted"
 if ! awk '

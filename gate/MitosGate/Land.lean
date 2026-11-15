@@ -1748,11 +1748,7 @@ end Fixture
 
 /-! ## No `sorry`, standard axioms only
 
-`lake build` accepts a `sorry` with a warning, so the build checks it: it fails if any theorem this
-file adds, a statement's proof, a lemma or a fixture, private ones included, depends on an axiom
-other than the three standard ones, and `sorryAx` is one. It names every such theorem.
-`gate/land-test.sh` plants `sorry`s and an axiom in a copy of this file and requires the check to
-name each one. -/
+`lake build` accepts a `sorry` with a warning, so the build checks it. -/
 
 open Lean in
 #eval show CoreM Unit from do
