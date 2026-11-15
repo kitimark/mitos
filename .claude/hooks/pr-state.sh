@@ -202,8 +202,6 @@ while read -r n sha; do
   if grep -qx "$n" "$dir/full_thread_prs"; then
     mergeable='?'
     if [ ! -e "$dir/pull-$n.failed" ]; then
-      # Branch protection is strict, so only "clean", "unstable" and "has_hooks" can merge: a PR that is
-      # behind main or blocked cannot, for anyone. Anything else, or a head other than the list's, holds.
       mergeable=$(jq -r --arg sha "$sha" 'if (.mergeable | type) != "boolean" and (.mergeable | type) != "null" then error("bad mergeable")
         elif (.mergeable_state | type) != "string" and (.mergeable_state | type) != "null" then error("bad state")
         elif (.rebaseable | type) != "boolean" and (.rebaseable | type) != "null" then error("bad rebaseable")
