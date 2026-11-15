@@ -155,7 +155,7 @@ jobs:
         run: .github/scripts/cancel-superseded.test.sh
 
       - name: The cheat corpus is partitioned across the shard matrix
-        run: .github/scripts/cheat-partition.test.sh
+        run: .github/scripts/cheat-shard.test.sh
 
       - name: The spec-label check fails closed
         run: .github/scripts/ci-trust.test.sh
@@ -213,6 +213,25 @@ jobs:
 
       - name: Build core and gate
         run: lake build
+
+      - name: The gate binary does not need the toolchain at runtime
+        run: |
+          set -euo pipefail
+          bin=.lake/build/bin/mitos-gate
+          ldd "$bin" | tee /tmp/mitos-gate.ldd
+          if grep -E 'not found|/\.elan/' /tmp/mitos-gate.ldd; then
+            echo "::error::mitos-gate needs a Lean shared library; prove would have to build or pack one"
+            exit 1
+          fi
+          strip "$bin"
+
+      - name: Upload the gate binary for prove
+        uses: actions/upload-artifact@v4
+        with:
+          name: mitos-gate-bin
+          path: .lake/build/bin/mitos-gate
+          if-no-files-found: error
+          overwrite: true
 
       - name: land-decide.sh records each outcome and holds no key
         run: .github/scripts/land-decide.test.sh
@@ -288,9 +307,9 @@ jobs:
         run: lake exe mitos-lint-test
 
   # Same skip rule as checks. Each shard pays its own Lean setup and runs the
-  # cases cheat-partition.sh assigns it. N is 3: on the cache-hit corpus of
-  # run 43679668897 the slowest third was 264s, and a fourth runner saved about
-  # 30s after setup.
+  # residue `mitos-gate cheats --shard k/3` assigns. N is 3: on the cache-hit
+  # corpus of run 43679668897 the slowest third was 264s, and a fourth runner
+  # saved about 30s after setup.
   cheat-shard:
     if: >-
       github.event_name == 'push' ||
@@ -353,17 +372,17 @@ jobs:
           set -euo pipefail
           rm -rf .lake/cheats
           mkdir -p .lake/cheats
-          mapfile -t names < <(.github/scripts/cheat-partition.sh shard "${{ matrix.shard }}")
-          if ((${#names[@]} == 0)); then
-            echo "refusing: mitos-gate cheats with no names runs the whole corpus" >&2
-            exit 1
-          fi
-          .github/scripts/cheat-partition.sh check
           # Keep the status and still print the table. A pipe would swallow it.
+          # The binary writes shard-cases from the same list it runs, and refuses
+          # an empty residue because no names would run the whole corpus.
           status=0
-          .lake/build/bin/mitos-gate cheats --jobs 4 --timeout 600 "${names[@]}" > .lake/cheats/table.txt || status=$?
+          .lake/build/bin/mitos-gate cheats --jobs 4 --timeout 600 --shard "${{ matrix.shard }}/3" \
+            > .lake/cheats/table.txt || status=$?
           printf '%s\n' "$status" > .lake/cheats/shard-exit
-          printf '%s\n' "${names[@]}" > .lake/cheats/shard-cases
+          if [ "$status" -eq 0 ] && [ ! -s .lake/cheats/shard-cases ]; then
+            echo "shard-cases is empty, so the shard did not record the names it ran" >&2
+            status=1
+          fi
           cat .lake/cheats/table.txt
           exit "$status"
 
@@ -400,11 +419,21 @@ jobs:
           pattern: cheat-shard-logs-*
           path: shards
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: mitos-gate-bin
+          path: gate-bin
+
       - name: Cheat corpus is rejected (mitos-gate cheats, runs in parallel)
         env:
           CHECKS: ${{ needs.checks.result }}
           SHARDS: ${{ needs.cheat-shard.result }}
-        run: .github/scripts/cheat-partition.sh aggregate shards merged
+        run: |
+          set -euo pipefail
+          chmod +x gate-bin/mitos-gate
+          gate-bin/mitos-gate cheats aggregate \
+            --checks "$CHECKS" --shards "$SHARDS" --merged merged \
+            shards/cheat-shard-logs-0 shards/cheat-shard-logs-1 shards/cheat-shard-logs-2
 
       - name: Upload the merged cheat logs
         uses: actions/upload-artifact@v4

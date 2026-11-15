@@ -38,6 +38,14 @@ def usage : String := "usage:
   mitos-gate cheats [--jobs N] [--timeout S] [case]...
                                                  run the cheat corpus (eval/cheats/), N runs at a time
                                                  (default 4), each stopped after S seconds (default 600)
+  mitos-gate cheats --shard k/n [--list] [--cases <dir>]
+                                                 the cases whose index mod n is k, from eval/cheats/
+                                                 (or <dir> with --list). Refuses an empty residue,
+                                                 because no names would run the whole corpus
+  mitos-gate cheats aggregate --checks <s> --shards <s> --merged <dir> [--cases <dir>] <shard>...
+                                                 accept the shard records only when both jobs
+                                                 succeeded and the records are the partition of the
+                                                 case directory; publish the logs into <dir>
   mitos-gate land [<snapshot.json>]              the landing decision for one snapshot (file, or standard
                                                  input): who is next, what is pushed, the caller's step,
                                                  who wakes; one line of JSON. Exit 1: snapshot refused
