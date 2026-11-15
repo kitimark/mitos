@@ -711,7 +711,9 @@ lake build && lake exe mitos-gate imports && lake exe mitos-gate lock --check
 (cd core && lake check && lake comparator --paranoid)
 (cd examples/acme && lake build)
 lake --dir eval/mutants build
-for c in $(ls eval/mutants/cases); do lake --dir eval/mutants exe mitos-mutants "$c" || break; done
+(for c in $(ls eval/mutants/cases); do
+  for m in "" --paranoid; do lake --dir eval/mutants exe mitos-mutants $m "$c" || exit 1; done
+done)
 lake --dir eval/score build && lake --dir eval/score exe mitos-score eval/fixtures/toy
 lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire --model Models.ToyRequire.model --paranoid
 lake exe mitos-gate accept --workspace examples/acme --plugin GoMod --model Models.GoMod.model --paranoid
