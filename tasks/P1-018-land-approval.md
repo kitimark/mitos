@@ -387,8 +387,9 @@ items of #200:
   the owner's word alone, a gate result that is not red wakes nobody exactly when it is green,
   covered or not; in nobody's line it wakes nobody exactly when the pull request is covered. Only
   the bot-review clause keeps the hypothesis. The old text follows from the new one.
-- The axiom check covers every theorem of the file and names each failure. `land-test.sh` plants
-  three `sorry`s and an axiom in a copy and requires the check to name all four.
+- The axiom check covers every theorem the file adds, private ones included, and names each
+  failure. `land-test.sh` plants four `sorry`s (one in a private lemma) and an axiom in a copy and
+  requires the check to name all five.
 - New fixtures pin each entry of the kept and critical path lists, unread paths as critical,
   a stale bot review, a head without a content id and the holder wake of an uncovered gate in
   nobody's line. 164 `Land` fixtures (154 before).
