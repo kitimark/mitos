@@ -39,6 +39,8 @@ case "$2" in
     s=${2#repos/acme/widgets/pulls/}; name=thread-rc-${s%%/*}; empty='[[]]' ;;
   repos/acme/widgets/pulls/*/reviews*)
     s=${2#repos/acme/widgets/pulls/}; name=thread-rv-${s%%/*}; empty='[[]]' ;;
+  repos/acme/widgets/pulls/[0-9]*)
+    name=pull-${2#repos/acme/widgets/pulls/}; empty='{"mergeable":true,"mergeable_state":"clean"}' ;;
   repos/acme/widgets/compare/*) name=compare ;;
   *) echo "unexpected route $2" >&2; exit 1 ;;
 esac
@@ -70,7 +72,7 @@ pr_closed() {
 
 reset() {
   rm -f "$work"/icomments.json "$work"/rcomments.json "$work"/dash.json "$work"/compare.json \
-    "$work"/checks-*.json "$work"/files-*.json "$work"/thread-*.json
+    "$work"/checks-*.json "$work"/files-*.json "$work"/thread-*.json "$work"/pull-*.json
   cat >"$work/open.json" <<JSON
 [
  {"number":45,"draft":false,"head":{"sha":"9c9db92897db266388f95ee3228d19eaf709372a"},
@@ -446,7 +448,7 @@ expect "a verdict at an earlier head is shown as such" "open #21 head 2222222 re
 reject "a verdict at an earlier head: no merge command" "merge-ready #21"
 expect "a PR from another account gets no detail" "open #60 head 6666666 ready labels=- assignees=-"
 count "a PR from another account: its line ends there" '^open #60 .*gate=' 0
-if [ "$(grep -c '^api ' "$work/calls")" -eq 14 ]; then pass "fourteen calls: two more per owner PR, three more for the merge candidate"; else fail "calls: $(grep -c '^api ' "$work/calls")"; fi
+if [ "$(grep -c '^api ' "$work/calls")" -eq 15 ]; then pass "fifteen calls: two more per owner PR, four more for the merge candidate"; else fail "calls: $(grep -c '^api ' "$work/calls")"; fi
 if grep -q -e "pulls/60/" -e "$H60" "$work/calls"; then fail "a PR from another account got calls"; else pass "a PR from another account gets no calls of its own"; fi
 # shellcheck disable=SC2016
 reject "no merge command reads the head when run" '$('
@@ -625,6 +627,65 @@ expect "no gate run" "gate=none verdict=9c9db92(the head)"
 echo '{"check_runs":[{"id":2,"name":"gate","status":"completed","conclusion":"success"},{"id":1,"name":"gate","status":"completed","conclusion":"failure"}]}' >"$work/checks-$H45.json"
 run ok
 expect "a re-run: the latest gate run counts" "$(mline 45 "$H45" "$userkeeps")"
+
+ready_reset
+run ok
+expect "a clean PR: merge command" "$(mline 45 "$H45" "$userkeeps")"
+reject "a clean PR: no conflict note" "conflict="
+echo '{"mergeable":true,"mergeable_state":"clean"}' >"$work/pull-45.json"
+run ok
+expect "a clean PR read from the PR route: merge command" "$(mline 45 "$H45" "$userkeeps")"
+echo '{"mergeable":true,"mergeable_state":"unstable"}' >"$work/pull-45.json"
+run ok
+expect "mergeable with failing optional checks: merge command" "$(mline 45 "$H45" "$userkeeps")"
+echo '{"mergeable":false,"mergeable_state":"dirty"}' >"$work/pull-45.json"
+run ok
+expect "a dirty PR shows the conflict" "verdict=9c9db92(the head) owner-unanswered=- user-kept=yes conflict=dirty"
+reject "a dirty PR: no merge command" "merge-ready #45"
+echo '{"mergeable":true,"mergeable_state":"dirty"}' >"$work/pull-45.json"
+run ok
+expect "mergeable_state dirty alone counts" "conflict=dirty"
+reject "mergeable_state dirty alone: no merge command" "merge-ready #45"
+echo '{"mergeable":false,"mergeable_state":"clean"}' >"$work/pull-45.json"
+run ok
+expect "mergeable false alone counts" "conflict=dirty"
+reject "mergeable false alone: no merge command" "merge-ready #45"
+echo '{"mergeable":null,"mergeable_state":"unknown"}' >"$work/pull-45.json"
+run ok
+expect "mergeable null: GitHub is still computing" "conflict=not-computed"
+reject "mergeable null: no merge command" "merge-ready #45"
+echo '{}' >"$work/pull-45.json"
+run ok
+expect "no mergeable field reads as not computed" "conflict=not-computed"
+reject "no mergeable field: no merge command" "merge-ready #45"
+echo '{"mergeable":"yes"}' >"$work/pull-45.json"
+run ok
+expect "an odd mergeable value is unreadable" "conflict=unreadable"
+reject "an odd mergeable value: no merge command" "merge-ready #45"
+rm -f "$work/pull-45.json"
+FAKE_FAIL=pull run ok
+exit0 "the PR route fails"
+expect "an unreadable PR route" "conflict=unreadable"
+reject "an unreadable PR route: no merge command" "merge-ready #45"
+jq '(.[] | select(.number == 45) | .labels) = [{"name":"needs-rebase"}]' "$work/open.json" >"$work/open.json.new" && mv "$work/open.json.new" "$work/open.json"
+run ok
+expect "needs-rebase shows the conflict" "labels=needs-rebase assignees=- gate=success verdict=9c9db92(the head) owner-unanswered=- user-kept=yes conflict=needs-rebase"
+reject "needs-rebase: no merge command, though GitHub says mergeable" "merge-ready #45"
+expect "needs-rebase does not hide another PR's line" "open #21 head 2222222"
+echo '{"mergeable":false,"mergeable_state":"dirty"}' >"$work/pull-45.json"
+run ok
+expect "needs-rebase wins over dirty in the note" "conflict=needs-rebase"
+count "needs-rebase and dirty: one conflict note" 'conflict=' 1
+ready_reset
+jq '(.[] | select(.number == 45) | .labels) = [{"name":"needs-rebase"}]' "$work/open.json" >"$work/open.json.new" && mv "$work/open.json.new" "$work/open.json"
+echo '{"mergeable":false,"mergeable_state":"dirty"}' >"$work/pull-21.json"
+: >"$work/calls"
+run ok
+if grep -q 'pulls/21$' "$work/calls"; then fail "a PR with no verdict at its head read its PR route"; else pass "a PR with no verdict at its head costs no PR read"; fi
+if grep -q 'pulls/60$' "$work/calls"; then fail "a PR from another account read its PR route"; else pass "a PR from another account costs no PR read"; fi
+expect "a PR with no verdict at its head: no conflict claim from an unread PR" "open #21 head 2222222 ready labels=- assignees=- gate=success verdict=1111111(an old head) owner-unanswered=- user-kept=no"
+reject "a PR with no verdict at its head: no dirty note" "conflict=dirty"
+rm -f "$work/pull-21.json"
 
 for f in gate/x.lean eval/cheats/c/run.sh .github/workflows/ci.yml statements.lock examples/acme/models.lock \
   core/Mitos/Core.lean core/Mitos/Core/Spec.lean core/Challenge/A.lean core/comparator.json lean-toolchain \
