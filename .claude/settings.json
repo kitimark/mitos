@@ -66,5 +66,10 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(gh api -X PUT repos/kitimark/mitos/pulls/*/merge*)"
+    ]
   }
 }
