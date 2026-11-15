@@ -58,7 +58,6 @@ def plan (i : AggregateInput) : MergePlan :=
       [modeFull, modeComparator].map fun mode => { shard := k, file := logName name mode : LogCopy }
   { copies
     timing := timingText i
-    shardTables := (List.range i.count).map fun k => (k, (tableTexts i)[k]?.getD "")
     stdout := stdoutText i.directory i.count (tableTexts i) }
 
 end MitosGate.CheatsAggregate

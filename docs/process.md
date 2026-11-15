@@ -358,7 +358,10 @@ fresh copy of the workspace, `--jobs N` of them at a time (default 4), each stop
 `--timeout S` seconds (default 600) and then failed. Naming cases runs only those. A case whose
 `expect` has `heavy=yes` needs much memory (`model_include_str_src` peaks at about 13 GB), so its
 runs run alone. The logs are `.lake/cheats/<case>.full.log` and `<case>.comparator.log`, with
-`timing.tsv` beside them, and CI uploads them as the `cheat-logs` artifact. Every decision the runner
+`timing.tsv` beside them, and CI uploads them as the `cheat-logs` artifact. That artifact is
+the case logs and `timing.tsv` only. A shard's own `table.txt` stays in the shard logs. The merge
+does not copy it to a `shard-k-table.txt`: nothing reads those files, and the merged table is the
+text the prove step prints. Every decision the runner
 makes is in `gate/MitosGate/Cheats.lean`, with its proofs: the `expect` parser (a key it does not
 know, or a key given twice, is an error, except `lock_append`; `full` and `comparator_only` are
 required), the reading of the gate's verdict line, the pass rule, the table and the scheduler.

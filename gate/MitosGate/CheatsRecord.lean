@@ -78,7 +78,6 @@ structure LogCopy where
 structure MergePlan where
   copies : List LogCopy
   timing : String
-  shardTables : List (Nat × String)
   stdout : String
   deriving DecidableEq, Repr
 
