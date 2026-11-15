@@ -13,7 +13,8 @@ bash_library() {
   return 0
 }
 
-for f in "$root/.claude/hooks/hook-state.sh" "$root/.claude/scripts/lib/origin-repo.sh"; do
+libs=("$root"/.claude/scripts/lib/*.sh)
+for f in "$root/.claude/hooks/hook-state.sh" "${libs[@]}"; do
   if bash_library "$f"; then
     echo "ok   $(basename "$f")"
   else
@@ -43,7 +44,6 @@ if ! command -v shellcheck >/dev/null 2>&1; then
 fi
 
 cp "$root/.claude/hooks/hook-state.sh" "$work/hook-state.sh"
-cp "$root/.claude/scripts/lib/origin-repo.sh" "$work/origin-repo.sh"
 sed -i '1s/^#!\/usr\/bin\/env bash$/# not a shebang/' "$work/hook-state.sh"
 if shellcheck --shell=sh "$work/hook-state.sh" >"$work/sh-out" 2>&1; then
   echo "FAIL hook-state.sh without its shebang passed a sh check"
@@ -56,15 +56,18 @@ if ! shellcheck "$root/.claude/hooks/hook-state.sh" >"$work/sc-hook" 2>&1; then
 else
   echo "ok   shellcheck hook-state.sh"
 fi
-if ! shellcheck "$root/.claude/scripts/lib/origin-repo.sh" >"$work/sc-origin" 2>&1; then
-  echo "FAIL shellcheck origin-repo.sh"; cat "$work/sc-origin"; failed=1
-else
-  echo "ok   shellcheck origin-repo.sh"
-fi
+for f in "${libs[@]}"; do
+  if ! shellcheck "$f" >"$work/sc-lib" 2>&1; then
+    echo "FAIL shellcheck $(basename "$f")"; cat "$work/sc-lib"; failed=1
+  else
+    echo "ok   shellcheck $(basename "$f")"
+  fi
+done
 if ! shellcheck -x -S warning "$root/.claude/hooks/pr-state.sh" \
     "$root/.claude/hooks/check-agent-spawn.sh" \
     "$root/.claude/scripts/watch-github.sh" \
-    "$root/.claude/scripts/bot-review.sh" >"$work/sc-follow" 2>&1; then
+    "$root/.claude/scripts/bot-review.sh" \
+    "$root/.claude/scripts/carry.sh" >"$work/sc-follow" 2>&1; then
   echo "FAIL shellcheck -x on the scripts that source the libraries"; cat "$work/sc-follow"; failed=1
 else
   echo "ok   shellcheck -x follows the sourced libraries"
