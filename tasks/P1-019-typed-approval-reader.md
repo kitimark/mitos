@@ -3,7 +3,7 @@
 phase: 1
 goal: The reader sets `approves` only for a typed, unedited owner comment that holds only `/land <commit>`, reads every other typed owner comment as `ownerSpoke`, adds one `ownerSpoke` when the owner posts on a review route at or after the approval, and `KeptMergeIsTheOwnersTypedApproval` proves that a `merge` plan on a kept path traces to that one comment.
 statement: none locked (`gate/` is not in `statements.lock`); `Speech.ApprovalIsTypedAndNamed`, `Speech.TypedCommentIsAWord` and `Snapshot.KeptMergeIsTheOwnersTypedApproval` are under Design, statements
-touches: gate/MitosGate/Speech/Comment.lean, gate/MitosGate/Speech/Words.lean, gate/MitosGate/Speech.lean, gate/MitosGate/SpeechCli.lean, gate/MitosGate/Snapshot/Obs.lean, gate/MitosGate/Snapshot/Fixtures.lean, gate/MitosGate/SnapshotCli.lean (`wordJson` only), gate/speech-test.sh, gate/snapshot-test.sh, gate/land-test.sh, this file, ops/runs/
+touches: gate/MitosGate/Speech/Comment.lean, gate/MitosGate/Speech/Words.lean, gate/MitosGate/Speech.lean, gate/MitosGate/SpeechCli.lean, gate/MitosGate/Snapshot/Obs.lean, gate/MitosGate/Snapshot/Fixtures.lean, gate/MitosGate/SnapshotCli.lean (`wordJson` only), gate/MitosGate/Snapshot.lean (the axiom check's list only), gate/speech-test.sh, gate/snapshot-test.sh, gate/land-test.sh, this file, ops/runs/
 must_not_touch: statements.lock, models.lock, eval/cheats/, models, .github/, .claude/, gate/MitosGate/Land.lean, gate/MitosGate/LandCli.lean, gate/MitosGate/Shadow.lean, gate/MitosGate/Shadow/, gate/MitosGate/ShadowCli.lean, gate/MitosGate/ShadowCli/, gate/MitosGate/Speech/Syntax.lean, gate/MitosGate/Speech/Commit.lean, gate/snapshot-fetch.sh, gate/shadow-fetch.sh
 checks: build (`lake build`, which proves every fixture and runs each module's axiom check), the axiom check (standard axioms only), every gate/*-test.sh, shellcheck, cheats (in ci)
 budget: 20 iterations · 6h wall · 2M tokens
@@ -11,10 +11,15 @@ escalation: hint → automation → stronger model → pair → split → revisi
 
 ## Context
 - Plan row P1-019 in `plan/phase-1.md` (Land track), row A2 of the auto-merge amendment (#178,
-  comment 6890739593, accepted by the owner on 15 Nov in #179, comment 6890996353); issue none
-  yet; tracker #179.
+  comment 6890739593, accepted by the owner on 15 Nov in #179, comment 6890996353); issue #296;
+  tracker #179.
 - Needs P1-018 (A1), which adds `Mark.approves`, `Word.ownerSpoke`, the `merge` plan and statements
-  15 to 18, and has the reader pass `approves := false`. P1-020 (A3) follows this row.
+  15 to 18, and has the reader pass `approves := false`. It merged as #301 (`main` at 85981fe).
+  P1-020 (A3) follows this row.
+- **Root's default (15 Nov):** the re-check after P1-018 and the build go in one PR, with no design
+  PR first. The reason: most of the sketch was built at plan time, and a design PR would add a
+  verify-and-merge cycle for a small re-check. The re-check is under Design, Re-check after
+  P1-018.
 - Who merges: the owner, by hand (`gate/`). It is trust-critical, so it also gets an `opus`
   verifier at `xhigh`.
 - The judge built this row's Lean on Lean 4.35.0: the three `Speech` files with every fixture, and
@@ -28,43 +33,74 @@ escalation: hint → automation → stronger model → pair → split → revisi
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
 lists.
 
-depth: contract only, so this row's issue says "contract only". Most of its sketch is built: at
-plan time the judge's `Speech/Comment.lean`, `Speech/Words.lean`, `Speech.lean` (125 fixtures, in
+depth: build. Planned as contract only, and built in this row's PR on `main` at 85981fe. At plan
+time the judge's `Speech/Comment.lean`, `Speech/Words.lean`, `Speech.lean` (125 fixtures, in
 115 s) and `Snapshot/Obs.lean` built on top of P1-018's plan-time split on `main` at a222e99, and
 `SpeechCli` built with the two arms under `modules`.
 `main`'s `Snapshot/Fixtures.lean` also built on it (417 s) with three edits: the base comment
 `"/land " ++ hB`, `aLandAfterAByteOrderMarkNeedsNoAnswer`'s body `"\uFEFF/land " ++ hB`, and
 `⟨1800, hB, true⟩` in `theOwnersLandIsTheEntry`. So every fixture that expects `.present hB` on
 `main` passes again, after P1-018 turned eight of them to `.stop .noEntry`.
-Not built: `SnapshotCli`'s `approves`, the 11 Snapshot cases and the JSON cases.
+The PR took those files as the judge left them, and added what plan time did not build:
+`SnapshotCli`'s `approves`, the 11 Snapshot cases and the JSON cases (`fixtures` names each).
 
-revisit_when: re-check after P1-018 merges.
+revisit_when: none. The re-check after P1-018 merged is below.
+
+### Re-check after P1-018
+
+`main` at 85981fe against the plan-time split that the sketch was built on:
+- The reader's six files (`Speech/Comment.lean`, `Speech/Words.lean`, `Speech.lean`, `SpeechCli`,
+  `Snapshot/Obs.lean`, `Snapshot/Fixtures.lean`) are byte for byte the split's, so the sketch
+  applies to them unchanged.
+- `Land.lean`: `Mark.approves`, `Word.ownerSpoke`, `Word.decides`, `spokeSince`, `Obs.entries`,
+  `newestOwner_max`, `PlannedMergeIsGated` and `OnlyLandOrHoldChangesTheWord` are as the split had
+  them. New since the split: `OwnerWord`, `Obs.word` and `WordStandsIsTheEntry`, with six fixtures,
+  and the `Plan` constructors in the order push, idle, merge. The reader uses none of them.
+  `Obs.word` reads `spoke` from the `ownerSpoke` this row emits, so the JSON cases also check the
+  `word` field.
+- `LandCli`: it reads `approves` as an optional boolean, absent as false, refuses it on every other
+  word, and prints `word` beside `step`, as Usage says. `land-test.sh` has the absent and the
+  `false` case from P1-018, so this row adds no case there.
+- `Snapshot/Fixtures.lean`: the eight fixtures that P1-018 turned to `.stop .noEntry` are the
+  eight that plan time named, and they expect `.present hB` again. So the three names that end in
+  `IsPresented` (#303 item 5) are true again.
+- The three statements build on `main` with their text unchanged, on the standard axioms.
+- `Obs.unnamed` (#303 item 1) stays, because it is in `Land.lean`, which is in must_not_touch,
+  and this row changes no line of it.
+- N2 on #295 and #192 (P1-013 PR 3's `land.test.sh` case): P1-013's PR 2 and PR 3 are not open, so
+  nothing changes for them here.
 
 modules: one topic per file; no file is added.
 - `gate/MitosGate/Speech/Comment.lean`: what one comment says. `Read.land` gains `approves`; `Read`
   gains `spoke`; `onlyWords`, `holdOrSpoke` and `typed` are added. `ownerRead` (125) reads `spoke`
   where it read `ignored .noWord` or `ignored .protocolFence`, and `ignored .footer` stays. Lemmas:
   `ownerRead_land` (it also gives the flag), `target_named`, `ownerRead_byOwner`, `byOwner_word`.
-  About 565 lines (514 today).
+  `Why.noWord` goes, because nothing reads to it any more. About 565 lines (514 before).
 - `gate/MitosGate/Speech/Words.lean`: the words of a conversation. `ApprovalIsTypedAndNamed`,
   `TypedCommentIsAWord`, and `ownerLand_read`, which `OwnerLandIsTyped`'s proof now uses. About
-  430 lines (377).
+  430 lines (377 before).
 - `gate/MitosGate/Speech.lean`: the fixtures. 10 reads gain the flag, 10 change from `ignored` to
-  `spoke`, 19 are new, and the axiom check's list gains the two statements. About 380 lines (330).
+  `spoke`, 19 are new, and the axiom check's list gains the two statements. Seven of the ten that
+  read `spoke` are renamed, `…IsNoWord` and `typedRecordIsIgnored` to `…IsSpoke`, because an
+  `ownerSpoke` is a word. About 380 lines (330 before).
 - `gate/MitosGate/SpeechCli.lean`: the `speech` line. `.land s a` prints `approves` where it
   printed `land` when `a` is true, and `.spoke` prints `<id> ownerSpoke@<n>`. Built at plan time
-  with exactly these two arms; the words are the root's default.
+  with exactly these two arms; the words are the root's default. `whyName` loses its `noWord` arm.
 - `gate/MitosGate/Snapshot/Obs.lean`: the snapshot of one pull request. `reviewPosts`,
   `spokeInReview`, `withReviewSpeech` and the `words` of `obs` (20); `KeptMergeIsTheOwnersTypedApproval`
   with `newestOwner_append_spoke`, `newestOwner_withReviewSpeech` and `mem_withReviewSpeech`;
-  `failedReadHolds` reads through `newestOwner_withReviewSpeech`. About 270 lines (167).
+  `failedReadHolds` reads through `newestOwner_withReviewSpeech`. About 270 lines (167 before).
 - `gate/MitosGate/Snapshot/Fixtures.lean`: the base comment `land` names its commit
   (`"/land " ++ hB`), and so does `aLandAfterAByteOrderMarkNeedsNoAnswer`'s body; P1-018's eight
   `.stop .noEntry` go back to `.present hB`; `theOwnersLandIsTheEntry` reads `⟨1800, hB, true⟩`;
-  the 11 cases of section 5.
+  the 11 cases of section 5, through a `planOf` beside `stepOf`.
 - `gate/MitosGate/SnapshotCli.lean`: `wordJson` (243) prints `("approves", .bool m.approves)` on
   `ownerLand`. P1-018 already prints `ownerSpoke`.
-- `gate/speech-test.sh`, `gate/snapshot-test.sh`, `gate/land-test.sh`: the JSON cases.
+- `gate/MitosGate/Snapshot.lean`: the axiom check's list gains `keptMergeIsTheOwnersTypedApproval`.
+  Plan time left this file out of `touches`, though the check of standard axioms for the Snapshot
+  statements runs only here; the PR added it.
+- `gate/speech-test.sh` and `gate/snapshot-test.sh`: the JSON cases. `gate/land-test.sh` keeps
+  P1-018's two `approves` cases and gains none (Re-check after P1-018).
 
 ### Usage (caller's view)
 
@@ -117,12 +153,28 @@ reuse:
   `Land.newestOwner_max`.
 
 fixtures:
-- `Speech` and `Snapshot`: section 5's lists below. The `Speech` ones are built (106 become 125).
-  The 11 `Snapshot` cases are to write; the judge evaluated each through `obs` and `plan`.
-- The JSON cases: section 5's first "To write" bullet below. Each runs the real `mitos-gate`
-  commands, as the `gate/*-test.sh` scripts do.
-- `speech-test.sh`: every typed comment that read `ignored no-word` or `ignored record-without-app`
-  now reads `ownerSpoke`, `ignored footer` stays, and a named `/land` alone prints `approves`.
+- `Speech`: section 5's list below (106 become 125).
+- `Snapshot`, through `planOf`, on the base reads (`/land <hB>` on `gate/Main.lean`):
+  `aTypedApprovalOnATrustPathIsMerged`, `anAnsweredReviewCommentAfterTheApprovalRetiresIt`,
+  `aReviewCommentInTheApprovalsSecondRetiresIt`, `aReviewCommentBeforeTheApprovalLeavesIt`,
+  `anApprovalTypedAfterAReviewCommentIsMerged`, `aBareLandOnATrustPathIsNotMerged`,
+  `anAppPostedApprovalIsNotMerged`, `aLaterTypedCommentAnAgentAnsweredRetiresTheApproval`,
+  `aSpecPathWithoutTheLabelIsNotMerged`, `aSpecPathWithTheLabelIsMerged` and
+  `aLaterAgentPostRetiresNothing`. Each review comment in them has an agent's answer, so `rest`
+  holds and only the `ownerSpoke` stops the merge.
+- `snapshot-test.sh`, each through the real `mitos-gate snapshot` and then `land`, with PR 9 on
+  `gate/Main.lean`: a typed approval prints `approves` true and plans PR 9's merge; a bare `/land`
+  prints `approves` false, is no entry and reads `unnamed`; a later typed comment that an agent
+  answered prints an `ownerSpoke`, plans `idle` and reads `spoke`, and the same snapshot without
+  its `ownerSpoke` plans the merge, so a printer that dropped it would fail open; the owner's post
+  on the review-comment route and on the review route after the approval each print an
+  `ownerSpoke`; `/land <commit>` in a review comment gives no word; a spec path gives `rest`
+  false without the label and true with it.
+- `speech-test.sh`: every typed comment that read `ignored no-word` now reads `ownerSpoke` (the
+  quoted footer, and the quoted, fenced and indented `/land`), `ignored footer` stays, and the
+  unique prefix, alone, prints `approves`. New: a named `/land` alone approves, a named `/land`
+  with other text prints `land`, an app's named `/land` is no word, any other typed comment and a
+  typed land record print `ownerSpoke`.
 
 cut_line: one PR, `Part of #179`. It ships the reader of section 3, its two statements and the
 Snapshot statement, the fixtures and the JSON cases. It leaves every job that acts on a `merge`
@@ -224,10 +276,10 @@ Section 5, the `Speech` and `Snapshot` cases and the JSON cases:
 - **JSON cases.** The snapshot's JSON carries `approves` and `ownerSpoke`, and an absent `approves` reads false. One case runs a later typed comment through `snapshot` and then `land` and expects `idle`, because a printer that dropped `ownerSpoke` would fail open. A spec path without the label gives `rest = false`. `/land <commit>` in a review gives no word.
 
 ## Done when
-- [ ] the three statements proved; the 19 `Speech` and 10 `Snapshot` statements keep their text
-- [ ] `lake build` passes: 125 `Speech` fixtures, the Snapshot fixtures with the 11 new cases
-- [ ] the JSON cases pass in `speech-test.sh`, `snapshot-test.sh` and `land-test.sh`
-- [ ] the PR body lists each expected value that changed
-- [ ] all `checks` pass locally
-- [ ] no `sorry`, no new axioms
-- [ ] run-log record written (ops/runs/)
+- [x] the three statements proved; the 19 `Speech` and 10 `Snapshot` statements keep their text
+- [x] `lake build` passes: 125 `Speech` fixtures, the Snapshot fixtures with the 11 new cases
+- [x] the JSON cases pass in `speech-test.sh`, `snapshot-test.sh` and `land-test.sh`
+- [x] the PR body lists each expected value that changed
+- [x] all `checks` pass locally, except the cheat corpus, which runs in CI
+- [x] no `sorry`, no new axioms
+- [x] run-log record written (ops/runs/)

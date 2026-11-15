@@ -241,7 +241,8 @@ def resultName : Result → String
   | .pass => "pass" | .fail => "fail" | .hold => "hold" | .wordingOnly => "wordingOnly"
 
 def wordJson : Word → Json
-  | .ownerLand m => kind "ownerLand" [("said", n m.said), ("about", .str m.about)]
+  | .ownerLand m =>
+    kind "ownerLand" [("said", n m.said), ("about", .str m.about), ("approves", .bool m.approves)]
   | .ownerHold s => kind "ownerHold" [("said", n s)]
   | .ownerSpoke s => kind "ownerSpoke" [("said", n s)]
   | .agentLand t m => kind "agentLand" [("who", teamJson t), ("said", n m.said), ("about", .str m.about)]

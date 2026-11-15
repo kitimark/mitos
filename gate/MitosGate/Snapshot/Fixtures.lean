@@ -246,7 +246,7 @@ def pushes : List Carry.Push :=
     hA⟩]
 def gateRun : Check := ⟨10, "gate", "github-actions", hB, "completed", "success"⟩
 def rabbit : Review := ⟨3, "coderabbitai[bot]", "COMMENTED", hB, 20261114070100, "Review."⟩
-def land : Comment := ⟨900, owner, none, 20261114080000, 20261114080000, "/land"⟩
+def land : Comment := ⟨900, owner, none, 20261114080000, 20261114080000, "/land " ++ hB⟩
 def question : Comment := ⟨800, owner, none, 20261114075900, 20261114075900, "why this?"⟩
 def answer (t : Stamp) : Comment := ⟨850, owner, some "claude", t, t, "Because." ++ footer⟩
 def reads : Reads :=
@@ -267,8 +267,8 @@ def stepOf (g : Global := g) (p : Pull := pull) (r : Reads := reads) (x : Git :=
 def step0 : Land.Step := stepOf
 def carried : String := "PASS opus-xhigh carried from `5c258d6`, author sonnet"
 
-theorem allReadAndCoveredIsPresented : step0 = .stop .noEntry := by decide +kernel
-theorem theOwnersLandIsTheEntry : o0.words = [.ownerLand ⟨1800, hB, false⟩] := by decide +kernel
+theorem allReadAndCoveredIsPresented : step0 = .present hB := by decide +kernel
+theorem theOwnersLandIsTheEntry : o0.words = [.ownerLand ⟨1800, hB, true⟩] := by decide +kernel
 theorem unreadCommentsHold : stepOf (r := { reads with comments := none }) = .stop .held := by
   decide +kernel
 theorem unreadReviewCommentsHold :
@@ -321,14 +321,14 @@ theorem anOpusAuthorIsNotCoveredByItsOwnModel :
 theorem noAuthorNoteIsNotEligible :
     stepOf (g := withRow "PASS opus-xhigh at `85b0781`") = .stop .notEligible := by decide +kernel
 theorem aVerdictOnAnOlderHeadCarriesOverTheUpdatersPush :
-    stepOf (g := withRow carried) = .stop .noEntry := by decide +kernel
+    stepOf (g := withRow carried) = .present hB := by decide +kernel
 theorem aVerdictOnOtherContentDoesNotCarry :
     stepOf (g := withRow carried) (x := ⟨[(hB, "id-1"), (hA, "id-2")], .current⟩) =
       .stop .notEligible := by decide +kernel
 theorem anOwnerQuestionWithoutAnswerIsNotEligible :
     stepOf (r := withComments [question, land]) = .stop .notEligible := by decide +kernel
 theorem anAnsweredOwnerQuestionIsEligible :
-    stepOf (r := withComments [question, answer 20261114075930, land]) = .stop .noEntry := by
+    stepOf (r := withComments [question, answer 20261114075930, land]) = .present hB := by
   decide +kernel
 theorem anAnswerInTheSameSecondIsNoAnswer :
     stepOf (r := withComments [question, answer 20261114075900, land]) = .stop .notEligible := by
@@ -337,11 +337,11 @@ theorem anUnansweredReviewCommentIsNotEligible :
     stepOf (r := withReviewComments [⟨owner, none, 20261114075900, 20261114075900, "rename"⟩]) =
       .stop .notEligible := by decide +kernel
 theorem aLandAfterAByteOrderMarkNeedsNoAnswer :
-    stepOf (r := withComments [{ land with body := "﻿/land" }]) = .stop .noEntry := by
+    stepOf (r := withComments [{ land with body := "﻿/land " ++ hB }]) = .present hB := by
   decide +kernel
 theorem anOtherLoginsCommentNeedsNoAnswer :
     stepOf (r := withReviewComments [⟨"someone", none, 20261114075900, 20261114075900, "rename"⟩]) =
-      .stop .noEntry := by decide +kernel
+      .present hB := by decide +kernel
 theorem aBodyWithoutTheFooterIsNotEligible :
     stepOf (p := { pull with body := "Why." }) = .stop .notEligible := by decide +kernel
 theorem aBodyWithTwoFootersIsNotEligible :
@@ -349,7 +349,7 @@ theorem aBodyWithTwoFootersIsNotEligible :
   decide +kernel
 theorem aSummaryBelowTheFooterIsPresented :
     stepOf (p := { pull with body := "Why." ++ footer ++ "\n\n## Summary by CodeRabbit\n" }) =
-      .stop .noEntry := by decide +kernel
+      .present hB := by decide +kernel
 theorem aSessionLinkIsNotEligible :
     stepOf (p := { pull with body := "Why. " ++ String.ofList sessionLink ++ "x" ++ footer }) =
       .stop .notEligible := by decide +kernel
@@ -358,7 +358,7 @@ theorem aSpecPathWithoutTheLabelIsNotEligible :
       .stop .notEligible := by decide +kernel
 theorem aSpecPathWithTheLabelIsPresented :
     stepOf (p := { pull with labels := ["spec-approved"] })
-      (r := { reads with files := some ["examples/acme/models.lock"] }) = .stop .noEntry := by
+      (r := { reads with files := some ["examples/acme/models.lock"] }) = .present hB := by
   decide +kernel
 theorem noBotReviewIsNotEligible :
     stepOf (r := { reads with reviews := some [] }) = .stop .notEligible := by decide +kernel
@@ -367,7 +367,7 @@ theorem aReviewByAnotherLoginIsNoBotReview :
       .stop .notEligible := by decide +kernel
 theorem aPassedRabbitCheckAtTheHeadIsAReview :
     stepOf (r := withChecks [gateRun, ⟨11, "CodeRabbit", "coderabbitai", hB, "completed", "success"⟩]) =
-      .stop .noEntry := by decide +kernel
+      .present hB := by decide +kernel
 theorem aRabbitCheckFromAnotherAppIsNoReview :
     botAt hB [⟨13, "CodeRabbit", "other-app", hB, "completed", "success"⟩] [] = none := by
   decide +kernel
@@ -401,6 +401,46 @@ theorem eachFailedReadIsIncomplete :
      complete g pull { reads with files := none }, complete g pull { reads with checks := none },
      complete g pull reads] =
       [false, false, false, false, false, false, false, false, false, true] := by decide +kernel
+
+def planOf (p : Pull := pull) (r : Reads := reads) : Land.Plan :=
+  Land.plan (Land.queueOf [o g p r git])
+def rename (t : Stamp) : Post := ⟨owner, none, t, t, "rename"⟩
+def renamed (t : Stamp) : Post := ⟨owner, none, t, t, "Renamed." ++ footer⟩
+
+theorem aTypedApprovalOnATrustPathIsMerged : planOf = .merge 7 hB := by decide +kernel
+theorem anAnsweredReviewCommentAfterTheApprovalRetiresIt :
+    planOf (r := withReviewComments [rename 20261114080100, renamed 20261114080200]) = .idle := by
+  decide +kernel
+theorem aReviewCommentInTheApprovalsSecondRetiresIt :
+    planOf (r := withReviewComments [rename 20261114080000, renamed 20261114080100]) = .idle := by
+  decide +kernel
+theorem aReviewCommentBeforeTheApprovalLeavesIt :
+    planOf (r := withReviewComments [rename 20261114075900, renamed 20261114075930]) =
+      .merge 7 hB := by decide +kernel
+theorem anApprovalTypedAfterAReviewCommentIsMerged :
+    planOf (r := { reads with
+      comments := some [land, ⟨950, owner, none, 20261114080200, 20261114080200, land.body⟩],
+      reviewComments := some [rename 20261114080100, renamed 20261114080130] }) = .merge 7 hB := by
+  decide +kernel
+theorem aBareLandOnATrustPathIsNotMerged :
+    planOf (r := withComments [{ land with body := "/land" }]) = .idle := by decide +kernel
+theorem anAppPostedApprovalIsNotMerged :
+    planOf (r := withComments [{ land with slug := some "claude" }]) = .idle := by decide +kernel
+theorem aLaterTypedCommentAnAgentAnsweredRetiresTheApproval :
+    planOf (r := withComments [land, ⟨950, owner, none, 20261114080100, 20261114080100, "wait"⟩,
+      ⟨960, owner, some "claude", 20261114080200, 20261114080200, "Waiting." ++ footer⟩]) =
+      .idle := by decide +kernel
+theorem aSpecPathWithoutTheLabelIsNotMerged :
+    planOf (r := { reads with files := some ["core/Mitos/Core/Graph.lean"] }) = .idle := by
+  decide +kernel
+theorem aSpecPathWithTheLabelIsMerged :
+    planOf (p := { pull with labels := ["spec-approved"] })
+      (r := { reads with files := some ["examples/acme/models.lock"] }) = .merge 7 hB := by
+  decide +kernel
+theorem aLaterAgentPostRetiresNothing :
+    planOf (r := withComments [land,
+      ⟨960, owner, some "claude", 20261114080200, 20261114080200, "Noted." ++ footer⟩]) =
+      .merge 7 hB := by decide +kernel
 
 end Fixture
 

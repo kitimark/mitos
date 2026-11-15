@@ -24,14 +24,15 @@ def delegates : List Teammate := []
 
 inductive Why
   | notOwner | unknownApp | noRecord | malformed | notLand | wrongTask | wrongProvider
-  | footer | protocolFence | noWord | markup | link | quoteContinuation | nested
+  | footer | protocolFence | markup | link | quoteContinuation | nested
   | hold | severalWords | badArgument | unknownCommit | ambiguousCommit | noHead
   deriving DecidableEq
 
 inductive Read
-  | land (about : Sha)
+  | land (about : Sha) (approves : Bool)
   | hold (why : Why)
   | editHold
+  | spoke
   | agent (who : Teammate) (about : Sha)
   | ignored (why : Why)
   deriving DecidableEq
@@ -122,19 +123,29 @@ def doubt (b : List Char) : Option Why :=
   else if inQuote false (lines (unbom b)) then some .quoteContinuation
   else none
 
+def onlyWords (b : List Char) : Bool :=
+  (lines (unbom b)).all fun l => blank l || (word? l).isSome
+
+def holdOrSpoke (b : List Char) : Read :=
+  if (lines (unbom b)).any holdLine then .hold .hold else .spoke
+
 def ownerRead (x : Ctx) (pushes : List Carry.Push) (t : Stamp) (b : List Char) : Read :=
   match ownerLines b with
-  | .error why => .ignored why
-  | .ok [] => if (lines (unbom b)).any holdLine then .hold .hold else .ignored .noWord
+  | .error .footer => .ignored .footer
+  | .error _ => holdOrSpoke b
+  | .ok [] => holdOrSpoke b
   | .ok [.hold] => .hold .hold
   | .ok [.land arg] =>
     match doubt b with
     | some why => .hold why
     | none =>
       match target x pushes t arg with
-      | some s => .land s
+      | some s => .land s (decide (arg ≠ []) && onlyWords b)
       | none => .hold (unresolved x arg)
   | .ok _ => .hold .severalWords
+
+def typed (x : Ctx) (c : Comment) : Bool :=
+  c.login == x.owner && c.slug.isNone && !footer (unbom c.body.toList)
 
 structure Record where
   task : Nat
@@ -216,14 +227,15 @@ def read (x : Ctx) (pushes : List Carry.Push) (c : Comment) : Read :=
     | none => ownerRead x pushes c.created c.body.toList
 
 def Read.word : Read → Nat → Option Word
-  | .land s, n => some (.ownerLand ⟨n, s, false⟩)
+  | .land s a, n => some (.ownerLand ⟨n, s, a⟩)
   | .hold _, n => some (.ownerHold n)
   | .editHold, n => some (.ownerHold n)
+  | .spoke, n => some (.ownerSpoke n)
   | .agent t s, n => some (.agentLand t ⟨n, s, false⟩)
   | .ignored _, _ => none
 
 def Read.byOwner : Read → Bool
-  | .land _ | .hold _ | .editHold => true
+  | .land _ _ | .hold _ | .editHold | .spoke => true
   | .agent _ _ | .ignored _ => false
 
 def AppNeverOwner : Prop :=
@@ -312,7 +324,7 @@ theorem holdLine_unbom {b : List Char} (h : (lines b).any holdLine = true) :
 
 theorem ownerRead_unbom {x : Ctx} {pushes : List Carry.Push} {t : Stamp} {b b' : List Char}
     (h : unbom b = unbom b') : ownerRead x pushes t b = ownerRead x pushes t b' := by
-  simp only [ownerRead, ownerLines, doubt, h]
+  simp only [ownerRead, ownerLines, doubt, holdOrSpoke, onlyWords, h]
 
 theorem agentRead_unbom {x : Ctx} {p : String} {b b' : List Char} (h : unbom b = unbom b') :
     agentRead x p b = agentRead x p b' := by
@@ -423,7 +435,7 @@ theorem agentNeedsSlugProviderTaskHead : AgentNeedsSlugProviderTaskHead := by
       cases hs : c.slug with
       | none =>
         rw [hs] at h
-        simp only [ownerRead] at h
+        simp only [ownerRead, holdOrSpoke] at h
         repeat' split at h
         all_goals cases h
       | some s =>
@@ -479,27 +491,65 @@ theorem holdLineHolds : HoldLineHolds := by
   replace hh := holdLine_unbom hh
   rw [read_typed ho hu hs, ownerRead, hl]
   match ls with
-  | [] => simp only [hh, ite_true]; exact ⟨_, rfl⟩
+  | [] => simp only [holdOrSpoke, hh, ite_true]; exact ⟨_, rfl⟩
   | [.hold] => exact ⟨_, rfl⟩
   | [.land _] => simp only [doubt, hh, ite_true]; exact ⟨_, rfl⟩
   | .hold :: _ :: _ => exact ⟨_, rfl⟩
   | .land _ :: _ :: _ => exact ⟨_, rfl⟩
 
 theorem ownerRead_land {x : Ctx} {pushes : List Carry.Push} {t : Stamp} {b : List Char}
-    {s : Sha} (h : ownerRead x pushes t b = .land s) :
-    ∃ arg, ownerLines b = .ok [.land arg] ∧ target x pushes t arg = some s := by
+    {s : Sha} {a : Bool} (h : ownerRead x pushes t b = .land s a) :
+    ∃ arg, ownerLines b = .ok [.land arg] ∧ target x pushes t arg = some s ∧
+      a = (decide (arg ≠ []) && onlyWords b) := by
   unfold ownerRead at h
   split at h
   · cases h
-  · split at h <;> cases h
+  · simp only [holdOrSpoke] at h; split at h <;> cases h
+  · simp only [holdOrSpoke] at h; split at h <;> cases h
   · cases h
   · next arg hl =>
     split at h
     · cases h
     · split at h
-      · next ht => cases h; exact ⟨arg, hl, ht⟩
+      · next ht => cases h; exact ⟨arg, hl, ht, rfl⟩
       · cases h
   · cases h
+
+theorem target_named {x : Ctx} {pushes : List Carry.Push} {t : Stamp} {arg : List Char} {s : Sha}
+    (ha : arg ≠ []) (h : target x pushes t arg = some s) : resolve x.known arg = some s := by
+  unfold target at h
+  simp only [ha, ↓reduceIte] at h
+  split at h
+  · exact h
+  · cases h
+
+theorem ownerRead_byOwner {x : Ctx} {pushes : List Carry.Push} {t : Stamp} {b : List Char}
+    (hf : footer (unbom b) = false) : (ownerRead x pushes t b).byOwner = true := by
+  have hl : ownerLines b = .error .protocolFence ∨ ∃ ls, ownerLines b = .ok ls := by
+    unfold ownerLines
+    rw [hf]
+    simp only [Bool.false_eq_true, ↓reduceIte]
+    split
+    · exact .inr ⟨_, rfl⟩
+    · exact .inl rfl
+  unfold ownerRead
+  rcases hl with hl | ⟨ls, hl⟩
+  · rw [hl]; simp only [holdOrSpoke]; split <;> rfl
+  · rw [hl]
+    match ls with
+    | [] => simp only [holdOrSpoke]; split <;> rfl
+    | [.hold] => rfl
+    | [.land arg] =>
+      simp only
+      split
+      · rfl
+      · split <;> rfl
+    | .hold :: _ :: _ => rfl
+    | .land _ :: _ :: _ => rfl
+
+theorem byOwner_word {r : Read} (h : r.byOwner = true) (n : Nat) :
+    ∃ w, r.word n = some w ∧ w.byOwner = true ∧ w.said = n := by
+  cases r <;> simp [Read.byOwner] at h <;> exact ⟨_, rfl, rfl, rfl⟩
 
 theorem ownerLines_footer {b : List Char} {ls : List Line} (h : ownerLines b = .ok ls) :
     footer b = false := by

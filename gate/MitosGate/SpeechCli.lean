@@ -60,7 +60,6 @@ def whyName : Why → String
   | .wrongProvider => "record-from-another-provider"
   | .footer => "footer"
   | .protocolFence => "record-without-app"
-  | .noWord => "no-word"
   | .markup => "fence-or-html-in-the-comment"
   | .link => "link-in-the-comment"
   | .quoteContinuation => "inside-a-quote"
@@ -76,7 +75,8 @@ def line (x : Ctx) (cs : List Comment) (pushes : List Carry.Push) (c : Comment) 
   let r := read x pushes c
   let n := r.pos cs c
   match r with
-  | .land s => msg s!"{c.id} ownerLand@{n} {s} land"
+  | .land s a => msg s!"{c.id} ownerLand@{n} {s} {if a then "approves" else "land"}"
+  | .spoke => msg s!"{c.id} ownerSpoke@{n}"
   | .hold why => msg s!"{c.id} ownerHold@{n} {whyName why}"
   | .editHold => msg s!"{c.id} ownerHold@{n} edited"
   | .agent t s => msg s!"{c.id} agentLand@{n} {t.provider} " ++ quote t.name ++ msg s!" {s} record"
