@@ -1,7 +1,7 @@
 # tasks/P1-019-typed-approval-reader.md
 
 phase: 1
-goal: The reader sets `approves` only for a typed, unedited owner comment that holds only `/land <commit>`, reads every other typed owner comment as `ownerSpoke`, adds one `ownerSpoke` when the owner posts or edits a post on a review route at or after the approval, and `KeptMergeIsTheOwnersTypedApproval` proves that a `merge` plan on a kept path traces to that one comment.
+goal: The reader sets `approves` only for a typed, unedited owner comment that holds only `/land <commit>`, reads every other typed owner comment as `ownerSpoke`, adds one `ownerSpoke` when the owner posts or edits a review comment at or after the approval (an edit read through `updated_at`) or has posted a review summary with text at any time (the reviews route has no edit time), and `KeptMergeIsTheOwnersTypedApproval` proves that a `merge` plan on a kept path traces to that one comment.
 statement: none locked (`gate/` is not in `statements.lock`); `Speech.ApprovalIsTypedAndNamed`, `Speech.TypedCommentIsAWord` and `Snapshot.KeptMergeIsTheOwnersTypedApproval` are under Design, statements
 touches: gate/MitosGate/Speech/Comment.lean, gate/MitosGate/Speech/Words.lean, gate/MitosGate/Speech.lean, gate/MitosGate/SpeechCli.lean, gate/MitosGate/Snapshot/Obs.lean, gate/MitosGate/Snapshot/Fields.lean (`Post.lastSpoke` and its use in `unanswered` only), gate/MitosGate/Snapshot/Fixtures.lean, gate/MitosGate/SnapshotCli.lean (`wordJson` only), gate/MitosGate/Snapshot.lean (the axiom check's list only), gate/speech-test.sh, gate/snapshot-test.sh, gate/land-test.sh, this file, ops/runs/
 must_not_touch: statements.lock, models.lock, eval/cheats/, models, .github/, .claude/, gate/MitosGate/Land.lean, gate/MitosGate/LandCli.lean, gate/MitosGate/Shadow.lean, gate/MitosGate/Shadow/, gate/MitosGate/ShadowCli.lean, gate/MitosGate/ShadowCli/, gate/MitosGate/Speech/Syntax.lean, gate/MitosGate/Speech/Commit.lean, gate/snapshot-fetch.sh, gate/shadow-fetch.sh
@@ -48,6 +48,11 @@ retired nothing, though N2 retires the approval on anything the owner types afte
 `spokeInReview` reads the later of a post's two times, as `unanswered` reads an edit, and a
 twelfth Snapshot case and one JSON case pin it. The statement's text is unchanged: it still
 speaks of creation times only, which the new rule also gives.
+CodeRabbit's review of efa480e found the same gap for a review summary: the reviews route gives
+only `submitted_at`, so a summary edited after the approval reads as typed before it. So an owner
+review summary with text retires the approval whenever it was submitted (root's default, under
+owner_decisions). A thirteenth Snapshot case and one JSON case pin it, and the statement's text is
+unchanged.
 
 revisit_when: none. The re-check after P1-018 merged is below.
 
@@ -92,15 +97,16 @@ modules: one topic per file; no file is added.
   printed `land` when `a` is true, and `.spoke` prints `<id> ownerSpoke@<n>`. Built at plan time
   with exactly these two arms; the words are the root's default. `whyName` loses its `noWord` arm.
 - `gate/MitosGate/Snapshot/Obs.lean`: the snapshot of one pull request. `reviewPosts`,
-  `spokeInReview` (the later of a post's created and updated times), `withReviewSpeech` and the
+  `spokeInReview` (the later of a post's created and updated times, and any owner review summary
+  with text), `withReviewSpeech` and the
   `words` of `obs` (20); `KeptMergeIsTheOwnersTypedApproval`
   with `newestOwner_append_spoke`, `newestOwner_withReviewSpeech` and `mem_withReviewSpeech`;
   `failedReadHolds` reads through `newestOwner_withReviewSpeech`. About 270 lines (167 before).
 - `gate/MitosGate/Snapshot/Fixtures.lean`: the base comment `land` names its commit
   (`"/land " ++ hB`), and so does `aLandAfterAByteOrderMarkNeedsNoAnswer`'s body; P1-018's eight
   `.stop .noEntry` go back to `.present hB`; `theOwnersLandIsTheEntry` reads `⟨1800, hB, true⟩`;
-  the 11 cases of section 5 and one for an edited review comment, through a `planOf` beside
-  `stepOf`.
+  the 11 cases of section 5, one for an edited review comment and one for a review summary with
+  text, through a `planOf` beside `stepOf`.
 - `gate/MitosGate/SnapshotCli.lean`: `wordJson` (243) prints `("approves", .bool m.approves)` on
   `ownerLand`. P1-018 already prints `ownerSpoke`.
 - `gate/MitosGate/Snapshot.lean`: the axiom check's list gains `keptMergeIsTheOwnersTypedApproval`.
@@ -115,8 +121,11 @@ After this row, on a kept pull request, the owner's comment that holds only `/la
 approves; `decide`'s record then plans `{"kind":"merge","pr":7,"head":"…"}` once everything is
 green, still printed only, because no job acts on it until P1-020. A bare `/land`, or the line with
 other text, on a kept path is no entry; off the kept paths it lands as before. Anything else the
-owner types after the approval, in the conversation or on a review, retires it until they type the
-line again.
+owner types in the conversation after the approval, or posts or edits on a review comment at or
+after it, retires it until they type the line again. A review summary from the owner with text
+retires it whenever it was submitted, because the reviews route gives no edit time, so `/land`
+cannot approve such a pull request and the owner merges it by hand. An empty summary submitted
+before the approval, such as a bare approval, leaves it.
 
 ```
 $ mitos-gate speech --owner owner --pr 7 --pushes pushes.tsv comments.json
@@ -164,19 +173,21 @@ fixtures:
 - `Snapshot`, through `planOf`, on the base reads (`/land <hB>` on `gate/Main.lean`):
   `aTypedApprovalOnATrustPathIsMerged`, `anAnsweredReviewCommentAfterTheApprovalRetiresIt`,
   `aReviewCommentInTheApprovalsSecondRetiresIt`, `aReviewCommentEditedAfterTheApprovalRetiresIt`,
-  `aReviewCommentBeforeTheApprovalLeavesIt`,
+  `aReviewCommentBeforeTheApprovalLeavesIt`, `aReviewSummaryWithTextBeforeTheApprovalRetiresIt`,
   `anApprovalTypedAfterAReviewCommentIsMerged`, `aBareLandOnATrustPathIsNotMerged`,
   `anAppPostedApprovalIsNotMerged`, `aLaterTypedCommentAnAgentAnsweredRetiresTheApproval`,
   `aSpecPathWithoutTheLabelIsNotMerged`, `aSpecPathWithTheLabelIsMerged` and
-  `aLaterAgentPostRetiresNothing`. Each review comment in them has an agent's answer, so `rest`
-  holds and only the `ownerSpoke` stops the merge.
+  `aLaterAgentPostRetiresNothing`. Each review comment and review summary in them has an agent's
+  answer, so `rest` holds and only the `ownerSpoke` stops the merge.
 - `snapshot-test.sh`, each through the real `mitos-gate snapshot` and then `land`, with PR 9 on
   `gate/Main.lean`: a typed approval prints `approves` true and plans PR 9's merge; a bare `/land`
   prints `approves` false, is no entry and reads `unnamed`; a later typed comment that an agent
   answered prints an `ownerSpoke`, plans `idle` and reads `spoke`, and the same snapshot without
   its `ownerSpoke` plans the merge, so a printer that dropped it would fail open; the owner's post
   on the review-comment route and on the review route after the approval each print an
-  `ownerSpoke`, and so does a review comment written before it and edited after it;
+  `ownerSpoke`, and so does a review comment written before it and edited after it; an answered
+  review summary with text submitted before the approval prints an `ownerSpoke`, plans `idle` and
+  reads `spoke`;
   `/land <commit>` in a review comment gives no word; a spec path gives `rest`
   false without the label and true with it.
 - `speech-test.sh`: every typed comment that read `ignored no-word` now reads `ownerSpoke` (the
@@ -195,6 +206,10 @@ deferrals:
 - To P1-020: the shadow evidence. Records made from this row's merge on are the first in which a
   typed approval reads as one, so P1-020's window starts here.
 - To P1-021: the rule and the hook for a deleted comment (N6).
+- To P1-020 (#297), or P1-021 (#298) if P1-020 does not touch `gate/snapshot-fetch.sh`: the exact
+  read of a review summary's edit, from the `updated_at` of the issue timeline's `reviewed`
+  events. It needs `snapshot-fetch.sh`, which is in must_not_touch here, and a run against the
+  real API. Until then the reader holds on any owner summary with text.
 - Unchanged and still open on #245: an owner's typed `@coderabbitai` command counts as unanswered.
 
 owner_decisions:
@@ -204,6 +219,11 @@ owner_decisions:
   still counts) and N6 (a deleted comment stays unseen), each with its default.
 - **Root's default, made at plan time:** the `speech` line words, `approves` and `ownerSpoke`. They
   show only in `mitos-gate speech`, which no workflow or script reads but `speech-test.sh`.
+- **Root's default, round 3 (15 Nov):** an owner review summary with text retires the approval
+  whatever its submit time. The reviews route cannot tell a summary edited after `/land` from one
+  typed before it, and N2 requires the edit to retire it, so the reader fails closed. The cost:
+  `/land` cannot approve a pull request on which the owner wrote a review summary with text, and
+  the owner merges it by hand. The owner's only review so far had an empty body.
 
 ### The amendment's text for this row
 
@@ -286,8 +306,8 @@ Section 5, the `Speech` and `Snapshot` cases and the JSON cases:
 
 ## Done when
 - [x] the three statements proved; the 19 `Speech` and 10 `Snapshot` statements keep their text
-- [x] `lake build` passes: 125 `Speech` fixtures, the Snapshot fixtures with the 11 new cases
-  and the edited review comment
+- [x] `lake build` passes: 125 `Speech` fixtures, the Snapshot fixtures with the 11 new cases,
+  the edited review comment and the review summary with text
 - [x] the JSON cases pass in `speech-test.sh`, `snapshot-test.sh` and `land-test.sh`
 - [x] the PR body lists each expected value that changed
 - [x] all `checks` pass locally, except the cheat corpus, which runs in CI
