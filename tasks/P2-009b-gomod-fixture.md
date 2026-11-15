@@ -692,10 +692,29 @@ Rejected:
 Run S1, write the fixture with F1's `printf` lines, then `Score/GoMod.lean` and the two lines in
 `Score.lean`, then checks 1 to 4.
 
+## Build notes
+
+- Built the accepted design on `3fb20ca` with Lean v4.35.0 and Go 1.24.7. The S1 diff was
+  empty. The implementation uses `List (Fact × Assumption)` in `Score.GoMod`, with the path
+  guard at `factsOf` and the seven theorems beside their definitions.
+- The scorer built without warnings. All seven `#print axioms` results contain only
+  `propext`, `Classical.choice` and `Quot.sound`.
+- The real CLI printed F2 with hash `889671a4d4c0eaed6b0680028ba965d63774aaaa48b7c070f860e3e5bade24cf`.
+  It reports 15 facts, 6 predicted edges, 6 labels, 5 true positives, 1 false positive and
+  1 miss. Precision and recall are both 0.83. The toy hash before and after is F3.
+- Go's own `go mod edit -json` parse and L1 to L5 reproduce all six hand labels. All ten
+  fixture hashes match F1. The quoted requirement and ignored `replace` remain measured gaps.
+- The run log is `ops/runs/2026-11-15/P2-009b-builder-1.json`. Global checks and CI
+  are recorded below when complete. The local
+  bubblewrap probe cannot create a user namespace in this environment. Sandboxed checks
+  retain their required policy and need CI evidence.
+- Actual builder model is `gpt-6.1-sol` at high reasoning. The role table's Claude model
+  names are unavailable in this environment. The user keeps the merge for this task.
+
 ## Done when
-- [ ] `mitos-score eval/fixtures/gomod` prints F2 at the head (check 4)
-- [ ] the toy scorecard is unchanged (check 3)
-- [ ] the labels agree with Go's parse (check 5), result in the PR body
+- [x] `mitos-score eval/fixtures/gomod` prints F2 at the head (check 4)
+- [x] the toy scorecard is unchanged (check 3)
+- [x] the labels agree with Go's parse (check 5), result in the PR body
 - [ ] all `checks` pass locally, and `gate` is green
-- [ ] no `sorry`, no new axioms (checks 1 and 2)
-- [ ] run-log record written (ops/runs/)
+- [x] no `sorry`, no new axioms (checks 1 and 2)
+- [x] run-log record written (ops/runs/)

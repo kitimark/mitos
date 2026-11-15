@@ -1,0 +1,6 @@
+app	lib	go-module	example.com/lib	runtime
+app	log-fork	go-module	example.com/log	runtime
+app	cli	go-module	example.com/cli	runtime
+lib	util	go-module	example.com/util	runtime
+mono	lib	go-module	example.com/lib	runtime
+mono	util	go-module	example.com/util	runtime
