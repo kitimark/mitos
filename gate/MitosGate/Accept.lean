@@ -370,11 +370,14 @@ def occurs (pat : List Char) : List Char → Bool
 
 /-- Whether a failed comparator run ended as a judgment does. The comparator ended with code 1, its
 code for a judgment (2 is its code for a run that could not start). No compiler or tool ended
-abnormally: Lake prints `Lean exited with code N` for a Lean that is killed, crashes or exits 1
-without an error message, and `external command '…' exited with code N` for a tool, and what such a
-run printed before it stopped, a failure marker included, says nothing about the code. -/
+abnormally or failed to start: Lake prints `Lean exited with code N` for a Lean that is killed,
+crashes or exits 1 without an error message, `external command '…' exited with code N` for a tool,
+and `failed to execute '…'` for a process it could not start. What such a run printed, a failure
+marker included, says nothing about the code. The text is matched anywhere, so a plugin that prints
+it makes its own run no judgment, which fails its case rather than passing it. -/
 def endedJudged (code : Option UInt32) (out : String) : Bool :=
-  code == some 1 && !occurs "exited with code".toList out.toList
+  code == some 1 && !occurs "exited with code".toList out.toList &&
+    !occurs "failed to execute".toList out.toList
 
 /-- Whether a comparator run that `Outcome.parse` reads as `noJudgment` judged the code all the same,
 because the code does not build: it ended as a judgment does (`endedJudged`), and Lake reports that
@@ -447,6 +450,14 @@ example : buildRejected (some 137) "" = false := by decide +kernel
 -- The comparator's sandboxed build killed before it reported anything: the comparator still ends
 -- with code 1.
 example : buildRejected (some 1) "error: Child exited with 137\n" = false := by decide +kernel
+
+-- A Lean that Lake could not start (`Lake.rawProc`'s message): the build still fails.
+example : buildRejected (some 1) "error: failed to execute 'lean': resource temporarily unavailable
+Some required targets logged failures:
+- Plugins.ToyRequire
+error: build failed
+error: Child exited with 1
+" = false := by decide +kernel
 
 -- A comparator killed after its build reported a failure.
 example : buildRejected (some 137) "error: build failed\n" = false := by decide +kernel
