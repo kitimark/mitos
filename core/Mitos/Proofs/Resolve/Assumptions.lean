@@ -4,25 +4,30 @@ namespace Mitos.Proofs
 open Mitos Mitos.Impl
 
 theorem resolve_assumptions_exact : Spec.AssumptionsExact resolve := by
-  intro fs wf e he r hr p hp hreq hprov a
-  obtain ⟨r', hr', p', hp', _, rfl⟩ := mem_edges.mp he
-  have := WellFormed.eq_of_id wf hr hr' hreq
-  have := WellFormed.eq_of_id wf hp hp' hprov
-  subst r' p'
-  exact mem_assumptionsOf
+  intro fs wf e he c hc hkey
+  obtain ⟨r, hr, p, hp, hm, rfl⟩ := mem_edges.mp he
+  have := derivations_key_inj wf hc (mem_derivations.mpr ⟨r, hr, p, hp, hm, rfl⟩) hkey
+  subst this
+  have ho : ∀ a, a ∈ (Chain.direct r p).origins ↔ a = r.origin ∨ a = p.origin := by
+    simp [Chain.origins, Chain.direct]
+  exact ⟨fun a ha => (ho a).mpr (mem_assumptionsOf.mp ha),
+    fun a ha => mem_assumptionsOf.mpr ((ho a).mp ha)⟩
 
 theorem resolve_status_honest : Spec.StatusHonest resolve := by
-  intro fs wf e he r hr hreq
-  obtain ⟨r', hr', p, _, _, rfl⟩ := mem_edges.mp he
-  have := WellFormed.eq_of_id wf hr hr' hreq
-  subst r'
+  intro fs wf e he
+  obtain ⟨r, hr, p, hp, hm, rfl⟩ := mem_edges.mp he
+  have hc := derivations_single_provider wf (mem_derivations.mpr ⟨r, hr, p, hp, hm, rfl⟩)
+  simp only [Chain.direct] at hc
+  rw [show (mkEdge fs r p).requiringFactId = r.id from rfl,
+    show (mkEdge fs r p).providingFactId = p.id from rfl, hc]
   simp only [mkEdge, statusOf, providers, Bool.and_eq_true, List.all_eq_true,
     Bool.not_eq_true', beq_iff_eq]
   split <;> simp_all
 
-theorem mem_keys {fs : List Located} {k : Nat × Nat} {P : Edge → Bool} :
+theorem mem_keys {fs : List Located} {k : Derivation} {P : Edge → Bool} :
     k ∈ ((resolve fs).edges.filter P).map Edge.key ↔
-      ∃ r ∈ fs, ∃ p ∈ fs, matchesB r p = true ∧ P (mkEdge fs r p) = true ∧ k = (r.id, p.id) := by
+      ∃ r ∈ fs, ∃ p ∈ fs, matchesB r p = true ∧ P (mkEdge fs r p) = true ∧
+        k = .direct r.id p.id := by
   simp only [List.mem_map, List.mem_filter, mem_edges]
   constructor
   · rintro ⟨_, ⟨⟨r, hr, p, hp, hm, rfl⟩, hP⟩, rfl⟩; exact ⟨r, hr, p, hp, hm, hP, rfl⟩
