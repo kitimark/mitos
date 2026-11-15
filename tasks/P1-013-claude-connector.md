@@ -475,7 +475,7 @@ The sketches above went in as written, with these differences.
 - **Left to later:** a CodeRabbit pass that left no review, only a summary comment (#234's first
   case), has no commit to carry from, as `botAt` reads it, so it stays `behind`. #242 asks for a
   carry from the check run of an earlier head; that needs one more read per earlier head and
-  `botAt` does not use it, so a change there is Lean's and lands with `land`.
+  `botAt` does not use it, so a change there is Lean's and lands with `land`; #309 tracks it.
 
 ### `land.sh` and `lib/land-snapshot.sh` (PR 3 starts from these files)
 

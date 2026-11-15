@@ -184,8 +184,10 @@ is "a head that is not a commit SHA is refused" "" "carry: PR #86 has no head co
 pr "$c2" feature
 
 out=$(cd "$work/clone" && envs FAKE_MODE=fail "$script" 86 "$c1" 2>&1); code=$?
+printf "%s\n" "$out" >>"$work/all"
 check "GitHub fails: the line" "$out" "carry: cannot read PR #86"
 out=$(cd "$work/clone" && envs FAKE_FAIL=activity "$script" 86 "$c1" 2>&1); code=$?
+printf "%s\n" "$out" >>"$work/all"
 check "the pushes cannot be read: the line" "$out" "carry: cannot read the pushes of PR #86"
 check "the pushes cannot be read: exit" "$code" 2
 echo '{"not":"pages"}' >"$work/f/activity.json"
@@ -203,6 +205,7 @@ pr "$c2" feature
 run 86 "$c1"
 is "back to a covered head" "carry #86: ${c1:0:7} covers ${c2:0:7}" "" 0
 out=$(cd "$work/clone" && envs MITOS_MAIN_TOOL="$work/elsewhere" "$script" --no-build 86 "$c1" 2>&1); code=$?
+printf "%s\n" "$out" >>"$work/all"
 check "MITOS_MAIN_TOOL is said out loud" "$(head -n 1 <<<"$out")" \
   "carry: MITOS_MAIN_TOOL is set, so the tool is not the one this clone keeps"
 check "a tool that is not built there is an error" "$code" 2
