@@ -127,6 +127,7 @@ while read -r n sha; do
   v=$(jq -r --arg n "$n" '.[$n].h // empty' <<<"$verdicts" 2>/dev/null)
   if [[ $v =~ ^[0-9a-f]{7,40}$ && $sha == "$v"* ]]; then
     echo "$n" >>"$dir/full_thread_prs"
+    fetch "pull-$n" "repos/$repo/pulls/$n" &
     fetch_all_pages "thread-ic-$n" "repos/$repo/issues/$n/comments?per_page=100" &
     fetch_all_pages "thread-rc-$n" "repos/$repo/pulls/$n/comments?per_page=100" &
     fetch_all_pages "thread-rv-$n" "repos/$repo/pulls/$n/reviews?per_page=100" &
@@ -196,6 +197,19 @@ while read -r n sha; do
     read -r user_kept trust_critical <<<"$kt"
   fi
   [ -n "$gate" ] || gate='?'
+  # The list route has no mergeable fields, so only a candidate (verdict at the head) reads its PR.
+  mergeable=unread
+  if grep -qx "$n" "$dir/full_thread_prs"; then
+    mergeable='?'
+    if [ ! -e "$dir/pull-$n.failed" ]; then
+      mergeable=$(jq -r 'if (.mergeable | type) != "boolean" and (.mergeable | type) != "null" then error("bad mergeable")
+        elif (.mergeable_state | type) != "string" and (.mergeable_state | type) != "null" then error("bad state")
+        elif .mergeable == false or .mergeable_state == "dirty" then "dirty"
+        elif .mergeable == true then "clean"
+        else "unknown" end' "$dir/pull-$n.json" 2>/dev/null) || mergeable='?'
+      [ -n "$mergeable" ] || mergeable='?'
+    fi
+  fi
   [ -n "$user_kept" ] || user_kept='?'
   [ -n "$trust_critical" ] || trust_critical='?'
   full_thread_unanswered=null
@@ -219,8 +233,8 @@ while read -r n sha; do
       [ -n "$full_thread_unanswered" ] || full_thread_unanswered='"?"'
     fi
   fi
-  jq -cn --argjson n "$n" --arg sha "$sha" --arg gate "$gate" --arg user_kept "$user_kept" --arg trust_critical "$trust_critical" --argjson full_thread_unanswered "$full_thread_unanswered" \
-    '{n: $n, sha: $sha, gate: $gate, user_kept: $user_kept, trust_critical: $trust_critical, full_thread_unanswered: $full_thread_unanswered}' >>"$dir/extra.ndjson"
+  jq -cn --argjson n "$n" --arg sha "$sha" --arg gate "$gate" --arg user_kept "$user_kept" --arg trust_critical "$trust_critical" --arg mergeable "$mergeable" --argjson full_thread_unanswered "$full_thread_unanswered" \
+    '{n: $n, sha: $sha, mergeable: $mergeable, gate: $gate, user_kept: $user_kept, trust_critical: $trust_critical, full_thread_unanswered: $full_thread_unanswered}' >>"$dir/extra.ndjson"
 done <"$dir/heads"
 
 owner_unanswered_by_thread=null
@@ -306,11 +320,12 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
         ($verdicts | if . == null then null else .[$n] end) as $vi |
         ($e.trust_critical != "no" or (.labels | any(. == "spec-approved"))) as $trust_critical |
         ($v != "?" and $v != "none" and ($e.sha | startswith($v))) as $h |
-        {v: $v, u: $u, head: $h, hold: (if $h then merge_hold_reason($vi; $trust_critical) else null end)} end) as $r |
+        (if (.labels | any(. == "needs-rebase")) then "needs-rebase" elif $e.mergeable == "dirty" then "dirty" elif $e.mergeable == "unknown" then "not-computed" elif $e.mergeable == "?" then "unreadable" else null end) as $cf |
+        {v: $v, u: $u, head: $h, cf: $cf, hold: (if $h then merge_hold_reason($vi; $trust_critical) else null end)} end) as $r |
      "open #\($n) head \(.sha) \(if .draft then "draft" else "ready" end) labels=\(.labels | lst) assignees=\(.who | lst)\(
        if $r == null then ""
-       else " gate=\($e.gate) verdict=\($r.v)\(if $r.head then "(the head)" elif $r.v == "?" or $r.v == "none" then "" else "(an old head)" end) owner-unanswered=\($r.u) user-kept=\($e.user_kept)\(if $r.hold != null then " merge-hold=\($r.hold)" else "" end)" end)",
-     (if $r != null and $r.head and $r.hold == null and $e.gate == "success" and $r.u == "-" and (.draft | not) then
+       else " gate=\($e.gate) verdict=\($r.v)\(if $r.head then "(the head)" elif $r.v == "?" or $r.v == "none" then "" else "(an old head)" end) owner-unanswered=\($r.u) user-kept=\($e.user_kept)\(if $r.cf != null then " conflict=\($r.cf)" else "" end)\(if $r.hold != null then " merge-hold=\($r.hold)" else "" end)" end)",
+     (if $r != null and $r.head and $r.hold == null and $e.gate == "success" and $r.u == "-" and $r.cf == null and $e.mergeable == "clean" and (.draft | not) then
         "merge-ready #\($n), \(if $e.user_kept == "no" then "an agent merges" elif $e.user_kept == "yes" then "the user merges (it touches a path the user keeps)" else "the user merges (its files could not be read)" end): gh api -X PUT repos/\($repo)/pulls/\($n)/merge -f merge_method=rebase -f sha=\($e.sha)"
       else empty end)
    end),
