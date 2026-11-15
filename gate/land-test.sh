@@ -214,8 +214,9 @@ got=0
 "$bin" land a b >"$tmp/out" 2>"$tmp/err" || got=$?
 if [ "$got" = 2 ] && [ ! -s "$tmp/out" ]; then ok "two arguments are a usage error"; else bad "two arguments are a usage error" "exit $got"; fi
 
-# A copy of Land.lean with a sorry in a statement's proof, in a lemma and in a fixture, and a
-# fixture proved from a new axiom. The build-time axiom check must fail and name all four.
+# A copy of Land.lean with a sorry in a statement's proof, in a lemma, in a private lemma and in a
+# fixture, and a fixture proved from a new axiom. The build-time axiom check must fail and name all
+# five.
 name="the axiom check names each sorry and each other axiom"
 mkdir "$tmp/planted"
 if ! awk '
@@ -224,7 +225,9 @@ if ! awk '
       n++; next }
     $0 == "theorem noOwnerWordIsNone : agentBehind.word = .none := by decide +kernel" {
       print "theorem noOwnerWordIsNone : agentBehind.word = .none := sorry"; n++; next }
-    $0 == "namespace Fixture" { print "theorem plantedLemma : True := sorry"; print; n++; next }
+    $0 == "namespace Fixture" {
+      print "theorem plantedLemma : True := sorry"
+      print "private theorem plantedPrivate : True := sorry"; print; n++; next }
     $0 == "end Fixture" {
       print "axiom plantedAxiom : False"
       print "theorem plantedFixture : (1 : Nat) = 2 := plantedAxiom.elim"; print; n++; next }
@@ -236,6 +239,7 @@ else
   (cd "$root" && lake env lean "$tmp/planted/Land.lean") >"$tmp/planted/out" 2>&1 || got=$?
   want="MitosGate.Land.holdWins depends on the axiom sorryAx
 MitosGate.Land.plantedLemma depends on the axiom sorryAx
+MitosGate.Land.plantedPrivate depends on the axiom sorryAx
 MitosGate.Land.Fixture.noOwnerWordIsNone depends on the axiom sorryAx
 MitosGate.Land.Fixture.plantedFixture depends on the axiom MitosGate.Land.Fixture.plantedAxiom"
   named=$(sed -E 's/^.*: error: //' "$tmp/planted/out" | grep ' depends on the axiom ' | sort)

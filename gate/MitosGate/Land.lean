@@ -1748,16 +1748,17 @@ end Fixture
 
 /-! ## No `sorry`, standard axioms only
 
-`lake build` accepts a `sorry` with a warning, so the build checks it: it fails if any theorem of
-this file, a statement's proof, a lemma or a fixture, depends on an axiom other than the three
-standard ones, and `sorryAx` is one. It names every such theorem. `gate/land-test.sh` plants a
-`sorry` and an axiom in a copy of this file and requires the check to name each one. -/
+`lake build` accepts a `sorry` with a warning, so the build checks it: it fails if any theorem this
+file adds, a statement's proof, a lemma or a fixture, private ones included, depends on an axiom
+other than the three standard ones, and `sorryAx` is one. It names every such theorem.
+`gate/land-test.sh` plants `sorry`s and an axiom in a copy of this file and requires the check to
+name each one. -/
 
 open Lean in
 #eval show CoreM Unit from do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
   let mine := (← getEnv).constants.map₂.foldl (fun acc n c =>
-    if (`MitosGate.Land).isPrefixOf n && c.isTheorem then acc.push n else acc) #[]
+    if c.isTheorem then acc.push n else acc) #[]
   unless mine.any (`MitosGate.Land.Fixture).isPrefixOf do throwError "no fixture theorem found"
   for n in [``pushOnlyNext, ``noEntryNoPush, ``oneLandingAtATime, ``pushKeepsCover,
       ``pushIsNotRepeated, ``mergeIsGated, ``plannedMergeIsGated, ``ownerEntryIsTheirLastWord,
@@ -1772,7 +1773,7 @@ open Lean in
   for n in mine do
     for a in ← collectAxioms n do
       unless standard.contains a do
-        bad := bad.push m!"{n} depends on the axiom {a}"
+        bad := bad.push m!"{privateToUserName n} depends on the axiom {a}"
   unless bad.isEmpty do throwError MessageData.joinSep bad.toList "\n"
 
 end MitosGate.Land
