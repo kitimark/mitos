@@ -10,8 +10,6 @@ trap 'rm -rf "$work"' EXIT
 g() { git -C "$1" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "${@:2}"; }
 sha() { printf "$1%.0s" $(seq 40); }
 
-# A real remote for acme/widgets with main and a branch of two commits, and a clone whose origin
-# URL carries a credential that the script must never print.
 mkdir -p "$work/remotes/acme"
 git init -q --bare -b main "$work/remotes/acme/widgets.git"
 git init -q -b main "$work/seed"
@@ -60,7 +58,6 @@ esac
 EOF
 chmod +x "$work/bin/gh"
 
-# main's tool as the library makes it, with a stub lake that builds a stub gate.
 cat >"$work/bin/lake" <<'EOF'
 #!/usr/bin/env bash
 echo build >>"$FAKE_DIR/lake.log"
