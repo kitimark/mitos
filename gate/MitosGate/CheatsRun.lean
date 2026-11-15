@@ -229,8 +229,16 @@ def resolveDir (root : System.FilePath) (specified : Option String) : System.Fil
     let path := System.FilePath.mk p
     if path.isAbsolute then path else root / path
 
+/-- A trailing separator is `path/.`, and `lstat` then follows a symlink to a
+directory. Drop those separators first. The lookup still does not resolve the
+link, and a path that is only separators stays as it is. -/
+def withoutTrailingSep (p : System.FilePath) : System.FilePath :=
+  let t := (p.toString.dropEndWhile fun c => System.FilePath.pathSeparators.contains c).toString
+  if t.isEmpty then p else ⟨t⟩
+
 /-- `metadata` follows a symlink, so a link never counts as its target's type. -/
 def isSymlinkFree (p : System.FilePath) (t : IO.FS.FileType) : IO Bool := do
+  let p := withoutTrailingSep p
   if !(← p.pathExists) then return false
   return (← p.symlinkMetadata).type == t
 
