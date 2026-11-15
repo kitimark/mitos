@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# The protection reader: `.github/scripts/land-protection.sh` against a stub gh, and the static pins
-# of `.github/workflows/land-protection.yml` next to `land.yml`. No token, no network.
 # shellcheck disable=SC2016
 set -u
 
@@ -115,7 +113,7 @@ joined=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$script")
 mint=$(block "$wf" '      - name: Mint an app token that can only read administration')
 want_mint='      - name: Mint an app token that can only read administration
         id: app
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0, the commit v1 names
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
         with:
           app-id: ${{ vars.PR_UPDATER_APP_ID }}
           private-key: ${{ secrets.PR_UPDATER_APP_KEY }}
@@ -148,8 +146,8 @@ start
 uses=$(grep -oE 'uses: [^ ]+' "$wf" | tr '\n' ' ')
 [ "$uses" = "uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 " ] \
   || note "land-protection.yml uses other actions, or in another order: $uses"
-checkout=$(block "$wf" '      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0, the commit v4 names')
-[ "$checkout" = '      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0, the commit v4 names
+checkout=$(block "$wf" '      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0')
+[ "$checkout" = '      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false' ] || note "the checkout is not main's commit without credentials:" "$checkout"
 runs=$(grep -E '^[[:space:]]*(- )?run:' "$wf" | sed -E 's/^[[:space:]]*(- )?run: //')
@@ -161,8 +159,8 @@ order=$(steps_of "$wf" | grep -nE 'uses: actions/checkout|id: app|run: \.github/
   | cut -d: -f1 | tr '\n' ' ')
 sorted=$(tr ' ' '\n' <<<"$order" | grep . | sort -n | tr '\n' ' ')
 [ "$order" = "$sorted" ] && [ "$(wc -w <<<"$order")" = 4 ] || note "the steps are not checkout, mint, read, upload"
-upload=$(block "$wf" '      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2, the commit v4 names')
-[ "$upload" = '      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2, the commit v4 names
+upload=$(block "$wf" '      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2')
+[ "$upload" = '      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: land-protection-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/land-protection/read.json

@@ -357,7 +357,6 @@ for knob in SNAPSHOT_PROTECTION_WAIT=-1 SNAPSHOT_PROTECTION_WAIT=1m SNAPSHOT_PRO
   fi
 done
 
-# Main's protection comes from the reader's artifact (gate/snapshot-fetch.sh, the freshness rule).
 command -v zip >/dev/null 2>&1 || { echo "FAIL zip is not installed"; exit 1; }
 pd="$tmp/pd"
 pfake="$tmp/pfake"
@@ -389,7 +388,6 @@ EOF
 chmod +x "$pfake/gh" "$rfake/gh"
 past=2000-01-01T00:00:00Z
 future=2999-01-01T00:00:00Z
-# run <id> <attempt> <status> <conclusion> <updated_at> [jq filter]: one run of the reader
 run() {
   jq -cn --argjson id "$1" --argjson a "$2" --arg st "$3" --arg c "$4" --arg u "$5" --arg main "$m2" \
     '{id: $id, run_attempt: $a, status: $st, conclusion: (if $c == "" then null else $c end),
@@ -398,7 +396,6 @@ run() {
       repository: {full_name: "owner/mitos"}}' | jq -c "${6:-.}"
 }
 runs() { jq -cn '{total_count: ($ARGS.positional | length), workflow_runs: [$ARGS.positional[] | fromjson]}' --args "$@"; }
-# artifact <run> <attempt> [jq filter on read.json]: the reader's artifact, made by the reader itself
 artifact() {
   rm -rf "$pd/r"
   PATH="$rfake:$PATH" R_PROTECTION="$b/protection.json" GITHUB_REF=refs/heads/main \

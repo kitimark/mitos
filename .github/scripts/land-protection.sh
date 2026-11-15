@@ -1,15 +1,5 @@
 #!/usr/bin/env bash
 # Usage: .github/scripts/land-protection.sh <owner/name> <dir>
-#
-# The protection reader of `.github/workflows/land-protection.yml`. It reads main's classic branch
-# protection once, `repos/<owner/name>/branches/main/protection`, through `gh api` with the token
-# in GH_TOKEN, and writes `<dir>/read.json`, one line:
-#   {"v":1,"repo":"<owner/name>","ref":"refs/heads/main","run":<GITHUB_RUN_ID>,
-#    "attempt":<GITHUB_RUN_ATTEMPT>,"read":"<UTC time just before the read>","protection":{...}}
-# `protection` is the route's response as GitHub sent it, so `mitos-gate snapshot` reads it as it
-# read the route before. `gate/snapshot-fetch.sh` takes the file only from a run that matches it
-# (see there). Exit 0: written. Exit 1: the read failed or was not a JSON object, or the file could
-# not be written. Exit 2: usage, or not a run on refs/heads/main.
 set -u
 
 die() { printf 'land-protection: %s\n' "$1" >&2; exit 2; }
