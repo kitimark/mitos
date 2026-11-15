@@ -94,11 +94,10 @@ def namespaced (cmd : String) (args : Array String) : String × Array String :=
   ("unshare", #["--user", "--map-current-user", "--pid", "--fork", "--mount-proc", "--kill-child",
     "--", cmd] ++ args)
 
-/-- Run `cmd args` in `cwd`, as the first process of a PID namespace of its own (`namespaced`), in a
-session of its own, with `TMPDIR` set to `tmp`, until it has exited and no process holds its stdout
-or stderr any more. If that takes `timeoutMs`, its whole process group gets SIGKILL, once, and the
-run is marked timed out. There is no SIGTERM step first: `inRunDir` removes what a killed run
-leaves, so a chance to clean up would buy nothing.
+/-- Run `cmd args` in `cwd`, in a session of its own, with `TMPDIR` set to `tmp`, until it has
+exited and no process holds its stdout or stderr any more. If that takes `timeoutMs`, its whole
+process group gets SIGKILL, once, and the run is marked timed out. There is no SIGTERM step first:
+`inRunDir` removes what a killed run leaves, so a chance to clean up would buy nothing.
 
 The kill is `Child.kill`, which on Lean v4.35.0 sends SIGKILL to the whole group of a child spawned
 with `setsid`, although its docstring says SIGTERM. `mitos-lint-test` pins this: it times out a
@@ -106,15 +105,8 @@ child that ignores SIGTERM and leaves a grandchild that ignores it too, and requ
 both gone. So a toolchain that sends SIGTERM instead fails CI, rather than leaving the runner waiting
 on a survivor.
 
-The group holds `unshare` and the namespace's first process, and when that process dies the kernel
-kills the rest of the namespace. So a descendant that outlives the child and keeps a pipe open dies
-with it, and so does one that left the group with `setsid`: the pipes close, and the wait ends. The
-child is reaped only after both pipes have closed. Until then its pid, which is the group's id,
-cannot be reused, so the kill reaches only this run's processes. Without unprivileged user
-namespaces `unshare` fails, and the run has no verdict.
-
-Stdout and stderr stay apart: the verdict is read from stdout alone (`Cheats.Run.verdict`). The run
-is not `logged` until `runJob` has written its log. -/
+The child is reaped only after both pipes have closed. Until then its pid, which is the group's id,
+cannot be reused, so the kill reaches only this run's processes. -/
 def runChild (cmd : String) (args : Array String) (cwd tmp : System.FilePath) (timeoutMs : Nat) :
     IO Run := do
   let (cmd, args) := namespaced cmd args
@@ -164,11 +156,8 @@ structure Done where
   startMs : Nat
   endMs : Nat
 
-/-- Write `text` to `file`, flush it and read it back. True only when the file then holds `text`.
-`IO.FS.writeFile` leaves a failed write to the handle's finalizer, which drops it; the flush raises
-it here, and the read finds a file that still differs. False comes with a warning, and the run's row
-then fails (`Cheats.Run.verdict` needs `logged`), so `cheat-logs` cannot lack the log of a row that
-passed. -/
+/-- `IO.FS.writeFile` leaves a failed write to the handle's finalizer, which drops it; the flush
+raises it here, and the read finds a file that still differs. -/
 def writeLog (c : String) (file : System.FilePath) (text : String) : IO Bool := do
   try
     IO.FS.withFile file .write fun h => do
@@ -502,8 +491,7 @@ open Lean in
 #eval show CoreM Unit from do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
   -- This module imports the fixture, so it is outside that scan. Its own
-  -- theorems are still checked, with those of `Cheats` and `Accept`, which
-  -- the fixture does not import, and an empty list fails closed.
+  -- theorems are still checked, and an empty list fails closed.
   let roots := [`MitosGate.CheatsRun, `MitosGate.Cheats, `MitosGate.Accept]
   let theorems := (← getEnv).constants.fold (fun acc n c =>
     if c.isTheorem && roots.any (·.isPrefixOf n) then acc.push n else acc) #[]

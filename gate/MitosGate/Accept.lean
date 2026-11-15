@@ -351,7 +351,6 @@ theorem pluginFailure_stdout {code : UInt32} {s₁ s₂ e : String} {f₁ f₂ :
 structure Judgment where
   outcome : Outcome
   output  : String
-  /-- The comparator's exit code, or none when `lake` could not be started. -/
   code    : Option UInt32
 
 def runComparator (c : Config) (dir : System.FilePath) (config : String) : IO Judgment := do
@@ -372,32 +371,18 @@ def occurs (pat : List Char) : List Char → Bool
 code for a judgment (2 is its code for a run that could not start). No compiler or tool ended
 abnormally or failed to start: Lake prints `Lean exited with code N` for a Lean that is killed,
 crashes or exits 1 without an error message, `external command '…' exited with code N` for a tool,
-and `failed to execute '…'` for a process it could not start. What such a run printed, a failure
-marker included, says nothing about the code. The text is matched anywhere, so a plugin that prints
-it makes its own run no judgment, which fails its case rather than passing it. -/
+and `failed to execute '…'` for a process it could not start. -/
 def endedJudged (code : Option UInt32) (out : String) : Bool :=
   code == some 1 && !occurs "exited with code".toList out.toList &&
     !occurs "failed to execute".toList out.toList
 
-/-- Whether a comparator run that `Outcome.parse` reads as `noJudgment` judged the code all the same,
-because the code does not build: it ended as a judgment does (`endedJudged`), and Lake reports that
-a required target failed (`error: build failed`). -/
 def buildRejected (code : Option UInt32) (out : String) : Bool :=
   endedJudged code out && occurs "error: build failed".toList out.toList
 
-/-- The cause of the rejection a failed comparator run gives its gate. A failure that `Outcome.parse`
-names is a judgment when the run ended as one does (`endedJudged`), and so is a build that fails on
-the code's own errors (`buildRejected`). Any other run, such as a `lake` that was killed or could not
-start, or a Lean killed after it printed a failure marker, is no judgment, so no cheat case can count
-it as a rejection. -/
 def Judgment.cause (j : Judgment) : Failure → Cause
   | .noJudgment => if buildRejected j.code j.output then .judged else .noJudgment
   | _ => if endedJudged j.code j.output then .judged else .noJudgment
 
-/-! Comparator tails from the logs in CI's `cheat-logs` artifact for main at b6a9bfe, then runs that
-did not judge. -/
-
--- `type_error.comparator.log`: a plugin that does not type-check.
 example : buildRejected (some 1) "error: Plugins/ToyRequire.lean:38:50: Type mismatch
   0
 has type
@@ -411,7 +396,6 @@ error: build failed
 error: Child exited with 1
 " = true := by decide +kernel
 
--- `golden_model_in_examples.full.log`: the generated Challenge does not build against the model.
 example : buildRejected (some 1) "warning: Challenge/ToyRequire.lean:11:8: declaration uses `sorry`
 error: Challenge/ToyRequire.lean:12:56: Unknown identifier `_root_.Models.ToyRequire.model`
 error: Challenge/ToyRequire.lean:13:62: Unknown identifier `_root_.Models.ToyRequire.model`
@@ -421,7 +405,6 @@ error: build failed
 error: Child exited with 1
 " = true := by decide +kernel
 
--- `empty_extractor.full.log`, gate 6: the adequacy proof does not build.
 example : buildRejected (some 1) "error: Models/ToyRequire/Adequacy.lean:16:13: Unknown identifier `golden_of_requirements`
 error: Models/ToyRequire/Adequacy.lean:15:58: unsolved goals
 ⊢ model.Adequate examples
@@ -431,9 +414,6 @@ error: build failed
 error: Child exited with 1
 " = true := by decide +kernel
 
-/-- A Lean that exits 137, as a killed one does, while it builds the plugin: Lake still reports a
-failed build. From `mitos-gate accept --skip-lint` on the toy workspace with
-`#eval (IO.Process.exit 137 : IO Unit)` added to the plugin. -/
 def killedLean : String := "✖ [13/13] Building Plugins.ToyRequire (639ms)
 error: Lean exited with code 137
 Some required targets logged failures:
@@ -444,14 +424,10 @@ error: Child exited with 1
 
 example : buildRejected (some 1) killedLean = false := by decide +kernel
 
--- A `lake` killed before it judged anything, with exit 137 and no output.
 example : buildRejected (some 137) "" = false := by decide +kernel
 
--- The comparator's sandboxed build killed before it reported anything: the comparator still ends
--- with code 1.
 example : buildRejected (some 1) "error: Child exited with 137\n" = false := by decide +kernel
 
--- A Lean that Lake could not start (`Lake.rawProc`'s message): the build still fails.
 example : buildRejected (some 1) "error: failed to execute 'lean': resource temporarily unavailable
 Some required targets logged failures:
 - Plugins.ToyRequire
@@ -459,18 +435,14 @@ error: build failed
 error: Child exited with 1
 " = false := by decide +kernel
 
--- A comparator killed after its build reported a failure.
 example : buildRejected (some 137) "error: build failed\n" = false := by decide +kernel
 
--- A comparator that could not start.
 example : buildRejected (some 2) "error: could not read the configuration: no such file\n" = false := by
   decide +kernel
 
--- A `lake` that could not be started.
 example : buildRejected none "error: could not run lake comparator: no such file\n" = false := by
   decide +kernel
 
-/-- A comparator run that ended with code 1, printed `out` and named failure `f`. -/
 def endedWith (f : Failure) (out : String) : Judgment :=
   { outcome := .failed f, output := out, code := some 1 }
 
@@ -482,8 +454,6 @@ example : (endedWith .noJudgment "error: build failed\n").cause .noJudgment = .j
 example : (endedWith .illegalAxiom "error: Illegal axiom detected: 'sorryAx'\n").cause
     .illegalAxiom = .judged := by decide +kernel
 
--- `env_hack.comparator.log` and `missing_obligation.full.log`: judgments, though a kernel or the
--- export ended with a code of its own, which the comparator reports as `exited with N`.
 example : endedJudged (some 1) "Lean default kernel rejected the solution
 error: Lean default exited with 1
 " = true := by decide +kernel
@@ -492,12 +462,10 @@ example : endedJudged (some 1) "PANIC at LeanExport.dumpConstant LeanExport.Basi
 error: Child exited with 134
 " = true := by decide +kernel
 
-/-- A failure marker printed before Lean exited 137, as a plugin's `#eval` can print one. -/
 example : (endedWith .illegalAxiom
     "error: Illegal axiom detected: 'sorryAx'\nerror: Lean exited with code 137\n").cause
     .illegalAxiom = .noJudgment := by decide +kernel
 
-/-- A comparator that ended with code 137 after printing a failure marker. -/
 example : ({ endedWith .kernelReject "Lean default kernel rejected the solution\n" with
     code := some 137 }).cause .kernelReject = .noJudgment := by decide +kernel
 
@@ -555,7 +523,6 @@ def adequacyFailure (model : String) (cause : Cause) : Failure → String
     if cause == .judged then s!"{adequacyModule model} does not build"
     else "the adequacy proof could not be judged"
 
-/-- Gate 6's runs: on a failure, its reason, the comparator's output and the cause. -/
 def judgeModel (c : Config) (m : LockedModels) (dir : System.FilePath) :
     IO (Except (String × String × Cause) Unit) := do
   if let .error e := ← examplesLayout m then return .error (e, "", .judged)

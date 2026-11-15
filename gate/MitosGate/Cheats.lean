@@ -258,12 +258,8 @@ def isVerdictLine (l : List Char) : Bool := "VERDICT:".toList.isPrefixOf l
 
 def verdictLines (out : String) : List (List Char) := (splitLines out.toList).filter isVerdictLine
 
-/-- Each line, then a newline: what printing `ls` one line at a time writes. -/
 def printedLines (ls : List (List Char)) : List Char := ls.flatMap fun l => l ++ ['\n']
 
-/-- The verdict a gate's stdout states: its last line, which a newline ends, when no line before it
-is a verdict line. Whatever the run printed on stderr, or after that line, never counts, so an
-uncaught exception's message or a line printed late cannot stand in for the gate's verdict. -/
 def readVerdict (out : String) : Option Verdict :=
   match (splitLines out.toList).reverse with
   | [] :: l :: earlier => if earlier.any isVerdictLine then none else Verdict.parseChars l
@@ -355,8 +351,6 @@ theorem splitLines_printedLines {ls : List (List Char)} (h : ∀ l ∈ ls, '\n' 
     rw [this, ih (fun l' hl' => h l' (by simp [hl']))]
     simp
 
-/-- A stdout states verdict `v` exactly when it is lines that are not verdict lines, then `v`'s
-line, each ended by a newline, and nothing after. -/
 theorem readVerdict_eq_some_iff {out : String} {v : Verdict} :
     readVerdict out = some v ↔
       ∃ pre : List (List Char), (∀ l ∈ pre, '\n' ∉ l ∧ isVerdictLine l = false) ∧
@@ -417,7 +411,6 @@ theorem isVerdictLine_render (v : Verdict) : isVerdictLine v.render.bytes = true
     cases c <;> simp [isVerdictLine, gateTag, causeBytes, List.isPrefixOf]
   | unrecorded _ => simp [isVerdictLine, recordTag, List.isPrefixOf]
 
-/-- A stdout with a verdict has exactly one verdict line, so two verdict lines are no verdict. -/
 theorem verdictLines_of_readVerdict {out : String} {v : Verdict} (h : readVerdict out = some v) :
     verdictLines out = [v.render.bytes] := by
   obtain ⟨pre, hpre, hv, hout⟩ := readVerdict_eq_some_iff.mp h
@@ -561,9 +554,6 @@ example :
       Verdict.parse (ciLine line) ≠ some v := by
   decide
 
-/-- One gate run as the runner saw it. Its stdout and stderr are kept apart, because the verdict is
-read from stdout alone; the log holds both. `logged` says that the run's log file holds `log`, read
-back after the write. -/
 structure Run where
   exitCode : UInt32
   stdout : String
@@ -576,9 +566,6 @@ def Run.log (r : Run) : String := r.stdout ++ r.stderr
 
 def noRun : Run := { exitCode := 255, stdout := "", stderr := "", timedOut := false, logged := false }
 
-/-- A run's verdict: the last line of its stdout, if the run was not stopped at the timeout, its log
-is on disk and its exit code is the verdict's. A run without one fails its case, so no crash, I/O
-error or lost log reads as a judgment. -/
 def Run.verdict (r : Run) : Option Verdict :=
   if r.timedOut || !r.logged then none
   else match readVerdict r.stdout with
@@ -610,28 +597,21 @@ example : noRun.verdict = none := by decide
 
 def statementsLine : String := "VERDICT: REJECTED (gate 3: statements)\n"
 
-/-- A run that exited 1 with this stdout and stderr, and was not stopped. -/
 def exited (out err : String) (logged : Bool := true) : Run :=
   { exitCode := 1, stdout := out, stderr := err, timedOut := false, logged }
 
-/-- The verdict line on stderr, as an uncaught exception's message would print it, is not read. -/
 example : (exited "" ("uncaught exception: x\n" ++ statementsLine)).verdict = none := by
   decide +kernel
 
-/-- A line after the verdict line, so it is not the last line of stdout. -/
 example : (exited (statementsLine ++ "later\n") "").verdict = none := by decide +kernel
 
-/-- A verdict line that no newline ends, as a run killed while printing it would leave. -/
 example : (exited "VERDICT: REJECTED (gate 3: statements)" "").verdict = none := by decide +kernel
 
-/-- Two verdict lines. -/
 example : (exited (statementsLine ++ statementsLine) "").verdict = none := by decide +kernel
 
-/-- The gate's own lines, then the verdict, with a note on stderr. -/
 example : (exited ("GATE 3 statements: FAIL\n" ++ statementsLine) "note\n").verdict =
     some (.rejected .statements .judged) := by decide +kernel
 
-/-- The same run, with its log lost. -/
 example : (exited ("GATE 3 statements: FAIL\n" ++ statementsLine) "note\n" false).verdict = none := by
   decide +kernel
 
