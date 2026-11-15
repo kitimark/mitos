@@ -1,0 +1,1 @@
+{"task":"land-245","role":"owner","model":"claude-sonnet-5-5","attempt":3,"iterations":1,"wall_min":10,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Round 3 of #278: pushes only the root-accepted /no-comments deletions (the Usage line in land-protection.sh and one header sentence in snapshot-fetch.sh). No code change."}
