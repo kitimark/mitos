@@ -21,9 +21,13 @@ def reviewPosts (r : Reads) : List Post :=
   r.reviewComments.getD [] ++
     ((r.reviews.getD []).filter counts).map fun v => ⟨v.login, none, v.submitted, v.submitted, v.body⟩
 
+/-- The reviews route has no update time, so a summary edited after the approval reads as typed
+before it. So any owner summary with text retires the approval. -/
 def spokeInReview (g : Global) (r : Reads) (ws : List Word) : Bool :=
   match Land.newestOwner ws with
   | some (.ownerLand m) =>
+    (r.reviews.getD []).any (fun v => !v.body.isEmpty &&
+      speaks g ⟨v.login, none, v.submitted, v.submitted, v.body⟩) ||
     (r.comments.getD []).any fun c => 2 * c.id == m.said &&
       (reviewPosts r).any fun s => speaks g s && decide (c.created ≤ s.lastSpoke)
   | _ => false
@@ -164,9 +168,8 @@ theorem keptMergeIsTheOwnersTypedApproval : KeptMergeIsTheOwnersTypedApproval :=
         have h1 := hs _ hin
         have h2 := (Speech.top_ge (ctx g p r) (r.comments.getD [])).2 c hc
         omega
-    simp only [spokeInReview, hw'] at hno
-    rw [List.any_eq_false] at hno
-    have h3 := hno c hc
+    simp only [spokeInReview, hw', Bool.or_eq_false_iff] at hno
+    have h3 := List.any_eq_false.1 hno.2 c hc
     simp only [Bool.and_eq_true, beq_iff_eq, not_and] at h3
     have h4 := h3 hsaid.symm
     rcases Nat.lt_or_ge s.created c.created with hlt | hge

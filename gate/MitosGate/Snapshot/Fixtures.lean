@@ -421,6 +421,11 @@ theorem aReviewCommentEditedAfterTheApprovalRetiresIt :
 theorem aReviewCommentBeforeTheApprovalLeavesIt :
     planOf (r := withReviewComments [rename 20261114075900, renamed 20261114075930]) =
       .merge 7 hB := by decide +kernel
+theorem aReviewSummaryWithTextBeforeTheApprovalRetiresIt :
+    planOf (r := { reads with
+      reviews := some [rabbit, ⟨4, owner, "COMMENTED", hB, 20261114075900, "rename"⟩],
+      reviewComments := some [renamed 20261114075930] }) = .idle := by
+  decide +kernel
 theorem anApprovalTypedAfterAReviewCommentIsMerged :
     planOf (r := { reads with
       comments := some [land, ⟨950, owner, none, 20261114080200, 20261114080200, land.body⟩],

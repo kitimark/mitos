@@ -309,6 +309,20 @@ else
   bad "the owner's review comment edited after the approval is an ownerSpoke in the snapshot" "$(words9)" "$(cat "$tmp/snap.err")"
 fi
 fresh
+echo '[[]]' >"$d/comments-7.json"
+said9 "$typed9"
+jq --arg h "$q1" '.[0] += [{id: 2, user: {login: "owner"}, state: "COMMENTED", commit_id: $h,
+    submitted_at: "2026-11-14T07:59:00Z", body: "rename"}]' "$b/reviews-9.json" >"$d/reviews-9.json"
+jq -n --arg footer "$agent_footer" '[[{user: {login: "owner"}, created_at: "2026-11-14T07:59:30Z",
+    updated_at: "2026-11-14T07:59:30Z", body: ("Renamed." + $footer)}]]' >"$d/review-comments-9.json"
+expect_land "an owner review summary with text before the approval retires it, as an edit after it would" "$me9" \
+  '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"noEntry"},"word":"spoke"}'
+if [ "$(words9)" = "$spoke9" ]; then
+  ok "the owner's review summary with text before the approval is an ownerSpoke in the snapshot"
+else
+  bad "the owner's review summary with text before the approval is an ownerSpoke in the snapshot" "$(words9)"
+fi
+fresh
 echo '[[]]' >"$d/comments-9.json"
 jq -n --arg q "$q1" '[[{user: {login: "owner"}, created_at: "2026-11-14T08:00:00Z", updated_at: "2026-11-14T08:00:00Z",
     body: ("/land " + $q)}]]' >"$d/review-comments-9.json"
