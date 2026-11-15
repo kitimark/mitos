@@ -1,15 +1,20 @@
 namespace MitosGate
 
 /-- Flush the parent's stdout so a child that fails to start cannot write those buffered lines
-into the output `run` returns. -/
+into the output `runOutput` returns. -/
 def flushParentStdoutBeforeChild : IO Unit := do
   (← IO.getStdout).flush
+
+/-- Run `cmd` and return its exit code, stdout and stderr. -/
+def runOutput (cmd : String) (args : Array String) (cwd : Option System.FilePath := none)
+    (stdin : Option String := none) : IO IO.Process.Output := do
+  flushParentStdoutBeforeChild
+  IO.Process.output { cmd, args, cwd } stdin
 
 /-- Run `cmd` and return its exit code and output. -/
 def run (cmd : String) (args : Array String) (cwd : Option System.FilePath := none)
     (stdin : Option String := none) : IO (UInt32 × String) := do
-  flushParentStdoutBeforeChild
-  let out ← IO.Process.output { cmd, args, cwd } stdin
+  let out ← runOutput cmd args cwd stdin
   return (out.exitCode, out.stdout ++ out.stderr)
 
 /-- `path` relative to `root`, by path components, so the spelling of `root` does not remain. -/

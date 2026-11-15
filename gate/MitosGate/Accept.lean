@@ -109,6 +109,17 @@ def adequacyComparatorJson (m : LockedModels) : String :=
   gate6ComparatorJson (adequacyModule m.model) [s!"{m.model}.adequate"]
     [m.model, s!"{m.model}.examples"]
 
+private def configKeys (json : String) : List String :=
+  match Lean.Json.parse json with
+  | .ok (.obj kvs) => kvs.toList.map (·.1)
+  | _ => []
+
+-- A configuration adds kernels only with `external_kernels` or `enable_nanoda` (Lake's
+-- `Check.Config`). The gate's set neither, so a kernel that rejects is one of `Outcome.kernels`.
+#guard [comparatorJson "P", gate6ComparatorJson "M" ["M.t"] ["M.d"]].all fun json =>
+  configKeys json ==
+    ["challenge_module", "definition_names", "permitted_axioms", "solution_module", "theorem_names"]
+
 def headerImports (src : String) : IO (Except String (Array Lean.Name)) := do
   let (imports, _, msgs) ← Lean.Elab.parseImports src
   if msgs.hasErrors then return .error "its header does not parse"
@@ -332,6 +343,14 @@ example :
     pluginFailure .missingConst = .statements ∧ pluginFailure .statement = .statements :=
   ⟨rfl, rfl⟩
 
+/-- The comparator's stdout holds the plugin's build log, so the plugin's text can change it. By
+`Outcome.parse_stdout` it can only choose between `importClash` and `noJudgment`, which this maps
+to one gate, so it cannot move the plugin's rejection. -/
+theorem pluginFailure_stdout {code : UInt32} {s₁ s₂ e : String} {f₁ f₂ : Failure}
+    (h₁ : Outcome.parse code ⟨s₁, e⟩ = .failed f₁) (h₂ : Outcome.parse code ⟨s₂, e⟩ = .failed f₂) :
+    pluginFailure f₁ = pluginFailure f₂ := by
+  rcases Outcome.parse_stdout h₁ h₂ with rfl | ⟨rfl | rfl, rfl | rfl⟩ <;> rfl
+
 structure Judgment where
   outcome : Outcome
   output  : String
@@ -339,8 +358,8 @@ structure Judgment where
 def runComparator (c : Config) (dir : System.FilePath) (config : String) : IO Judgment := do
   let args := #["comparator", s!"--config={config}"] ++ if c.paranoid then #["--paranoid"] else #[]
   try
-    let (code, out) ← run "lake" args dir
-    return { outcome := .parse code out, output := out }
+    let r ← runOutput "lake" args dir
+    return { outcome := .parse r.exitCode ⟨r.stdout, r.stderr⟩, output := r.stdout ++ r.stderr }
   catch e =>
     return { outcome := .failed .noJudgment, output := s!"error: could not run lake comparator: {e}" }
 
