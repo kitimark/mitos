@@ -514,6 +514,20 @@ if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "snapshot-fetch: the read
 else
   bad "protection: an expired artifact holds" "$(cat "$tmp/pf.err")"
 fi
+for other in '.artifacts[0].workflow_run.id = 502' '.artifacts += [.artifacts[0] | .id = 901]' \
+  '.artifacts[0].size_in_bytes = 1048577' '.artifacts[0].name = "land-protection-501-2"'; do
+  pstart
+  runs "$(run 501 1 completed success 2026-11-15T06:00:20Z)" >"$pd/runs.json"
+  artifact 501 1
+  jq "$other" "$pd/artifacts.json" >"$pd/x" && mv "$pd/x" "$pd/artifacts.json"
+  pfetch
+  if [ ! -e "$tmp/pf/protection.json" ] && [ "$(said)" = "snapshot-fetch: the read of protection failed" ] \
+    && [ "$(unzipped)" = 0 ]; then
+    ok "protection: an artifact list with $other holds"
+  else
+    bad "protection: an artifact list with $other holds" "$(cat "$tmp/pf.err")"
+  fi
+done
 
 for other in '.head_branch = "feature"' '.event = "pull_request"' '.event = "schedule"' \
   '.head_repository.full_name = "fork/mitos"' '.repository.full_name = "fork/mitos"' \
