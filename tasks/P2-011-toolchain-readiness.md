@@ -2,10 +2,10 @@
 
 phase: 2
 goal: The next-toolchain canary passes on Lean v4.36 with every probe of the mutant runner still catching a known misread, and once v4.36.0 ships the repository is pinned to it with its records re-made.
-statement: none locked (tooling task). `MitosGate.RunLog.sortLines_eq_of_perm` keeps its statement; PR B re-proves it without the deprecated lemmas.
-touches: PR A (the probes): eval/mutants/Mutants/CrossCheck.lean, eval/mutants/Mutants/Output.lean, eval/mutants/Main.lean (the two probe loops of `leanCheck`), tasks/P1-006-mutation-testing.md (one note after each of its two Probes paragraphs) · PR B (the bump): lean-toolchain, eval/mutants/lean-toolchain, eval/score/lean-toolchain, examples/acme/lean-toolchain (and eval/diff/lean-toolchain once P2-008 has merged), any lake-manifest.json that Lake rewrites, examples/acme/accepted/*.json (re-recorded), gate/MitosGate/ContentId.lean (lines 44, 46, 49), the two version mentions in the gate 1 row of docs/process.md, the version mention in the docstring of gate/MitosGate/CheatsRun.lean, the Lean version in .coderabbit.yaml · both: this file, ops/runs/
+statement: none locked (tooling task). `MitosGate.RunLog.sortLines_eq_of_perm` keeps its statement; PR A re-proved it without the deprecated lemmas (it landed with the probes).
+touches: PR A (the probes): eval/mutants/Mutants/CrossCheck.lean, eval/mutants/Mutants/Output.lean, eval/mutants/Main.lean (the two probe loops of `leanCheck`), tasks/P1-006-mutation-testing.md (one note after each of its two Probes paragraphs), gate/MitosGate/ContentId.lean (lines 44, 46, 49: the three deprecated lemma names) · PR B (the bump): lean-toolchain, eval/mutants/lean-toolchain, eval/score/lean-toolchain, examples/acme/lean-toolchain (and eval/diff/lean-toolchain once P2-008 has merged), any lake-manifest.json that Lake rewrites, examples/acme/accepted/*.json (re-recorded), the two version mentions in the gate 1 row of docs/process.md, the version mention in the docstring of gate/MitosGate/CheatsRun.lean, the Lean version in .coderabbit.yaml · both: this file, ops/runs/
 must_not_touch: statements.lock (unless cut_line's lock case applies), models.lock, core/, eval/cheats/, models, .github/, eval/mutants/Mutants/Challenge.lean (the reader), eval/mutants/Mutants/CommentProbe.lean, eval/mutants/cases/, eval/score/ (except its lean-toolchain, which PR B writes), every gate/ file not named in touches
-checks: PR A: build, `lake --dir eval/mutants build`, `lake --dir eval/mutants exe mitos-mutants src_dst_swapped edges_duplicated cheat_impl_macro`, one nightly dispatch on the branch · PR B: build, imports, lock, core `lake check`, comparator `--paranoid`, accept-toy `--paranoid --record`, scorecard, `mitos-lint-test`, cheats, `gate/*-test.sh`, the three mutant cases, one nightly dispatch on the branch
+checks: PR A: build, `lake --dir eval/mutants build`, `lake --dir eval/mutants exe mitos-mutants src_dst_swapped edges_duplicated cheat_impl_macro`, `gate/content-id-test.sh`, `gate/carry-test.sh`, one nightly dispatch on the branch · PR B: build, imports, lock, core `lake check`, comparator `--paranoid`, accept-toy `--paranoid --record`, scorecard, `mitos-lint-test`, cheats, `gate/*-test.sh`, the three mutant cases, one nightly dispatch on the branch
 budget: PR A 8 iterations · 3h wall · 1M tokens; PR B 8 iterations · 4h wall · 1.5M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
@@ -28,8 +28,9 @@ escalation: hint → automation → stronger model → pair → split → revisi
   `--paranoid`, `eval/cheats/run.sh` and `mitos-mutants` without `--paranoid`. It does not run
   `mitos-gate lock --check` or `mitos-lint-test`, and it does not build `eval/score`. CI does not
   build `eval/mutants` at all, so PR A's `gate` check says nothing about the probes.
-- Roles (kitimark-mode table): PR A has no owner path and is routine against this sketch (sonnet,
-  high), verified by opus at xhigh. PR B is trust-critical (`gate/`, `lean-toolchain`): opus at
+- Roles (kitimark-mode table): PR A touches `gate/` (ContentId), so it is trust-critical: the
+  PR-owner-hard row (opus, xhigh), verified by the model that did not write most of the diff and by
+  opus at xhigh. PR B is trust-critical (`gate/`, `lean-toolchain`): opus at
   xhigh, verified by sonnet and by opus.
 - Designed at plan time by one designer, with no arena. The PR A and PR B sketches build on
   v4.35.0 and the three-case run passes.
@@ -38,7 +39,7 @@ escalation: hint → automation → stronger model → pair → split → revisi
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
 lists.
 
-depth: build. PR A's three files and PR B's three ContentId lines are sketched below in full; the
+depth: build. PR A's three probe files and its three ContentId lines are sketched below in full; the
 rest of PR B is a checklist with no new code. The sketches build on v4.35.0.
 
 revisit_when: PR A: none (it waits for no unmerged row). PR B: re-check when leanprover/lean4
@@ -55,8 +56,8 @@ modules: one topic per file; no new file.
     About +30 and -30 lines. Layout: itself.
   - `eval/mutants/Main.lean`: the two probe loops of `leanCheck` read `p.lines`. About -6 lines.
   - `tasks/P1-006-mutation-testing.md`: one short note after each Probes paragraph.
-- PR B
   - `gate/MitosGate/ContentId.lean`: three lemma names in `sortLines_eq_of_perm`.
+- PR B
   - the toolchain files, the records and the version mentions in `touches`.
 
 types:
@@ -134,7 +135,7 @@ owner_decisions:
   touches `gate/` and `lean-toolchain`.
 - From P1-006 round 9 (#86): the reader gets no new lexer rule. This design adds none.
 - Waiting for the owner: the Owns-cell extension (Context). Defaults this design takes, which the
-  owner can overrule: simulated misreads for the probes, and the deprecations in PR B.
+  owner can overrule: simulated misreads for the probes, and the deprecations in PR A (with the probes).
 
 ### Diagnosis
 
@@ -403,7 +404,7 @@ After the round 10 Probes paragraph:
 `sortLines_eq_of_perm` already uses `Std.le_trans`, `Std.le_total` and `Std.le_antisymm` (see
 cut_line). The proof below is what landed; PR B does not edit it again.
 
-`gate/MitosGate/ContentId.lean`, `sortLines_eq_of_perm` (lines 44, 46 and 49 change):
+`gate/MitosGate/ContentId.lean`, `sortLines_eq_of_perm` (lines 44, 46 and 49 changed in PR A):
 
 ```lean
 theorem sortLines_eq_of_perm {l₁ l₂ : List String} (h : l₁.Perm l₂) :
@@ -432,7 +433,7 @@ The bump, in order, at the head after the last rebase:
 2. Write `leanprover/lean4:v4.36.0` into `lean-toolchain`, `eval/mutants/lean-toolchain`,
    `eval/score/lean-toolchain`, `examples/acme/lean-toolchain`, and `eval/diff/lean-toolchain` if
    it exists.
-3. The three ContentId lines above.
+3. Nothing in ContentId: PR A landed its three lines (above).
 4. `lake build`, `lake exe mitos-gate imports`, `lake exe mitos-gate lock --check`,
    `cd core && lake check && lake comparator --paranoid`. Commit whatever `lake-manifest.json`
    Lake rewrites, and nothing by hand. `lake build` shows no `has been deprecated` line.
@@ -505,8 +506,8 @@ lines per probe, it keeps one idea: fixtures that pin what each probe misreads (
   Challenge, as round 9 showed.
 - We accept a second, deliberately wrong reader in the code, `misread`, named for what it is and
   used only by probes.
-- We accept that the bump waits for the release, and that the canary log keeps three deprecation
-  warnings until then.
+- We accept that the bump waits for the release. The canary log has no deprecation warning on rc2
+  now that PR A landed the ContentId lines.
 
 **Alternatives considered.**
 - A: explicit `lines` per probe, plus a guard that their texts are the source's lines. It behaves
@@ -544,7 +545,7 @@ green on v4.35.0 with the cross-check `#guard`s above.
       prints the three probe lines with 3, 5 and 2 probes caught and the three cases as expected
       (2 refuted, 0 known gaps, 1 cheat rejected); the PR body says `Part of #147`
 - [ ] one nightly dispatch on PR A's branch: `full` passed, and the canary on v4.36.0-rc2 (or the
-      newest rc then) passed, with no `has been deprecated` line but ContentId's three
+      newest rc then) passed, with no `has been deprecated` line
 - [ ] the one-off mutants, one local run each on v4.35.0, in PR A's body. M1, a live decoy:
       `hiddenIn` with `--` lines in place of `/-` and `-/`; as is, the build fails on
       `probesAreMisreads`; with that guard and `decoyReaderKeeps` and `reverseReaderKeeps`
