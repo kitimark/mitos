@@ -33,8 +33,7 @@ statement is wrong.
   the `note` of the next attempt's record.
 - Before each push,
   `git diff --name-status --no-renames origin/main...HEAD -- ops/runs ':!ops/runs/README.md'`
-  shows only `A` lines, except an `M` line for a day file that a PR opened before this change
-  appended to and keeps until it lands (see Transition).
+  shows only `A` lines.
 
 ## Merging
 
@@ -47,18 +46,14 @@ and stops the rebase on a conflict when they differ, so the PR updater labels th
 `needs-rebase` instead of keeping two records. One attempt on two days is two paths, which git
 does not see; the check below fails it.
 
-## Transition: the day files
+## Day files
 
-Until #91, every record was a line of a day file, `ops/runs/<YYYY-MM-DD>.ndjson`, merged with
-git's union driver. The four day files from 2026-11-06 to 2026-11-09 stay, and no PR may add one.
-Until #113, a PR opened before this change may still append its lines to a day file that is
-on `main`, and `.gitattributes` still merges the day files with union, so the PRs open now land
-without a push. For those lines the old rules hold: never edit, delete or reorder a line that is
-already in a day file, in any commit, even a line an earlier commit of the same branch added.
-Union keeps both versions of an edited line, two records for one attempt, as on #62 twice (#74),
-and a commit that deletes the stale copy does not hold, because the next rebase brings it back.
-Such a PR's next attempt goes in a record file. #113 then freezes the day files, so that the
-check wants each one as it is on `main`, and drops the union line.
+Until #91, every record was a line of a day file, `ops/runs/<YYYY-MM-DD>.ndjson`. The four day
+files from 2026-11-06 to 2026-11-09 stay on `main`. They are frozen: each one must match `main`
+line for line, and no PR may add a day file or append, edit, delete or reorder a line. A new
+attempt goes in its own record file. There is no merge driver for the day files. While git's
+union driver merged them, an edit became two records for one attempt, as on #62 twice (#74); that
+driver is gone.
 
 ## Enforced by CI
 
@@ -78,19 +73,19 @@ annotation, when:
   `escalations` must hold strings. The integers must be natural numbers, and `tokens` may also be
   `null`, as on every record so far, since no session meters tokens yet. Other fields are allowed.
   A blank line in a day file fails;
-- on a pull request, against the merge base: a record file is missing from the PR's merge result
-  or has other text; a line of a day file is missing, or occurs fewer times (an edit or a
-  deletion); or the PR adds a day file.
+- on a pull request, against the merge base: a record file is missing or has other text; a day
+  file differs from the merge base (an appended, edited, deleted or reordered line, or a deleted
+  file); or the PR adds a day file.
 
 The rules are proved in `gate/MitosGate/RunLog.lean`. When the check finds no problem, every
 record of the merge base is a record of the head, no two records of the head share a key, and
 every record file is one line holding one record, named by its key (`problems_eq_nil`,
 `records_kept`, `recordFile_ok`, `singleLine?_spec`). A day folder then holds each key once
 (`day_keys_nodup`), and a name built from a safe task and role is one plain path entry
-(`fileName_safe`). For the day files, the append-only check holds exactly when the head is the
-base plus some lines in any order, union of two sides that only append always passes it, and union
-passes the duplicate check exactly when the lines of the base and both sides have distinct keys,
-while an edited line that union kept next to the original fails it. The model of union, and what
-git does with two record files at one path, are assumptions about git, replayed on real git by
-`gate/runlog-test.sh`. The JSON parsing and file reading around the proved functions are not
-proved.
+(`fileName_safe`). A day file passes exactly when its lines equal the merge base
+(`keptProblems_eq_nil`). The theorems `union_appendOnly`, `union_noDupKeys_iff` and
+`edit_then_union` record why those files were safe to freeze: under the old union merge, two
+sides that only appended kept every base line, and an edited line kept beside the original failed
+the duplicate check. The check does not use them. What git does with two record files at one path
+is replayed on real git by `gate/runlog-test.sh`. The JSON parsing and file reading around the
+proved functions are not proved.

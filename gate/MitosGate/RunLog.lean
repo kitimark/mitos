@@ -93,10 +93,11 @@ theorem appendOnly_delete (p s : List String) (l : String) :
   rw [List.count_append, List.count_append, List.count_cons_self]
   omega
 
-/-- **Union keeps the base.** The model of git's union merge, an assumption about git that is not
-proved here: when one side is the base plus lines `a` and the other the base plus lines `b`, union
-keeps each base line once and every added line of each side, so its result `r` is some order of
-`base ++ a ++ b`. The replays in `gate/runlog-test.sh` check such merges on real git. -/
+/-- **Union keeps the base.** The model of the `union` driver that merged day files until #113, an
+assumption about git that is not proved here: when one side is the base plus lines `a` and the
+other the base plus lines `b`, union keeps each base line once and every added line of each side,
+so its result `r` is some order of `base ++ a ++ b`. The check no longer uses this. It is why an
+append-only union kept every base line, and so why those files were safe to freeze as equality. -/
 theorem union_appendOnly {base a b r : List String} (hunion : r.Perm (base ++ a ++ b)) :
     appendOnly base r = true :=
   appendOnly_iff_perm_append.mpr ⟨a ++ b, by rw [← List.append_assoc]; exact hunion⟩
@@ -552,20 +553,36 @@ def dupProblems (parse : String → Except Message Record) (dir : System.FilePat
     match recs[i], recs[j] with
     | (fi, li, r), (fj, lj, _) =>
       [⟨fj, lj, m "a second record for " ++ keyText r ++
-        m s!"; the first is at {fi}:{li}. An attempt has one record: a correction goes in the next attempt's record. Union keeps both versions of an edited day-file line (ops/runs/README.md)"⟩]
+        m s!"; the first is at {fi}:{li}. An attempt has one record: a correction goes in the next attempt's record (ops/runs/README.md)"⟩]
+
+def firstDiff? : List String → List String → Nat
+  | [], _ => 0
+  | _ :: _, [] => 0
+  | a :: as, b :: bs => if a == b then firstDiff? as bs + 1 else 0
+
+example : firstDiff? ["a", "b"] ["a", "b", "c"] = 2 := by decide
+example : firstDiff? ["a", "b", "c"] ["a", "x", "c"] = 1 := by decide
+example : firstDiff? ["a", "b"] ["a"] = 1 := by decide
 
 def keptProblems (dir : System.FilePath) (b h : Tree) : List Problem :=
   b.days.filterMap (fun d =>
     let lines := d.2
     let hl := linesOf h d.1
-    if honly : appendOnly lines hl = true then none
+    if d.2 == hl then none
     else
-      let i := missingIndex lines hl (by simpa using honly)
-      let what := if h.days.any (·.1 == d.1) then "is missing from this file" else
-        "is missing: the file was deleted"
-      some ⟨(dir / d.1).toString, i + 1, m s!"line {i + 1} of the merge-base version {what}. " ++
-        m "Run-log lines are append-only: a line already on the base branch may not be edited " ++
-        m "or deleted (ops/runs/README.md)"⟩) ++
+      let i := firstDiff? d.2 hl
+      let line := i + 1
+      let msg :=
+        if !h.days.any (·.1 == d.1) then
+          s!"line {line} of the merge-base version is missing: the file was deleted. " ++
+            "A day file on the base branch is frozen and must match main (ops/runs/README.md)"
+        else if i ≥ d.2.length then
+          s!"line {line} is not in the merge-base version: a day file may not gain a line. " ++
+            "A day file on the base branch is frozen and must match main (ops/runs/README.md)"
+        else
+          s!"line {line} of the merge-base version differs from this file. " ++
+            "A day file on the base branch is frozen and must match main (ops/runs/README.md)"
+      some ⟨(dir / d.1).toString, line, m msg⟩) ++
   h.days.filterMap (fun d =>
     if b.days.any (·.1 == d.1) then none
     else some ⟨(dir / d.1).toString, 1, m ("a new day file. Each attempt's record goes in its own " ++
@@ -614,14 +631,15 @@ theorem dupProblems_eq_nil {parse : String → Except Message Record} {dir : Sys
   · cases h
 
 theorem keptProblems_eq_nil {dir : System.FilePath} {b h : Tree} (hk : keptProblems dir b h = []) :
-    (∀ d ∈ b.days, appendOnly d.2 (linesOf h d.1) = true) ∧
+    (∀ d ∈ b.days, linesOf h d.1 = d.2) ∧
       (∀ d ∈ h.days, ∃ d' ∈ b.days, d'.1 = d.1) ∧ (∀ f ∈ b.files, f ∈ h.files) := by
   simp only [keptProblems, List.append_eq_nil_iff, List.filterMap_eq_nil_iff] at hk
   obtain ⟨⟨h1, h2⟩, h3⟩ := hk
   refine ⟨fun d hd => ?_, fun d hd => ?_, fun f hf => ?_⟩
   · have := h1 d hd
     split at this
-    · assumption
+    · rename_i heq
+      exact (beq_iff_eq.mp heq).symm
     · cases this
   · have := h2 d hd
     split at this
@@ -635,16 +653,14 @@ theorem keptProblems_eq_nil {dir : System.FilePath} {b h : Tree} (hk : keptProbl
     · cases this
 
 theorem records_kept (parse : String → Except Message Record) {b h : Tree}
-    (hdays : ∀ d ∈ b.days, appendOnly d.2 (linesOf h d.1) = true)
+    (hdays : ∀ d ∈ b.days, linesOf h d.1 = d.2)
     (hfiles : ∀ f ∈ b.files, f ∈ h.files) :
     ∀ r ∈ records parse b, r ∈ records parse h := by
   intro r hr
   simp only [records, List.mem_append, List.mem_flatMap, List.mem_filterMap] at hr ⊢
   rcases hr with ⟨d, hd, l, hl, hp⟩ | ⟨f, hf, hp⟩
   · left
-    have hlh : l ∈ linesOf h d.1 := by
-      have := appendOnly_iff_count.mp (hdays d hd) l
-      exact List.count_pos_iff.mp (Nat.lt_of_lt_of_le (List.count_pos_iff.mpr hl) this)
+    have hlh : l ∈ linesOf h d.1 := (hdays d hd).symm ▸ hl
     unfold linesOf at hlh
     cases hfind : h.days.find? (fun x => x.1 == d.1) with
     | none => simp [hfind] at hlh
@@ -658,7 +674,8 @@ theorem problems_eq_nil (parse : String → Except Message Record) (dir : System
     noDupKeys (records parse h) = true ∧
       (∀ d ∈ h.days, ∀ l ∈ d.2, ∃ r, parse l = .ok r) ∧
       (∀ f ∈ h.files, isDate f.1 = true ∧ ∃ r, recordFile parse f.2.1 f.2.2 = .ok r) ∧
-      (∀ b, base = some b → (∀ r ∈ records parse b, r ∈ records parse h) ∧
+      (∀ b, base = some b → (∀ d ∈ b.days, linesOf h d.1 = d.2) ∧
+        (∀ r ∈ records parse b, r ∈ records parse h) ∧
         ∀ d ∈ h.days, ∃ d' ∈ b.days, d'.1 = d.1) := by
   unfold problems at hp
   rw [List.append_eq_nil_iff, List.append_eq_nil_iff] at hp
@@ -667,7 +684,7 @@ theorem problems_eq_nil (parse : String → Except Message Record) (dir : System
   refine ⟨dupProblems_eq_nil hdup, hl, hf, fun b hb => ?_⟩
   subst hb
   obtain ⟨k1, k2, k3⟩ := keptProblems_eq_nil hkept
-  exact ⟨records_kept parse k1 k3, k2⟩
+  exact ⟨k1, records_kept parse k1 k3, k2⟩
 
 example : fileName ("ci-escape-68", "builder", 12) = "ci-escape-68-builder-12.json" := by decide
 example : safeTask "P1-006" = true ∧ safeTask ".x" = false ∧ safeTask "-x" = false ∧
@@ -802,7 +819,7 @@ def check (base : Option System.FilePath) (head : System.FilePath) : IO UInt32 :
   ps := ps ++ ((problems parseRecord head b? h).filter fun p => !hbad.contains p.file).toArray
   if ps.isEmpty then
     let vs := match b? with
-      | some b => s!", every merge-base line and record file kept " ++
+      | some b => s!", every day file matches the merge base and every record file is kept " ++
           s!"({b.days.length + b.files.length} file(s) compared)"
       | none => ""
     IO.println (s!"run log OK: {h.days.length + h.files.length} file(s), " ++

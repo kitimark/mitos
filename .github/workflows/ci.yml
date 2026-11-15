@@ -252,7 +252,7 @@ jobs:
           done
           if [ -n "$failed" ]; then echo "::error::these gate shell tests failed:$failed"; exit 1; fi
 
-      - name: Run-log lines are append-only, one record per (task, role, attempt)
+      - name: Run-log day files match the base, one record per (task, role, attempt)
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
