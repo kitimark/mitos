@@ -4,32 +4,11 @@
 # Saves the REST reads that `mitos-gate snapshot <dir>` turns into the landing snapshot, one file
 # per read, `<dir>/<read>.json`, through `gh api` only: REST, never GraphQL. A read that fails
 # leaves no file, so the snapshot holds every pull request that needs it; a list is read with
-# `--paginate --slurp`, so a list with a failed page leaves no file either. Apart from main's
-# protection (below), the script parses only the numbers, heads and branch names of the open pull
-# requests, to name their routes, and skips a route whose name it would have to build from anything
-# else; `mitos-gate snapshot` checks every response it reads. It prints one line on standard error
-# per failed read and exits 0; a usage error exits 2.
-#
-# Main's protection is the one read this script does not make itself. Its route,
-# `branches/main/protection`, needs Administration read, which the workflow token of `land.yml`
-# lacks, so `.github/workflows/land-protection.yml` reads it with a read-only app token in its own
-# job, on `land.yml`'s events, and uploads `land-protection-<run>-<attempt>` holding `read.json`
-# (`.github/scripts/land-protection.sh`). The freshness rule: `protection.json` is the
-# `protection` of that file only from the newest run of that workflow that
-#   - is in this repository, on branch main, was started by push, workflow_run, issue_comment or
-#     workflow_dispatch, and completed with success;
-#   - ran at the commit of main that `main.json` holds, so main's own reader made the read;
-#   - finished at or after this run started (`run_started_at` of the run GITHUB_RUN_ID names,
-#     which a re-run moves), and whose file names that run, its attempt, this repository and
-#     refs/heads/main, with a read that began at or after this run started.
-# So no read from before the event this run answers counts. To name the routes of that run and
-# its artifact, the script parses their ids and the run's attempt, as numbers. While no run passes
-# and a run of that workflow at that commit is still queued or running, the script polls every
-# SNAPSHOT_PROTECTION_POLL seconds (default 5), for SNAPSHOT_PROTECTION_WAIT seconds at most
-# (default 60). Otherwise it saves no `protection.json`, and every pull request holds as unread
-# protection, with one line that says why: the read failed, is stale, or is from another run,
-# repository or ref. A dispatch of `land.yml` starts no reader, so it holds unless
-# `land-protection.yml` is dispatched on main right after it.
+# `--paginate --slurp`, so a list with a failed page leaves no file either. The script parses only
+# the numbers, heads and branch names of the open pull requests, to name their routes, and skips a
+# route whose name it would have to build from anything else; `mitos-gate snapshot` checks every
+# response it reads. It prints one line on standard error per failed read and exits 0; a usage
+# error exits 2.
 set -u
 
 die() { printf 'snapshot-fetch: %s\n' "$1" >&2; exit 2; }
@@ -79,7 +58,6 @@ ours='[.workflow_runs[] | select(type == "object"
 done_since='[.[] | select(.status == "completed" and .conclusion == "success"
   and (.updated_at | type == "string" and test($re)) and .updated_at >= $since)]'
 
-# Saves protection.json and prints nothing, or prints why it saved none.
 protection_from() {
   local s=$1 main since pick seen='' id attempt name art deadline
   if ! main=$(jq -er '.commit.sha' "$out/main.json" 2>/dev/null) || [[ ! $main =~ ^[0-9a-f]{40}$ ]] \
@@ -92,7 +70,6 @@ protection_from() {
   fi
   deadline=$((SECONDS + wait_s))
   while :; do
-    # shellcheck disable=SC2016
     if ! get "$s/runs.json" \
       "repos/$repo/actions/workflows/land-protection.yml/runs?branch=main&exclude_pull_requests=true&per_page=30" \
       || ! jq -e '.workflow_runs | type == "array"' "$s/runs.json" >/dev/null 2>&1 \
@@ -105,7 +82,6 @@ protection_from() {
       seen=$pick
       read -r id attempt <<<"$pick"
       name=land-protection-$id-$attempt
-      # shellcheck disable=SC2016
       if [[ ! $id =~ ^[1-9][0-9]{0,19}$ || ! $attempt =~ ^[1-9][0-9]{0,4}$ ]] \
         || ! get "$s/artifacts.json" "repos/$repo/actions/runs/$id/artifacts?name=$name&per_page=100" \
         || ! art=$(jq -er --arg name "$name" --argjson id "$id" \
@@ -120,14 +96,12 @@ protection_from() {
         echo failed
         return
       fi
-      # shellcheck disable=SC2016
       if ! jq -e --arg repo "$repo" --argjson id "$id" --argjson attempt "$attempt" \
         '.v == 1 and .repo == $repo and .ref == "refs/heads/main" and .run == $id
           and .attempt == $attempt' "$s/read.json" >/dev/null; then
         echo "is from another run, repository or ref than run $id, attempt $attempt"
         return
       fi
-      # shellcheck disable=SC2016
       if jq -e --arg since "$since" '.read >= $since' "$s/read.json" >/dev/null; then
         if jq -c .protection "$s/read.json" >"$out/protection.part" \
           && mv -- "$out/protection.part" "$out/protection.json"; then
@@ -138,7 +112,6 @@ protection_from() {
         return
       fi
     fi
-    # shellcheck disable=SC2016
     if [ "$SECONDS" -ge "$deadline" ] || ! jq -e --arg repo "$repo" --arg main "$main" \
       "$ours"' | any(.[]; .status != "completed")' "$s/runs.json" >/dev/null 2>&1; then
       echo "is stale: no successful land-protection run at $main read it at or after $since"

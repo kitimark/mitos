@@ -1,13 +1,5 @@
 name: land-protection
 
-# Reads main's classic branch protection for the land shadow run (`land.yml`), which cannot: the
-# route needs Administration read, and `land.yml` holds no key. This job mints a token of the
-# `mitos-pr-updater` app scoped to `administration: read` alone, makes that one read and uploads
-# it. `gate/snapshot-fetch.sh` in `land.yml`'s `decide` takes the file only from a successful run
-# of this workflow on main, at the commit of main that `decide` read, whose read began at or after
-# that `decide` run started. So this workflow starts on exactly `land.yml`'s events, with the same
-# `if:` (`.github/scripts/land-protection.test.sh` pins both).
-
 on:
   push:
     branches: [main]
@@ -32,19 +24,16 @@ jobs:
           github.event.comment.user.login == github.repository_owner))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    # The app's private key is a secret of the `trusted` environment, whose deployment branch rule
-    # admits only `main` (see update-prs.yml). Each run leaves a deployment record there.
     environment: trusted
     permissions:
       contents: read
     steps:
-      # main's own script, at the commit this run is for. No pull request's code runs here.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0, the commit v4 names
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - name: Mint an app token that can only read administration
         id: app
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0, the commit v1 names
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
         with:
           app-id: ${{ vars.PR_UPDATER_APP_ID }}
           private-key: ${{ secrets.PR_UPDATER_APP_KEY }}
@@ -53,7 +42,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: .github/scripts/land-protection.sh "$GITHUB_REPOSITORY" "$RUNNER_TEMP/land-protection"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2, the commit v4 names
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: land-protection-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/land-protection/read.json
