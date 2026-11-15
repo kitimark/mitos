@@ -373,8 +373,6 @@ jobs:
           rm -rf .lake/cheats
           mkdir -p .lake/cheats
           # Keep the status and still print the table. A pipe would swallow it.
-          # The binary writes shard-cases from the same list it runs, and refuses
-          # an empty residue because no names would run the whole corpus.
           status=0
           .lake/build/bin/mitos-gate cheats --jobs 4 --timeout 600 --shard "${{ matrix.shard }}/3" \
             > .lake/cheats/table.txt || status=$?

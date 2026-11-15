@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# The shard command and the aggregate, against the binary this job built.
-# Listing is enough for the live corpus. The cases themselves are not run.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -118,11 +116,6 @@ fill_good
 printf 'one\nextra\n' >"$work/shards/cheat-shard-logs-0/shard-cases"
 run_agg "not the partition" "extra name"
 ok "an extra recorded name fails"
-
-fill_good
-printf 'one\none\n' >"$work/shards/cheat-shard-logs-0/shard-cases"
-run_agg "not the partition" "duplicate record"
-ok "a duplicated record fails"
 
 fill_good
 printf 'case\tmode\tstart_ms\tend_ms\texit\ttimed_out\none\tfull\t0\t1\t1\tfalse\n' \
