@@ -85,10 +85,13 @@ def recordTag : List Char := "VERDICT: REJECTED (record: ".toList
 def causeBytes : Cause → List Char
   | .judged => [')']
   | .ioError => ": I/O error)".toList
+  | .noJudgment => ": no judgment)".toList
 
 theorem ciLine_empty : ciLine "" = "" := by decide
 
 theorem ciLine_ioError : ciLine "I/O error" = "I/O error" := by decide
+
+theorem ciLine_noJudgment : ciLine "no judgment" = "no judgment" := by decide
 
 def Verdict.render : Verdict → VerdictLine
   | .accepted => .mk "VERDICT: ACCEPTED"
@@ -96,7 +99,8 @@ def Verdict.render : Verdict → VerdictLine
     .mk <| "VERDICT: REJECTED (gate " ++ toString g.num ++ ": " ++ g.name ++
       (match c with
         | .judged => ""
-        | .ioError => ": " ++ ciLine "I/O error") ++ ")"
+        | .ioError => ": " ++ ciLine "I/O error"
+        | .noJudgment => ": " ++ ciLine "no judgment") ++ ")"
   | .unrecorded why => .mk <| "VERDICT: REJECTED (record: " ++ why ++ ")"
 
 theorem Verdict.render_bytes (v : Verdict) : v.render.bytes = match v with
@@ -113,11 +117,18 @@ theorem Verdict.render_bytes (v : Verdict) : v.render.bytes = match v with
     | ioError =>
       simp [Verdict.render, VerdictLine.bytes, gateTag, causeBytes, ciLine_ioError,
         String.toList_append, List.append_assoc]
+    | noJudgment =>
+      simp [Verdict.render, VerdictLine.bytes, gateTag, causeBytes, ciLine_noJudgment,
+        String.toList_append, List.append_assoc]
   | unrecorded why =>
     simp [Verdict.render, VerdictLine.bytes, recordTag, String.toList_append]
 
 example : (Verdict.rejected .adequacy .ioError).render.bytes =
     "VERDICT: REJECTED (gate 6: model adequacy: I/O error)".toList := by
+  rw [Verdict.render_bytes]; decide
+
+example : (Verdict.rejected .sandbox .noJudgment).render.bytes =
+    "VERDICT: REJECTED (gate 2: sandbox build: no judgment)".toList := by
   rw [Verdict.render_bytes]; decide
 
 example : (Verdict.rejected .lint .judged).render.bytes =
@@ -130,12 +141,9 @@ example : toString (Verdict.rejected .lint .judged).render =
 def gateOf? (cs : List Char) : Option (GateId × List Char) :=
   GateId.all.findSome? fun g => (stripPrefix? (toString g.num ++ ": " ++ g.name).toList cs).map (g, ·)
 
-theorem causeBytes_ne : causeBytes .judged ≠ causeBytes .ioError := by decide
+def Cause.all : List Cause := [.judged, .ioError, .noJudgment]
 
-def causeOf? (cs : List Char) : Option Cause :=
-  if cs = causeBytes .judged then some .judged
-  else if cs = causeBytes .ioError then some .ioError
-  else none
+def causeOf? (cs : List Char) : Option Cause := Cause.all.find? (causeBytes · == cs)
 
 def Verdict.parseChars (cs : List Char) : Option Verdict :=
   if cs = acceptedLine then some .accepted
@@ -177,12 +185,13 @@ theorem eq_dropLast_append {l : List Char} {a : Char} (h : l.getLast? = some a) 
 
 theorem causeOf?_eq_some_iff {cs : List Char} {c : Cause} :
     causeOf? cs = some c ↔ cs = causeBytes c := by
-  cases c with
-  | judged =>
-    by_cases h : cs = causeBytes .judged <;> simp [causeOf?, h]
-  | ioError =>
-    by_cases h : cs = causeBytes .judged <;> by_cases h2 : cs = causeBytes .ioError <;>
-      simp [causeOf?, h, h2, causeBytes_ne, causeBytes_ne.symm]
+  constructor
+  · intro h
+    unfold causeOf? at h
+    have hp := List.find?_some h
+    exact (beq_iff_eq.mp hp).symm
+  · rintro rfl
+    cases c <;> decide
 
 theorem VerdictLine.toString_bytes (l : VerdictLine) : (toString l).toList = l.bytes := by
   rfl
@@ -241,21 +250,164 @@ theorem Verdict.parse_eq_some_iff {l : String} {v : Verdict} :
 theorem Verdict.parse_render (v : Verdict) : Verdict.parse (toString v.render) = some v :=
   Verdict.parse_eq_some_iff.mpr (VerdictLine.toString_bytes v.render)
 
+theorem Verdict.parseChars_eq_some_iff {cs : List Char} {v : Verdict} :
+    Verdict.parseChars cs = some v ↔ cs = v.render.bytes := by
+  simpa [Verdict.parse] using Verdict.parse_eq_some_iff (l := String.ofList cs) (v := v)
+
 def isVerdictLine (l : List Char) : Bool := "VERDICT:".toList.isPrefixOf l
 
 def verdictLines (out : String) : List (List Char) := (splitLines out.toList).filter isVerdictLine
 
+/-- Each line, then a newline: what printing `ls` one line at a time writes. -/
+def printedLines (ls : List (List Char)) : List Char := ls.flatMap fun l => l ++ ['\n']
+
+/-- The verdict a gate's stdout states: its last line, which a newline ends, when no line before it
+is a verdict line. Whatever the run printed on stderr, or after that line, never counts, so an
+uncaught exception's message or a line printed late cannot stand in for the gate's verdict. -/
 def readVerdict (out : String) : Option Verdict :=
-  match verdictLines out with
-  | [l] => Verdict.parseChars l
+  match (splitLines out.toList).reverse with
+  | [] :: l :: earlier => if earlier.any isVerdictLine then none else Verdict.parseChars l
   | _ => none
 
-theorem readVerdict_eq_none {out : String} (h : (verdictLines out).length ≠ 1) :
-    readVerdict out = none := by
-  unfold readVerdict
-  split
-  · rename_i l hl; simp [hl] at h
-  · rfl
+theorem splitLines_go_ne_nil (cs acc : List Char) : splitLines.go cs acc ≠ [] := by
+  induction cs generalizing acc with
+  | nil => simp [splitLines.go]
+  | cons c cs ih =>
+    simp only [splitLines.go]
+    split
+    · simp
+    · exact ih _
+
+def joinLines : List (List Char) → List Char
+  | [] => []
+  | l :: ls =>
+    match ls with
+    | [] => l
+    | _ :: _ => l ++ '\n' :: joinLines ls
+
+theorem joinLines_cons_cons (l m : List Char) (ls : List (List Char)) :
+    joinLines (l :: m :: ls) = l ++ '\n' :: joinLines (m :: ls) := rfl
+
+theorem joinLines_go (cs acc : List Char) :
+    joinLines (splitLines.go cs acc) = acc.reverse ++ cs := by
+  induction cs generalizing acc with
+  | nil => simp [splitLines.go, joinLines]
+  | cons c cs ih =>
+    simp only [splitLines.go]
+    split
+    · rename_i hc
+      subst hc
+      obtain ⟨m, ms, hm⟩ : ∃ m ms, splitLines.go cs [] = m :: ms := by
+        cases h : splitLines.go cs [] with
+        | nil => exact absurd h (splitLines_go_ne_nil cs [])
+        | cons m ms => exact ⟨m, ms, rfl⟩
+      have h := ih []
+      rw [hm] at h ⊢
+      rw [joinLines_cons_cons, h]
+      simp
+    · rw [ih]
+      simp
+
+theorem joinLines_splitLines (cs : List Char) : joinLines (splitLines cs) = cs := by
+  show joinLines (splitLines.go cs []) = cs
+  simpa using joinLines_go cs []
+
+theorem newline_not_mem_go (cs acc : List Char) (h : '\n' ∉ acc) :
+    ∀ l ∈ splitLines.go cs acc, '\n' ∉ l := by
+  induction cs generalizing acc with
+  | nil => simpa [splitLines.go] using h
+  | cons c cs ih =>
+    simp only [splitLines.go]
+    split
+    · rename_i hc
+      intro l hl
+      simp only [List.mem_cons] at hl
+      rcases hl with rfl | hl
+      · simpa using h
+      · exact ih [] (by simp) l hl
+    · rename_i hc
+      exact ih (c :: acc) (by simp [h, Ne.symm hc])
+
+theorem newline_not_mem_splitLines (cs : List Char) : ∀ l ∈ splitLines cs, '\n' ∉ l :=
+  newline_not_mem_go cs [] (by simp)
+
+theorem joinLines_append_nil (ls : List (List Char)) : joinLines (ls ++ [[]]) = printedLines ls := by
+  induction ls with
+  | nil => rfl
+  | cons l ls ih =>
+    obtain ⟨m, ms, hm⟩ : ∃ m ms, ls ++ [[]] = m :: ms := by
+      cases ls with
+      | nil => exact ⟨[], [], rfl⟩
+      | cons x xs => exact ⟨x, xs ++ [[]], rfl⟩
+    rw [List.cons_append, hm, joinLines_cons_cons, ← hm, ih]
+    simp [printedLines]
+
+theorem splitLines_printedLines {ls : List (List Char)} (h : ∀ l ∈ ls, '\n' ∉ l) :
+    splitLines (printedLines ls) = ls ++ [[]] := by
+  induction ls with
+  | nil => simp [printedLines, splitLines, splitLines.go]
+  | cons l ls ih =>
+    have hl := h l (by simp)
+    have := splitLines_go_append (rest := printedLines ls) (acc := []) hl
+    simp only [printedLines, List.flatMap_cons, List.append_assoc, List.cons_append,
+      List.nil_append] at *
+    simp only [splitLines] at *
+    rw [this, ih (fun l' hl' => h l' (by simp [hl']))]
+    simp
+
+/-- A stdout states verdict `v` exactly when it is lines that are not verdict lines, then `v`'s
+line, each ended by a newline, and nothing after. -/
+theorem readVerdict_eq_some_iff {out : String} {v : Verdict} :
+    readVerdict out = some v ↔
+      ∃ pre : List (List Char), (∀ l ∈ pre, '\n' ∉ l ∧ isVerdictLine l = false) ∧
+        '\n' ∉ v.render.bytes ∧ out.toList = printedLines (pre ++ [v.render.bytes]) := by
+  constructor
+  · intro h
+    unfold readVerdict at h
+    split at h
+    · rename_i l earlier hrev
+      split at h
+      · cases h
+      · rename_i hany
+        have hl := Verdict.parseChars_eq_some_iff.mp h
+        have hsplit : splitLines out.toList = earlier.reverse ++ [l, []] := by
+          have := congrArg List.reverse hrev
+          simpa using this
+        have hnl := newline_not_mem_splitLines out.toList
+        refine ⟨earlier.reverse, ?_, ?_, ?_⟩
+        · intro x hx
+          refine ⟨hnl x (by rw [hsplit]; simp [hx]), ?_⟩
+          have : x ∈ earlier := by simpa using hx
+          simp only [List.any_eq_true, not_exists, not_and, Bool.not_eq_true] at hany
+          exact hany x this
+        · rw [← hl]
+          exact hnl l (by rw [hsplit]; simp)
+        · rw [← hl]
+          have hj : earlier.reverse ++ [l] ++ [[]] = splitLines out.toList := by
+            rw [hsplit]
+            simp
+          rw [← joinLines_append_nil, hj, joinLines_splitLines]
+    · cases h
+  · rintro ⟨pre, hpre, hv, hout⟩
+    have hs : splitLines out.toList = pre ++ [v.render.bytes] ++ [[]] := by
+      rw [hout]
+      apply splitLines_printedLines
+      intro l hl
+      rcases List.mem_append.mp hl with h | h
+      · exact (hpre l h).1
+      · simp at h
+        subst h
+        exact hv
+    have hany : pre.reverse.any isVerdictLine = false := by
+      simp only [List.any_eq_false, List.mem_reverse]
+      intro x hx
+      simp [(hpre x hx).2]
+    unfold readVerdict
+    rw [hs]
+    simp only [List.reverse_append, List.reverse_cons, List.reverse_nil, List.nil_append,
+      List.cons_append]
+    simp only [hany, Bool.false_eq_true, ↓reduceIte]
+    exact Verdict.parseChars_eq_some_iff.mpr rfl
 
 theorem isVerdictLine_render (v : Verdict) : isVerdictLine v.render.bytes = true := by
   rw [Verdict.render_bytes]
@@ -265,29 +417,43 @@ theorem isVerdictLine_render (v : Verdict) : isVerdictLine v.render.bytes = true
     cases c <;> simp [isVerdictLine, gateTag, causeBytes, List.isPrefixOf]
   | unrecorded _ => simp [isVerdictLine, recordTag, List.isPrefixOf]
 
-theorem readVerdict_printed {pre : List String} {v : Verdict} {rest : List Char}
+/-- A stdout with a verdict has exactly one verdict line, so two verdict lines are no verdict. -/
+theorem verdictLines_of_readVerdict {out : String} {v : Verdict} (h : readVerdict out = some v) :
+    verdictLines out = [v.render.bytes] := by
+  obtain ⟨pre, hpre, hv, hout⟩ := readVerdict_eq_some_iff.mp h
+  have hs : splitLines out.toList = pre ++ [v.render.bytes] ++ [[]] := by
+    rw [hout]
+    apply splitLines_printedLines
+    intro l hl
+    rcases List.mem_append.mp hl with h | h
+    · exact (hpre l h).1
+    · simp at h
+      subst h
+      exact hv
+  have hpre' : pre.filter isVerdictLine = [] := by
+    rw [List.filter_eq_nil_iff]
+    intro x hx
+    simp [(hpre x hx).2]
+  have hnil : isVerdictLine ([] : List Char) = false := by decide
+  simp only [verdictLines, hs, List.filter_append, hpre', List.filter_cons, isVerdictLine_render,
+    hnil, List.filter_nil, ↓reduceIte, List.nil_append, List.append_nil, Bool.false_eq_true]
+
+theorem readVerdict_eq_none {out : String} (h : (verdictLines out).length ≠ 1) :
+    readVerdict out = none := by
+  cases hr : readVerdict out with
+  | none => rfl
+  | some v => simp [verdictLines_of_readVerdict hr] at h
+
+theorem readVerdict_printed {pre : List String} {v : Verdict}
     (hpre : ∀ l ∈ pre, '\n' ∉ l.toList ∧ isVerdictLine l.toList = false)
-    (hv : '\n' ∉ v.render.bytes) (hrest : ∀ l ∈ splitLines rest, isVerdictLine l = false) :
-    readVerdict (String.ofList (printed (pre ++ [toString v.render]) ++ rest)) = some v := by
-  have hline : (toString v.render).toList = v.render.bytes := VerdictLine.toString_bytes v.render
-  have hsplit := splitLines_printed_append (ls := pre ++ [toString v.render]) (rest := rest)
-    (fun l hl => by
-      rcases List.mem_append.mp hl with h | h
-      · exact (hpre l h).1
-      · simp at h; subst h; rw [hline]; exact hv)
-  have : verdictLines (String.ofList (printed (pre ++ [toString v.render]) ++ rest)) =
-      [v.render.bytes] := by
-    simp only [verdictLines, String.toList_ofList, hsplit, List.map_append, List.map_cons,
-      List.map_nil, List.filter_append, List.filter_cons, hline, isVerdictLine_render, ↓reduceIte,
-      List.filter_nil]
-    rw [List.filter_eq_nil_iff.mpr, List.filter_eq_nil_iff.mpr]
-    · simp
-    · intro l hl; simp [hrest l hl]
-    · intro l hl
-      obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hl
-      simp [(hpre s hs).2]
-  simp only [readVerdict, this]
-  exact Verdict.parse_render v
+    (hv : '\n' ∉ v.render.bytes) :
+    readVerdict (String.ofList (printed (pre ++ [toString v.render]))) = some v := by
+  apply readVerdict_eq_some_iff.mpr
+  refine ⟨pre.map String.toList, ?_, hv, ?_⟩
+  · intro l hl
+    obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hl
+    exact hpre s hs
+  · simp [printed, printedLines, List.flatMap_map, VerdictLine.toString_bytes]
 
 def Verdict.ofGate : Except (GateId × Cause) (Option String) → Verdict
   | .ok none => .accepted
@@ -320,6 +486,12 @@ theorem Verdict.ofGate_render_bytes (o : Except (GateId × Cause) (Option String
       refine ⟨gateTag ++ (toString g.num ++ ": " ++ g.name).toList ++ [':', ' '], "I/O error",
         ?_, ?_, ?_⟩
       · simp [causeBytes, ciLine_ioError, String.toList_append]
+      · cases g <;> decide
+      · cases g <;> decide
+    | noJudgment =>
+      refine ⟨gateTag ++ (toString g.num ++ ": " ++ g.name).toList ++ [':', ' '], "no judgment",
+        ?_, ?_, ?_⟩
+      · simp [causeBytes, ciLine_noJudgment, String.toList_append]
       · cases g <;> decide
       · cases g <;> decide
   · left
@@ -389,26 +561,38 @@ example :
       Verdict.parse (ciLine line) ≠ some v := by
   decide
 
+/-- One gate run as the runner saw it. Its stdout and stderr are kept apart, because the verdict is
+read from stdout alone; the log holds both. `logged` says that the run's log file holds `log`, read
+back after the write. -/
 structure Run where
   exitCode : UInt32
-  output : String
+  stdout : String
+  stderr : String
   timedOut : Bool
+  logged : Bool
   deriving Inhabited, Repr
 
-def noRun : Run := { exitCode := 255, output := "", timedOut := false }
+def Run.log (r : Run) : String := r.stdout ++ r.stderr
 
+def noRun : Run := { exitCode := 255, stdout := "", stderr := "", timedOut := false, logged := false }
+
+/-- A run's verdict: the last line of its stdout, if the run was not stopped at the timeout, its log
+is on disk and its exit code is the verdict's. A run without one fails its case, so no crash, I/O
+error or lost log reads as a judgment. -/
 def Run.verdict (r : Run) : Option Verdict :=
-  if r.timedOut then none
-  else match readVerdict r.output with
+  if r.timedOut || !r.logged then none
+  else match readVerdict r.stdout with
     | some v => if v.exitCode = r.exitCode then some v else none
     | none => none
 
 theorem Run.verdict_eq_some {r : Run} {v : Verdict} :
-    r.verdict = some v ↔ r.timedOut = false ∧ readVerdict r.output = some v ∧ v.exitCode = r.exitCode := by
+    r.verdict = some v ↔ r.timedOut = false ∧ r.logged = true ∧ readVerdict r.stdout = some v ∧
+      v.exitCode = r.exitCode := by
   unfold Run.verdict
-  cases ht : r.timedOut
-  · simp only [Bool.false_eq_true, ↓reduceIte, true_and]
-    cases h : readVerdict r.output with
+  cases ht : r.timedOut <;> cases hl : r.logged
+  · simp
+  · simp only [Bool.false_or, Bool.not_true, Bool.false_eq_true, ↓reduceIte, true_and]
+    cases h : readVerdict r.stdout with
     | none => simp
     | some v' =>
       simp only [Option.some.injEq]
@@ -420,15 +604,45 @@ theorem Run.verdict_eq_some {r : Run} {v : Verdict} :
       · simp only [he, ↓reduceIte, reduceCtorEq, false_iff, not_and]
         rintro rfl; exact he
   · simp
+  · simp
 
 example : noRun.verdict = none := by decide
+
+def statementsLine : String := "VERDICT: REJECTED (gate 3: statements)\n"
+
+/-- A run that exited 1 with this stdout and stderr, and was not stopped. -/
+def exited (out err : String) (logged : Bool := true) : Run :=
+  { exitCode := 1, stdout := out, stderr := err, timedOut := false, logged }
+
+/-- The verdict line on stderr, as an uncaught exception's message would print it, is not read. -/
+example : (exited "" ("uncaught exception: x\n" ++ statementsLine)).verdict = none := by
+  decide +kernel
+
+/-- A line after the verdict line, so it is not the last line of stdout. -/
+example : (exited (statementsLine ++ "later\n") "").verdict = none := by decide +kernel
+
+/-- A verdict line that no newline ends, as a run killed while printing it would leave. -/
+example : (exited "VERDICT: REJECTED (gate 3: statements)" "").verdict = none := by decide +kernel
+
+/-- Two verdict lines. -/
+example : (exited (statementsLine ++ statementsLine) "").verdict = none := by decide +kernel
+
+/-- The gate's own lines, then the verdict, with a note on stderr. -/
+example : (exited ("GATE 3 statements: FAIL\n" ++ statementsLine) "note\n").verdict =
+    some (.rejected .statements .judged) := by decide +kernel
+
+/-- The same run, with its log lost. -/
+example : (exited ("GATE 3 statements: FAIL\n" ++ statementsLine) "note\n" false).verdict = none := by
+  decide +kernel
 
 def Run.shown (r : Run) : String :=
   match r.verdict with
   | some .accepted => "ACCEPTED"
-  | some (.rejected g _) => s!"REJECTED@{g.num}"
+  | some (.rejected g .judged) => s!"REJECTED@{g.num}"
+  | some (.rejected g .ioError) => s!"IO-ERROR@{g.num}"
+  | some (.rejected g .noJudgment) => s!"NO-JUDGMENT@{g.num}"
   | some (.unrecorded _) => "REJECTED@record"
-  | none => if r.timedOut then "TIMEOUT" else "NO-VERDICT"
+  | none => if r.timedOut then "TIMEOUT" else if r.logged then "NO-VERDICT" else "NO-LOG"
 
 inductive CompExpect
   | accept
@@ -881,11 +1095,15 @@ example : fullOk .adequacy (some (.rejected .adequacy .judged)) = true := by dec
 example : CompExpect.ok .reject (some (.rejected .lint .ioError)) = false := by decide
 example : CompExpect.ok (.rejectAt .adequacy) (some (.rejected .adequacy .ioError)) = false := by decide
 example : CompExpect.ok (.rejectAt .adequacy) (some (.rejected .adequacy .judged)) = true := by decide
+example : fullOk .sandbox (some (.rejected .sandbox .noJudgment)) = false := by decide
+example : CompExpect.ok .reject (some (.rejected .sandbox .noJudgment)) = false := by decide
+example : CompExpect.ok (.rejectAt .sandbox) (some (.rejected .sandbox .noJudgment)) = false := by
+  decide
 
 def guardsOk (e : Expect) (full : Run) : Bool :=
   match e.guards with
   | none => true
-  | some r => guardsWhy r e.comparatorOnly full.output == .holds
+  | some r => guardsWhy r e.comparatorOnly full.stdout == .holds
 
 def pad (n : Nat) (s : String) : String := s ++ String.ofList (List.replicate (n - s.length) ' ')
 
@@ -905,7 +1123,7 @@ def header : String :=
 def judge (case : String) (e : Expect) (full comp : Run) : Row :=
   let guard := match e.guards with
     | none => ""
-    | some r => guardText r (guardsWhy r e.comparatorOnly full.output)
+    | some r => guardText r (guardsWhy r e.comparatorOnly full.stdout)
   { case
     text := pad 14 full.shown ++ " " ++ pad 14 ("@" ++ toString e.full.num) ++ " " ++
       pad 22 comp.shown ++ " " ++ pad 10 e.comparatorOnly.render ++ " " ++ guard
@@ -919,7 +1137,7 @@ def CompExpect.Holds : CompExpect → Option Verdict → Prop
 theorem judge_pass_iff {case : String} {e : Expect} {full comp : Run} :
     (judge case e full comp).pass = true ↔
       full.verdict = some (.rejected e.full .judged) ∧ e.comparatorOnly.Holds comp.verdict ∧
-        ∀ r, e.guards = some r → guardsWhy r e.comparatorOnly full.output = .holds := by
+        ∀ r, e.guards = some r → guardsWhy r e.comparatorOnly full.stdout = .holds := by
   simp only [judge, Bool.and_eq_true, and_assoc]
   apply and_congr
   · generalize full.verdict = v
@@ -940,19 +1158,42 @@ theorem judge_pass_iff {case : String} {e : Expect} {full comp : Run} :
 
 def ioAtAdequacy : Run :=
   { exitCode := 1
-    output := "VERDICT: REJECTED (gate 6: model adequacy: I/O error)\n"
-    timedOut := false }
+    stdout := "VERDICT: REJECTED (gate 6: model adequacy: I/O error)\n"
+    stderr := ""
+    timedOut := false
+    logged := true }
 
 def judgedAtAdequacy : Run :=
   { exitCode := 1
-    output := "VERDICT: REJECTED (gate 6: model adequacy)\n"
-    timedOut := false }
+    stdout := "VERDICT: REJECTED (gate 6: model adequacy)\n"
+    stderr := ""
+    timedOut := false
+    logged := true }
+
+def noJudgmentAtSandbox : Run :=
+  { exitCode := 1
+    stdout := "VERDICT: REJECTED (gate 2: sandbox build: no judgment)\n"
+    stderr := ""
+    timedOut := false
+    logged := true }
 
 example : (judge "wrong cause" { full := .adequacy, comparatorOnly := .reject }
     ioAtAdequacy judgedAtAdequacy).pass = false := by decide
 
 example : (judge "judged" { full := .adequacy, comparatorOnly := .reject }
     judgedAtAdequacy judgedAtAdequacy).pass = true := by decide
+
+example : (judge "no judgment" { full := .adequacy, comparatorOnly := .reject }
+    judgedAtAdequacy noJudgmentAtSandbox).pass = false := by decide
+
+example : (judge "no judgment at the gate" { full := .adequacy, comparatorOnly := .rejectAt .sandbox }
+    judgedAtAdequacy noJudgmentAtSandbox).pass = false := by decide
+
+example : noJudgmentAtSandbox.shown = "NO-JUDGMENT@2" := by decide
+
+example : ioAtAdequacy.shown = "IO-ERROR@6" := by decide
+
+example : { judgedAtAdequacy with logged := false }.shown = "NO-LOG" := by decide
 
 structure Case where
   name : String

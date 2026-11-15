@@ -343,24 +343,58 @@ def ciCount : Nat := (ciCases "").length
 /-! ## The cheat runner's timeout
 
 At a run's timeout, `CheatsRun.runChild` sends SIGKILL to the run's whole process group through
-`Child.kill`, whose docstring says SIGTERM. Each case runs a `bash` child through
-`CheatsRun.inRunDir` and `runChild` with a 1 s timeout. The child ignores SIGTERM and starts a
-grandchild that ignores it too and holds the pipes. Both would sleep for 30 s, so on a toolchain
-whose `Child.kill` sent SIGTERM the run would end only after 30 s, or with a code other than 137,
-and the case would fail rather than hang. -/
+`Child.kill`, whose docstring says SIGTERM. The group holds `unshare` and the first process of the
+run's PID namespace, and when that process dies, the kernel kills the rest of the namespace. Each
+case runs a `bash` child through `CheatsRun.inRunDir` and `runChild` with a 1 s timeout. The child
+ignores SIGTERM and starts a grandchild that ignores it too, holds the pipes and sleeps for 30 s
+and a fraction no other process uses, by which the test finds it in the host's `/proc`. Every
+process would exit on its own after 30 s. So on a toolchain whose `Child.kill` sent SIGTERM, or
+with a runner that cannot reach a grandchild in a session of its own, a run would end only after
+30 s, or with another code, and the case would fail rather than hang. -/
 
-def timeoutCases : List (String × String × UInt32) :=
-  [ ("the child and its grandchild ignore SIGTERM",
-      "trap '' TERM; sleep 30 & echo \"grandchild $!\"; echo x > \"$TMPDIR/left\"; wait", 137),
-    ("the child exits at once; its grandchild ignores SIGTERM and holds the pipes",
-      "trap '' TERM; sleep 30 & echo \"grandchild $!\"; echo x > \"$TMPDIR/left\"", 0) ]
+structure TimeoutCase where
+  name : String
+  /-- The child's script, given the grandchild's command. -/
+  script : String → String
+  code : UInt32
+  timedOut : Bool
 
-/-- Whether process `pid` has not exited: `/proc/<pid>/stat` is there, and the state after the
-command name, which is in parentheses, is neither zombie (`Z`) nor dead (`X`). -/
-def running (pid : String) : IO Bool := do
-  let stat ← try IO.FS.readFile ("/proc" / pid / "stat") catch _ => return false
-  let state := (stat.toList.reverse.takeWhile (· != ')')).reverse.dropWhile (· == ' ')
-  return !(state.head? == some 'Z' || state.head? == some 'X')
+/-- A grandchild that ignores SIGTERM, prints a line and sleeps `30.<tag>` s holding the pipes. It
+creates `$TMPDIR/gc` once it has printed, so the child can wait for it. -/
+def grandchild (tag : String) : String :=
+  "bash -c 'trap \"\" TERM; echo grandchild; : > \"$TMPDIR/gc\"; exec sleep 30." ++ tag ++ "'"
+
+def awaitGrandchild : String :=
+  "until [ -e \"$TMPDIR/gc\" ]; do sleep 0.05; done; echo x > \"$TMPDIR/left\""
+
+def timeoutCases : List TimeoutCase :=
+  [ { name := "the child and its grandchild ignore SIGTERM"
+      script := fun gc => s!"trap '' TERM; {gc} & {awaitGrandchild}; wait", code := 137,
+      timedOut := true },
+    { name := "the child exits at once; its grandchild ignores SIGTERM and holds the pipes, " ++
+        "and dies with the namespace"
+      script := fun gc => s!"trap '' TERM; {gc} & {awaitGrandchild}", code := 0, timedOut := false },
+    { name := "the child waits; its grandchild is in a session of its own, ignores SIGTERM " ++
+        "and holds the pipes"
+      script := fun gc => s!"trap '' TERM; setsid -f {gc}; {awaitGrandchild}; sleep 30",
+      code := 137, timedOut := true },
+    { name := "the child exits at once; its grandchild is in a session of its own and holds " ++
+        "the pipes"
+      script := fun gc => s!"setsid -f {gc}; {awaitGrandchild}", code := 0, timedOut := false } ]
+
+/-- Whether a process that has not exited runs `sleep 30.<tag>`: its `/proc/<pid>/cmdline` is that
+command, and the state in `/proc/<pid>/stat` after the command name, which is in parentheses, is
+neither zombie (`Z`) nor dead (`X`). -/
+def sleeping (tag : String) : IO Bool := do
+  let want := "sleep\x0030." ++ tag ++ "\x00"
+  for e in ← System.FilePath.readDir "/proc" do
+    unless !e.fileName.isEmpty && e.fileName.all Char.isDigit do continue
+    let cmd ← try IO.FS.readFile (e.path / "cmdline") catch _ => pure ""
+    unless cmd == want do continue
+    let stat ← try IO.FS.readFile (e.path / "stat") catch _ => pure ""
+    let state := (stat.toList.reverse.takeWhile (· != ')')).reverse.dropWhile (· == ' ')
+    unless stat.isEmpty || state.head? == some 'Z' || state.head? == some 'X' do return true
+  return false
 
 /-! ## Scoped tokens
 
@@ -386,29 +420,89 @@ def scopedTokensStartingLiteral (env : Lean.Environment) : Array String × Nat :
       | _ => pure ()
   return (bad, n)
 
-def timeoutCase (script : String) (code : UInt32) : IO (List String) := do
+def timeoutCase (c : TimeoutCase) (tag : String) : IO (List String) := do
   let dirOf ← IO.mkRef (none : Option System.FilePath)
   let t0 ← IO.monoMsNow
   let run ← CheatsRun.inRunDir fun dir => do
     dirOf.set (some dir)
-    CheatsRun.runChild "bash" #["-c", script] (dir / "ws") (dir / "tmp") 1000
+    CheatsRun.runChild "bash" #["-c", c.script (grandchild tag)] (dir / "ws") (dir / "tmp") 1000
   let ms := (← IO.monoMsNow) - t0
+  let shown := { run with logged := true }.shown
+  let want := if c.timedOut then "TIMEOUT" else "NO-VERDICT"
   let mut errs := #[]
-  unless run.timedOut do errs := errs.push "the run is not marked timed out"
-  unless run.shown == "TIMEOUT" do errs := errs.push s!"the row would show {run.shown}"
-  unless run.exitCode == code do errs := errs.push s!"exit {run.exitCode}, not {code}"
+  unless run.timedOut == c.timedOut do
+    errs := errs.push s!"the run is {if run.timedOut then "" else "not "}marked timed out"
+  unless shown == want do errs := errs.push s!"the row would show {shown}"
+  unless run.exitCode == c.code do errs := errs.push s!"exit {run.exitCode}, not {c.code}"
   unless ms < 15000 do errs := errs.push s!"the run took {ms} ms"
-  let gc := (run.output.splitOn "\n").findSome? fun l =>
-    let cs := l.toList
-    if cs.take 11 == "grandchild ".toList then some (String.ofList (cs.drop 11)) else none
-  match gc with
-  | some p =>
-    if p.isEmpty || !p.all Char.isDigit then errs := errs.push s!"grandchild pid {p}"
-    else if ← running p then errs := errs.push s!"grandchild {p} still runs"
-  | none => errs := errs.push s!"the grandchild did not start: {run.output}"
+  if !(run.stdout.splitOn "\n").contains "grandchild" then
+    errs := errs.push s!"the grandchild did not start: {run.log}"
+  else if ← sleeping tag then errs := errs.push s!"the grandchild sleep 30.{tag} still runs"
   match ← dirOf.get with
   | some d => if ← d.pathExists then errs := errs.push s!"{d} is still there"
   | none => errs := errs.push "no run directory was made"
+  return errs.toList
+
+/-! ## The verdict is the last line of the gate's stdout
+
+`Cheats.Run.verdict` reads a run's verdict from its stdout alone, and only from the last line. Each
+case runs a `bash` child through `CheatsRun.runChild` that prints a verdict line, and checks what
+the runner reads from it. The first prints what the Lean runtime prints for an uncaught exception
+whose message holds a verdict line: the message on stderr, and exit 1. -/
+
+def verdictCases : List (String × String × Option Cheats.Verdict) :=
+  [ ("an uncaught exception's message holds a verdict line",
+      "printf 'uncaught exception: x\\nVERDICT: REJECTED (gate 3: statements)\\n' >&2; exit 1", none),
+    ("a line follows the verdict line",
+      "printf 'VERDICT: REJECTED (gate 3: statements)\\nlater\\n'; exit 1", none),
+    ("the verdict line is the last line of stdout, with a note on stderr",
+      "printf 'GATE 3 statements: FAIL\\nVERDICT: REJECTED (gate 3: statements)\\n'; " ++
+        "echo note >&2; exit 1", some (.rejected .statements .judged)) ]
+
+def verdictText : Option Cheats.Verdict → String
+  | some v => toString v.render
+  | none => "no verdict"
+
+def verdictCase (script : String) (want : Option Cheats.Verdict) : IO (List String) := do
+  let run ← CheatsRun.inRunDir fun dir =>
+    CheatsRun.runChild "bash" #["-c", script] (dir / "ws") (dir / "tmp") 60000
+  let got := { run with logged := true }.verdict
+  if got == want then return []
+  return [s!"read {verdictText got}, not {verdictText want}, from stdout {repr run.stdout} " ++
+    s!"and stderr {repr run.stderr}"]
+
+/-! ## A log that is not on disk fails its row
+
+`CheatsRun.runJob` writes each run's log and reads it back, and a run whose log does not hold its
+output has no verdict, so its row fails. Each run here is a stub gate that prints a rejection at
+gate 0: once into a log folder it can write, once into one where the log's path is a folder. -/
+
+def logWrite : IO (List String) := do
+  let dir ← IO.FS.createTempDir
+  let errs ← try
+    let stub := dir / "gate"
+    IO.FS.writeFile stub "#!/bin/sh\necho 'VERDICT: REJECTED (gate 0: provenance)'\nexit 1\n"
+    IO.setAccessRights stub { user := { read := true, write := true, execution := true } }
+    let e : Cheats.Expect := { full := .provenance, comparatorOnly := .rejectAt .provenance }
+    let root ← IO.currentDir
+    let ok := dir / "ok"
+    let lost := dir / "lost"
+    IO.FS.createDirAll ok
+    IO.FS.createDirAll (lost / "stub.full.log")
+    let mut errs : Array String := #[]
+    let kept ← CheatsRun.runJob stub.toString root ok 0 60 "stub" e .full
+    unless kept.run.verdict == some (.rejected .provenance .judged) do
+      errs := errs.push s!"a written log: the row would show {kept.run.shown}"
+    unless (← IO.FS.readFile (ok / "stub.full.log")) == kept.run.log do
+      errs := errs.push "the log does not hold the run's output"
+    let gone ← CheatsRun.runJob stub.toString root lost 0 60 "stub" e .full
+    unless gone.run.verdict == none && gone.run.shown == "NO-LOG" do
+      errs := errs.push s!"a log that could not be written: the row would show {gone.run.shown}"
+    pure errs
+  catch e =>
+    pure #[s!"could not run: {e}"]
+  finally
+    IO.FS.removeDirAll dir
   return errs.toList
 
 def recordWrite : IO (List String) := do
@@ -542,11 +636,23 @@ def main : IO UInt32 := do
   IO.println (s!"{if ci.isEmpty then "ok  " else "FAIL"} ci-log: {nci - ci.size} of {nci} " ++
     "hostile cases print no workflow command")
   fails := fails + ci.size
-  for (name, script, code) in timeoutCases do
-    let errs ← timeoutCase script code
+  let pid ← IO.Process.getPID
+  for (c, i) in timeoutCases.zipIdx do
+    let errs ← timeoutCase c s!"{pid}{i}"
     unless errs.isEmpty do fails := fails + 1
-    let detail := if errs.isEmpty then s!"timed out, exit {code}, nothing left" else "; ".intercalate errs
-    IO.println (ciLine s!"{if errs.isEmpty then "ok  " else "FAIL"} cheat runner timeout, {name}: {detail}")
+    let ended := if c.timedOut then "timed out" else "ended at once"
+    let detail := if errs.isEmpty then s!"{ended}, exit {c.code}, nothing left" else "; ".intercalate errs
+    IO.println (ciLine s!"{if errs.isEmpty then "ok  " else "FAIL"} cheat runner timeout, {c.name}: {detail}")
+  for (name, script, want) in verdictCases do
+    let errs ← verdictCase script want
+    unless errs.isEmpty do fails := fails + 1
+    let detail := if errs.isEmpty then s!"reads {verdictText want}" else "; ".intercalate errs
+    IO.println (ciLine s!"{if errs.isEmpty then "ok  " else "FAIL"} cheat runner verdict, {name}: {detail}")
+  let lw ← logWrite
+  unless lw.isEmpty do fails := fails + 1
+  IO.println (ciLine s!"{if lw.isEmpty then "ok  " else "FAIL"} cheat runner log: " ++
+    (if lw.isEmpty then "a log on disk keeps the verdict, and one that cannot be written fails its row"
+      else "; ".intercalate lw))
   let rw ← recordWrite
   unless rw.isEmpty do fails := fails + 1
   IO.println (ciLine s!"{if rw.isEmpty then "ok  " else "FAIL"} record temp: " ++
@@ -561,11 +667,12 @@ def main : IO UInt32 := do
     IO.println (ciLine s!"FAIL scoped tokens: {", ".intercalate badTokens.toList} start a literal or a comment ({nScoped} scoped tokens)")
   else
     IO.println (ciLine s!"ok  scoped tokens: {nScoped} from Init and Std, none starts a literal or a comment")
-  let total := cases.length + ruleCases.length + 1 + nci + timeoutCases.length + 2
+  let total := cases.length + ruleCases.length + 1 + nci + timeoutCases.length +
+    verdictCases.length + 1 + 2
   let count (k : String) (w : Bool) := (cases.filter fun c => c.kind == k && c.wantOk == w).length
-  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet; {nci} CI-log cases; {timeoutCases.length} cheat-runner timeout cases; the scoped-token scan; the record temp file"
+  let summary := s!"model: {count "model" true} accepted, {count "model" false} rejected; plugin: {count "plugin" true} accepted, {count "plugin" false} rejected; core imports: {count "core" true} accepted, {count "core" false} rejected; {ruleCases.length} rule cases; the ban ratchet; {nci} CI-log cases; {timeoutCases.length} cheat-runner timeout cases; {verdictCases.length} cheat-runner verdict cases; the cheat-runner log write; the scoped-token scan; the record temp file"
   if fails == 0 then
-    IO.println s!"gate-1 lint: all {total} cases behave as expected ({summary})"
+    IO.println s!"mitos-lint-test: all {total} cases behave as expected ({summary})"
     return 0
-  IO.println s!"gate-1 lint: {fails} of {total} cases FAILED"
+  IO.println s!"mitos-lint-test: {fails} of {total} cases FAILED"
   return 1

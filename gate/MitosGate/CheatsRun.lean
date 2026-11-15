@@ -84,10 +84,21 @@ def prepare (root : System.FilePath) (c : String) (e : Expect) (ws : System.File
     IO.FS.withFile (ws / "models.lock") .append fun h =>
       for l in e.lockAppend do h.putStr (l ++ "\n")
 
-/-- Run `cmd args` in `cwd`, in a session of its own, with `TMPDIR` set to `tmp`, until it has
-exited and no process holds its stdout or stderr any more. If that takes `timeoutMs`, its whole
-process group gets SIGKILL, once, and the run is marked timed out. There is no SIGTERM step first:
-`inRunDir` removes what a killed run leaves, so a chance to clean up would buy nothing.
+/-- `cmd args` as the first process of a PID namespace of its own, through `unshare` with a user
+namespace, so it needs no privilege, as `bwrap` needs none. When that process ends, by itself or at
+the timeout, the kernel kills every process left in the namespace, one that started a session of
+its own included. `/proc` is mounted again for the namespace, because Lean finds its own binary
+at `/proc/<pid>/exe` by the pid the namespace gives it, which names another process in the host's
+`/proc`, and `lean --print-prefix` would stop with `failed to locate application`. -/
+def namespaced (cmd : String) (args : Array String) : String × Array String :=
+  ("unshare", #["--user", "--map-current-user", "--pid", "--fork", "--mount-proc", "--kill-child",
+    "--", cmd] ++ args)
+
+/-- Run `cmd args` in `cwd`, as the first process of a PID namespace of its own (`namespaced`), in a
+session of its own, with `TMPDIR` set to `tmp`, until it has exited and no process holds its stdout
+or stderr any more. If that takes `timeoutMs`, its whole process group gets SIGKILL, once, and the
+run is marked timed out. There is no SIGTERM step first: `inRunDir` removes what a killed run
+leaves, so a chance to clean up would buy nothing.
 
 The kill is `Child.kill`, which on Lean v4.35.0 sends SIGKILL to the whole group of a child spawned
 with `setsid`, although its docstring says SIGTERM. `mitos-lint-test` pins this: it times out a
@@ -95,13 +106,18 @@ child that ignores SIGTERM and leaves a grandchild that ignores it too, and requ
 both gone. So a toolchain that sends SIGTERM instead fails CI, rather than leaving the runner waiting
 on a survivor.
 
-The timeout covers the pipes too, so a descendant that outlives the child and keeps a pipe open is
-killed with the rest of the group, not waited for. The child is reaped only after both pipes have
-closed. Until then its pid, which is the group's id, cannot be reused, so the kill reaches only
-this run's processes. A process that starts a session of its own leaves the group and is out of
-reach. -/
+The group holds `unshare` and the namespace's first process, and when that process dies the kernel
+kills the rest of the namespace. So a descendant that outlives the child and keeps a pipe open dies
+with it, and so does one that left the group with `setsid`: the pipes close, and the wait ends. The
+child is reaped only after both pipes have closed. Until then its pid, which is the group's id,
+cannot be reused, so the kill reaches only this run's processes. Without unprivileged user
+namespaces `unshare` fails, and the run has no verdict.
+
+Stdout and stderr stay apart: the verdict is read from stdout alone (`Cheats.Run.verdict`). The run
+is not `logged` until `runJob` has written its log. -/
 def runChild (cmd : String) (args : Array String) (cwd tmp : System.FilePath) (timeoutMs : Nat) :
     IO Run := do
+  let (cmd, args) := namespaced cmd args
   let child ← IO.Process.spawn
     { cmd, args, cwd := some cwd, env := #[("TMPDIR", some tmp.toString)],
       stdin := .null, stdout := .piped, stderr := .piped, setsid := true }
@@ -121,7 +137,7 @@ def runChild (cmd : String) (args : Array String) (cwd tmp : System.FilePath) (t
     IO.sleep 100
   let out ← IO.ofExcept (← IO.wait out)
   let err ← IO.ofExcept (← IO.wait err)
-  return { exitCode := code, output := out ++ err, timedOut }
+  return { exitCode := code, stdout := out, stderr := err, timedOut, logged := false }
 
 def runGate (gate : String) (root ws tmp : System.FilePath) (m : Mode) (timeout : Nat) :
     IO Run :=
@@ -136,7 +152,9 @@ def inRunDir (act : System.FilePath → IO Run) : IO Run := do
       IO.FS.createDirAll (dir / "ws")
       IO.FS.createDirAll (dir / "tmp")
       act dir
-    catch err => pure { exitCode := 255, output := s!"mitos-gate cheats: {err}\n", timedOut := false }
+    catch err =>
+      pure { exitCode := 255, stdout := "", stderr := s!"mitos-gate cheats: {err}\n",
+             timedOut := false, logged := false }
   try IO.FS.removeDirAll dir
   catch err => IO.eprintln (ciLine s!"warning: could not remove the job directory {dir}: {err}")
   return run
@@ -146,15 +164,31 @@ structure Done where
   startMs : Nat
   endMs : Nat
 
+/-- Write `text` to `file`, flush it and read it back. True only when the file then holds `text`.
+`IO.FS.writeFile` leaves a failed write to the handle's finalizer, which drops it; the flush raises
+it here, and the read finds a file that still differs. False comes with a warning, and the run's row
+then fails (`Cheats.Run.verdict` needs `logged`), so `cheat-logs` cannot lack the log of a row that
+passed. -/
+def writeLog (c : String) (file : System.FilePath) (text : String) : IO Bool := do
+  try
+    IO.FS.withFile file .write fun h => do
+      h.putStr text
+      h.flush
+    if (← IO.FS.readFile file) == text then return true
+    IO.eprintln (ciLine s!"warning: the log of {c} does not hold its run's output, so its row fails")
+    return false
+  catch err =>
+    IO.eprintln (ciLine s!"warning: could not write the log of {c}, so its row fails: {err}")
+    return false
+
 def runJob (gate : String) (root logs : System.FilePath) (t0 : Nat) (timeout : Nat) (c : String)
     (e : Expect) (m : Mode) : IO Done := do
   let startMs := (← IO.monoMsNow) - t0
   let run ← inRunDir fun dir => do
     prepare root c e (dir / "ws")
     runGate gate root (dir / "ws") (dir / "tmp") m timeout
-  try IO.FS.writeFile (logs / s!"{c}.{m.logName}.log") run.output
-  catch err => IO.eprintln (ciLine s!"warning: could not write the log of {c}: {err}")
-  return { run, startMs, endMs := (← IO.monoMsNow) - t0 }
+  let logged ← writeLog c (logs / s!"{c}.{m.logName}.log") run.log
+  return { run := { run with logged }, startMs, endMs := (← IO.monoMsNow) - t0 }
 
 abbrev Pending := Task (Job × Except IO.Error Done)
 
@@ -168,8 +202,9 @@ partial def schedule (n : Nat) (launch : Job → IO Pending) (report : Job × Do
       let ((j, r), rest) ← IO.waitAny' running h
       let d : Done := match r with
         | .ok d => d
-        | .error err => { run := { exitCode := 255, output := s!"mitos-gate cheats: {err}\n",
-                                   timedOut := false }, startMs := 0, endMs := 0 }
+        | .error err => { run := { exitCode := 255, stdout := "",
+                                   stderr := s!"mitos-gate cheats: {err}\n", timedOut := false,
+                                   logged := false }, startMs := 0, endMs := 0 }
       report (j, d)
       schedule n launch report (st.finish j) rest (acc.push (j, d))
     else return acc
@@ -467,10 +502,13 @@ open Lean in
 #eval show CoreM Unit from do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
   -- This module imports the fixture, so it is outside that scan. Its own
-  -- theorems are still checked, and an empty list fails closed.
+  -- theorems are still checked, with those of `Cheats` and `Accept`, which
+  -- the fixture does not import, and an empty list fails closed.
+  let roots := [`MitosGate.CheatsRun, `MitosGate.Cheats, `MitosGate.Accept]
   let theorems := (← getEnv).constants.fold (fun acc n c =>
-    if c.isTheorem && (`MitosGate.CheatsRun).isPrefixOf n then acc.push n else acc) #[]
-  if theorems.isEmpty then throwError "no CheatsRun theorem found"
+    if c.isTheorem && roots.any (·.isPrefixOf n) then acc.push n else acc) #[]
+  for r in roots do
+    unless theorems.any (r.isPrefixOf ·) do throwError "no {r} theorem found"
   for n in theorems.toList do
     for a in ← collectAxioms n do
       unless standard.contains a do

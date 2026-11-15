@@ -351,14 +351,116 @@ theorem pluginFailure_stdout {code : UInt32} {s₁ s₂ e : String} {f₁ f₂ :
 structure Judgment where
   outcome : Outcome
   output  : String
+  /-- The comparator's exit code, or none when `lake` could not be started. -/
+  code    : Option UInt32
 
 def runComparator (c : Config) (dir : System.FilePath) (config : String) : IO Judgment := do
   let args := #["comparator", s!"--config={config}"] ++ if c.paranoid then #["--paranoid"] else #[]
   try
     let r ← runOutput "lake" args dir
-    return { outcome := .parse r.exitCode ⟨r.stdout, r.stderr⟩, output := r.stdout ++ r.stderr }
+    return { outcome := .parse r.exitCode ⟨r.stdout, r.stderr⟩, output := r.stdout ++ r.stderr,
+             code := some r.exitCode }
   catch e =>
-    return { outcome := .failed .noJudgment, output := s!"error: could not run lake comparator: {e}" }
+    return { outcome := .failed .noJudgment, output := s!"error: could not run lake comparator: {e}",
+             code := none }
+
+def occurs (pat : List Char) : List Char → Bool
+  | [] => pat.isEmpty
+  | s@(_ :: rest) => pat.isPrefixOf s || occurs pat rest
+
+/-- Whether a comparator run that `Outcome.parse` reads as `noJudgment` judged the code all the same,
+because the code does not build. The comparator ended with code 1, its code for a judgment (2 is its
+code for a run that could not start). Lake reports that a required target failed
+(`error: build failed`). No compiler or tool ended abnormally: Lake prints `Lean exited with code N`
+for a Lean that is killed, crashes or exits 1 without an error message, and
+`external command '…' exited with code N` for a tool, and a build that such an exit failed says
+nothing about the code. -/
+def buildRejected (code : Option UInt32) (out : String) : Bool :=
+  code == some 1 && occurs "error: build failed".toList out.toList &&
+    !occurs "exited with code".toList out.toList
+
+/-- The cause of the rejection a failed comparator run gives its gate. A failure that `Outcome.parse`
+names is a judgment, and so is a build that fails on the code's own errors (`buildRejected`). Any
+other run, such as a `lake` that was killed or could not start, is no judgment, so no cheat case can
+count it as a rejection. -/
+def Judgment.cause (j : Judgment) : Failure → Cause
+  | .noJudgment => if buildRejected j.code j.output then .judged else .noJudgment
+  | _ => .judged
+
+/-! Comparator tails from the logs in CI's `cheat-logs` artifact for main at b6a9bfe, then runs that
+did not judge. -/
+
+-- `type_error.comparator.log`: a plugin that does not type-check.
+example : buildRejected (some 1) "error: Plugins/ToyRequire.lean:38:50: Type mismatch
+  0
+has type
+  Nat
+of sort `Type` but is expected to have type
+  CompleteWrt model extractor
+of sort `Prop`
+Some required targets logged failures:
+- Plugins.ToyRequire
+error: build failed
+error: Child exited with 1
+" = true := by decide +kernel
+
+-- `golden_model_in_examples.full.log`: the generated Challenge does not build against the model.
+example : buildRejected (some 1) "warning: Challenge/ToyRequire.lean:11:8: declaration uses `sorry`
+error: Challenge/ToyRequire.lean:12:56: Unknown identifier `_root_.Models.ToyRequire.model`
+error: Challenge/ToyRequire.lean:13:62: Unknown identifier `_root_.Models.ToyRequire.model`
+Some required targets logged failures:
+- Challenge.ToyRequire
+error: build failed
+error: Child exited with 1
+" = true := by decide +kernel
+
+-- `empty_extractor.full.log`, gate 6: the adequacy proof does not build.
+example : buildRejected (some 1) "error: Models/ToyRequire/Adequacy.lean:16:13: Unknown identifier `golden_of_requirements`
+error: Models/ToyRequire/Adequacy.lean:15:58: unsolved goals
+⊢ model.Adequate examples
+Some required targets logged failures:
+- Models.ToyRequire.Adequacy
+error: build failed
+error: Child exited with 1
+" = true := by decide +kernel
+
+/-- A Lean that exits 137, as a killed one does, while it builds the plugin: Lake still reports a
+failed build. From `mitos-gate accept --skip-lint` on the toy workspace with
+`#eval (IO.Process.exit 137 : IO Unit)` added to the plugin. -/
+def killedLean : String := "✖ [13/13] Building Plugins.ToyRequire (639ms)
+error: Lean exited with code 137
+Some required targets logged failures:
+- Plugins.ToyRequire
+error: build failed
+error: Child exited with 1
+"
+
+example : buildRejected (some 1) killedLean = false := by decide +kernel
+
+-- A `lake` killed before it judged anything, with exit 137 and no output.
+example : buildRejected (some 137) "" = false := by decide +kernel
+
+-- A comparator killed after its build reported a failure.
+example : buildRejected (some 137) "error: build failed\n" = false := by decide +kernel
+
+-- A comparator that could not start.
+example : buildRejected (some 2) "error: could not read the configuration: no such file\n" = false := by
+  decide +kernel
+
+-- A `lake` that could not be started.
+example : buildRejected none "error: could not run lake comparator: no such file\n" = false := by
+  decide +kernel
+
+/-- A comparator run that ended with code 1, printed `out` and named failure `f`. -/
+def endedWith (f : Failure) (out : String) : Judgment :=
+  { outcome := .failed f, output := out, code := some 1 }
+
+example : (endedWith .noJudgment killedLean).cause .noJudgment = .noJudgment := by decide +kernel
+
+example : (endedWith .noJudgment "error: build failed\n").cause .noJudgment = .judged := by
+  decide +kernel
+
+example : (endedWith .illegalAxiom "").cause .illegalAxiom = .judged := by decide
 
 /-- The regular files under `dir`, recursively, relative to it and sorted. Anything else there, such
 as a symlink or a device, is an error: reading it could follow it out of the judging directory or
@@ -387,16 +489,19 @@ def buildOutputs (dir : System.FilePath) : ExceptT String IO (Array (String × S
 def changedOutputs (before after : Array (String × String)) : Array String :=
   before.filterMap fun (f, h) => if after.contains (f, h) then none else some f
 
-def examplesFailure (model : String) : Failure → String
+def examplesFailure (model : String) (cause : Cause) : Failure → String
   | .missingConst => s!"{examplesModule model} must declare `{model}.examples`"
   | .illegalAxiom =>
     s!"`{model}.examples` uses an axiom outside {String.intercalate ", " permittedAxioms}"
   | .statement | .definitionHole =>
     s!"`{model}.examples` in {examplesModule model} is not a `Mitos.ModelExamples` definition"
   | .kernelReject => s!"a kernel rejected {examplesModule model}"
-  | .importClash | .noJudgment => s!"{examplesModule model} could not be judged"
+  | .importClash => s!"{examplesModule model} could not be judged"
+  | .noJudgment =>
+    if cause == .judged then s!"{examplesModule model} does not build"
+    else s!"{examplesModule model} could not be judged"
 
-def adequacyFailure (model : String) : Failure → String
+def adequacyFailure (model : String) (cause : Cause) : Failure → String
   | .importClash =>
     s!"{adequacyModule model} does not build: two modules it imports declare one name; " ++
       s!"`{model}.examples` may be declared only in {examplesModule model}"
@@ -407,15 +512,20 @@ def adequacyFailure (model : String) : Failure → String
   | .statement | .definitionHole =>
     s!"`{model}.adequate` does not state `Mitos.Model.Adequate {model} {model}.examples`"
   | .kernelReject => s!"a kernel rejected `{model}.adequate`"
-  | .noJudgment => "the adequacy proof could not be judged"
+  | .noJudgment =>
+    if cause == .judged then s!"{adequacyModule model} does not build"
+    else "the adequacy proof could not be judged"
 
+/-- Gate 6's runs: on a failure, its reason, the comparator's output and the cause. -/
 def judgeModel (c : Config) (m : LockedModels) (dir : System.FilePath) :
-    IO (Except (String × String) Unit) := do
-  if let .error e := ← examplesLayout m then return .error (e, "")
+    IO (Except (String × String × Cause) Unit) := do
+  if let .error e := ← examplesLayout m then return .error (e, "", .judged)
   let ex ← runComparator c dir "examples.json"
-  if let .failed f := ex.outcome then return .error (examplesFailure m.model f, ex.output)
+  if let .failed f := ex.outcome then
+    return .error (examplesFailure m.model (ex.cause f) f, ex.output, ex.cause f)
   let ad ← runComparator c dir "adequacy.json"
-  if let .failed f := ad.outcome then return .error (adequacyFailure m.model f, ad.output)
+  if let .failed f := ad.outcome then
+    return .error (adequacyFailure m.model (ad.cause f) f, ad.output, ad.cause f)
   return .ok ()
 
 def comparatorTail (out : String) : List String :=
@@ -430,20 +540,21 @@ def showComparatorTail (out : String) : IO Unit := do
 def pluginGates (c : Config) (j : Judgment) : GateM Unit := do
   if let .failed f := j.outcome then
     let g := pluginFailure f
-    report g false
+    let cause := j.cause f
+    report g false (if cause == .noJudgment then "no judgment" else "")
     showComparatorTail j.output
-    throw (g, .judged)
+    throw (g, cause)
   report .sandbox true
   report .statements true
   report .axioms true (String.intercalate ", " permittedAxioms)
   report .kernels true (if c.paranoid then "lean4lean, nanoda, con-leche, con-ron, paranoid" else "Lean kernel only (use --paranoid for independent kernels)")
 
-def adequacyGate (m : LockedModels) (j : Except (String × String) Unit) (rebuilt : Option String) :
-    GateM Unit := do
-  if let .error (reason, out) := j then
+def adequacyGate (m : LockedModels) (j : Except (String × String × Cause) Unit)
+    (rebuilt : Option String) : GateM Unit := do
+  if let .error (reason, out, cause) := j then
     report .adequacy false reason
     unless out.isEmpty do showComparatorTail out
-    throw (.adequacy, .judged)
+    throw (.adequacy, cause)
   if let some why := rebuilt then
     report .adequacy false
       s!"gates 3 and 6 may not have judged one elaboration of the model: {why}"
