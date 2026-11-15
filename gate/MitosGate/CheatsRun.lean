@@ -1,3 +1,5 @@
+import Lean.CoreM
+import Lean.Util.CollectAxioms
 import MitosGate.Accept
 import MitosGate.Cheats
 import MitosGate.CheatsAggregate
@@ -279,26 +281,41 @@ structure AggFlags where
   casesDir : Option String := none
   dirs : List String := []
 
+/-- Structural recursion, so the fixture reduces in the kernel. A `let rec`
+inside `parseAggArgs` would be well-founded and would not. -/
+def parseAggGo (rest : List String) (a : AggFlags) : Except String AggFlags :=
+  match rest with
+  | [] => .ok a
+  | "--checks" :: v :: more =>
+    if a.checks.isSome then .error "--checks is given twice"
+    else parseAggGo more { a with checks := some v }
+  | "--shards" :: v :: more =>
+    if a.shardsJob.isSome then .error "--shards is given twice"
+    else parseAggGo more { a with shardsJob := some v }
+  | "--merged" :: v :: more =>
+    if a.merged.isSome then .error "--merged is given twice"
+    else parseAggGo more { a with merged := some v }
+  | "--cases" :: v :: more =>
+    if a.casesDir.isSome then .error "--cases is given twice"
+    else parseAggGo more { a with casesDir := some v }
+  | flag :: more =>
+    if flag.startsWith "-" then .error ("unknown or incomplete option " ++ flag)
+    else
+      match more.find? (·.startsWith "-") with
+      | some bad => .error ("unknown or incomplete option " ++ bad)
+      | none => .ok { a with dirs := a.dirs ++ (flag :: more) }
+
 def parseAggArgs (args : List String) : Except String AggFlags :=
-  let rec go (rest : List String) (a : AggFlags) : Except String AggFlags :=
-    match rest with
-    | [] => .ok a
-    | "--checks" :: v :: more =>
-      if a.checks.isSome then .error "--checks is given twice"
-      else go more { a with checks := some v }
-    | "--shards" :: v :: more =>
-      if a.shardsJob.isSome then .error "--shards is given twice"
-      else go more { a with shardsJob := some v }
-    | "--merged" :: v :: more =>
-      if a.merged.isSome then .error "--merged is given twice"
-      else go more { a with merged := some v }
-    | "--cases" :: v :: more =>
-      if a.casesDir.isSome then .error "--cases is given twice"
-      else go more { a with casesDir := some v }
-    | flag :: more =>
-      if flag.startsWith "-" then .error s!"unknown or incomplete option {flag}"
-      else .ok { a with dirs := a.dirs ++ (flag :: more) }
-  go args {}
+  parseAggGo args {}
+
+theorem optionAfterDirectoryIsRejected :
+    parseAggArgs ["--checks", "s", "--shards", "t", "--merged", "m", "d0", "--cases", "x"] =
+      .error "unknown or incomplete option --cases" := by
+  simp [parseAggArgs, parseAggGo]
+
+theorem plainShardDirectories :
+    parseAggArgs ["d0", "d1"] = .ok { dirs := ["d0", "d1"] } := by
+  simp [parseAggArgs, parseAggGo]
 
 def readText (p : System.FilePath) : IO (Option String) := do
   if ← isRegular p then return some (← IO.FS.readFile p) else return none
@@ -387,5 +404,18 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
         catch e =>
           IO.eprintln (ciLine s!"mitos-gate cheats stopped on an I/O error: {e}")
           return 2
+
+open Lean in
+#eval show CoreM Unit from do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  -- This module imports the fixture, so it is outside that scan. Its own
+  -- theorems are still checked, and an empty list fails closed.
+  let theorems := (← getEnv).constants.fold (fun acc n c =>
+    if c.isTheorem && (`MitosGate.CheatsRun).isPrefixOf n then acc.push n else acc) #[]
+  if theorems.isEmpty then throwError "no CheatsRun theorem found"
+  for n in theorems.toList do
+    for a in ← collectAxioms n do
+      unless standard.contains a do
+        throwError "{n} depends on the axiom {a}"
 
 end MitosGate.CheatsRun
