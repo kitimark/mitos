@@ -21,11 +21,12 @@ def reviewPosts (r : Reads) : List Post :=
   r.reviewComments.getD [] ++
     ((r.reviews.getD []).filter counts).map fun v => ⟨v.login, none, v.submitted, v.submitted, v.body⟩
 
+/-- A post edited at or after the approval also spoke after it, as `unanswered` reads an edit. -/
 def spokeInReview (g : Global) (r : Reads) (ws : List Word) : Bool :=
   match Land.newestOwner ws with
   | some (.ownerLand m) =>
     (r.comments.getD []).any fun c => 2 * c.id == m.said &&
-      (reviewPosts r).any fun s => speaks g s && decide (c.created ≤ s.created)
+      (reviewPosts r).any fun s => speaks g s && decide (c.created ≤ max s.created s.updated)
   | _ => false
 
 def withReviewSpeech (g : Global) (p : Pull) (r : Reads) (ws : List Word) : List Word :=
@@ -171,7 +172,8 @@ theorem keptMergeIsTheOwnersTypedApproval : KeptMergeIsTheOwnersTypedApproval :=
     have h4 := h3 hsaid.symm
     rcases Nat.lt_or_ge s.created c.created with hlt | hge
     · exact hlt
-    · exact absurd (List.any_eq_true.2 ⟨s, hsm, by simp [hsp, hge]⟩) h4
+    · exact absurd (List.any_eq_true.2
+        ⟨s, hsm, by simp [hsp, Nat.le_trans hge (Nat.le_max_left _ _)]⟩) h4
 
 theorem failedReadHolds : FailedReadHolds := by
   intro g p r x hc
