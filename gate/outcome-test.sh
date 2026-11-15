@@ -9,8 +9,11 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 check="$(cd "$root" && lean --print-prefix)/src/lean/lake/Lake/CLI/Check.lean"
 [ -f "$check" ] || { echo "FAIL the toolchain has no Lake source at $check"; exit 1; }
 
+bundled=$(sed -n '/^def bundledKernels/,/^$/p' "$check")
+entries=$(grep -c '(exe "' <<<"$bundled")
+named=$(grep -cE '^ *\("[^"]+", #\[' <<<"$bundled")
 lake_kernels=$({
-  sed -n '/^def bundledKernels/,/^$/p' "$check" | grep -oE '^ *\("[^"]+", #\[' | sed -E 's/^ *\("([^"]+)".*/\1/'
+  grep -oE '^ *\("[^"]+", #\[' <<<"$bundled" | sed -E 's/^ *\("([^"]+)".*/\1/'
   grep -oE 'runExternalKernel "[^"]+"' "$check" | sed -E 's/.*"([^"]+)"/\1/'
 } | sort -u)
 gate_kernels=$(cd "$root" && printf '%s\n' 'import MitosGate.Outcome' \
@@ -23,9 +26,11 @@ check_that() {
 }
 
 check_that "Lake's source names Lean's own kernel" 'grep -qx "Lean default" <<<"$lake_kernels"'
-check_that "Lake's source names at least one bundled kernel" '[ "$(wc -l <<<"$lake_kernels")" -ge 2 ]'
+check_that "a name is read from each of the $entries kernels in bundledKernels ($named read)" \
+  '[ "$entries" -gt 0 ] && [ "$entries" -eq "$named" ]'
 check_that "Outcome.kernels is readable" '[ -n "$gate_kernels" ]'
-missing=$(comm -23 <(printf '%s\n' "$lake_kernels") <(printf '%s\n' "$gate_kernels"))
+missing=$(comm -23 <(printf '%s\n' "$lake_kernels") <(printf '%s\n' "$gate_kernels")) ||
+  missing="(comm failed)"
 check_that "every kernel Lake can run is in Outcome.kernels (missing: ${missing:-none})" \
   '[ -z "$missing" ]'
 
