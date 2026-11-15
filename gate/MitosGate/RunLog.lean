@@ -566,7 +566,6 @@ example : firstDiff? ["a", "b"] ["a"] = 1 := by decide
 
 def keptProblems (dir : System.FilePath) (b h : Tree) : List Problem :=
   b.days.filterMap (fun d =>
-    let lines := d.2
     let hl := linesOf h d.1
     if d.2 == hl then none
     else
