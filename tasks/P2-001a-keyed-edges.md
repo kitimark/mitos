@@ -811,9 +811,9 @@ Step 1: add `Derivation`, `RepoKey` and `Spec/Derivations.lean` with its five la
 comparator green and `additive-step` shown.
 
 ## Done when
-- [ ] all `checks` pass locally at the head, one Lean build at a time
-- [ ] every run-level fixture under Design holds, and P2-005a's
-- [ ] the PR body lists the lock diff against the prediction and says `Closes #203` and
+- [x] all `checks` pass locally at the head, one Lean build at a time
+- [x] every run-level fixture under Design holds, and P2-005a's
+- [x] the PR body lists the lock diff against the prediction and says `Closes #203` and
       `Closes #205`
-- [ ] no `sorry`, no new axioms
-- [ ] run-log records written (ops/runs/)
+- [x] no `sorry`, no new axioms
+- [x] run-log records written (ops/runs/)

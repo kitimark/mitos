@@ -166,7 +166,7 @@ owner_decisions: none. No `breaks=`, `survives=` or `rejects=` line changes, so 
 exit criterion 3 is needed.
 
 ## Done when
-- [ ] all `checks` pass locally, one Lean build at a time
-- [ ] every fixture above holds, and the run's last line and breakers table are in the PR body
-- [ ] no `sorry`, no new axioms
-- [ ] run-log record written (ops/runs/)
+- [x] all `checks` pass locally, one Lean build at a time
+- [x] every fixture above holds, and the run's last line and breakers table are in the PR body
+- [x] no `sorry`, no new axioms
+- [x] run-log record written (ops/runs/)
