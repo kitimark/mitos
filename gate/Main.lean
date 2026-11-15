@@ -105,30 +105,33 @@ def writeOrCheck (file : System.FilePath) (txt : String) (check : Bool) (count s
   IO.println (ciLine s!"{file} is out of date: {stale}.")
   return 1
 
-def lockReach (env : Lean.Environment) : IO UInt32 := do
-  let dir : System.FilePath := "core" / "Mitos" / "Core"
+def coreSrcDir : System.FilePath := "core"
+
+def lockReach (core : Lock.ImportedRoot) : IO UInt32 := do
+  let root := core.root
+  let dir := Lock.moduleDir coreSrcDir root
   unless ← dir.isDir do
     IO.println (ciLine s!"{dir} is not a folder here, so its modules cannot be checked against statements.lock: run lock from the repository root")
     return 1
-  let srcs ← Lock.sourceModules dir `Mitos.Core
-  let missed := Lock.unreached srcs.toList env.header.moduleNames.contains
+  let srcs ← Lock.sourceModules coreSrcDir root
+  let missed := Lock.unreached srcs.toList core.env.header.moduleNames.contains
   if missed.isEmpty then
-    IO.println (ciLine s!"every module under {dir}/ is reached from Mitos.Core ({srcs.size} modules)")
+    IO.println (ciLine s!"every module under {dir}/ is reached from {root} ({srcs.size} modules)")
     return 0
   for m in missed do
-    IO.println (ciLine s!"{Lean.modToFilePath "core" m "lean"}: Mitos.Core does not import {m}, directly or transitively, so statements.lock has no line for its declarations")
+    IO.println (ciLine s!"{Lean.modToFilePath coreSrcDir m "lean"}: {root} does not import {m}, directly or transitively, so statements.lock has no line for its declarations")
   let n := missed.length
   let (noun, verb, it) := if n == 1 then ("module", "is", "it") else ("modules", "are", "each")
-  IO.println (ciLine s!"{n} {noun} under {dir}/ {verb} not reached from Mitos.Core: import {it} from core/Mitos/Core.lean, which is a spec change, or delete it")
+  IO.println (ciLine s!"{n} {noun} under {dir}/ {verb} not reached from {root}: import {it} from {Lean.modToFilePath coreSrcDir root "lean"}, which is a spec change, or delete it")
   return 1
 
 def lockStatements (check : Bool) : IO UInt32 := do
   let headerCode ← if check then lockHeaderStatus else pure 0
-  let env ← Lock.importRoot `Mitos.Core
-  let es ← Lock.entries env [`Mitos.Core]
+  let core ← Lock.importRoot `Mitos.Core
+  let es ← Lock.entries core.env [core.root]
   let code ← writeOrCheck "statements.lock" (Lock.render es) check s!"{es.size} declarations"
     "the meaning of the trusted core changed"
-  let reachCode ← lockReach env
+  let reachCode ← lockReach core
   return if headerCode != 0 || code != 0 || reachCode != 0 then 1 else 0
 
 /-- Writes or checks `<workspace>/models.lock`. Gate 0's walker reads the models, and gate 0 reads
