@@ -159,8 +159,12 @@ def RunRefusal.text : RunRefusal → String
   | .emptyShard k =>
     s!"shard {k} would be empty, and mitos-gate cheats with no names runs the whole corpus"
 
+/-- Least empty residue. It is `names.length` when that index is still below `n`, and there is
+none otherwise: residues below `names.length` each contain that index, and `noEmpty_of_count`
+covers `n ≤ names.length`. A search through `List.range n` would allocate `n` cells first, so a
+modulus such as `10^10` would hang instead of refusing. -/
 def firstEmpty (names : List String) (n : Nat) : Option Nat :=
-  (List.range n).find? fun k => assign names n k == []
+  if names.length < n then some names.length else none
 
 def selection (names : List String) (s : Shard) : Except RunRefusal (List String) :=
   if names.isEmpty then .error .noCases
@@ -527,16 +531,23 @@ theorem dirOk_iff (i : AggregateInput) :
     dirOk i = true ↔ i.directory ≠ [] := by
   cases h : i.directory <;> simp [dirOk, h]
 
-theorem firstEmpty_none_iff {names : List String} {n : Nat} (_hn : 0 < n) :
+theorem firstEmpty_none_iff {names : List String} {n : Nat} (hn : 0 < n) :
     firstEmpty names n = none ↔ ∀ k, k < n → assign names n k ≠ [] := by
-  simp only [firstEmpty, List.find?_eq_none, List.mem_range]
   constructor
-  · intro h k hk
-    cases hbeq : assign names n k == []
-    · exact (beq_eq_false_iff_ne).mp hbeq
-    · exact (h k hk hbeq).elim
-  · intro h k hk heq
-    exact h k hk ((beq_iff_eq).mp heq)
+  · intro h
+    cases Nat.lt_or_ge names.length n with
+    | inl hlt =>
+      simp [firstEmpty, hlt] at h
+    | inr hge =>
+      exact noEmpty_of_count names n hn hge
+  · intro hall
+    cases Nat.lt_or_ge names.length n with
+    | inl hlt =>
+      rcases someShardEmptyWhenShorter hn hlt with ⟨k, hk, hempty⟩
+      exact absurd hempty (hall k hk)
+    | inr hge =>
+      have hnot : ¬ names.length < n := Nat.not_lt_of_le hge
+      simp [firstEmpty, hnot]
 
 theorem foldl_step_some (i : AggregateInput) (ks : List Nat) (r : CorpusReject) :
     ks.foldl (stepSlot i) (some r) = some r := by

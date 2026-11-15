@@ -42,6 +42,12 @@ got=$("$bin" cheats --list --shard 0/3 --cases "$tiny"; "$bin" cheats --list --s
 [ "$got" = $'one\nthree\ntwo' ] || fail "three cases listed as [$got]"
 ok "three cases are one per shard"
 
+if "$bin" cheats --list --shard 0/10000000000 --cases "$tiny" >"$work/huge.out" 2>"$work/huge.err"; then
+  fail "a huge modulus was accepted"
+fi
+grep -q "shard 3 would be empty" "$work/huge.err" || fail "huge modulus said $(cat "$work/huge.err")"
+ok "a huge modulus is refused without walking it"
+
 if "$bin" cheats --shard 0/3 --cases "$tiny" >"$work/run.out" 2>"$work/run.err"; then
   fail "--cases without --list was allowed to run"
 fi
@@ -134,6 +140,18 @@ fill_good
 printf 'CASE FULL\none REJECTED  <-- FAIL\n' >"$work/shards/cheat-shard-logs-0/table.txt"
 CHECKS=success SHARDS=success run_agg "marks it failed" "table fail"
 ok "a failed table row fails"
+
+fill_good
+rm "$work/shards/cheat-shard-logs-0/one.full.log"
+ln -s one.comparator.log "$work/shards/cheat-shard-logs-0/one.full.log"
+CHECKS=success SHARDS=success run_agg "has no full log" "symlink log"
+ok "a symlink is not a log"
+
+fill_good
+rm "$work/shards/cheat-shard-logs-0/one.full.log"
+mkdir "$work/shards/cheat-shard-logs-0/one.full.log"
+CHECKS=success SHARDS=success run_agg "has no full log" "directory log"
+ok "a directory in place of a log is not a log"
 
 fill_good
 mkdir -p "$tiny/four"
