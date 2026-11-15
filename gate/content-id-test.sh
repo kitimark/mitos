@@ -98,7 +98,6 @@ if g merge-base main pr >/dev/null 2>&1; then bad "  (the graft should hide the 
 same "a graft in info/grafts does not change the id" "$id_pr" "$(cid main pr)"
 rm "$repo/.git/info/grafts"
 
-# Rebases. main changes a file the PR does not touch: the PR's diff is unchanged, so the id stays.
 g checkout -q main
 printf 'b1\nb2\nb3\n' >"$repo/B.lean"
 g commit -qam "main: B.lean"
