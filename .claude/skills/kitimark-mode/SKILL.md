@@ -336,7 +336,7 @@ watcher's echo filter and the merge rule below rely on both.
   `--skip-lint` log. The table is in the `prove` job's log (`gh api
   repos/{owner}/{repo}/actions/jobs/<job-id>/logs`), and on a PR it lists the cases of the head
   merged into its base. Locally the verifier runs only the cases the change adds or edits, and
-  the variants it builds to test a finding, with `eval/cheats/run.sh <case>...`. Like
+  the variants it builds to test a finding, with `lake exe mitos-gate cheats <case>...`. Like
   **Blocking only**, this rule holds in the playbooks too: where Autopilot-full step 4 says
   verifiers re-run the gates, they read the cheat corpus from these logs.
 - The root writes each verdict into the PR's In flight row on the Owner dashboard, or into its
