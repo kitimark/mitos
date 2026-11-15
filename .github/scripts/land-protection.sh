@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Usage: .github/scripts/land-protection.sh <owner/name> <dir>
 set -u
 
 die() { printf 'land-protection: %s\n' "$1" >&2; exit 2; }

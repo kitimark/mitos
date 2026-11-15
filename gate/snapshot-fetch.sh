@@ -4,12 +4,8 @@
 # Saves the REST reads that `mitos-gate snapshot <dir>` turns into the landing snapshot, one file
 # per read, `<dir>/<read>.json`, through `gh api` only: REST, never GraphQL. A read that fails
 # leaves no file, so the snapshot holds every pull request that needs it; a list is read with
-# `--paginate --slurp`, so a list with a failed page leaves no file either. The script parses only
-# the numbers, heads and branch names of the open pull requests, to name their routes, and main's
-# SHA, this run's start time and the protection reader's run ids, attempt, artifact and file, to
-# take main's protection only from a fresh read; it skips a route whose name it would have to build
-# from anything else, and `mitos-gate snapshot` checks every response it reads. It prints one line
-# on standard error per failed read and exits 0; a usage error exits 2.
+# `--paginate --slurp`, so a list with a failed page leaves no file either. It prints one line on
+# standard error per failed read and exits 0; a usage error exits 2.
 set -u
 
 die() { printf 'snapshot-fetch: %s\n' "$1" >&2; exit 2; }
