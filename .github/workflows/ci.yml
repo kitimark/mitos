@@ -116,14 +116,27 @@ jobs:
           cancel_runs_whose_head_differs
           # end-cancel-superseded-body
 
-  gate:
+  # Today's gate body, without the corpus and without the spec-label step.
+  # #164 replaces the script-test steps in place. #168's setup action replaces
+  # the inline elan, bubblewrap and cache steps. Only this job saves the Lean
+  # cache, and only on a push to main, so a shard's smaller .lake cannot win
+  # the save. #167's pin check is not here; it belongs on gate, first after
+  # checkout, once that change lands.
+  checks:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       github.event.action != 'labeled' &&
+       github.event.action != 'unlabeled')
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: pr-state.sh, watch-github.sh and the files they source run gh only as gh api in their wrappers, and never name GraphQL
         run: .claude/scripts/gh-api-rest.test.sh
@@ -141,7 +154,16 @@ jobs:
       - name: A never-started jobless run does not fail cancel-superseded
         run: .github/scripts/cancel-superseded.test.sh
 
-      - uses: actions/cache@v4
+      - name: The cheat corpus is partitioned across the shard matrix
+        run: .github/scripts/cheat-partition.test.sh
+
+      - name: The spec-label check fails closed
+        run: .github/scripts/ci-trust.test.sh
+
+      # Restore on a pull request. Save on a push to main, which is the only
+      # push this workflow runs. #168 turns this pair into the setup action.
+      - uses: actions/cache/restore@v4
+        if: github.event_name != 'push'
         with:
           path: |
             ~/.elan
@@ -149,6 +171,20 @@ jobs:
             core/.lake
           key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
           restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+
+      - uses: actions/cache@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: |
+            ~/.elan
+            .lake
+            core/.lake
+          key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+
+      # #168's setup action owns this rm. A restored .lake can hold another run's logs.
+      - name: Drop restored cheat and mutant logs
+        run: rm -rf .lake/cheats .lake/mutants
 
       - name: Install elan if the cache has none (pinned, checked, retried)
         run: .github/scripts/install-elan.sh
@@ -248,44 +284,181 @@ jobs:
       - name: Model lint allowlist accepts and rejects each command kind
         run: lake exe mitos-lint-test
 
-      - name: Cheat corpus is rejected (mitos-gate cheats, runs in parallel)
+  # Same skip rule as checks. Each shard pays its own Lean setup and runs the
+  # cases cheat-partition.sh assigns it. N is 3: on the cache-hit corpus of
+  # run 43679668897 the slowest third was 264s, and a fourth runner saved about
+  # 30s after setup.
+  cheat-shard:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       github.event.action != 'labeled' &&
+       github.event.action != 'unlabeled')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Restore only. #168's setup action replaces these inline steps.
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.elan
+            .lake
+            core/.lake
+          key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+
+      - name: Drop restored cheat and mutant logs
+        run: rm -rf .lake/cheats .lake/mutants
+
+      - name: Install elan if the cache has none (pinned, checked, retried)
+        run: .github/scripts/install-elan.sh
+
+      - name: Cache key and folder of the pinned bubblewrap .deb
+        id: bwrap
+        run: .github/scripts/install-bubblewrap.sh --cache-key >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pinned bubblewrap .deb (saved at the end of a job that downloaded it)
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.bwrap.outputs.dir }}
+          key: ${{ steps.bwrap.outputs.key }}
+
+      - name: Install bubblewrap (sandbox for lake comparator)
         run: |
+          .github/scripts/install-bubblewrap.sh
+          # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bwrap needs them.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install the Lean toolchains from lean-toolchain (retried; no download on a cache hit)
+        run: .github/scripts/install-toolchains.sh
+
+      - name: Build core and gate
+        run: lake build
+
+      - name: Cheat shard ${{ matrix.shard }} of 3
+        run: |
+          set -euo pipefail
           rm -rf .lake/cheats
-          start=$SECONDS
-          set +e
-          lake exe mitos-gate cheats
-          status=$?
-          set -e
-          echo "mitos-gate cheats: $((SECONDS - start)) s on $(nproc) vCPU, $(free -g | awk '/^Mem:/ {print $2}') GiB"
+          mkdir -p .lake/cheats
+          mapfile -t names < <(.github/scripts/cheat-partition.sh shard "${{ matrix.shard }}")
+          if ((${#names[@]} == 0)); then
+            echo "refusing: mitos-gate cheats with no names runs the whole corpus" >&2
+            exit 1
+          fi
+          .github/scripts/cheat-partition.sh check
+          # Keep the status and still print the table. A pipe would swallow it.
+          status=0
+          .lake/build/bin/mitos-gate cheats --jobs 4 --timeout 600 "${names[@]}" > .lake/cheats/table.txt || status=$?
+          printf '%s\n' "$status" > .lake/cheats/shard-exit
+          printf '%s\n' "${names[@]}" > .lake/cheats/shard-cases
+          cat .lake/cheats/table.txt
           exit "$status"
 
-      - name: Spec changes need the spec-approved label
-        if: github.event_name == 'pull_request'
-        env:
-          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'spec-approved') }}
-        run: |
-          changed=$(git diff --no-renames --name-only -z "origin/${{ github.base_ref }}...HEAD" \
-            | grep -zE '(^|/)(statements|models)\.lock$|^core/Challenge/|^core/comparator\.json$|^core/Mitos/Core(/|\.lean$|$)' \
-            | tr '\0' '\n' || true)
-          if [ -n "$changed" ] && [ "$APPROVED" != "true" ]; then
-            echo "These spec files changed without the spec-approved label:"; echo "$changed"; exit 1
-          fi
-
-      - name: Upload cheat logs
+      - name: Upload shard logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cheat-logs
+          name: cheat-shard-logs-${{ matrix.shard }}
           path: .lake/cheats/
-          if-no-files-found: ignore
+          if-no-files-found: error
+          overwrite: true
 
-  # A fork's token cannot comment; its scorecard stays in the gate job's summary.
+  # Runs when checks or a shard failed, so a failed or cancelled shard becomes
+  # a failed prove. Skipped on a label event, where gate reads an earlier run.
+  prove:
+    needs: [checks, cheat-shard]
+    if: >-
+      always() &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.action != 'labeled' &&
+        github.event.action != 'unlabeled'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cheat-shard-logs-*
+          path: shards
+
+      - name: Cheat corpus is rejected (mitos-gate cheats, runs in parallel)
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          SHARDS: ${{ needs.cheat-shard.result }}
+        run: .github/scripts/cheat-partition.sh aggregate shards merged
+
+      - name: Upload the merged cheat logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cheat-logs
+          path: merged/
+          if-no-files-found: error
+          overwrite: true
+
+  # The only required check. No needs and no job if: a skipped required check
+  # counts as passed. It fails unless the spec label holds and prove succeeded,
+  # including when a shard failed, was cancelled, or was skipped on a run that
+  # should have run the corpus.
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: The labels route fails closed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # pull-requests: read covers this route for a pull request. On a push
+          # there is no event PR, so the call uses an existing one.
+          LIVE_PR: ${{ github.event.pull_request.number || 125 }}
+        run: .github/scripts/ci-trust.test.sh --live
+
+      - name: Spec changes need the spec-approved label, and prove succeeded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          RUN_ID: ${{ github.run_id }}
+        run: .github/scripts/ci-trust.sh aggregate
+
+  # A fork's token cannot comment; its scorecard stays in the checks job's summary.
+  # The comment follows prove, not the label: a spec PR labelled after its push
+  # still gets one.
   scorecard-comment:
-    needs: gate
+    needs: prove
     if: >-
       github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.prove.result == 'success'
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       pull-requests: write
     concurrency:
@@ -304,7 +477,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           marker='<!-- mitos-scorecard -->'
-          { echo "$marker"; cat scorecard.md; echo; echo "_Head ${SHA}, from the \`gate\` job._"; } > body.md
+          { echo "$marker"; cat scorecard.md; echo; echo "_Head ${SHA}, from the \`checks\` job._"; } > body.md
           ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
             --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id")
           id=${ids%%$'\n'*}

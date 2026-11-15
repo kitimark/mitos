@@ -1,0 +1,1 @@
+{"task":"ci-165","role":"builder","model":"grok-4.7","attempt":1,"iterations":4,"wall_min":23,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Joint #165 and #166. N=3 from the cache-hit timing of run 43679668897. Built on current main; #164, #168 and #167 have not landed."}
