@@ -199,10 +199,10 @@ refuses "a snapshot that is not an object" '[]' 'snapshot: expected an object'
 
 got=0
 jq -c . "$base" | "$bin" land >"$tmp/out" 2>&1 || got=$?
-[ "$got" = 0 ] && grep -q '^{"next":153,' "$tmp/out" && ok "a snapshot on standard input" || bad "a snapshot on standard input" "$(cat "$tmp/out")"
+if [ "$got" = 0 ] && grep -q '^{"next":153,' "$tmp/out"; then ok "a snapshot on standard input"; else bad "a snapshot on standard input" "$(cat "$tmp/out")"; fi
 got=0
 jq -c . "$base" | "$bin" land - >"$tmp/out" 2>&1 || got=$?
-[ "$got" = 0 ] && grep -q '^{"next":153,' "$tmp/out" && ok "a snapshot on standard input, named -" || bad "a snapshot on standard input, named -" "$(cat "$tmp/out")"
+if [ "$got" = 0 ] && grep -q '^{"next":153,' "$tmp/out"; then ok "a snapshot on standard input, named -"; else bad "a snapshot on standard input, named -" "$(cat "$tmp/out")"; fi
 got=0
 "$bin" land "$tmp/no-such-file" >"$tmp/out" 2>"$tmp/err" || got=$?
 if [ "$got" = 1 ] && [ ! -s "$tmp/out" ] && [ "$(grep -c '' "$tmp/err")" = 1 ] && grep -q '^land: stopped on an I/O error: ' "$tmp/err"; then
@@ -273,6 +273,13 @@ if "$bin" land-answers "$tmp/in" >"$tmp/out" 2>"$tmp/err" &&
     (.answers[0].body | startswith("<!-- land-report -->\n"))' "$tmp/out" >/dev/null; then
   ok "land-answers on the fixture"
 else bad "land-answers on the fixture" "$(cat "$tmp/out" "$tmp/err")"; fi
+jq -c '.prs[0].words[0].approves = false' "$base" >"$tmp/in"
+if "$bin" land-answers "$tmp/in" >"$tmp/out" 2>"$tmp/err" &&
+  jq -e '.answers[0].line == "This PR touches a path you keep. To approve and merge it, comment only this line:" and
+    .answers[0].body == "<!-- land-report -->\nThis PR touches a path you keep. To approve and merge it, comment only this line:\n\n```\n/land aaa\n```"' \
+    "$tmp/out" >/dev/null; then
+  ok "a bare land answer decodes its newlines and code block"
+else bad "a bare land answer decodes its newlines and code block" "$(cat "$tmp/out" "$tmp/err")"; fi
 jq -c '.prs[0] |= (.head = "ar" | .pushes = [{byUpdater:true,before:"aaa",after:"ar"}] |
   .base = {kind:"current"}) | del(.prs[2])' "$base" >"$tmp/in"
 if "$bin" land-answers "$tmp/in" >"$tmp/out" 2>"$tmp/err" &&

@@ -1318,9 +1318,11 @@ writes `api "repos/$repo" >"$out/repo.json"` and, per merged pull request,
 - Accepted residuals (the amendment's open item): a comment, edit or deletion in the seconds
   between `apply`'s last read and the `PUT` is not seen; a bot edit, or another run's report post,
   between `decide`'s read and `apply`'s stops the merge with a "Not merged yet" post, and the owner
-  comments `/land <head>` again. `apply` does not re-read the labels (`spec-approved`), the pull
-  request's body, the dashboard's verdict cell or branch protection; a change to them after
-  `decide`'s read is not seen, and GitHub re-checks only `gate` and protection at the `PUT`.
+  comments `/land <head>` again. `apply` re-reads a required `spec-approved` label with the pull
+  request, as the build notes explain. It does not re-read the pull request's body, the dashboard's
+  verdict cell or branch protection. A change to those after `decide`'s read is not seen; a label
+  change after `apply`'s pull request read is not seen either. GitHub re-checks only `gate` and
+  protection at the `PUT`.
 
 ### Real runs (the builder makes them; the owner types where marked)
 
@@ -1475,8 +1477,13 @@ Section 6, the bullets about this row:
 
 ## Build notes
 
-The implementation follows design head 9241871 with the corrections below.
+The implementation follows the build-depth design, including its round 2 clarifications at 05fd848, with the corrections below.
 
+- Round 2 restores the full-workflow checks for run expressions, multi-line run blocks, event
+  values outside the decide environment and inline `gh`. Temporary apply and report mutations passed
+  the narrowed checks before the fix and fail the restored checks. Permission and concurrency
+  checks stay scoped to their job. The CLI tests keep the queued-answer case and add the design's
+  bare-answer case with exact decoded newlines and a code block.
 - `land-answers` prints its JSON directly. The copied `ciLine` wrapper changed JSON escapes such
   as `\n` into non-JSON `\u{005C}n`, which the actual CLI test rejected. Answers contain fixed
   wording, validated alphanumeric commits and natural numbers; JSON escaping keeps the output

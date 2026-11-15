@@ -402,7 +402,7 @@ done <<<"$gh_lines"
 ! grep -nwE 'curl|wget' "$script" || note "land-decide.sh names curl or wget"
 ! grep -wE 'git' <<<"$joined" | grep -vE '^for tool in |git rev-parse --verify --quiet ' \
   || note "land-decide.sh runs git other than rev-parse"
-! grep -qw gh "$decide_wf" || note "land.yml calls gh itself"
+! grep -qw gh "$wf" || note "land.yml calls gh itself"
 bad_calls=$(grep -vxE 'api rate_limit --jq \.resources\.core\.remaining|api repos/owner/mitos/branches/main --jq \.commit\.sha' "$calls")
 [ -z "$bad_calls" ] || note "the stub gh saw other calls:" "$bad_calls"
 [ -s "$calls" ] || note "the stub gh saw no call"
@@ -420,12 +420,12 @@ done
 awk '/^    concurrency:$/ { c = NR } c && NR == c + 1 && /^      group: land-decide$/ { g = NR }
   g && NR == g + 1 && /^      cancel-in-progress: false$/ { ok = 1 } END { exit !ok }' "$decide_wf" \
   || note "the decide job has no concurrency group land-decide that keeps a running run"
-! grep -nE '^[[:space:]]*(- )?run:.*\$\{\{' "$decide_wf" || note "a run: line holds an expression"
-! grep -nE '^[[:space:]]*(- )?run:[[:space:]]*[|>]' "$decide_wf" || note "a run: block spans lines"
+! grep -nE '^[[:space:]]*(- )?run:.*\$\{\{' "$wf" || note "a run: line holds an expression"
+! grep -nE '^[[:space:]]*(- )?run:[[:space:]]*[|>]' "$wf" || note "a run: block spans lines"
 while IFS= read -r l; do
   [[ $l =~ ^\ {10}LAND_EVENT_[A-Z]+:\ \$\{\{\ github\.event\.[a-z_.]+\ \}\}$ ]] \
     || note "event text outside the decide step's env: [$l]"
-done < <(grep -F '${{' "$decide_wf" | grep -F 'github.event.')
+done < <(grep -F '${{' "$wf" | grep -F 'github.event.')
 finish filter-pins
 
 start
