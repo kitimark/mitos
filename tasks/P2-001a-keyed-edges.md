@@ -811,7 +811,7 @@ Step 1: add `Derivation`, `RepoKey` and `Spec/Derivations.lean` with its five la
 comparator green and `additive-step` shown.
 
 ## Done when
-- [x] all `checks` pass locally at the head, one Lean build at a time
+- [x] all `checks` pass locally at the head except `mitos-lint-test` and the cheat corpus, which run in CI; one Lean build at a time
 - [x] every run-level fixture under Design holds, and P2-005a's
 - [x] the PR body lists the lock diff against the prediction and says `Closes #203` and
       `Closes #205`

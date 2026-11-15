@@ -1,0 +1,1 @@
+{"task":"P2-001a","role":"owner","model":"claude-sonnet-5-5","attempt":2,"iterations":1,"wall_min":10,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"One-line Done-when fix for the CodeRabbit thread: the checks line now names mitos-lint-test and the cheat corpus as run in CI."}
