@@ -104,6 +104,26 @@ def Obs.word (o : Obs) : OwnerWord :=
   | _ => .none
 ```
 
+`Mark` and `Plan` as they become. The quote names their changes only in its comments, so here
+they are as code. They were added in round 2 of the plan PR and type-checked beside `main`'s
+`Land`, together with the uses that the quote and Build notes give them: `⟨said, o.head, true⟩`,
+`⟨n, s, false⟩`, `.merge o.pr o.head` and `m.approves`. `Plan.push` keeps its doc comment from
+`main`.
+
+```lean
+structure Mark where
+  said : Nat
+  about : Sha
+  approves : Bool
+  deriving DecidableEq
+
+inductive Plan
+  | push (pr : Pr) (expect replay : Sha)
+  | idle
+  | merge (pr : Pr) (head : Sha)
+  deriving DecidableEq
+```
+
 statements: 15 `PlannedMergeIsGated`, 16 `OwnerEntryIsTheirLastWord`, 17 `KeptEntryIsTheOwners`
 and 18 `OnlyLandOrHoldChangesTheWord`, in the amendment's text below, each proved in the judge's
 file. Statements 1 to 14 keep their text. Added at plan time and proved (standard axioms only):

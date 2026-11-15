@@ -59,7 +59,7 @@ modules: one topic per file (`.claude/skills/principle-split-by-topic/SKILL.md`)
 rough budgets; the sketched files are at their sketch's size.
 - PR 1, the cover rule:
   - `.claude/scripts/lib/main-tool.sh`: main's tool, the `mitos-gate` built in a checkout of
-    `origin/main` that the clone keeps, and when that build is fresh; 60 lines; copies
+    `origin/main` that the clone keeps, and when that build is fresh; 65 lines; copies
     `lib/origin-repo.sh` (a sourced function file with a bash shebang).
   - `.claude/scripts/main-tool.test.sh`: the library against a real scratch clone and a stub
     `lake`; 130 lines; copies `bot-review.test.sh` (a scratch repository, `ok` and `FAIL` lines).
@@ -84,16 +84,16 @@ rough budgets; the sketched files are at their sketch's size.
   - `gate/MitosGate/Snapshot.lean`: the axiom-check list names the new theorem.
   - `gate/snapshot-test.sh`: one case steps as an undelegated teammate; two cases added.
 - PR 3, `land`:
-  - `.claude/scripts/lib/land-snapshot.sh`: one landing snapshot taken with main's tool; 16
+  - `.claude/scripts/lib/land-snapshot.sh`: one landing snapshot taken with main's tool; 14
     lines; copies `lib/origin-repo.sh`.
-  - `.claude/scripts/land.sh`: one step of `land` for one pull request, and its one write; 195
+  - `.claude/scripts/land.sh`: one step of `land` for one pull request, and its one write; 197
     lines; copies `bot-review.sh`.
   - `.claude/scripts/land.test.sh`: `land.sh` against a stub `gh`, a stub fetch and snapshot, and
     the real `mitos-gate land` and `speech`; 320 lines; copies
     `.github/scripts/land-decide.test.sh` (`lake build mitos-gate`, a gate wrapper whose
     `snapshot` prints a file and whose `land` is the real one).
 - PR 4, the wake rules:
-  - `.claude/scripts/lib/wake.sh`: who a monitor line wakes, by the wake table; 136 lines; copies
+  - `.claude/scripts/lib/wake.sh`: who a monitor line wakes, by the wake table; 138 lines; copies
     `watch-github.sh`'s own `own_filter` (a filter over the poll's lines).
   - `.claude/scripts/watch-github.sh`: sources the three libraries and calls `wake_filter` in
     `report` when `WATCH_WAKE=1` (7 lines, below), and prints the `land:` line (25 lines,
@@ -238,72 +238,91 @@ owns, so it goes to a researcher, as a `ci:` line does.
 
 ### `lib/main-tool.sh` (PR 1 starts from this file)
 
-Ran here: shellcheck is clean, and 15 cases pass against a real scratch clone, with a real
-`git worktree add` into the git directory and a stub `lake` (What was checked).
+Ran here: shellcheck is clean on the file alone, with no directive. The plan-time cases (15, a
+real scratch clone, a real `git worktree add` into the git directory and a stub `lake`) ran on the
+sketch before its answers left the globals; the sketch as it stands passed the round-2 cases
+(What was checked).
 
 ```bash
 #!/usr/bin/env bash
 
-# shellcheck disable=SC2034 # the MAIN_TOOL_* variables are the caller's
 main_tool_inputs=(gate core lakefile.toml lake-manifest.json lean-toolchain .github/workflows/land.yml)
 
+main_tool_dir() {
+  local common
+  common=$(git -C "${CLAUDE_PROJECT_DIR:-.}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
+    || return 1
+  printf '%s\n' "${MITOS_MAIN_TOOL:-$common/mitos-main-tool}"
+}
+
+main_tool_bin() { printf '%s\n' "$1/.lake/build/bin/mitos-gate"; }
+
+main_tool_why() { printf '%s\n' "$1" >&2; }
+
 main_tool_fresh() {
-  local proj=$1 stamp=$2 at=$3 built
+  local proj=$1 stamp=$2 at=$3 bin=$4 built
   built=$(cat "$stamp" 2>/dev/null) || return 1
-  [[ $built =~ ^[0-9a-f]{40}$ ]] && [ -x "$MAIN_TOOL_BIN" ] || return 1
+  [[ $built =~ ^[0-9a-f]{40}$ ]] && [ -x "$bin" ] || return 1
   [ "$built" = "$at" ] \
     || git -C "$proj" diff --quiet "$built" "$at" -- "${main_tool_inputs[@]}" 2>/dev/null
 }
 
-# shellcheck disable=SC2034
 main_tool() {
-  local mode=$1 at=${2:-} proj=${CLAUDE_PROJECT_DIR:-.} common stamp
-  MAIN_TOOL_WHY=
+  local mode=$1 dir=${2:-} at=${3:-} proj=${CLAUDE_PROJECT_DIR:-.} bin stamp
   case $mode in
     ensure | ready) ;;
-    *) MAIN_TOOL_WHY="main_tool takes ensure or ready"; return 1 ;;
+    *) main_tool_why "main_tool takes ensure or ready"; return 1 ;;
   esac
-  common=$(git -C "$proj" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
-    || { MAIN_TOOL_WHY="not in a clone"; return 1; }
-  MAIN_TOOL_DIR=${MITOS_MAIN_TOOL:-$common/mitos-main-tool}
-  MAIN_TOOL_BIN=$MAIN_TOOL_DIR/.lake/build/bin/mitos-gate
-  stamp=$MAIN_TOOL_DIR/.lake/main-tool.built
+  [ -n "$dir" ] || { main_tool_why "main_tool takes the folder main_tool_dir prints"; return 1; }
+  bin=$(main_tool_bin "$dir")
+  stamp=$dir/.lake/main-tool.built
   if [ "$mode" = ensure ] || [ -z "$at" ]; then
     timeout -k 5 60 git -C "$proj" fetch -q origin main </dev/null 2>/dev/null \
-      || { MAIN_TOOL_WHY="cannot fetch origin main"; return 1; }
+      || { main_tool_why "cannot fetch origin main"; return 1; }
     at=$(git -C "$proj" rev-parse --verify --quiet 'refs/remotes/origin/main^{commit}') \
-      || { MAIN_TOOL_WHY="no origin/main"; return 1; }
+      || { main_tool_why "no origin/main"; return 1; }
   fi
-  [[ $at =~ ^[0-9a-f]{40}$ ]] || { MAIN_TOOL_WHY="main is not a commit"; return 1; }
-  MAIN_TOOL_AT=$at
+  [[ $at =~ ^[0-9a-f]{40}$ ]] || { main_tool_why "main is not a commit"; return 1; }
   if [ -z "${MAIN_TOOL_FD:-}" ]; then
-    exec {MAIN_TOOL_FD}>>"$MAIN_TOOL_DIR.lock" || { MAIN_TOOL_WHY="cannot open the lock"; return 1; }
+    exec {MAIN_TOOL_FD}>>"$dir.lock" || { main_tool_why "cannot open the lock"; return 1; }
   fi
-  flock -s -w 30 "$MAIN_TOOL_FD" || { MAIN_TOOL_WHY="the checkout is busy"; return 1; }
-  main_tool_fresh "$proj" "$stamp" "$at" && return 0
+  flock -s -w 30 "$MAIN_TOOL_FD" || { main_tool_why "the checkout is busy"; return 1; }
+  main_tool_fresh "$proj" "$stamp" "$at" "$bin" && return 0
   if [ "$mode" = ready ]; then
-    MAIN_TOOL_WHY="main's tool is not built at ${at:0:7}"
+    main_tool_why "main's tool is not built at ${at:0:7}"
     return 1
   fi
-  command -v lake >/dev/null 2>&1 || { MAIN_TOOL_WHY="lake is not installed"; return 1; }
-  flock -x -w 1800 "$MAIN_TOOL_FD" || { MAIN_TOOL_WHY="the checkout stayed busy"; return 1; }
-  if ! main_tool_fresh "$proj" "$stamp" "$at"; then
+  command -v lake >/dev/null 2>&1 || { main_tool_why "lake is not installed"; return 1; }
+  flock -x -w 1800 "$MAIN_TOOL_FD" || { main_tool_why "the checkout stayed busy"; return 1; }
+  if ! main_tool_fresh "$proj" "$stamp" "$at" "$bin"; then
     rm -f -- "$stamp"
-    if [ -e "$MAIN_TOOL_DIR/.git" ]; then
-      git -C "$MAIN_TOOL_DIR" checkout -q --force --detach "$at" 2>/dev/null \
-        || { MAIN_TOOL_WHY="cannot move the checkout to ${at:0:7}"; return 1; }
+    if [ -e "$dir/.git" ]; then
+      git -C "$dir" checkout -q --force --detach "$at" 2>/dev/null \
+        || { main_tool_why "cannot move the checkout to ${at:0:7}"; return 1; }
     else
-      git -C "$proj" worktree add -q --detach "$MAIN_TOOL_DIR" "$at" 2>/dev/null \
-        || { MAIN_TOOL_WHY="cannot add the checkout"; return 1; }
+      git -C "$proj" worktree add -q --detach "$dir" "$at" 2>/dev/null \
+        || { main_tool_why "cannot add the checkout"; return 1; }
     fi
-    (cd "$MAIN_TOOL_DIR" && lake build mitos-gate) >"$MAIN_TOOL_DIR.build.log" 2>&1 </dev/null \
-      || { MAIN_TOOL_WHY="the build at ${at:0:7} failed, see $MAIN_TOOL_DIR.build.log"; return 1; }
-    printf '%s\n' "$at" >"$stamp" || { MAIN_TOOL_WHY="cannot write the stamp"; return 1; }
+    (cd "$dir" && lake build mitos-gate) >"$dir.build.log" 2>&1 </dev/null \
+      || { main_tool_why "the build at ${at:0:7} failed, see $dir.build.log"; return 1; }
+    printf '%s\n' "$at" >"$stamp" || { main_tool_why "cannot write the stamp"; return 1; }
   fi
-  flock -s "$MAIN_TOOL_FD"
+  flock -s "$MAIN_TOOL_FD" || { main_tool_why "cannot take the shared lock back"; return 1; }
 }
 ```
 
+- **How the answers come back.** No value crosses a function's edge in a global. `main_tool_dir`
+  prints the checkout's folder and `main_tool_bin <dir>` the binary in it, and a caller reads
+  each with `$(…)`. `main_tool` prints nothing on standard output: it returns 1 with the reason as
+  the last line on standard error, and the caller sends that to a file,
+  `main_tool ensure "$tool_dir" 2>"$w/main-tool.err" || die "… $(tail -n 1 "$w/main-tool.err")"`.
+  The reason is not read with `$(…)`, because `main_tool` opens the shared lock in its caller's
+  process, and a subshell would close it on return; a redirection keeps the call in the caller's
+  shell. `land_snapshot` answers the same way. The other shape was a nameref the caller passes
+  (`local -n`), and it lost because shellcheck 0.11.0 reads every write through a nameref as an
+  unused variable (SC2034), so the directive would come back (run here, What was checked).
+  `MAIN_TOOL_FD` stays a global: it is the process's own lock, and only this file reads it. No
+  caller read `MAIN_TOOL_AT`, so it is gone.
 - The checkout lives in the git directory (`<git-common-dir>/mitos-main-tool`), so `git status`
   never shows it and every worktree of the clone shares it.
 - The build is fresh when its stamp names a commit whose `main_tool_inputs` equal main's. So a
@@ -374,10 +393,12 @@ if ! api activity.json --paginate --slurp "$pushes" \
   die "cannot read the pushes of PR #$pr"
 fi
 
-main_tool "$mode" || die "$MAIN_TOOL_WHY"
-timeout -k 5 60 git -C "$MAIN_TOOL_DIR" fetch -q origin "$ref" "$from" </dev/null 2>/dev/null \
+tool_dir=$(main_tool_dir) || die "not in a clone"
+tool_bin=$(main_tool_bin "$tool_dir")
+main_tool "$mode" "$tool_dir" 2>"$w/main-tool.err" || die "$(tail -n 1 "$w/main-tool.err")"
+timeout -k 5 60 git -C "$tool_dir" fetch -q origin "$ref" "$from" </dev/null 2>/dev/null \
   || die "cannot fetch $ref and ${from:0:7}"
-(cd "$MAIN_TOOL_DIR" && timeout -k 5 120 "$MAIN_TOOL_BIN" carry origin/main "$from" "$head") \
+(cd "$tool_dir" && timeout -k 5 120 "$tool_bin" carry origin/main "$from" "$head") \
   <"$w/activity.tsv" >/dev/null 2>"$w/carry.err"
 case $? in
   0) echo "carry #$pr: ${from:0:7} covers ${head:0:7}"; exit 0 ;;
@@ -425,8 +446,11 @@ esac
 
 ### `land.sh` and `lib/land-snapshot.sh` (PR 3 starts from these files)
 
-Ran here: shellcheck is clean; 59 cases pass against the real `mitos-gate land` and `speech` of
-a222e99; 24 mutants each fail a case; and three read-only runs against GitHub (What was checked).
+Ran here, on the sketches before their answers left the globals: 59 cases pass against the real
+`mitos-gate land` and `speech` of a222e99; 24 mutants each fail a case; and three read-only runs
+against GitHub. As they stand, shellcheck is clean on `lib/land-snapshot.sh` alone with no
+directive and on `land.sh` with `-x`, and `land_snapshot` passed the round-2 cases (What was
+checked).
 
 ```bash
 #!/usr/bin/env bash
@@ -491,8 +515,11 @@ settled() {
 }
 
 settled
-main_tool ensure || die "main's tool: $MAIN_TOOL_WHY"
-land_snapshot "$repo" "$w" || die "$LAND_SNAPSHOT_WHY"
+tool_dir=$(main_tool_dir) || die "not in a clone"
+tool_bin=$(main_tool_bin "$tool_dir")
+main_tool ensure "$tool_dir" 2>"$w/main-tool.err" || die "main's tool: $(tail -n 1 "$w/main-tool.err")"
+land_snapshot "$repo" "$w" "$tool_dir" "$tool_bin" 2>"$w/land-snapshot.err" \
+  || die "$(tail -n 1 "$w/land-snapshot.err")"
 if ! jq -e --argjson n "$pr" 'any(.prs[]; .pr == $n)' "$w/snapshot.json" >/dev/null 2>&1; then
   settled
   die "#$pr is open but not in the snapshot"
@@ -501,7 +528,7 @@ fi
 jq -c --arg p "$provider" --arg t "$teammate" --argjson n "$pr" \
   '. + {me: {provider: $p, name: $t}, pr: $n}' "$w/snapshot.json" >"$w/input.json" \
   || die "cannot name the caller in the snapshot"
-"$MAIN_TOOL_BIN" land "$w/input.json" >"$w/decision.json" 2>"$w/land.err" \
+"$tool_bin" land "$w/input.json" >"$w/decision.json" 2>"$w/land.err" \
   || die "the decision is refused: $(head -n 1 "$w/land.err" | clean)"
 step=$(jq -c '.step | objects' "$w/decision.json" 2>/dev/null)
 [ -n "$step" ] || die "the decision has no step"
@@ -538,7 +565,7 @@ unchanged() {
 }
 
 record() {
-  # shellcheck disable=SC2016 # the backquotes are the fence, not a command
+  # shellcheck disable=SC2016
   printf '```mitos-protocol\n%s\n```\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_' \
     "$(jq -cn --argjson n "$pr" --arg p "$provider" --arg t "$teammate" --arg h "$1" \
       '{v: 1, kind: "land", task: $n, as: {provider: $p, teammate: $t}, head: $h}')"
@@ -630,19 +657,17 @@ die "the decision names a step this script does not know"
 ```bash
 #!/usr/bin/env bash
 
-# shellcheck disable=SC2034 # LAND_SNAPSHOT_WHY is the caller's
 land_snapshot() {
-  local repo=$1 out=$2 dash
-  LAND_SNAPSHOT_WHY=
+  local repo=$1 out=$2 tool_dir=$3 tool_bin=$4 dash
   dash=$(sed -n 's/^ *LAND_DASHBOARD: \([1-9][0-9]\{0,6\}\)$/\1/p' \
-    "$MAIN_TOOL_DIR/.github/workflows/land.yml" 2>/dev/null)
+    "$tool_dir/.github/workflows/land.yml" 2>/dev/null)
   [[ $dash =~ ^[1-9][0-9]{0,6}$ ]] \
-    || { LAND_SNAPSHOT_WHY="main's land.yml does not name one LAND_DASHBOARD"; return 1; }
-  "$MAIN_TOOL_DIR/gate/snapshot-fetch.sh" "$repo" "$dash" "$out/reads" 2>"$out/fetch.err" </dev/null \
-    || { LAND_SNAPSHOT_WHY="the fetch refused: $(tail -n 1 "$out/fetch.err")"; return 1; }
-  (cd "$MAIN_TOOL_DIR" && "$MAIN_TOOL_BIN" snapshot "$out/reads") >"$out/snapshot.json" \
+    || { echo "main's land.yml does not name one LAND_DASHBOARD" >&2; return 1; }
+  "$tool_dir/gate/snapshot-fetch.sh" "$repo" "$dash" "$out/reads" 2>"$out/fetch.err" </dev/null \
+    || { echo "the fetch refused: $(tail -n 1 "$out/fetch.err")" >&2; return 1; }
+  (cd "$tool_dir" && "$tool_bin" snapshot "$out/reads") >"$out/snapshot.json" \
     2>"$out/snapshot.err" </dev/null \
-    || { LAND_SNAPSHOT_WHY="the snapshot refused: $(tail -n 1 "$out/snapshot.err")"; return 1; }
+    || { echo "the snapshot refused: $(tail -n 1 "$out/snapshot.err")" >&2; return 1; }
 }
 ```
 
@@ -688,18 +713,22 @@ itself. So the script decides two things for a line: whether it prints, and whom
   not covered.
 - It ships off. `wake_filter` runs only when `WATCH_WAKE=1` (O3).
 
-`.claude/scripts/lib/wake.sh`. Ran here: shellcheck is clean, and 44 cases pass over fixed poll
-files, a stub activity route and the real `mitos-gate land` (What was checked).
+`.claude/scripts/lib/wake.sh`. Ran here, on the sketch before its functions took their folders as
+arguments: 44 cases pass over fixed poll files, a stub activity route and the real
+`mitos-gate land`. As it stands, shellcheck is clean on the file alone with no directive, and the
+wake filter passed the round-2 cases (What was checked). Each function takes the folders and the
+repository it reads as arguments, and `watch-github.sh` passes its own:
+`wake_filter "$dir" "$w" "$repo"`. It still calls functions by name, `watch-github.sh`'s `api`,
+`say` and `drop_lock_fd` and the two other libraries', but reads none of their variables.
 
 ```bash
 #!/usr/bin/env bash
 
-# shellcheck disable=SC2154 # $dir, $w, $repo, api, say and drop_lock_fd are watch-github.sh's
 wake_updater='mitos-pr-updater[bot]'
 
 wake_by_updater() {
-  local n=$1 old=$2 new=$3 ref
-  ref=$(jq -r --argjson n "$n" '.[] | select(.number == $n) | .head.ref // ""' "$w/open.json" 2>/dev/null)
+  local poll_dir=$1 repo=$2 n=$3 old=$4 new=$5 ref
+  ref=$(jq -r --argjson n "$n" '.[] | select(.number == $n) | .head.ref // ""' "$poll_dir/open.json" 2>/dev/null)
   [[ $ref =~ ^[A-Za-z0-9._/-]+$ && $ref != -* && $ref != *..* ]] || return 1
   api "activity-$n.json" "repos/$repo/activity?ref=refs/heads/$ref&direction=desc&per_page=30" || return 1
   jq -e --arg v "$old" --arg c "$new" --arg u "$wake_updater" '
@@ -708,16 +737,16 @@ wake_by_updater() {
       else .[0] as $p
         | ($p.after[0:7] == $cur and $p.activity_type == "force_push" and $p.actor.login == $u)
           and (.[1:] | walk($p.before[0:7])) end;
-    walk($c)' "$w/activity-$n.json" >/dev/null 2>&1
+    walk($c)' "$poll_dir/activity-$n.json" >/dev/null 2>&1
 }
 
 wake_head_events() {
-  local n=$1 h=$2 c=$3 prev h0 c0
-  prev=$(grep -m1 "^pr #$n head " "$dir/snapshot" 2>/dev/null) || { echo keep; return; }
+  local state_dir=$1 poll_dir=$2 repo=$3 n=$4 h=$5 c=$6 prev h0 c0
+  prev=$(grep -m1 "^pr #$n head " "$state_dir/snapshot" 2>/dev/null) || { echo keep; return; }
   h0=$(awk '{print $4}' <<<"$prev")
   c0=${prev#* checks }
   if [ "$h" != "$h0" ]; then
-    wake_by_updater "$n" "$h0" "$h" || { echo keep; return; }
+    wake_by_updater "$poll_dir" "$repo" "$n" "$h0" "$h" || { echo keep; return; }
     c0=-
   fi
   jq -nc --argjson n "$n" --arg c "$c" --arg c0 "$c0" '
@@ -730,8 +759,8 @@ wake_head_events() {
 }
 
 wake_label_events() {
-  local n=$1 l=$2 a=$3 prev l0 a0
-  prev=$(grep -m1 "^pr #$n labels=" "$dir/snapshot" 2>/dev/null) || { echo keep; return; }
+  local state_dir=$1 n=$2 l=$3 a=$4 prev l0 a0
+  prev=$(grep -m1 "^pr #$n labels=" "$state_dir/snapshot" 2>/dev/null) || { echo keep; return; }
   l0=$(awk '{print substr($3, 8)}' <<<"$prev")
   a0=$(awk '{print substr($4, 11)}' <<<"$prev")
   if [ "$a" = "$a0" ] && jq -ne --arg l "$l" --arg l0 "$l0" '
@@ -744,27 +773,30 @@ wake_label_events() {
 }
 
 wake_of() {
-  local ev=$1 n
+  local land_dir=$1 tool_bin=$2 ev=$3 n
   n=$(jq -r .pr <<<"$ev")
   if [ "$(jq -r .kind <<<"$ev")" = gateDone ]; then
-    ev=$(jq -c --argjson n "$n" --slurpfile s "$w/land/snapshot.json" \
+    ev=$(jq -c --argjson n "$n" --slurpfile s "$land_dir/snapshot.json" \
       '($s[0].prs[] | select(.pr == $n) | .gate) as $g
        | if $g == null or ($g | IN("pending", "missing")) then error("no result") else . + {gate: $g} end' \
       <<<"$ev" 2>/dev/null) || return 1
   fi
-  jq -c --argjson e "$ev" '{prs, event: $e}' "$w/land/snapshot.json" >"$w/land/event.json" 2>/dev/null \
-    && "$MAIN_TOOL_BIN" land "$w/land/event.json" 2>/dev/null | jq -er '.wake.kind'
+  jq -c --argjson e "$ev" '{prs, event: $e}' "$land_dir/snapshot.json" >"$land_dir/event.json" 2>/dev/null \
+    && "$tool_bin" land "$land_dir/event.json" 2>/dev/null | jq -er '.wake.kind'
 }
 
 wake_decide() {
-  local main tier text ev one kind who keep n h
-  main=$(jq -r '.commit.sha // ""' "$w/main.json" 2>/dev/null)
-  mkdir -p "$w/land"
+  local poll_dir=$1 repo=$2 main tool_dir tool_bin tier text ev one kind who keep n h
+  main=$(jq -r '.commit.sha // ""' "$poll_dir/main.json" 2>/dev/null)
+  mkdir -p "$poll_dir/land"
   api rate.json rate_limit || return 1
-  [ "$(jq -r '.resources.core.remaining // 0' "$w/rate.json" 2>/dev/null)" -ge "${WATCH_WAKE_FLOOR:-1000}" ] \
+  [ "$(jq -r '.resources.core.remaining // 0' "$poll_dir/rate.json" 2>/dev/null)" -ge "${WATCH_WAKE_FLOOR:-1000}" ] \
     2>/dev/null || return 1
-  main_tool ready "$main" || { printf '%s\n' "$MAIN_TOOL_WHY" >"$w/wake-why"; return 1; }
-  drop_lock_fd land_snapshot "$repo" "$w/land" || return 1
+  tool_dir=$(main_tool_dir) || { echo "not in a clone" >"$poll_dir/wake-why"; return 1; }
+  tool_bin=$(main_tool_bin "$tool_dir")
+  main_tool ready "$tool_dir" "$main" 2>"$poll_dir/main-tool.err" \
+    || { tail -n 1 "$poll_dir/main-tool.err" >"$poll_dir/wake-why"; return 1; }
+  drop_lock_fd land_snapshot "$repo" "$poll_dir/land" "$tool_dir" "$tool_bin" 2>/dev/null || return 1
   while IFS=$'\t' read -r tier text ev; do
     keep=0 who=
     case $text in
@@ -772,10 +804,10 @@ wake_decide() {
         n=${text#pr #}; n=${n%% *}
         h=$(awk '{print $4}' <<<"$text")
         jq -e --argjson n "$n" --arg h "$h" 'any(.prs[]; .pr == $n and (.head | startswith($h)))' \
-          "$w/land/snapshot.json" >/dev/null 2>&1 || ev='[]' keep=1 ;;
+          "$poll_dir/land/snapshot.json" >/dev/null 2>&1 || ev='[]' keep=1 ;;
     esac
     while read -r one; do
-      kind=$(wake_of "$one") || kind=
+      kind=$(wake_of "$poll_dir/land" "$tool_bin" "$one") || kind=
       case $kind in
         nobody) ;;
         lander | holder | orchestrator)
@@ -785,13 +817,13 @@ wake_decide() {
       esac
     done < <(jq -c '.[]' <<<"$ev")
     [ "$keep" = 0 ] || printf '%s\t%s%s\n' "$tier" "$text" "${who:+ wake=$who}"
-  done <"$w/wake-pending" >"$w/lines.decided"
+  done <"$poll_dir/wake-pending" >"$poll_dir/lines.decided"
 }
 
 wake_filter() {
-  local tier text n h c l a ev any=0
-  : >"$w/lines.wake"
-  : >"$w/wake-pending"
+  local state_dir=$1 poll_dir=$2 repo=$3 tier text n h c l a ev any=0
+  : >"$poll_dir/lines.wake"
+  : >"$poll_dir/wake-pending"
   while IFS=$'\t' read -r tier text; do
     case $text in
       "main "*) continue ;;
@@ -799,34 +831,34 @@ wake_filter() {
         n=${text#pr #}; n=${n%% *}
         h=$(awk '{print $4}' <<<"$text")
         c=${text#* checks }
-        ev=$(wake_head_events "$n" "$h" "$c") ;;
+        ev=$(wake_head_events "$state_dir" "$poll_dir" "$repo" "$n" "$h" "$c") ;;
       "pr #"*" labels="*" assignees="*)
-        case $text in *" outside "*) printf '%s\t%s\n' "$tier" "$text" >>"$w/lines.wake"; continue ;; esac
+        case $text in *" outside "*) printf '%s\t%s\n' "$tier" "$text" >>"$poll_dir/lines.wake"; continue ;; esac
         n=${text#pr #}; n=${n%% *}
         l=$(awk '{print substr($3, 8)}' <<<"$text")
         a=$(awk '{print substr($4, 11)}' <<<"$text")
-        ev=$(wake_label_events "$n" "$l" "$a") ;;
-      *) printf '%s\t%s\n' "$tier" "$text" >>"$w/lines.wake"; continue ;;
+        ev=$(wake_label_events "$state_dir" "$n" "$l" "$a") ;;
+      *) printf '%s\t%s\n' "$tier" "$text" >>"$poll_dir/lines.wake"; continue ;;
     esac
     if [ "$ev" = keep ]; then
-      printf '%s\t%s\n' "$tier" "$text" >>"$w/lines.wake"
+      printf '%s\t%s\n' "$tier" "$text" >>"$poll_dir/lines.wake"
     elif [ -n "$ev" ]; then
-      printf '%s\t%s\t%s\n' "$tier" "$text" "$(jq -sc . <<<"$ev")" >>"$w/wake-pending"
+      printf '%s\t%s\t%s\n' "$tier" "$text" "$(jq -sc . <<<"$ev")" >>"$poll_dir/wake-pending"
       any=1
     fi
-  done <"$w/lines"
+  done <"$poll_dir/lines"
   if [ "$any" = 1 ]; then
-    if (wake_decide); then
-      cat "$w/lines.decided" >>"$w/lines.wake"
+    if (wake_decide "$poll_dir" "$repo"); then
+      cat "$poll_dir/lines.decided" >>"$poll_dir/lines.wake"
     else
-      cut -f1,2 "$w/wake-pending" >>"$w/lines.wake"
-      if [ -s "$w/wake-why" ] && ! cmp -s "$w/wake-why" "$dir/wake-said"; then
-        say "wake rules: $(cat "$w/wake-why")"
-        cp "$w/wake-why" "$dir/wake-said"
+      cut -f1,2 "$poll_dir/wake-pending" >>"$poll_dir/lines.wake"
+      if [ -s "$poll_dir/wake-why" ] && ! cmp -s "$poll_dir/wake-why" "$state_dir/wake-said"; then
+        say "wake rules: $(cat "$poll_dir/wake-why")"
+        cp "$poll_dir/wake-why" "$state_dir/wake-said"
       fi
     fi
   fi
-  mv "$w/lines.wake" "$w/lines"
+  mv "$poll_dir/lines.wake" "$poll_dir/lines"
 }
 ```
 
@@ -845,7 +877,7 @@ The hook in `watch-github.sh` (the diff against `main`). With it, and with `WATC
  origin_repo
 @@ report()
    } >"$w/lines"
-+  [ "${WATCH_WAKE:-0}" != 1 ] || wake_filter
++  [ "${WATCH_WAKE:-0}" != 1 ] || wake_filter "$dir" "$w" "$repo"
    drop_own_echoes | LC_ALL=C sort -s -t "$(printf '\t')" -k1,1 | cut -f2- >"$w/out"
 ```
 
@@ -862,13 +894,17 @@ that lists what the monitor prints, and to the "Waiting on GitHub" row of `docs/
 On `main` no agent can land: `Speech.delegates = []`, so `Obs.mayMerge` is false for everyone and
 `step` answers an agent `noEntry` or `present`, never `enter` or `merge`.
 `Snapshot.OnlyTheOwnerQueues` proves it. The plan row's proof needs one delegate. The default
-(O1) names the teammate `land.sh` acts as:
+(O1) names the teammate `land.sh` acts as.
+
+The sketch spans three files, in this order. `delegates` goes in
+`gate/MitosGate/Speech/Comment.lean`. `OnlyTheOwnerOrADelegateQueues` and its proof go in
+`gate/MitosGate/Snapshot/Obs.lean`, where they replace `OnlyTheOwnerQueues` and its proof.
+`orchestrator`, `stepAs` and the eight fixtures go in `Speech.Fixture` of
+`gate/MitosGate/Speech.lean`, before `agentLandAfterAnEditHolds`.
 
 ```lean
--- gate/MitosGate/Speech/Comment.lean
 def delegates : List Teammate := [⟨"claude", "orchestrator"⟩]
 
--- gate/MitosGate/Snapshot/Obs.lean, replacing OnlyTheOwnerQueues and its proof
 def OnlyTheOwnerOrADelegateQueues : Prop :=
   ∀ g p r x, ∀ e ∈ (obs g p r x).entries, e.lander = .owner ∨
     ∃ t, e.lander = .agent t ∧ t ∈ Speech.delegates ∧ (obs g p r x).kept = false
@@ -881,7 +917,6 @@ theorem onlyTheOwnerOrADelegateQueues : OnlyTheOwnerOrADelegateQueues := by
     obtain ⟨hk, hd⟩ := Land.onlyMergersQueue _ e t he hl
     exact .inr ⟨t, rfl, hd, hk⟩
 
--- gate/MitosGate/Speech.lean, in Speech.Fixture, before agentLandAfterAnEditHolds
 def orchestrator : Teammate := ⟨"claude", "orchestrator"⟩
 
 def stepAs (who : Teammate) (cs : List Comment) (paths : List String := ["README.md"]) : Step :=
@@ -952,20 +987,27 @@ types: shell, no new Lean type.
   fresh is an error.
 - `bot-review.sh`: one more answer, `coderabbit #<pr>: reviewed <head> (carried from <sha>)`,
   exit 0; and the suffix `; carry not checked: <why>` on a `paused`, `behind` or `pending` line.
-- `lib/main-tool.sh`: `main_tool ensure|ready [<main>]`.
-  - Both set `MAIN_TOOL_DIR`, `MAIN_TOOL_BIN` and `MAIN_TOOL_AT` (main's commit), and return 1
-    with `MAIN_TOOL_WHY` set on a failure.
+- `lib/main-tool.sh`: `main_tool_dir`, `main_tool_bin <dir>` and
+  `main_tool ensure|ready <dir> [<main>]`, where `<dir>` is what `main_tool_dir` printed.
+  - `main_tool_dir` prints the checkout's folder, `<git-common-dir>/mitos-main-tool` or
+    `MITOS_MAIN_TOOL`, and returns 1 outside a clone. `main_tool_bin` prints the binary in it.
+  - `main_tool` prints nothing on standard output. It returns 0 when the build in `<dir>` is
+    fresh, and 1 with the reason as the last line on standard error. A caller sends standard
+    error to a file, never through `$(…)` (How the answers come back).
   - `ensure` fetches `main`. When the build is not fresh it moves the checkout to `main`, or adds
     it, builds, and writes the stamp `.lake/main-tool.built`.
   - `ready` never builds. With `<main>` it does not fetch either.
   - Both leave a shared lock on `<checkout>.lock` held until the calling process exits. A build
     takes it exclusively, for up to 30 minutes of waiting.
-- `lib/land-snapshot.sh`: `land_snapshot <owner/name> <dir>`, after `main_tool`. It writes
-  `<dir>/reads/`, `<dir>/snapshot.json`, `<dir>/fetch.err` and `<dir>/snapshot.err`, and returns
-  1 with `LAND_SNAPSHOT_WHY` set on a failure. The dashboard issue is the one main's `land.yml`
+- `lib/land-snapshot.sh`: `land_snapshot <owner/name> <dir> <tool-dir> <tool-bin>`, after
+  `main_tool`, with what `main_tool_dir` and `main_tool_bin` printed. It writes `<dir>/reads/`,
+  `<dir>/snapshot.json`, `<dir>/fetch.err` and `<dir>/snapshot.err`, and returns 1 with the
+  reason as the last line on standard error. The dashboard issue is the one main's `land.yml`
   names.
-- `lib/wake.sh`: `wake_filter`, called by `watch-github.sh` with its `$dir`, `$w`, `$repo`,
-  `api`, `say` and `drop_lock_fd`. It rewrites `$w/lines` (`<tier>\t<line>`).
+- `lib/wake.sh`: `wake_filter <state-dir> <poll-dir> <owner/name>`, called by `watch-github.sh` as
+  `wake_filter "$dir" "$w" "$repo"`. It rewrites `<poll-dir>/lines` (`<tier>\t<line>`). It calls
+  `watch-github.sh`'s `api`, `say` and `drop_lock_fd`. `api <file>` writes `$w/<file>`, so the
+  poll folder it is passed must be `$w`.
 - State in the git directory, shared by every worktree of the clone: `mitos-main-tool/` (the
   checkout), `mitos-main-tool.lock`, `mitos-main-tool.build.log`, `mitos-land-<pr>.lock` (one
   `land.sh` per pull request at a time) and `mitos-land-<pr>.record` (`<head> <comment id>` of
@@ -1015,7 +1057,8 @@ fixtures: the names are the cases that passed here on the sketches, unless a lin
   build, though an old binary is there; ensure after main moves builds again, at main; ready with
   a commit does not fetch; ready with no commit fetches, and says so when it cannot; another
   worktree of the clone shares the checkout; a second call in one process reuses the lock; a
-  build waits for a caller that still runs the binary.
+  build waits for a caller that still runs the binary. To add: each refusal's reason is the last
+  line on standard error, and standard output stays empty.
 - `.claude/scripts/carry.test.sh` and the cover cases of `bot-review.test.sh` (a stub `gh`, main's
   tool as the library really makes it, a stub gate), 19 checks: with main's tool not built, the
   answer is today's and says the carry was not checked; `bot-review.sh` never builds main's tool;
@@ -1196,9 +1239,11 @@ unless the owner says otherwise on #192.
 
 Nothing in the repository was edited, pushed or posted. Every number is from one run.
 
-- **By the judge, on the sketches in this file.**
+- **By the judge, on the sketches as they were at plan time,** when `main_tool` and
+  `land_snapshot` answered in globals and `lib/wake.sh` read `watch-github.sh`'s variables.
   - shellcheck `-x` is clean on `land.sh`, `carry.sh`, the patched `bot-review.sh` and the three
-    libraries.
+    libraries, with SC2034 turned off in `lib/main-tool.sh` and `lib/land-snapshot.sh` and SC2154
+    in `lib/wake.sh`.
   - `lib/main-tool.sh`: 15 of 15, against a real scratch clone, a real `git worktree add` into
     the git directory, and a stub `lake`.
   - `land.sh`: 59 of 59, with the real `mitos-gate land` and `speech` of a222e99. 24 of 24
@@ -1230,6 +1275,32 @@ Nothing in the repository was edited, pushed or posted. Every number is from one
 - **By the Fable runner.** A comment from a session carries the `claude` app. The id of a `gate`
   check run is the id of its Actions job. The judge read the check runs of #278's head: a gate
   check's `details_url` is `…/actions/runs/<run>/job/<job>`, which `gate_run` parses.
+- **In round 2 of the plan PR (#288), on the sketches as they stand** (`main` at a7a666d,
+  shellcheck 0.11.0, bash 5.2.21, git 2.43.0, util-linux `flock` 2.39.3). The `/no-comments` pass
+  took out the SC2034 and SC2154 directives, and the sketches were reshaped so that no answer
+  crosses a function's edge in a global.
+  - shellcheck, with no directive but `record`'s SC2016: clean on `lib/main-tool.sh`,
+    `lib/land-snapshot.sh` and `lib/wake.sh` each alone, and on `carry.sh` and `land.sh` with
+    `-x`. With the hook and the `bot-review.sh` lines applied to `main`'s two files,
+    `shellcheck -x -S warning` on `watch-github.sh`, `bot-review.sh`, `carry.sh` and `land.sh`
+    is clean, as `sourced-bash.test.sh` runs it.
+  - Before the reshape, with the directives gone: SC2034 on `MAIN_TOOL_AT` and `MAIN_TOOL_WHY`,
+    and on `LAND_SNAPSHOT_WHY`; SC2154 on `w`, `repo` and `dir` in `lib/wake.sh`. No caller read
+    `MAIN_TOOL_AT`. A nameref (`local -n` or `declare -n`) draws SC2034 on each write through it.
+  - 31 of 31 cases of the new shape, against a real scratch clone with a bare origin, a stub
+    `lake`, a stub `mitos-gate` and a stub fetch. `main_tool_dir` and `main_tool_bin`. `ready`
+    with nothing built, and after a failed build. `ensure` builds once and stamps, needs no build
+    after a move of `main` off the tool inputs, and builds again after a `gate/` change. Each
+    refusal's reason is the last line on standard error, with standard output empty. A caller
+    that sends standard error to a file holds the shared lock until it exits and reuses it on a
+    second call, while the same call inside `$(…)` leaves no lock. `land_snapshot`'s answer and
+    its three refusals. The wake filter, with stubs of `api`, `say` and `drop_lock_fd`: a move of
+    `main`, a `needs-rebase` label, a line with no earlier line, the tool not built (said once
+    per commit of `main`, and no lock left after the poll), and a green gate that the tool
+    answers `nobody` or `holder` for. Two mutants of `lib/wake.sh` (`wake_of` ignores the tool
+    it is passed; `wake_filter` passes the poll folder as the state folder) fail 2 and 4 cases.
+  - Not run again on the new shape: the plan-time cases above (15, 59, 19 and 44), the 24
+    mutants of `land.sh`, `main`'s own test files, and the live reads.
 - **Not run:** a real `entered` or `merged`, which no agent can get on `main`; the re-run call;
   `land.sh` against #278's `snapshot-fetch.sh`; a real build through `main_tool ensure` (the
   tests use a stub `lake`); `watch-github.sh` end to end with `WATCH_WAKE=1` (the filter was
