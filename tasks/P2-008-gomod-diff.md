@@ -47,7 +47,7 @@ depth: build. The files under `types` are the whole runner and its two scripts, 
 every proof written: no `sorry`. The vendored data is named with the commands that fetch it, and
 each fetched `module.mod` is pinned by its go.sum hash. Built from a copy of `main` at `85981fe` on
 Lean v4.35.0: `lake --dir eval/diff build` succeeded (46 jobs, no warning under `warningAsError`),
-and the run printed the report under Usage. The named fixtures are F0 to F5 and T1 to T14.
+and the run printed the report under Usage. The named fixtures are F0 to F5 and T1 to T15.
 
 revisit_when: none. P2-006 and P2-007 have merged, and the names under `types` are theirs on
 `main`. Two later events touch this row, and neither is a redesign:
@@ -94,9 +94,9 @@ map reports it as a deviation and does not split silently.
 - `eval/diff/Main.lean`: the shell, 64 lines: the `eval/diff` layout, the case
   list and the exit codes. Copies `eval/score/Main.lean`: a usage string, one directory argument,
   IO only.
-- `eval/diff/check-pins.sh` (37 lines, executable): the pins against their
+- `eval/diff/check-pins.sh` (39 lines, executable): the pins against their
   bytes, with no Go; `--online` adds sum.golang.org.
-- `eval/diff/selftest.sh` (107 lines, executable): the exit codes and the
+- `eval/diff/selftest.sh` (111 lines, executable): the exit codes and the
   scripts, with no Go and no network.
 
 ### Usage (caller's view)
@@ -820,7 +820,9 @@ if $online && ! command -v curl > /dev/null; then
 fi
 status=0
 problem() { echo "$1: $2" >&2; status=1; }
+[ -r pins.tsv ] || { echo "check-pins.sh: cannot read pins.tsv" >&2; exit 2; }
 while IFS=$'\t' read -r c m v h _ l; do
+  case $c in ''|'#'*) continue ;; esac
   f=cases/$c/module.mod
   if [ ! -f "$f" ]; then problem "$c" "no module.mod"; continue; fi
   got="h1:$(printf '%s  go.mod\n' "$(sha256sum < "$f" | cut -d' ' -f1)" | openssl dgst -sha256 -binary | base64)"
@@ -837,7 +839,7 @@ while IFS=$'\t' read -r c m v h _ l; do
   case $m in
     *[A-Z]*) problem "$c" "module path has an upper-case letter, which the proxy escapes" ;;
   esac
-done < <(grep -v -e '^#' -e '^$' pins.tsv)
+done < pins.tsv
 exit "$status"
 ```
 
@@ -951,6 +953,10 @@ sed -i 's/\tApache-2.0$/\tGPL-3.0/' "$tmp/pins.tsv"
 if "$tmp/check-pins.sh" 2> "$tmp/err"; then echo "FAIL: check-pins.sh accepted GPL-3.0" >&2; exit 1; fi
 grep -qF "licence GPL-3.0" "$tmp/err"
 echo "ok: check-pins.sh refuses a licence outside the four"
+rm "$tmp/pins.tsv"
+if "$tmp/check-pins.sh" 2> "$tmp/err"; then echo "FAIL: check-pins.sh accepted a missing pins.tsv" >&2; exit 1; fi
+grep -qF "cannot read pins.tsv" "$tmp/err"
+echo "ok: check-pins.sh refuses a missing pins.tsv"
 ```
 
 statements: every proof is in the files above and closes on v4.35.0. What each says:
@@ -1011,7 +1017,7 @@ fixtures:
 | a `Require` entry with an `Indirect` field | `Go.lean` | only the paths are read |
 | a JSON with no `Module`, and one whose `Require` is a number | `Go.lean` | `Keys.ofGoJson` fails, so the run exits 2 |
 
-- T1 to T14, `eval/diff/selftest.sh`, one script with no Go and no network. It builds throwaway
+- T1 to T15, `eval/diff/selftest.sh`, one script with no Go and no network. It builds throwaway
   case folders whose go.mod and Go output are fixed text (the outputs are `go mod edit -json` of
   Go 1.24.7, compacted; F4), and for `--refresh` puts a stand-in `go` first on `PATH` that prints
   a version, rejects a file that says `reject-me`, or prints the output it is given. It runs from
@@ -1033,6 +1039,7 @@ fixtures:
 | T12 | `check-pins.sh` on cobra's committed row | 0 | the clean pin |
 | T13 | the same, one byte appended to `module.mod` | 1 | `module.mod hashes to h1:...` |
 | T14 | the same, the licence column set to `GPL-3.0` | 1 | `licence GPL-3.0 is not one of the four` |
+| T15 | the same, `pins.tsv` removed | 2 | `cannot read pins.tsv` |
 
 - F1, `--refresh` with Go 1.24.7 on `PATH`: exit 0 in 0.6 s, every `module.json` byte the same
   (`diff -r` of `cases` before and after is empty), the 13 files together hash to `45b45018c442…`
@@ -1092,7 +1099,7 @@ From the repository root, at the head after the last rebase.
    `cd eval/diff && lake env lean <scratch>/Axioms.lean`.
 5. `eval/diff/check-pins.sh --online` prints nothing and exits 0. It needs `curl`, `openssl` and the
    network, not Go. Without `--online` it needs neither network nor `curl`.
-6. `eval/diff/selftest.sh` prints fourteen `ok:` lines and exits 0.
+6. `eval/diff/selftest.sh` prints fifteen `ok:` lines and exits 0.
 7. With Go 1.24.7 on `PATH` (`go version` prints `go1.24.7`),
    `lake --dir eval/diff exe mitos-diff eval/diff --refresh` exits 0, and then
    `git status --porcelain eval/diff` prints nothing. Measured: the 13 files hash to
@@ -1461,7 +1468,7 @@ each unless said. The runners' own measurements, on `68e37a9`, agreed.
   (the report then prints both lines ending in `#?`). F1, F2 and F3 as listed.
 - `eval/diff/check-pins.sh`: exit 0 in 0.3 s; with `--online`, exit 0 in 2.3 s, all 13 hashes equal
   to sum.golang.org's go.mod lines. `shellcheck` clean on both scripts.
-- `eval/diff/selftest.sh`: fourteen `ok:` lines in 3.8 s.
+- `eval/diff/selftest.sh`: fifteen `ok:` lines in 3.8 s.
 - The vendoring commands of `types`, run in a scratch folder: 28 files, byte for byte the
   committed ones.
 - Candidates left out: gitea v1.27.3 and lazygit (Go 1.24.7 rejects their `ignore` block, measured
@@ -1477,7 +1484,7 @@ each unless said. The runners' own measurements, on `68e37a9`, agreed.
       eval/diff/Diff eval/diff/Main.lean` prints nothing
 - [ ] the plain run exits 0 with the table of Usage, also with no `go` on `PATH`
 - [ ] `--refresh` with Go 1.24.7 leaves `git status --porcelain eval/diff` empty
-- [ ] `eval/diff/check-pins.sh --online` prints nothing, and `eval/diff/selftest.sh` prints fourteen
+- [ ] `eval/diff/check-pins.sh --online` prints nothing, and `eval/diff/selftest.sh` prints fifteen
       `ok:` lines
 - [ ] each pin's `LICENSE` is one of the allowlist; the PR body states O1 and the F0 numbers
 - [ ] `eval/diff/lean-toolchain` reads `leanprover/lean4:v4.35.0`, as P2-011 expects
