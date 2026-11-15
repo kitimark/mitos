@@ -75,9 +75,11 @@ def onlyLandOrHoldLines (b : List Char) : Bool :=
   (lines (Speech.unbom b)).all (fun l => blank l || (Speech.word? l).isSome) &&
     (lines (Speech.unbom b)).any (fun l => (Speech.word? l).isSome)
 
+def Post.lastSpoke (s : Post) : Stamp := max s.created s.updated
+
 def unanswered (g : Global) (ss : List Post) : List Post :=
   ss.filter fun s => speaks g s && !onlyLandOrHoldLines s.body.toList &&
-    !ss.any fun a => answers g a && decide (s.updated < a.created)
+    !ss.any fun a => answers g a && decide (s.lastSpoke < a.created)
 
 def counts (v : Review) : Bool :=
   v.state == "APPROVED" || v.state == "CHANGES_REQUESTED" || !v.body.isEmpty
