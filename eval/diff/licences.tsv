@@ -1,0 +1,14 @@
+# case	module	version	licence (SPDX)	LICENSE URL	LICENSE SHA256	NOTICE URL (- if none)	NOTICE SHA256 (- if none)
+argo-cd	github.com/argoproj/argo-cd/v3	v3.6.1	Apache-2.0	https://raw.githubusercontent.com/argoproj/argo-cd/v3.6.1/LICENSE	c996fc213c94f4a4a838407d355b081226caa7b103a4f239bb87fb8f1d8e3a60	-	-
+cobra	github.com/spf13/cobra	v1.10.2	Apache-2.0	https://raw.githubusercontent.com/spf13/cobra/v1.10.2/LICENSE.txt	5e3400b93bbb099e83e52bab885e7441750673c21f97988ca3f1240639b63283	-	-
+etcd	go.etcd.io/etcd/v3	v3.7.3	Apache-2.0	https://raw.githubusercontent.com/etcd-io/etcd/v3.7.3/LICENSE	43ca1b4bbf462789ba15b28373e0c536e510f49e4d05d85a7690cfee94de6f49	-	-
+gh-cli	github.com/cli/cli/v2	v2.104.0	MIT	https://raw.githubusercontent.com/cli/cli/v2.104.0/LICENSE	6da4adc42392c8485e40b4251c7e332fc3352df1947c9ffade71dd60b14a7a4f	-	-
+go-redis	github.com/redis/go-redis/v9	v9.23.0	BSD-2-Clause	https://raw.githubusercontent.com/redis/go-redis/v9.23.0/LICENSE	a3a7dff87da3927db65cb4c87b1cfbc96ca2755704461a485d457be7ae300a86	-	-
+gopls	golang.org/x/tools/gopls	v0.24.0	BSD-3-Clause	https://raw.githubusercontent.com/golang/tools/gopls/v0.24.0/LICENSE	911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad	-	-
+grpc	google.golang.org/grpc	v1.85.0	Apache-2.0	https://raw.githubusercontent.com/grpc/grpc-go/v1.85.0/LICENSE	cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30	https://raw.githubusercontent.com/grpc/grpc-go/v1.85.0/NOTICE.txt	693ff28ec216d5112ac1bbfe64ef539005867d1c7bd427b57d579683293b947f
+kubernetes	k8s.io/kubernetes	v1.37.2	Apache-2.0	https://raw.githubusercontent.com/kubernetes/kubernetes/v1.37.2/LICENSE	cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30	-	-
+prometheus	github.com/prometheus/prometheus	v0.316.0	Apache-2.0	https://raw.githubusercontent.com/prometheus/prometheus/v0.316.0/LICENSE	c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4	https://raw.githubusercontent.com/prometheus/prometheus/v0.316.0/NOTICE	ac9e304462a58a4d71b6488423d4447e614c8b31d517fe24345016522c102a78
+rsc-quote	rsc.io/quote	v1.5.2	BSD-3-Clause	https://raw.githubusercontent.com/rsc/quote/v1.5.2/LICENSE	2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067	-	-
+tailscale	tailscale.com	v1.104.7	BSD-3-Clause	https://raw.githubusercontent.com/tailscale/tailscale/v1.104.7/LICENSE	a7ca6186a7963a0a60740f6047760eecd7a0234e8c38bd7e1e0bbcb324bda45b	-	-
+traefik	github.com/traefik/traefik/v3	v3.7.19	MIT	https://raw.githubusercontent.com/traefik/traefik/v3.7.19/LICENSE.md	c33e29340498ccde22ba0ab9537d6eb0aa3a2eae0dda61bb6df31df6a032fa5b	-	-
+zap	go.uber.org/zap	v1.28.0	MIT	https://raw.githubusercontent.com/uber-go/zap/v1.28.0/LICENSE	c2b97b3281be272711909076c8402499b4b5a3216196af47a25b1d3674d86152	-	-

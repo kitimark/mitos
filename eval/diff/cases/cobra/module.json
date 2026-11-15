@@ -1,0 +1,28 @@
+{
+	"Module": {
+		"Path": "github.com/spf13/cobra"
+	},
+	"Go": "1.15",
+	"Require": [
+		{
+			"Path": "github.com/cpuguy83/go-md2man/v2",
+			"Version": "v2.0.6"
+		},
+		{
+			"Path": "github.com/inconshreveable/mousetrap",
+			"Version": "v1.1.0"
+		},
+		{
+			"Path": "github.com/spf13/pflag",
+			"Version": "v1.0.9"
+		},
+		{
+			"Path": "go.yaml.in/yaml/v3",
+			"Version": "v3.0.4"
+		}
+	],
+	"Exclude": null,
+	"Replace": null,
+	"Retract": null,
+	"Tool": null
+}

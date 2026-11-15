@@ -1,0 +1,141 @@
+{
+	"Module": {
+		"Path": "golang.org/x/tools/gopls"
+	},
+	"Go": "1.27.0",
+	"Require": [
+		{
+			"Path": "github.com/fatih/gomodifytags",
+			"Version": "v1.17.1-0.20250423142747-f3939df9aa3c"
+		},
+		{
+			"Path": "github.com/fsnotify/fsnotify",
+			"Version": "v1.9.0"
+		},
+		{
+			"Path": "github.com/google/go-cmp",
+			"Version": "v0.7.0"
+		},
+		{
+			"Path": "github.com/jba/templatecheck",
+			"Version": "v0.7.1"
+		},
+		{
+			"Path": "github.com/modelcontextprotocol/go-sdk",
+			"Version": "v1.8.0"
+		},
+		{
+			"Path": "golang.org/x/mod",
+			"Version": "v0.41.0"
+		},
+		{
+			"Path": "golang.org/x/net",
+			"Version": "v0.59.0"
+		},
+		{
+			"Path": "golang.org/x/sync",
+			"Version": "v0.23.0"
+		},
+		{
+			"Path": "golang.org/x/telemetry",
+			"Version": "v0.0.0-20260924152758-ed294f943157"
+		},
+		{
+			"Path": "golang.org/x/text",
+			"Version": "v0.42.0"
+		},
+		{
+			"Path": "golang.org/x/tools",
+			"Version": "v0.51.1-0.20261014163302-24a65270771e"
+		},
+		{
+			"Path": "golang.org/x/vuln",
+			"Version": "v1.8.0"
+		},
+		{
+			"Path": "gopkg.in/yaml.v3",
+			"Version": "v3.0.1"
+		},
+		{
+			"Path": "honnef.co/go/tools",
+			"Version": "v0.8.1"
+		},
+		{
+			"Path": "mvdan.cc/gofumpt",
+			"Version": "v0.12.0"
+		},
+		{
+			"Path": "mvdan.cc/xurls/v2",
+			"Version": "v2.6.0"
+		},
+		{
+			"Path": "github.com/BurntSushi/toml",
+			"Version": "v1.6.0",
+			"Indirect": true
+		},
+		{
+			"Path": "github.com/fatih/camelcase",
+			"Version": "v1.0.0",
+			"Indirect": true
+		},
+		{
+			"Path": "github.com/fatih/structtag",
+			"Version": "v1.2.0",
+			"Indirect": true
+		},
+		{
+			"Path": "github.com/google/jsonschema-go",
+			"Version": "v0.4.3",
+			"Indirect": true
+		},
+		{
+			"Path": "github.com/google/safehtml",
+			"Version": "v0.1.0",
+			"Indirect": true
+		},
+		{
+			"Path": "github.com/segmentio/asm",
+			"Version": "v1.2.1",
+			"Indirect": true
+		},
+		{
+			"Path": "github.com/segmentio/encoding",
+			"Version": "v0.5.4",
+			"Indirect": true
+		},
+		{
+			"Path": "github.com/yosida95/uritemplate/v3",
+			"Version": "v3.0.2",
+			"Indirect": true
+		},
+		{
+			"Path": "golang.org/x/exp/typeparams",
+			"Version": "v0.0.0-20260908205506-85c1c2202aba",
+			"Indirect": true
+		},
+		{
+			"Path": "golang.org/x/oauth2",
+			"Version": "v0.37.0",
+			"Indirect": true
+		},
+		{
+			"Path": "golang.org/x/sys",
+			"Version": "v0.48.0",
+			"Indirect": true
+		},
+		{
+			"Path": "golang.org/x/time",
+			"Version": "v0.16.0",
+			"Indirect": true
+		},
+		{
+			"Path": "gopkg.in/check.v1",
+			"Version": "v1.0.0-20190902080502-41f04d3bba15",
+			"Indirect": true
+		}
+	],
+	"Exclude": null,
+	"Replace": null,
+	"Retract": null,
+	"Tool": null
+}

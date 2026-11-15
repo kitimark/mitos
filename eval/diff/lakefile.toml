@@ -1,0 +1,17 @@
+name = "mitos-diff"
+defaultTargets = ["mitos-diff"]
+
+[leanOptions]
+warningAsError = true
+
+[[require]]
+name = "acme"
+path = "../../examples/acme"
+
+[[lean_lib]]
+name = "Diff"
+globs = ["Diff.+"]
+
+[[lean_exe]]
+name = "mitos-diff"
+root = "Main"

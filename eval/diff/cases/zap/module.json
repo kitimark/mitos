@@ -1,0 +1,48 @@
+{
+	"Module": {
+		"Path": "go.uber.org/zap"
+	},
+	"Go": "1.19",
+	"Require": [
+		{
+			"Path": "github.com/stretchr/testify",
+			"Version": "v1.8.1"
+		},
+		{
+			"Path": "go.uber.org/goleak",
+			"Version": "v1.3.0"
+		},
+		{
+			"Path": "go.uber.org/multierr",
+			"Version": "v1.10.0"
+		},
+		{
+			"Path": "go.yaml.in/yaml/v3",
+			"Version": "v3.0.4"
+		},
+		{
+			"Path": "github.com/davecgh/go-spew",
+			"Version": "v1.1.1",
+			"Indirect": true
+		},
+		{
+			"Path": "github.com/kr/text",
+			"Version": "v0.2.0",
+			"Indirect": true
+		},
+		{
+			"Path": "github.com/pmezard/go-difflib",
+			"Version": "v1.0.0",
+			"Indirect": true
+		},
+		{
+			"Path": "gopkg.in/yaml.v3",
+			"Version": "v3.0.1",
+			"Indirect": true
+		}
+	],
+	"Exclude": null,
+	"Replace": null,
+	"Retract": null,
+	"Tool": null
+}
