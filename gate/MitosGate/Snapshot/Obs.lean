@@ -21,7 +21,6 @@ def reviewPosts (r : Reads) : List Post :=
   r.reviewComments.getD [] ++
     ((r.reviews.getD []).filter counts).map fun v => ⟨v.login, none, v.submitted, v.submitted, v.body⟩
 
-/-- A post edited at or after the approval also spoke after it, as `unanswered` reads an edit. -/
 def spokeInReview (g : Global) (r : Reads) (ws : List Word) : Bool :=
   match Land.newestOwner ws with
   | some (.ownerLand m) =>
