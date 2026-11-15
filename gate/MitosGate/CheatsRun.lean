@@ -229,26 +229,58 @@ def resolveDir (root : System.FilePath) (specified : Option String) : System.Fil
     let path := System.FilePath.mk p
     if path.isAbsolute then path else root / path
 
-/-- A trailing separator is `path/.`, and `lstat` then follows a symlink to a
-directory. The same lookup follows a path that already ends in `/.`. Drop
-separators and a trailing `/.` until the last component is the name that was
-given. The lookup still does not resolve the link. A path that is only
-separators, or only `/.`, stays as it is. -/
-def withoutTrailingSep (p : System.FilePath) : System.FilePath :=
-  ⟨go p.toString p.toString.length⟩
+/-- Characters of a path with trailing separators, and a trailing `sep` + `.`,
+removed. A trailing separator is that `/.` form: `lstat` follows a symlink to
+a directory either way. This does not resolve a link. A list that is only
+separators, or only `sep` + `.`, stays as it is. The statements are on `List
+Char` because a `String` literal does not reduce in the kernel. -/
+def stripTrailList (sep : Char) (seps : List Char) (cs : List Char) : List Char :=
+  go cs cs.length
 where
-  go (s : String) (fuel : Nat) : String :=
+  go (cs : List Char) (fuel : Nat) : List Char :=
     match fuel with
-    | 0 => s
+    | 0 => cs
     | fuel + 1 =>
-      let t := (s.dropEndWhile fun c => System.FilePath.pathSeparators.contains c).toString
-      let u := if t.isEmpty then s else t
-      let dot := System.FilePath.pathSeparator.toString ++ "."
-      if u.endsWith dot then
-        let v := (u.dropEnd dot.length).toString
-        if v.isEmpty || v.length >= s.length then s else go v fuel
-      else if u.length >= s.length then u
-      else go u fuel
+      let trimmed := cs.reverse.dropWhile seps.contains |>.reverse
+      let u := if trimmed.isEmpty then cs else trimmed
+      let dot :=
+        match u.getLast? with
+        | some '.' =>
+          match u.dropLast.getLast? with
+          | some c => c == sep
+          | none => false
+        | _ => false
+      let next :=
+        if dot then
+          let v := u.dropLast.dropLast
+          if v.isEmpty then cs else v
+        else u
+      if next.length >= cs.length then next else go next fuel
+
+def stripTrail (sep : Char) (seps : List Char) (s : String) : String :=
+  String.ofList (stripTrailList sep seps s.toList)
+
+def withoutTrailingSep (p : System.FilePath) : System.FilePath :=
+  ⟨stripTrail System.FilePath.pathSeparator System.FilePath.pathSeparators p.toString⟩
+
+theorem stripTrail_list (sep : Char) (seps : List Char) (s : String) :
+    stripTrail sep seps s = String.ofList (stripTrailList sep seps s.toList) := rfl
+
+theorem stripTrailList_plain :
+    stripTrailList '/' ['/'] ['s', 'h', 'a', 'r', 'd'] = ['s', 'h', 'a', 'r', 'd'] := by
+  decide
+
+theorem stripTrailList_slash :
+    stripTrailList '/' ['/'] ['s', 'h', 'a', 'r', 'd', '/'] = ['s', 'h', 'a', 'r', 'd'] := by
+  decide
+
+theorem stripTrailList_dot :
+    stripTrailList '/' ['/'] ['s', 'h', 'a', 'r', 'd', '/', '.'] = ['s', 'h', 'a', 'r', 'd'] := by
+  decide
+
+theorem stripTrailList_dotSlash :
+    stripTrailList '/' ['/'] ['s', 'h', 'a', 'r', 'd', '/', '.', '/'] = ['s', 'h', 'a', 'r', 'd'] := by
+  decide
 
 /-- `metadata` follows a symlink, so a link never counts as its target's type. -/
 def isSymlinkFree (p : System.FilePath) (t : IO.FS.FileType) : IO Bool := do
