@@ -1,5 +1,5 @@
 name = "mitos-score"
-defaultTargets = ["mitos-score"]
+defaultTargets = ["mitos-score", "Policy"]
 
 [[require]]
 name = "acme"
@@ -7,6 +7,9 @@ path = "../../examples/acme"
 
 [[lean_lib]]
 name = "Score"
+
+[[lean_lib]]
+name = "Policy"
 
 [[lean_exe]]
 name = "mitos-score"

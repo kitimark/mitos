@@ -67,11 +67,15 @@ modules: one topic per file.
   files, and the facts it takes from one. 37 lines. It copies the layout of
   `examples/acme/Plugins/GoMod.lean`: imports, one namespace, `open Mitos`, the definitions, then
   the theorems.
-- `eval/score/Score.lean`: two added lines, `import Score.GoMod` and the first line of the body
-  of `factsOf`. 141 → 143 lines. Nothing else in the file changes.
+- `eval/score/Score.lean`: the fixture adds `import Score.GoMod` and the first line of
+  `factsOf`. #325 adds the absent-kind check in `score`.
 - `eval/fixtures/gomod/` *(new)*: `.gitattributes` (`* -text`, the toy's), `labels.tsv` (6
   lines), and 8 go.mod files in 7 repos under `repos/`, 3 to 15 lines each. It copies the layout
   of `eval/fixtures/toy/`.
+- `eval/score/Policy.lean` *(#325)*: the scorecard text for the three rules below. It imports
+  `Score`. It is its own library and a default target in `eval/score/lakefile.toml`, because a
+  module that imports `Score` cannot be imported by `Score`, and otherwise `lake build` would
+  not elaborate it. #325 also adds the absent-kind check in `score` and four `reads` theorems.
 
 ### How the scorer reads a fixture on `main`
 
@@ -544,7 +548,8 @@ owner_decisions:
     on 84 of 84 facts), so they cannot show the two gaps; and they carry licences (#160 item 2).
   - D3. Labels follow `replace` (L2) and include `// indirect` requirements (L3). To turn L3, see
     F7.
-  - D4. No requirement between two modules of one repo, because Q1 has no rule.
+  - D4. The fixture still has no requirement between two modules of one repo, so F2 stays put.
+    The rule for that edge is Q1, decided for #325 and pinned outside this fixture.
   - D5. No CI change here; `.github/` is P2-012's.
   - D6. A quoted path is a labelled miss, not left out of the labels, so the card shows the
     model's known gap, as the toy's CRLF file does. If the owner prefers a fixture with no known
@@ -676,14 +681,29 @@ Rejected:
 
 ### Open questions and risks
 
-- Q1. A module that requires another module of its own repo gives a self-edge, because `matchesB`
-  ignores repos. Should a label list it, or should the scorer leave self-edges out? The fixture
-  has none until that is ruled.
-- Q2. A label whose kind no fact has, such as `go-mod`, scores as a miss without an error. Should
-  the scorer stop on it? That edits `Score.lean` beyond this cell, or P2-010's module.
-- Q3. The go command ignores modules under `testdata/` and under directories whose names start
-  with `.` or `_`; `reads` does not. It matters only on real repos, such as P2-008's pins. Should
-  `reads` follow Go there?
+- Q1. Decided for #325: a repo-level label includes a dependency between two modules of the same
+  repo, and the scorer keeps that self-edge. `matchesB` matches on identity, and `Chain.repoKey`
+  records the two repos even when they are equal. Dropping the edge only in the scorer would
+  score a different graph from `Mitos.Impl.resolve`. `Policy.labelled_same_repo_dependency_is_a_hit`
+  and `Policy.unlabelled_same_repo_dependency_is_a_false_positive` pin the scorecard: labelled, it
+  is a hit; unlabelled, it is a false positive. The fixture still has no such edge (D4), so F2
+  does not move.
+- Q2. Decided for #325: `score` rejects a label whose identity kind is absent from the extracted
+  facts, with `label kind … is not among the extracted facts`. A misspelled kind is not a measured
+  miss. A label whose kind does occur, and whose edge does not, stays a miss.
+  `Policy.absent_label_kind_is_an_error` and `Policy.label_of_a_present_kind_stays_a_miss` pin both,
+  and `absent_kind_is_reported` pins the predicate in the kernel.
+- Q3. Decided for #325: `reads` keeps every file named `go.mod`, including under `testdata` and
+  under directories whose names start with `.` or `_`. Go's module-root lookup, `findModuleRoot`
+  in go1.24.7 `src/cmd/go/internal/modload/init.go`, returns the nearest file named `go.mod` and
+  does not skip those names. The skip is the package walk, `walkPkgs` in `search.go`, which also
+  stops at every nested `go.mod`, including `tools/go.mod`, which this fixture scores.
+  `reads_testdata`, `reads_dot_directory`, `reads_underscore_directory`, `reads_under_testdata` and
+  `Policy.go_mod_under_testdata_dot_and_underscore_is_scored` pin it.
+- The five scorecard equalities use `native_decide`. Kernel `decide` exceeds the recursion limit
+  on `score` and `render`. Each of those theorems depends on one `native_decide` axiom besides
+  `propext`, `Classical.choice` and `Quot.sound`. `absent_kind_is_reported` and the `reads_*`
+  theorems are `decide`.
 - Q4. Should check 5 become a nightly step next to P2-012's Go refresh?
 - Not verified: the run on CI's machine, and check 5 with a Go other than 1.24.7.
 

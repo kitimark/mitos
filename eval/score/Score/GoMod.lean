@@ -23,6 +23,14 @@ theorem not_reads_backup : reads "go.mod.orig" = false := by decide
 
 theorem not_reads_directory : reads "go.mod/README" = false := by decide
 
+theorem reads_testdata : reads "testdata/go.mod" = true := by decide
+
+theorem reads_dot_directory : reads ".hidden/go.mod" = true := by decide
+
+theorem reads_underscore_directory : reads "_scratch/go.mod" = true := by decide
+
+theorem reads_under_testdata : reads "pkg/testdata/extra/go.mod" = true := by decide
+
 theorem facts_eq (text : String) :
     facts text = (Models.GoMod.facts text).map (·, .extractor "GoMod") := by
   rw [facts, _root_.GoMod.run_eq]
