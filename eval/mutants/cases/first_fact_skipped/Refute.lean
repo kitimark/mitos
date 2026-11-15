@@ -29,7 +29,7 @@ theorem resolve_total : ¬ Spec.Total Impl.resolve := by
 
 theorem resolve_retract_exact : ¬ Spec.RetractExact Impl.resolve := by
   intro h
-  have := h gs (.humanDeclaredOutsideSource "d") (by unfold WellFormed; decide) (1, 2)
+  have := h gs (.humanDeclaredOutsideSource "d") (by unfold WellFormed; decide) (.direct 1 2)
   revert this
   decide
 

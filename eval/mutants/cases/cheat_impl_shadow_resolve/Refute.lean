@@ -10,14 +10,14 @@ def loc (id : Nat) (repo : String) (kind : FactKind) : Located :=
 
 def bogus : Edge :=
   { requiringRepo := "a", providingRepo := "b", ident := ⟨"npm", "lib"⟩, scope := .runtime,
-    requiringFactId := 0, providingFactId := 1, assumes := [], status := .inferred }
+    key := .direct 0 1, assumes := [], status := .inferred }
 
 theorem resolve_assumptions_exact : ¬ Mitos.Spec.AssumptionsExact Mitos.Impl.resolve := by
   intro h
   have := h [loc 0 "a" .requires, loc 1 "b" .provides]
     (by unfold WellFormed; decide) bogus (List.mem_singleton_self _)
-    (loc 0 "a" .requires) (by simp) (loc 1 "b" .provides) (by simp)
-    rfl rfl (.extractor "x")
-  simp [bogus, loc] at this
+    (Chain.direct (loc 0 "a" .requires) (loc 1 "b" .provides)) (by decide) rfl
+  revert this
+  decide
 
 end Mitos.Refute

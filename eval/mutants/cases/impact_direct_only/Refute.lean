@@ -6,7 +6,7 @@ open Mitos
 
 def edge (src dst : String) : Edge :=
   { requiringRepo := src, providingRepo := dst, ident := ⟨"npm", "lib"⟩, scope := .runtime,
-    requiringFactId := 0, providingFactId := 0, assumes := [],
+    key := .direct 0 0, assumes := [],
     status := .confirmed }
 
 def es : List Edge := [edge "b" "a", edge "c" "b"]
