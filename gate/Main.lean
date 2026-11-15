@@ -18,8 +18,11 @@ def lockedSpecImports : List String := ["Init", "Std", "Mitos.Core"]
 def usage : String := "usage:
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.*; spec never imports impl)
-  mitos-gate lock [--check]                      write or check statements.lock
-  mitos-gate lock --check-header                 the first two lines match MitosGate.Lock.header
+  mitos-gate lock [--check]                      write or check statements.lock; either fails on a
+                                                 module under core/Mitos/Core/ that Mitos.Core does
+                                                 not import, directly or transitively
+  mitos-gate lock --check-header                 statements.lock starts with MitosGate.Lock.header,
+                                                 the newline after its second line included
   mitos-gate lock-models --workspace <dir> [--check]
                                                  write or check <dir>/models.lock, as gate 0 reads the models
   mitos-gate accept --workspace <dir> --plugin <Name> --model <Module.const>
@@ -79,7 +82,7 @@ partial def parseAccept (args : List String) (c : Accept.Config) : Except String
 
 def lockHeaderStatus : IO UInt32 := do
   let txt ← IO.FS.readFile "statements.lock"
-  if Lock.firstTwoLinesMatchHeader txt then
+  if Lock.startsWithHeader txt then
     IO.println (ciLine "statements.lock header matches MitosGate.Lock.header")
     return 0
   IO.eprintln (ciLine "statements.lock header does not match MitosGate.Lock.header")
@@ -102,12 +105,34 @@ def writeOrCheck (file : System.FilePath) (txt : String) (check : Bool) (count s
   IO.println (ciLine s!"{file} is out of date: {stale}.")
   return 1
 
+/-- Fails on a module under `core/Mitos/Core/` that `env`, the environment of `Mitos.Core`, does
+not hold. Lake builds every module there, and `statements.lock` lists only the declarations of the
+modules `env` holds (`Lock.unreached`). -/
+def lockReach (env : Lean.Environment) : IO UInt32 := do
+  let dir : System.FilePath := "core" / "Mitos" / "Core"
+  unless ← dir.isDir do
+    IO.println (ciLine s!"{dir} is not a folder here, so its modules cannot be checked against statements.lock: run lock from the repository root")
+    return 1
+  let srcs ← Lock.sourceModules dir `Mitos.Core
+  let missed := Lock.unreached srcs.toList env.header.moduleNames.contains
+  if missed.isEmpty then
+    IO.println (ciLine s!"every module under {dir}/ is reached from Mitos.Core ({srcs.size} modules)")
+    return 0
+  for m in missed do
+    IO.println (ciLine s!"{Lean.modToFilePath "core" m "lean"}: Mitos.Core does not import {m}, directly or transitively, so statements.lock has no line for its declarations")
+  let n := missed.length
+  let (noun, verb, it) := if n == 1 then ("module", "is", "it") else ("modules", "are", "each")
+  IO.println (ciLine s!"{n} {noun} under {dir}/ {verb} not reached from Mitos.Core: import {it} from core/Mitos/Core.lean, which is a spec change, or delete it")
+  return 1
+
 def lockStatements (check : Bool) : IO UInt32 := do
   let headerCode ← if check then lockHeaderStatus else pure 0
-  let es ← Lock.entries `Mitos.Core [`Mitos.Core]
+  let env ← Lock.importRoot `Mitos.Core
+  let es ← Lock.entries env [`Mitos.Core]
   let code ← writeOrCheck "statements.lock" (Lock.render es) check s!"{es.size} declarations"
     "the meaning of the trusted core changed"
-  return if headerCode != 0 || code != 0 then 1 else 0
+  let reachCode ← lockReach env
+  return if headerCode != 0 || code != 0 || reachCode != 0 then 1 else 0
 
 /-- Writes or checks `<workspace>/models.lock`. Gate 0's walker reads the models, and gate 0 reads
 back what this writes (`Accept.lockEntries_renderLock`). An I/O error is printed as one `::error::`
