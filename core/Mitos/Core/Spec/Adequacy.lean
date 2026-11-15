@@ -19,6 +19,13 @@ theorem wfAI : WellFormed [req, provAI] := by unfold WellFormed; decide
 
 theorem wf1 : WellFormed [req] := by unfold WellFormed; decide
 
+def provDeclared : Located :=
+  { prov with id := 2, path := "PROVIDES", origin := .humanDeclaredOutsideSource "sdk/PROVIDES" }
+
+def twoProvisions : List Located := [req, prov, provDeclared]
+
+theorem wfTwoProvisions : WellFormed twoProvisions := by unfold WellFormed; decide
+
 def goodEdge : Edge :=
   { requiringRepo := "web", providingRepo := "sdk", ident := req.fact.ident, scope := .runtime,
     key := .direct 0 1,
@@ -96,6 +103,58 @@ theorem doubled_impact_not_nodup : ¬ ImpactNodup (fun _ _ => ["web", "web"]) :=
   intro h
   have := h [goodEdge] "sdk"
   simp at this
+
+theorem twoProvisions_derivations :
+    derivations twoProvisions = [Chain.direct req prov, Chain.direct req provDeclared] := by
+  decide
+
+theorem sound_records_the_derivation {R : Resolver} (hs : Sound R) :
+    ∀ e ∈ (R [req, prov]).edges,
+      e.key = Derivation.direct 0 1 ∧ e.repoKey = goodEdge.repoKey := by
+  intro e he
+  obtain ⟨c, hc, hk, hr⟩ := hs [req, prov] wf e he
+  have hd : derivations [req, prov] = [Chain.direct req prov] := by decide
+  rw [hd, List.mem_singleton] at hc
+  subst hc
+  exact ⟨hk.symm, hr.symm⟩
+
+theorem complete_keeps_both_derivations {R : Resolver} (hc : Complete R) :
+    (∃ e ∈ (R twoProvisions).edges, e.key = Derivation.direct 0 1) ∧
+      ∃ e ∈ (R twoProvisions).edges, e.key = Derivation.direct 0 2 := by
+  have h := hc twoProvisions wfTwoProvisions
+  rw [twoProvisions_derivations] at h
+  exact ⟨h (Chain.direct req prov) (by simp), h (Chain.direct req provDeclared) (by simp)⟩
+
+theorem unresolved_exact_skips_resolved {R : Resolver} (hu : UnresolvedExact R) :
+    0 ∉ (R [req, prov]).unresolved := by
+  intro h
+  obtain ⟨r, -, hid, -, hn⟩ := (hu [req, prov] wf 0).mp h
+  exact hn (Chain.direct req prov) (by decide) hid.symm
+
+theorem assumptions_exact_lists_leaf_origins {R : Resolver} (ha : AssumptionsExact R) :
+    ∀ e ∈ (R twoProvisions).edges, e.key = Derivation.direct 0 2 →
+      ∀ a, a ∈ e.assumes ↔ (a = req.origin ∨ a = provDeclared.origin) := by
+  intro e he hk a
+  have hd : Chain.direct req provDeclared ∈ derivations twoProvisions := by
+    rw [twoProvisions_derivations]; simp
+  obtain ⟨h1, h2⟩ := ha twoProvisions wfTwoProvisions e he _ hd hk.symm
+  have ho : (Chain.direct req provDeclared).origins = [req.origin, provDeclared.origin] := rfl
+  rw [ho] at h1 h2
+  constructor
+  · intro h; simpa using h1 a h
+  · intro h; exact h2 a (by simpa using h)
+
+theorem status_honest_two_provisions_inferred {R : Resolver} (hh : StatusHonest R) :
+    ∀ e ∈ (R twoProvisions).edges, e.requiringFactId = 0 → e.status = .inferred := by
+  intro e he hr
+  cases hs : e.status with
+  | inferred => rfl
+  | confirmed =>
+    obtain ⟨-, hall⟩ := (hh twoProvisions wfTwoProvisions e he).mp hs
+    rw [twoProvisions_derivations] at hall
+    have h1 := hall (Chain.direct req prov) (by simp) hr.symm
+    have h2 := hall (Chain.direct req provDeclared) (by simp) hr.symm
+    exact absurd (h1.trans h2.symm) (by decide)
 
 /-- A file where character offsets and byte offsets differ. -/
 def accented : String := "é sdk"
