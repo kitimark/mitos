@@ -77,6 +77,17 @@ def OwnerLandIsTyped : Prop :=
       footer c.body.toList = false ∧ m.said = 2 * c.id ∧
       ∃ arg, ownerLines c.body.toList = .ok [.land arg] ∧ target x pushes c.created arg = some m.about
 
+def ApprovalIsTypedAndNamed : Prop :=
+  ∀ (x : Ctx) cs pushes b m, Word.ownerLand m ∈ (words x cs pushes b).1 → m.approves = true →
+    ∃ c ∈ cs, c.login = x.owner ∧ c.slug = none ∧ c.updated = c.created ∧
+      footer c.body.toList = false ∧ m.said = 2 * c.id ∧ onlyWords c.body.toList = true ∧
+      ∃ arg, arg ≠ [] ∧ ownerLines c.body.toList = .ok [.land arg] ∧
+        resolve x.known arg = some m.about
+
+def TypedCommentIsAWord : Prop :=
+  ∀ (x : Ctx) cs pushes b (c : Comment), c ∈ cs → typed x c = true →
+    ∃ w ∈ (words x cs pushes b).1, w.byOwner = true ∧ 2 * c.id ≤ w.said
+
 theorem place_mem {w u : Word} {vs : List Word} (h : u ∈ place w vs) :
     u = w ∨ u ∈ vs ∨ u = .ownerHold w.said := by
   induction vs with
@@ -350,8 +361,10 @@ theorem wordTraces : WordTraces := by
     · exact .inl h
   · exact ⟨.inr rfl, hpos w hw⟩
 
-theorem ownerLandIsTyped : OwnerLandIsTyped := by
-  intro x cs pushes b m hm
+theorem ownerLand_read {x : Ctx} {cs : List Comment} {pushes : List Carry.Push} {b : Bool}
+    {m : Mark} (hm : Word.ownerLand m ∈ (words x cs pushes b).1) :
+    ∃ c ∈ cs, c.login = x.owner ∧ c.slug = none ∧ c.updated = c.created ∧
+      ownerRead x pushes c.created c.body.toList = .land m.about m.approves ∧ m.said = 2 * c.id := by
   obtain ⟨⟨c, hc, hw⟩ | hh, -⟩ := wordTraces x cs pushes b _ hm
   · refine ⟨c, hc, ?_⟩
     have hb := word_byOwner hw
@@ -363,15 +376,52 @@ theorem ownerLandIsTyped : OwnerLandIsTyped := by
           rw [read_typed ho hu hs] at hw
           refine ⟨ho, rfl, hu, ?_⟩
           cases hr : ownerRead x pushes c.created c.body.toList with
-          | land s =>
+          | land s a =>
             rw [hr] at hw
             simp only [Read.word, Read.pos, Option.some.injEq, Land.Word.ownerLand.injEq] at hw
             subst hw
-            obtain ⟨arg, hl, ht⟩ := ownerRead_land hr
-            exact ⟨ownerLines_footer hl, rfl, arg, hl, ht⟩
+            exact ⟨rfl, rfl⟩
           | _ => rw [hr] at hw; simp [Read.word] at hw
       · rw [read_edited ho hu] at hw; simp [Read.word] at hw
     · simp [read, ho, Read.word] at hw
   · cases hh
+
+theorem ownerLandIsTyped : OwnerLandIsTyped := by
+  intro x cs pushes b m hm
+  obtain ⟨c, hc, ho, hs, hu, hr, hsaid⟩ := ownerLand_read hm
+  obtain ⟨arg, hl, ht, -⟩ := ownerRead_land hr
+  exact ⟨c, hc, ho, hs, hu, ownerLines_footer hl, hsaid, arg, hl, ht⟩
+
+theorem approvalIsTypedAndNamed : ApprovalIsTypedAndNamed := by
+  intro x cs pushes b m hm ha
+  obtain ⟨c, hc, ho, hs, hu, hr, hsaid⟩ := ownerLand_read hm
+  obtain ⟨arg, hl, ht, hap⟩ := ownerRead_land hr
+  rw [ha] at hap
+  have hap' := hap.symm
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hap'
+  exact ⟨c, hc, ho, hs, hu, ownerLines_footer hl, hsaid, hap'.2, arg, hap'.1, hl,
+    target_named hap'.1 ht⟩
+
+theorem typedCommentIsAWord : TypedCommentIsAWord := by
+  intro x cs pushes b c hc ht
+  simp only [typed, Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none,
+    Bool.not_eq_true'] at ht
+  obtain ⟨⟨ho, hs⟩, hf⟩ := ht
+  have hby : (read x pushes c).byOwner = true := by
+    by_cases hu : c.updated = c.created
+    · rw [read_typed ho hu hs]; exact ownerRead_byOwner hf
+    · rw [read_edited ho hu]; rfl
+  obtain ⟨w, hw, hwb, hws⟩ := byOwner_word hby ((read x pushes c).pos cs c)
+  obtain ⟨u, hu, hus, hue⟩ := arrange_keeps (mem_said.2 (.inr ⟨c, hc, hw⟩) : w ∈ said x cs pushes b)
+  refine ⟨u, hu, ?_, ?_⟩
+  · rcases hue with rfl | rfl
+    · exact hwb
+    · rfl
+  · rw [hus, hws]
+    rcases pos_cases (read x pushes c) cs c with h | h <;> rw [h]
+    · exact Nat.le_refl _
+    · have := (lastBy_ge cs c).1
+      simp only [editPos]
+      omega
 
 end MitosGate.Speech

@@ -17,14 +17,30 @@ def complete (g : Global) (p : Pull) (r : Reads) : Bool :=
 def ctx (g : Global) (p : Pull) (r : Reads) : Speech.Ctx :=
   { owner := g.owner, pr := p.number, known := known ((activity p r).getD []) }
 
+def reviewPosts (r : Reads) : List Post :=
+  r.reviewComments.getD [] ++
+    ((r.reviews.getD []).filter counts).map fun v => ⟨v.login, none, v.submitted, v.submitted, v.body⟩
+
+def spokeInReview (g : Global) (r : Reads) (ws : List Word) : Bool :=
+  match Land.newestOwner ws with
+  | some (.ownerLand m) =>
+    (r.comments.getD []).any fun c => 2 * c.id == m.said &&
+      (reviewPosts r).any fun s => speaks g s && decide (c.created ≤ s.created)
+  | _ => false
+
+def withReviewSpeech (g : Global) (p : Pull) (r : Reads) (ws : List Word) : List Word :=
+  if spokeInReview g r ws then
+    ws ++ [.ownerSpoke (2 * Speech.top (ctx g p r) (r.comments.getD []) + 2)]
+  else ws
+
 def obs (g : Global) (p : Pull) (r : Reads) (x : Git) : Obs :=
   { pr := p.number, updatable := updatable g p, enforced := enforced g, head := p.head,
     pushes := ((activity p r).getD []).map toLand, ids := x.ids, paths := r.files, base := x.base,
     gate := gateOf p.head (r.checks.getD []), author := (dashboardCell g p.number).bind authorOf,
     verdicts := ((dashboardCell g p.number).map (verdictsOf (ctx g p r).known)).getD [],
     botAt := botAt p.head (r.checks.getD []) (r.reviews.getD []), delegates := Speech.delegates,
-    words := (Speech.words (ctx g p r) (r.comments.getD []) ((activity p r).getD [])
-      (complete g p r)).1,
+    words := withReviewSpeech g p r (Speech.words (ctx g p r) (r.comments.getD [])
+      ((activity p r).getD []) (complete g p r)).1,
     rest := rest g p r }
 
 def abouts : List Word → List Sha
@@ -74,11 +90,94 @@ def RestNeedsAnswersAndTheLabel : Prop :=
     oneFooter p.body = true ∧ unanswered g (posts r) = [] ∧
       ((r.files.map (·.any specPath)).getD true = true → "spec-approved" ∈ p.labels)
 
+def KeptMergeIsTheOwnersTypedApproval : Prop :=
+  ∀ g p r x q h e, Land.next q = some (e, obs g p r x) → Land.plan q = .merge p.number h →
+    (obs g p r x).kept = true →
+    ∃ c ∈ r.comments.getD [], c.login = g.owner ∧ c.slug = none ∧ c.updated = c.created ∧
+      Speech.footer c.body.toList = false ∧ Speech.onlyWords c.body.toList = true ∧
+      (∃ arg s, arg ≠ [] ∧ Speech.ownerLines c.body.toList = .ok [.land arg] ∧
+        Speech.resolve (ctx g p r).known arg = some s ∧ (obs g p r x).carries s = true) ∧
+      (∀ d ∈ r.comments.getD [], Speech.typed (ctx g p r) d = true → d.id ≤ c.id) ∧
+      ∀ s ∈ reviewPosts r, speaks g s = true → s.created < c.created
+
+theorem newestOwner_append_spoke (ws : List Word) (n : Nat) :
+    Land.newestOwner (ws ++ [.ownerSpoke n]) = Land.newestOwner ws := by
+  have h1 : Land.newestOwner (ws ++ [Word.ownerSpoke n]) =
+      Land.newestOwner ((ws ++ [Word.ownerSpoke n]).filter (·.decides)) :=
+    Land.onlyLandOrHoldChangesTheWord _
+  have h2 : Land.newestOwner ws = Land.newestOwner (ws.filter (·.decides)) :=
+    Land.onlyLandOrHoldChangesTheWord _
+  rw [h1, h2]
+  simp [List.filter_append, Land.Word.decides]
+
+theorem newestOwner_withReviewSpeech (g : Global) (p : Pull) (r : Reads) (ws : List Word) :
+    Land.newestOwner (withReviewSpeech g p r ws) = Land.newestOwner ws := by
+  unfold withReviewSpeech
+  split
+  · exact newestOwner_append_spoke _ _
+  · rfl
+
+theorem mem_withReviewSpeech {g : Global} {p : Pull} {r : Reads} {ws : List Word} {w : Word}
+    (h : w ∈ ws) : w ∈ withReviewSpeech g p r ws := by
+  unfold withReviewSpeech
+  split
+  · exact List.mem_append_left _ h
+  · exact h
+
+theorem keptMergeIsTheOwnersTypedApproval : KeptMergeIsTheOwnersTypedApproval := by
+  intro g p r x q h e hn hp hk
+  obtain ⟨e', o', hn', -, -, -, -, -, -, -, -, -, -, hw, hs, hcar, ha⟩ :=
+    Land.plannedMergeIsGated q p.number h hp
+  rw [hn] at hn'
+  cases hn'
+  have hw' : Land.newestOwner (Speech.words (ctx g p r) (r.comments.getD [])
+      ((activity p r).getD []) (complete g p r)).1 = some (.ownerLand e.mark) := by
+    rw [← newestOwner_withReviewSpeech g p r]; exact hw
+  obtain ⟨hmem, -, hmax⟩ := Land.newestOwner_max hw'
+  obtain ⟨c, hc, ho, hsl, hu, hf, hsaid, hon, arg, harg, hl, hres⟩ :=
+    Speech.approvalIsTypedAndNamed (ctx g p r) (r.comments.getD []) ((activity p r).getD [])
+      (complete g p r) e.mark hmem (ha hk)
+  refine ⟨c, hc, ho, hsl, hu, hf, hon, ⟨arg, e.mark.about, harg, hl, hres, hcar⟩,
+    fun d hd ht => ?_, fun s hsm hsp => ?_⟩
+  · obtain ⟨w, hwm, hwb, hwle⟩ :=
+      Speech.typedCommentIsAWord (ctx g p r) (r.comments.getD []) ((activity p r).getD [])
+        (complete g p r) d hd ht
+    have hle : w.said ≤ e.mark.said := by
+      cases w with
+      | ownerLand m' => exact hmax _ hwm rfl
+      | ownerHold n => exact hmax _ hwm rfl
+      | ownerSpoke s => exact hs s (mem_withReviewSpeech hwm)
+      | agentLand t m' => cases hwb
+    omega
+  · have hno : spokeInReview g r (Speech.words (ctx g p r) (r.comments.getD [])
+        ((activity p r).getD []) (complete g p r)).1 = false := by
+      cases hsr : spokeInReview g r (Speech.words (ctx g p r) (r.comments.getD [])
+        ((activity p r).getD []) (complete g p r)).1 with
+      | false => rfl
+      | true =>
+        have hin : Word.ownerSpoke (2 * Speech.top (ctx g p r) (r.comments.getD []) + 2) ∈
+            (obs g p r x).words := by
+          show _ ∈ withReviewSpeech g p r _
+          unfold withReviewSpeech
+          rw [hsr]
+          simp
+        have h1 := hs _ hin
+        have h2 := (Speech.top_ge (ctx g p r) (r.comments.getD [])).2 c hc
+        omega
+    simp only [spokeInReview, hw'] at hno
+    rw [List.any_eq_false] at hno
+    have h3 := hno c hc
+    simp only [Bool.and_eq_true, beq_iff_eq, not_and] at h3
+    have h4 := h3 hsaid.symm
+    rcases Nat.lt_or_ge s.created c.created with hlt | hge
+    · exact hlt
+    · exact absurd (List.any_eq_true.2 ⟨s, hsm, by simp [hsp, hge]⟩) h4
+
 theorem failedReadHolds : FailedReadHolds := by
   intro g p r x hc
   obtain ⟨n, hn⟩ := Speech.incompleteReadHolds (ctx g p r) (r.comments.getD []) ((activity p r).getD [])
   have h : Land.newestOwner (obs g p r x).words = some (.ownerHold n) := by
-    simp only [obs, hc]
+    simp only [obs, hc, newestOwner_withReviewSpeech]
     exact hn
   exact Land.holdWins _ n h
 
