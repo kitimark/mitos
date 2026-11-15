@@ -31,29 +31,19 @@ private theorem occursIn_eq_isInfixOf (pat s : List Char) :
 private theorem occursIn_iff {pat s : List Char} : occursIn pat s = true ↔ pat <:+: s := by
   rw [occursIn_eq_isInfixOf, List.isInfixOf_internal_iff_isInfix]
 
-/-! ## The comparator's last line
-
+/-!
 `lake comparator` (Lake's `CLI/Check.lean` at v4.35.0, which `lean-toolchain` pins) ends a judgment
 that does not pass in one handler: it prints `error: ` and the reason to stderr and returns 1. It
 prints that line after every sandboxed child it started has exited, and `bwrap` gives each child
 its own PID namespace, whose processes die with it, so nothing the plugin started can write after
-the line. The gate's `run` returns stdout and then stderr, so the line is the last of the output.
-
-Everything before it can hold text the plugin chose. The build log holds every message Lean prints
-about the plugin's source: gate 1 allows `#print`, which prints any string, and an error echoes the
-identifier it names. The exporter and the kernels report on the plugin's declarations too. So a
-failure is read from the last line alone, and only when the whole line is one of the comparator's
-reports. -/
+the line. -/
 
 /-- A report of the comparator's after its `error: `, as Lake's `Check/Compare.lean`,
 `Check/Axioms.lean` and `CLI/Check.lean` print it. -/
 private inductive Report
-  /-- `lead`, which ends with the opening quote, then a constant's name and `'`. -/
   | names (lead : String)
-  /-- A kernel's name, ` exited with ` and the kernel's exit code. -/
   | exits (kernel : String)
 
-/-- A kernel decodes a string literal in time quadratic in its length, so the pieces stay apart. -/
 private def Report.lead : Report → List Char
   | .names lead => lead.toList
   | .exits kernel => kernel.toList ++ " exited with ".toList
@@ -69,8 +59,6 @@ private structure ReportRule where
   failure : Failure
   reports : List Report
 
-/-- The kernels `--paranoid` adds, then Lean's own, which always runs. The gate's configurations
-name no other kernel. -/
 private def kernels : List String :=
   ["Lean paranoid", "lean4lean", "nanoda", "con-leche", "con-ron", "Lean default"]
 
@@ -99,8 +87,6 @@ private theorem rules_cover :
   refine ⟨by decide, fun f => ?_⟩
   cases f <;> decide
 
-/-- No report's lead is a prefix of another rule's, so a line matches at most one rule and the
-order of `rules` decides nothing. -/
 private theorem leads_apart :
     ∀ r₁ ∈ rules, ∀ r₂ ∈ rules, ∀ a ∈ r₁.reports, ∀ b ∈ r₂.reports,
       a.lead <+: b.lead → r₁.failure = r₂.failure := by
@@ -145,7 +131,6 @@ theorem Outcome.lastLine_append {pre l : List Char} (hl : '\n' ∉ l) :
     simpa using this
   simp [lastLine, lastLine.dropNewline, List.takeWhile_append_of_pos hp]
 
-/-- The lines of the text whose reverse is `r`, from the last, each without its newline. -/
 private def revLines (r : List Char) : List (List Char) :=
   go r [] []
 where
@@ -154,11 +139,9 @@ where
     | c :: rest, line, acc =>
       if c == '\n' then go rest [] (line :: acc) else go rest (c :: line) acc
 
-/-- The lines of `out` before its last line, from the last. -/
 private def linesBefore (out : List Char) : List (List Char) :=
   revLines (((Outcome.lastLine.dropNewline out.reverse).dropWhile (· != '\n')).drop 1)
 
-/-- A frame of a panic's backtrace: `<binary>(<symbol>+<offset>) [<address>]`. -/
 private def frame (line : List Char) : Bool :=
   occursIn " [0x".toList line && line.getLast? == some ']'
 
@@ -176,7 +159,6 @@ private def panicBefore (out : List Char) : Bool :=
     exportPanic line || (line == "backtrace:".toList && (rest.head?.map exportPanic).getD false)
   | [] => false
 
-/-- Lean's error when two modules that a module imports declare one name. -/
 private def importClash (line : List Char) : Bool :=
   "error: ".toList.isPrefixOf line && occursIn ", environment already contains '".toList line
 
@@ -184,13 +166,6 @@ private def importClash (line : List Char) : Bool :=
 def Outcome.childExited (code : String) : List Char :=
   "error: Child exited with ".toList ++ code.toList
 
-/-- The last line decides, when it is one of the comparator's reports. When it says only that a
-child failed, that child's output may name the failure:
-- exit code 134, the exporter's abort, after its panic for a constant the module does not declare;
-- exit code 1, a failed `lake build`, whose log holds Lean's error for a name declared twice. In the
-  plugin's run that log holds the plugin's text too, but this only chooses between `importClash`
-  and `noJudgment`, which `pluginFailure` reports at one gate. Gate 6's runs build no plugin
-  source. -/
 private def classify (out : List Char) : Failure :=
   let last := Outcome.lastLine out
   match Outcome.report last with
@@ -234,16 +209,11 @@ theorem Outcome.parse_ok {code : UInt32} {out : String} (h : Outcome.parse code 
     code = 0 :=
   (Outcome.parse_eq_ok_iff.mp h).1
 
-/-- A report in the comparator's last line decides the failure, whatever the output holds before
-it. -/
 theorem Outcome.parse_of_report {out : String} {pre l : List Char} {f : Failure}
     (hout : out.toList = pre ++ '\n' :: (l ++ ['\n'])) (hl : '\n' ∉ l) (hr : report l = some f) :
     Outcome.parse 1 out = .failed f := by
   simp [Outcome.parse, classify, hout, lastLine_append hl, hr]
 
-/-- A failed build, which the comparator reports as `error: Child exited with 1`, is read as no
-judgment or as an import clash, which the plugin's run reports at the same gate, whatever text the
-plugin printed before that line. -/
 theorem Outcome.parse_failed_build {out : String} (t : List Char)
     (hout : out.toList = t ++ "\nerror: Child exited with 1\n".toList) :
     Outcome.parse 1 out = .failed .noJudgment ∨ Outcome.parse 1 out = .failed .importClash := by
@@ -258,9 +228,6 @@ theorem Outcome.parse_failed_build {out : String} (t : List Char)
   · exact Or.inr (by simp [Outcome.parse, classify, hlast, hr, h134, hc])
   · exact Or.inl (by simp [Outcome.parse, classify, hlast, hr, h134, hc])
 
-/-- Every failure but `noJudgment` needs exit code 1, the code of the comparator's handler. It is
-the report in the last line, or, when that line says only that a child failed, a missing constant
-after exit code 134 or an import clash after exit code 1. -/
 theorem Outcome.parse_judged {code : UInt32} {out : String} {f : Failure}
     (h : Outcome.parse code out = .failed f) (hf : f ≠ .noJudgment) :
     code = 1 ∧ (report (lastLine out.toList) = some f ∨
@@ -325,7 +292,7 @@ error: Child exited with 134
 " = .failed .missingConst := by decide +kernel
 
 -- The comparator's own output in that case's judging directory, from a local run, with all but
--- one frame of the backtrace cut. The gate's log leaves the backtrace out (`comparatorTail`).
+-- one frame of the backtrace cut.
 example : Outcome.parse 1 "PANIC at LeanExport.dumpConstant LeanExport.Basic:254:48: Constant ToyRequire.complete not found in environment.
 backtrace:
 /lib/x86_64-linux-gnu/libc.so.6(+0x129ecc) [0x7f9eabb29ecc]
@@ -345,14 +312,11 @@ Lean default kernel rejected the solution
 error: Lean default exited with 1
 " = .failed .kernelReject := by decide +kernel
 
--- Lean's error when an adequacy module imports two modules that declare `model.examples`, without
--- the build's list of failed targets.
 example : Outcome.parse 1 "error: Models/ToyRequire/Adequacy.lean:1:0: import Models.ToyRequire.Examples failed, environment already contains 'Models.ToyRequire.model.examples' from Models.ToyRequire
 error: build failed
 error: Child exited with 1
 " = .failed .importClash := by decide +kernel
 
--- A kernel's rejection, whatever the output holds before the comparator's last line.
 example (t : List Char) (out : String)
     (h : out.toList = t ++ "\nerror: Lean default exited with 1\n".toList) :
     Outcome.parse 1 out = .failed .kernelReject :=
@@ -367,12 +331,10 @@ error: build failed
 error: Child exited with 1
 " = .failed .noJudgment := by decide +kernel
 
-/-! Text the plugin prints comes before the comparator's last line. Each text is from the case's
-`full.log` in a local run, with the lines that do not bear on the outcome cut. A kernel decodes a
-long string literal slowly, so the texts stay short. -/
+/-! Each text is from the case's `full.log` in a local run, with the lines that do not bear on the
+outcome cut. -/
 
--- `print_kernel_reject`: `#print` writes the comparator's kernel-rejection lines, and Lean's
--- error echoes `kernel_reject`; the build failed.
+-- `print_kernel_reject`.
 example : Outcome.parse 1 "Lean default kernel rejected the solution
 error: Lean default exited with 1
 error: Plugins/ToyRequire.lean:42:50: Unknown identifier `kernel_reject`
@@ -380,15 +342,13 @@ error: build failed
 error: Child exited with 1
 " = .failed .noJudgment := by decide +kernel
 
--- `print_illegal_axiom`: `#print` writes the comparator's report of an illegal axiom; the
--- statement does not match.
+-- `print_illegal_axiom`.
 example : Outcome.parse 1 "error: Illegal axiom detected: 'sorryAx'
 Build completed successfully (13 jobs).
 error: Challenge and solution theorem statement do not match: 'ToyRequire.complete'
 " = .failed .statement := by decide +kernel
 
--- `print_missing_const`: `#print` writes the exporter's panic and the comparator's exit line for
--- it; the build failed.
+-- `print_missing_const`.
 example : Outcome.parse 1 "info: Plugins/ToyRequire.lean:38:0: PANIC at LeanExport.dumpConstant LeanExport.Basic:254:48: Constant ToyRequire.complete not found in environment.
 error: Child exited with 134
 error: build failed
@@ -396,15 +356,14 @@ error: Child exited with 1
 " = .failed .noJudgment := by decide +kernel
 
 
--- A report counts only as a whole line.
 example : Outcome.parse 1 "Lean default kernel rejected the solution: error: Lean default exited with 1
 " = .failed .noJudgment := by decide +kernel
 
 example : Outcome.parse 1 "error: Lean default exited with 1 and more
 " = .failed .noJudgment := by decide +kernel
 
-/-! A failure is read only at exit code 1. Exit code 0 always comes with `Your solution is okay!`,
-and 2 means that the run could not start. -/
+/-! Exit code 0 always comes with `Your solution is okay!`, and 2 means that the run could not
+start. -/
 
 example : Outcome.parse 0 "Build completed successfully (11 jobs).
 " = .failed .noJudgment := by decide +kernel
