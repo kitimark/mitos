@@ -219,9 +219,9 @@ by one.
 9. In CI, `gate` is green at the head. The PR body says `Closes #202` and that the owner merges it.
 
 ## Done when
-- [ ] the paragraph is in `docs/process.md` verbatim, where "Where it goes" says, and nothing else
+- [x] the paragraph is in `docs/process.md` verbatim, where "Where it goes" says, and nothing else
       in the file changed
-- [ ] all `checks` pass locally ("Checks the builder runs", 1 to 8), and `gate` is green at the head
-- [ ] `P2-000` is gone from `.claude/scripts/plan-tasks.pending` if this file lands in this PR
-- [ ] no `sorry`, no new axioms (nothing in Lean changes)
-- [ ] run-log record written (ops/runs/)
+- [x] all `checks` pass locally ("Checks the builder runs", 1 to 8), and `gate` is green at the head
+- [x] `P2-000` is gone from `.claude/scripts/plan-tasks.pending` if this file lands in this PR
+- [x] no `sorry`, no new axioms (nothing in Lean changes)
+- [x] run-log record written (ops/runs/)

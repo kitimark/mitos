@@ -1,0 +1,1 @@
+{"task":"P2-000","role":"owner","model":"claude-sonnet-5-5","attempt":1,"iterations":1,"wall_min":15,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Inserted the design's paragraph verbatim; claim checks C1 to C6 hold on main at 0892ce4."}

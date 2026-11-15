@@ -76,6 +76,17 @@ CI cannot tell a spec PR from an impl PR, so keeping spec changes out of impl PR
 A file moved out of one of these paths counts as a change to it, and so does a path with non-ASCII
 characters.
 
+Two rows are the exception: P2-001a and P2-001b of `plan/phase-2.md`. Each lands as one PR that
+carries its spec change together with the implementation, the proofs and every other file the change
+breaks. Both change `Edge`, which `Mitos.Impl.*`, `Mitos.Proofs.*`, the scorer and the mutants use,
+so the spec change alone does not build. Phase 1's spec could land first because no implementation
+existed yet, and CI skips `lake comparator` while `core/Mitos/Proofs/Resolver.lean` is missing. Now
+a spec-only PR could pass `gate` only by deleting the implementation, which also switches the
+comparator off. Each row's PR is still a spec PR: it needs `spec-approved`, and the owner reviews
+its spec files (the paths above). Its body names each statement that differs from its row's task
+file on `main`, or says that none does, so the owner sees the statements apart from the proofs. Lean
+and the comparator check the rest at the same merge.
+
 ### The task file
 
 Every unit of work is a file in `tasks/`, written from `tasks/TEMPLATE.md`:
