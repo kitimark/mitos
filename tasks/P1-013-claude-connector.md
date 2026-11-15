@@ -435,9 +435,14 @@ esac
 +  paused | behind | pending) echo "coderabbit #$pr: $state: last reviewed $l, head $h$unchecked" ;;
 ```
 
-- The rule is the reader's own: `Snapshot.botAt` gives the commit CodeRabbit last reviewed, and
-  `Obs.reviewed` asks `carries` from it, whatever CodeRabbit's run at the head is doing. So
-  `paused`, `behind` and `pending` all read `reviewed` when `carry` covers the head.
+- The rule is the reader's, and the commit it starts from is not yet. `Obs.reviewed` asks
+  `carries` from `Snapshot.botAt`, whatever CodeRabbit's run at the head is doing, and this
+  sketch asks `carry.sh` from `last`. So `paused`, `behind` and `pending` all read `reviewed`
+  when `carry` covers the head. But `last` prefers the paused summary's commit, while `botAt`
+  takes the head when CodeRabbit's check there passed, and else the newest CodeRabbit review with
+  a body (deferrals, #245). If the summary names A and the newest review names B, and only A
+  carries to the head, `bot-review.sh` reads `reviewed` and asks for no review, while `land`
+  reads the head as not reviewed. PR 1 settles one selection and pins that case (#290, item 4).
 - A carried head posts no `@coderabbitai review` request, with or without `--request`. That is
   where the rule saves a paid review.
 - When the cover check cannot run, the answer is today's, with the suffix. That side costs one
