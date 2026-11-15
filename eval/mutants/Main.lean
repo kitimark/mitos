@@ -228,10 +228,7 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
   let genPath (k : Nat) : String := s!"Challenge/MutantsOutput{k}.lean"
   let numbered := (List.range gens.length).zip gens
   let outProbes ← Output.outProbes.mapM fun p => do
-    let ls ← match readChallenge p.source with
-      | .ok ls => pure ls
-      | .error e => throw s!"{p.path}: {e}"
-    match Output.refutationGen a.impls Output.probeDefs ls p.breaks with
+    match Output.refutationGen a.impls Output.probeDefs p.lines p.breaks with
     | .ok g => pure (p, g, s!"{moduleOf p.path |>.replace "." "/"}Gen.lean")
     | .error e => throw s!"{p.path}: {e}"
   let first := CrossCheck.probes.map fun p => (p.path, p.source)
@@ -284,11 +281,8 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
       throw ("the refutation reader read the Challenge otherwise than Lean's parser: " ++
         "; ".intercalate (pps.map (·.text)))
     for p in Output.parseProbes do
-      let ls ← match readChallenge p.source with
-        | .ok ls => pure ls
-        | .error e => throw s!"parse probe {p.name}: {e}"
       let (h, i, c) ← parsed p.source
-      let found := (Output.parseProblems ls h i c).map (·.key)
+      let found := (Output.parseProblems p.lines h i c).map (·.key)
       unless p.expect.all found.contains do
         throw s!"the parse check missed a known misread in probe {p.name}: expected {p.expect}, found {found}"
     build "the generated Challenges and the output check's probes" second (second.map (moduleOf ·.1))

@@ -41,12 +41,12 @@ theorem sortLines_eq_of_perm {l₁ l₂ : List String} (h : l₁.Perm l₂) :
     sortLines l₁ = sortLines l₂ := by
   have trans : ∀ a b c : String, decide (a ≤ b) = true → decide (b ≤ c) = true →
       decide (a ≤ c) = true := fun _ _ _ hab hbc =>
-    decide_eq_true (String.le_trans (of_decide_eq_true hab) (of_decide_eq_true hbc))
+    decide_eq_true (Std.le_trans (of_decide_eq_true hab) (of_decide_eq_true hbc))
   have total : ∀ a b : String, (decide (a ≤ b) || decide (b ≤ a)) = true := fun a b => by
-    rcases String.le_total a b with h | h <;> simp [h]
+    rcases Std.le_total (a := a) (b := b) with h | h <;> simp [h]
   apply List.Perm.eq_of_pairwise (le := fun a b => decide (a ≤ b) = true)
   · intro a b _ _ hab hba
-    exact String.le_antisymm (of_decide_eq_true hab) (of_decide_eq_true hba)
+    exact Std.le_antisymm (of_decide_eq_true hab) (of_decide_eq_true hba)
   · exact List.pairwise_mergeSort trans total _
   · exact List.pairwise_mergeSort trans total _
   · exact (List.mergeSort_perm _ _).trans (h.trans (List.mergeSort_perm _ _).symm)

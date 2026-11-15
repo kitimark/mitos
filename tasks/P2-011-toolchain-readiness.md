@@ -102,9 +102,12 @@ cut_line: PR A ships now: the nine probes rebuilt on `misread`, and nothing else
 P2-001a (recommended) or after P2-001b, never between two core PRs (plan). PR B ships only when
 (1) leanprover/lean4 has published v4.36.0, not an rc, (2) the canary for v4.36.0 has passed on
 `main` after PR A, and (3) no core PR is open. Until then the bump is deferred, and #147 stays
-open with this checklist. The three ContentId lines ride in PR B, because the deprecations are
+open with this checklist. The three ContentId lines were going to ride in PR B, because the deprecations are
 warnings that fail no step (Diagnosis 5), so landing them alone would cost an owner merge and two
-verdicts for no check. If the canary on v4.36.0 or on a later rc fails at a new step, that is a
+verdicts for no check. They landed with the probe PR instead: #147 asks for them before the bump,
+the probe PR already waits on the owner (it changes probe expectations), and `Std.le_trans`,
+`Std.le_total` and `Std.le_antisymm` elaborate on both v4.35.0 and v4.36.0-rc2. PR B does not
+repeat them. If the canary on v4.36.0 or on a later rc fails at a new step, that is a
 new readiness round under #147 (a fresh PR owner with this file), not part of PR B. If
 `lock --check` fails at v4.36.0, PR B stops and reports: a moved `statements.lock` is a spec
 change, and the owner decides (`spec-approved`).
@@ -396,6 +399,9 @@ After the round 10 Probes paragraph:
 > problems are in P2-011's task file.
 
 ### Sketch, PR B
+
+`sortLines_eq_of_perm` already uses `Std.le_trans`, `Std.le_total` and `Std.le_antisymm` (see
+cut_line). The proof below is what landed; PR B does not edit it again.
 
 `gate/MitosGate/ContentId.lean`, `sortLines_eq_of_perm` (lines 44, 46 and 49 change):
 
