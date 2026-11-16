@@ -18,6 +18,7 @@ def lockedSpecImports : List String := ["Init", "Std", "Mitos.Core"]
 def usage : String := "usage:
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.*; spec never imports impl)
+                                                 and for gate/MitosGate/Base/ (Init, Std, Lean.Data.Json, MitosGate.Base)
   mitos-gate lock [--check]                      write or check statements.lock; either fails on a
                                                  module under core/Mitos/Core/ that Mitos.Core does
                                                  not import, directly or transitively
@@ -165,8 +166,9 @@ def cli (args : List String) : IO UInt32 := do
   | ["imports"] =>
     let vs ← Imports.check "core" Imports.trustedCoreImports
     let vs := vs ++ (← Imports.check ("core" / "Mitos" / "Core") lockedSpecImports)
+    let vs := vs ++ (← Imports.check ("gate" / "MitosGate" / "Base") Imports.baseImports)
     for v in vs do IO.println (ciLine v)
-    IO.println s!"{vs.size} import violation(s) in core/"
+    IO.println s!"{vs.size} import violation(s) in core/ and gate/MitosGate/Base/"
     return if vs.isEmpty then 0 else 1
   | ["lock", "--check-header"] => lockHeaderStatus
   | ["lock"] => lockStatements false
