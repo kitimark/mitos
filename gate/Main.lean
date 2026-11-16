@@ -29,7 +29,7 @@ def usage : String := s!"usage:
                                                  appears only in {Imports.seamFile}, including comments;
                                                  that exact seam may also import it
   mitos-gate lock [--check]                      write or check statements.lock; either fails on a
-                                                 module under core/Mitos/Core/ that Mitos.Core does
+                                                 module under core/Mitos/Core/ that Mitos.Core.Spec does
                                                  not import, directly or transitively
   mitos-gate lock --check-header                 statements.lock starts with MitosGate.Lock.header,
                                                  the newline after its second line included
@@ -119,11 +119,12 @@ def coreSrcDir : System.FilePath := "core"
 
 def lockReach (core : Lock.ImportedRoot) : IO UInt32 := do
   let root := core.root
-  let dir := Lock.moduleDir coreSrcDir root
+  let scan : Lean.Name := `Mitos.Core
+  let dir := Lock.moduleDir coreSrcDir scan
   unless ← dir.isDir do
     IO.println (ciLine s!"{dir} is not a folder here, so its modules cannot be checked against statements.lock: run lock from the repository root")
     return 1
-  let srcs ← Lock.sourceModules coreSrcDir root
+  let srcs ← Lock.sourceModules coreSrcDir scan
   let missed := Lock.unreached srcs.toList core.env.header.moduleNames.contains
   if missed.isEmpty then
     IO.println (ciLine s!"every module under {dir}/ is reached from {root} ({srcs.size} modules)")
@@ -137,8 +138,8 @@ def lockReach (core : Lock.ImportedRoot) : IO UInt32 := do
 
 def lockStatements (check : Bool) : IO UInt32 := do
   let headerCode ← if check then lockHeaderStatus else pure 0
-  let core ← Lock.importRoot `Mitos.Core
-  let es ← Lock.entries core.env [core.root]
+  let core ← Lock.importRoot `Mitos.Core.Spec
+  let es ← Lock.entries core.env [`Mitos.Core]
   let code ← writeOrCheck "statements.lock" (Lock.render es) check s!"{es.size} declarations"
     "the meaning of the trusted core changed"
   let reachCode ← lockReach core

@@ -2,6 +2,7 @@ import MitosGate.Cheats
 import MitosGate.GateId
 import MitosGate.Lint
 import MitosGate.Outcome
+import MitosGate.Surface
 import MitosGate.Util
 
 namespace MitosGate.Accept
@@ -293,7 +294,11 @@ def provenance (c : Config) (pluginFile : System.FilePath) : GateM Inputs := do
   if !(← wsTc.pathExists) then errs := errs.push "workspace has no lean-toolchain"
   else if trim (← IO.FS.readFile wsTc) != trim tc then
     errs := errs.push s!"workspace toolchain differs from Mitos pin {trim tc}"
-  let core ← coreFiles c.mitosRoot
+  let read ← coreFiles c.mitosRoot
+  let mut core : Array (String × String) := #[]
+  match ← Surface.surfaceClosure read headerImports with
+  | .error e => errs := errs.push e
+  | .ok paths => core := read.filter fun f => paths.contains f.1
   let mut pluginSrc := ""
   if ← pluginFile.pathExists then pluginSrc ← IO.FS.readFile pluginFile
   else errs := errs.push s!"plugin file {pluginFile} not found"

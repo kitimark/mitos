@@ -1,4 +1,4 @@
-import Mitos.Core
+import Mitos.Core.Spec
 
 def Mitos.Impl.resolve : Mitos.Resolver := sorry
 def Mitos.Impl.impact : List Mitos.Edge → String → List String := sorry

@@ -1,0 +1,3 @@
+full=2
+comparator_only=reject@2
+why=Imports the resolver spec (`Mitos.Core.Spec`) from an otherwise honest plugin, which would be accepted if the judging directory still held every core file.

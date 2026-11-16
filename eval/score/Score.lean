@@ -1,4 +1,4 @@
-import Mitos.Core
+import Mitos.Core.Spec
 import Mitos.Impl.Resolve
 import Plugins.ToyRequire
 import Score.GoMod

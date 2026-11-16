@@ -14,7 +14,7 @@ name = "mitos-gate"
 srcDir = "gate"
 root = "Main"
 supportInterpreter = true
-needs = ["mitos-core/+Mitos.Core:olean"]
+needs = ["mitos-core/+Mitos.Core.Spec:olean"]
 
 [[lean_exe]]
 name = "mitos-lint-test"
