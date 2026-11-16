@@ -40,21 +40,32 @@ owner_decisions: The owner selected both manifests as trust infrastructure in #3
 
 Before the implementation, the new hook cases report four failures, covering critical and kept for each manifest.
 The hook's extracted jq definitions classify both manifests as neither critical nor kept before the change and as both after it.
-The four package manifests remain neither in the live jq run.
+The four package manifests remain neither in the live jq and compiled Lean runs.
+The positive and negative kernel fixtures and Land's axiom scan compile successfully.
+The REST, sourced-bash, and plan-task suites pass locally.
 
 This container's `/` and `/tmp` belong to uid 65534, while the task runs as uid 1000.
 The existing hook-state path checks refuse that root because they trust only uid 0 or the current user.
 The complete hook suite therefore also reports filesystem failures that precede this change.
 An isolated filesystem was attempted with bubblewrap, but its uid-map setup fails on a read-only filesystem.
-CI must supply the complete hook-suite result. No trust check was weakened.
+The full hook suite is not wired into CI.
+It passes in a disposable Ubuntu 24.04 container with a root-owned filesystem, with 619 successful assertions and no failures.
+The container receives `git archive` output and provides bash, git, jq, and gh without host mounts or credentials.
+No trust check was weakened.
+
+Local core checking and the paranoid comparator also encounter the read-only uid-map error.
+[CI run 43949754043](https://github.com/kitimark/mitos/actions/runs/43949754043) at `9b98486` passes checks, all three cheat shards, and prove, including core checking, the paranoid comparator, and honest toy acceptance.
+The local full gate build remains in progress through the unchanged Snapshot fixtures when this evidence is recorded.
 
 The root's fresh Comment Sicko pass accepts the implementation diff with no new comments, zero deletions, and no reshape flags.
-The implementation and this pass run on Codex. The required Claude Opus verifier is unavailable in this environment, so its review remains open.
+An independent `gpt-6-astra` review at `xhigh` reports no code findings at `9b98486`.
+CodeRabbit's review of that head passes with no actionable comments, and there are no owner comments to answer there.
+The implementation and the no-comments pass run on Codex. The required Claude Opus verifier is unavailable in this environment, so its review remains open.
 
 ## Done when
 
-- [ ] Applicable checks pass locally or have a recorded environment limitation and a passing CI result.
+- [x] Applicable checks pass locally or have a recorded environment limitation and a passing CI result.
 - [x] Both classifiers and both rule locations protect exactly the two judging manifests.
 - [x] The `/no-comments` pass has no open flags.
-- [ ] Owner and CodeRabbit feedback is answered at the PR head.
+- [x] Owner and CodeRabbit feedback is answered at the implementation head.
 - [ ] An independent verifier and the required Opus verifier review the final head.
