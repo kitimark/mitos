@@ -14,18 +14,20 @@ import MitosGate.WorkflowCli
 
 open MitosGate
 
-def lockedSpecImports : List String := ["Init", "Std", "Mitos.Core"]
-
 def usage : String := s!"usage:
   mitos-gate workflow parse <file>              refuse YAML outside the workflow subset
   mitos-gate workflow leaves <file>             print decoded workflow leaves as JSON lines
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
-  mitos-gate imports                             import rule for core/ (Init, Std, Mitos.*; spec never imports impl)
+  mitos-gate imports                             import rule for core/ (Init, Std, Mitos.Core, Mitos.Impl;
+                                                 core/Mitos/Proofs may also import Mitos.Proofs and Mathlib;
+                                                 spec imports only Init, Std, Mitos.Core)
+                                                 and for gate/ (Init, Std, Lean, MitosGate)
                                                  and for gate/MitosGate/Base.lean and gate/MitosGate/Base/
                                                  (Init, Std, Lean.Data.Json, MitosGate.Base)
                                                  and for gate/vendor/l4yaml/ ({", ".intercalate Imports.vendorImports})
                                                  and for gate/ outside gate/vendor/: {Imports.vendorName}
-                                                 appears only in {Imports.seamFile}, including comments
+                                                 appears only in {Imports.seamFile}, including comments;
+                                                 that exact seam may also import it
   mitos-gate lock [--check]                      write or check statements.lock; either fails on a
                                                  module under core/Mitos/Core/ that Mitos.Core does
                                                  not import, directly or transitively
@@ -171,18 +173,11 @@ def cli (args : List String) : IO UInt32 := do
     IO.println s!"{bad} violation(s)"
     return if bad == 0 then 0 else 1
   | ["imports"] =>
-    let vs ← Imports.check "core" Imports.trustedCoreImports ["core" / ".lake"]
-    let vs := vs ++ (← Imports.check ("core" / "Mitos" / "Core") lockedSpecImports)
-    let vs := vs ++ (← Imports.check ("gate" / "MitosGate" / "Base") Imports.baseImports)
-    let baseRoot : System.FilePath := "gate" / "MitosGate" / "Base.lean"
-    let rootVs ← if ← baseRoot.pathExists then
-      Imports.checkFile baseRoot Imports.baseImports else pure #[]
-    let vs := vs ++ rootVs
-    let vs := vs ++ (← Imports.check ("gate" / "vendor" / "l4yaml") Imports.vendorImports)
+    let vs ← Imports.check "core" ["core" / ".lake"]
+    let vs := vs ++ (← Imports.check "gate")
     let vs := vs ++ (← Imports.checkSeam "gate")
     for v in vs do IO.println (ciLine v)
-    IO.println (s!"{vs.size} import violation(s) in core/ and gate/MitosGate/Base.lean and gate/MitosGate/Base/" ++
-      s!" and gate/vendor/l4yaml/ and gate/ outside gate/vendor/ (seam {Imports.seamFile})")
+    IO.println s!"{vs.size} import violation(s) in core/ and gate/"
     return if vs.isEmpty then 0 else 1
   | ["lock", "--check-header"] => lockHeaderStatus
   | ["lock"] => lockStatements false

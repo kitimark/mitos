@@ -172,7 +172,7 @@ which covers what no kernel term references, such as a structure field's default
 | Check | Command | L1 local | L2 PR | L3 nightly | Blocks merge |
 |---|---|---|---|---|---|
 | Build core and gate | `lake build` | ✓ | ✓ | ✓ | yes |
-| Core imports only `Init`, `Std`, `Mitos.*`; the spec never imports implementations | `lake exe mitos-gate imports` | ✓ | ✓ | ✓ | yes |
+| Core imports only `Init`, `Std`, `Mitos.*`; `core/Mitos/Proofs` may also import `Mathlib`, and only Proofs files import `Mitos.Proofs`; gate imports only `Init`, `Std`, `Lean`, `MitosGate`, except the vendored parser and its exact YAML seam; the spec never imports implementations | `lake exe mitos-gate imports` | ✓ | ✓ | ✓ | yes |
 | Lock matches the compiled core. The first two lines of `statements.lock` match `MitosGate.Lock.header` | `lake exe mitos-gate lock --check` | ✓ | ✓ | ✓ | yes |
 | `pr-state.sh`, `watch-github.sh` and the files they source run `gh` only as `gh api` in their wrappers, and never name GraphQL | `.claude/scripts/gh-api-rest.test.sh` | ✓ | ✓ | | yes |
 | `hook-state.sh` and every `.claude/scripts/lib/*.sh` name bash with a shebang, and `shellcheck -x` follows the scripts that source them | `.claude/scripts/sourced-bash.test.sh` | ✓ | ✓ | | yes |
