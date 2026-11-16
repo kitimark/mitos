@@ -170,7 +170,7 @@ def cli (args : List String) : IO UInt32 := do
     IO.println s!"{bad} violation(s)"
     return if bad == 0 then 0 else 1
   | ["imports"] =>
-    let vs ← Imports.check "core" Imports.trustedCoreImports
+    let vs ← Imports.check "core" Imports.trustedCoreImports ["core" / ".lake"]
     let vs := vs ++ (← Imports.check ("core" / "Mitos" / "Core") lockedSpecImports)
     let vs := vs ++ (← Imports.check ("gate" / "MitosGate" / "Base") Imports.baseImports)
     let baseRoot : System.FilePath := "gate" / "MitosGate" / "Base.lean"

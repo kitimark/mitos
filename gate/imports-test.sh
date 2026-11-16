@@ -12,7 +12,7 @@ pass=0
 fail=0
 
 check() {
-  local name=$1 code=$2 dir=$3 pat=$4 got=0
+  local name=$1 code=$2 dir=$3 pat=$4 expected_count=${5:-} got=0
   (cd "$dir" && "$bin" imports >"$tmp/out" 2>&1) || got=$?
   if [ "$got" != "$code" ]; then
     echo "FAIL $name: exit $got, expected $code"
@@ -37,6 +37,11 @@ check() {
       return
       ;;
   esac
+  if [ -n "$expected_count" ] && [ "$last" != "$expected_count $summary" ]; then
+    echo "FAIL $name: last line does not report exactly $expected_count violation(s): $last"
+    fail=$((fail + 1))
+    return
+  fi
   if grep -F -q 'uncaught exception' "$tmp/out"; then
     echo "FAIL $name: uncaught exception"
     sed 's/^/  | /' "$tmp/out"
@@ -103,6 +108,21 @@ mkdir -p "$tmp/core/core/Mitos"
 printf 'import Lean\n' >"$tmp/core/core/Mitos/LeanImport.lean"
 check "a core violation is still reported when Base is absent" \
   1 "$tmp/core" "core/Mitos/LeanImport.lean:1:"
+
+mkdir -p "$tmp/lake/core/.lake/packages/dep"
+printf 'import Lean\n' >"$tmp/lake/core/.lake/packages/dep/Dep.lean"
+check "a file under core/.lake is not checked" \
+  0 "$tmp/lake" "0 $summary"
+
+mkdir -p "$tmp/nested-lake/core/Mitos/Impl/.lake"
+printf 'import Lean\n' >"$tmp/nested-lake/core/Mitos/Impl/.lake/Bad.lean"
+check "a nested .lake under core/Mitos is still checked" \
+  1 "$tmp/nested-lake" "core/Mitos/Impl/.lake/Bad.lean:1:"
+
+mkdir -p "$tmp/lake/core/Mitos"
+printf 'import Lean\n' >"$tmp/lake/core/Mitos/Bad.lean"
+check "a core violation is reported next to a skipped core/.lake" \
+  1 "$tmp/lake" "core/Mitos/Bad.lean:1:" 1
 
 mkdir -p "$tmp/vendor/gate/vendor/l4yaml"
 printf 'import MitosGate.Util\n' >"$tmp/vendor/gate/vendor/l4yaml/Bad.lean"
