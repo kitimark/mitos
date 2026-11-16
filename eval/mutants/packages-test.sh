@@ -23,17 +23,16 @@ pkg_hash() {
   tar -C "$1" -cf - . | sha256sum | awk '{print $1}'
 }
 
-rm -rf .lake/mutants
-"$exe" "$case" > /tmp/packages-test-plain.out 2> /tmp/packages-test-plain.err
-test -s /tmp/packages-test-plain.out
-if [ -s /tmp/packages-test-plain.err ]; then
-  fail "no-packages run wrote to stderr: $(cat /tmp/packages-test-plain.err)"
-fi
-plain=$(result_of /tmp/packages-test-plain.out)
-test -n "$plain"
-
 tmp=$(mktemp -d)
 trap 'git -C "$root" worktree remove --force "$tmp/wt" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
+rm -rf .lake/mutants
+"$exe" "$case" > "$tmp/plain.out" 2> "$tmp/plain.err"
+test -s "$tmp/plain.out"
+if [ -s "$tmp/plain.err" ]; then
+  fail "no-packages run wrote to stderr: $(cat "$tmp/plain.err")"
+fi
+plain=$(result_of "$tmp/plain.out")
+test -n "$plain"
 git -C "$tmp" init -q -b main toy
 mkdir -p "$tmp/toy"
 printf '%s\n' 'def toy : Nat := 0' > "$tmp/toy/ToyPkg.lean"
@@ -71,7 +70,7 @@ after=$(pkg_hash "$tmp/wt/core/.lake/packages")
 test "$before" = "$after" || fail "core packages tree changed ($before -> $after)"
 with=$(result_of "$tmp/with.out")
 test "$plain" = "$with" || fail "verdict $with, wanted $plain"
-plain_summary=$(grep -E '^mutants: ' /tmp/packages-test-plain.out | sed -E 's/ \([0-9]+s\)$//')
+plain_summary=$(grep -E '^mutants: ' "$tmp/plain.out" | sed -E 's/ \([0-9]+s\)$//')
 with_summary=$(grep -E '^mutants: ' "$tmp/with.out" | sed -E 's/ \([0-9]+s\)$//')
 test "$plain_summary" = "$with_summary" || fail "summary '$with_summary', wanted '$plain_summary'"
 grep -q 'control (unmutated core, approved Challenge and proofs): ACCEPTED' "$tmp/with.out" || fail "control was not accepted"
