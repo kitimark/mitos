@@ -21,3 +21,10 @@ name = "mitos-lint-test"
 srcDir = "gate"
 root = "LintTest"
 supportInterpreter = true
+
+[[lean_lib]]
+name = "L4YAML"
+srcDir = "gate/vendor/l4yaml"
+roots = ["L4YAML.Parser.Composition"]
+globs = ["L4YAML.+"]
+leanOptions = { autoImplicit = false }
