@@ -160,6 +160,27 @@ theorem hasSub_iff (p s : List Char) : hasSub p s = true ↔ p <:+: s := by
     | nil => simp [hasSub]
     | cons a as => simp [hasSub, isPrefix_iff, ih, List.infix_cons_iff]
 
+def count (p : List Char) : List Char → Nat
+  | [] => 0
+  | c :: cs => (if isPrefix p (c :: cs) then 1 else 0) + count p cs
+
+theorem count_eq_zero_iff {p s : List Char} (hp : p ≠ []) :
+    count p s = 0 ↔ hasSub p s = false := by
+  induction s with
+  | nil => cases p <;> simp_all [count, hasSub]
+  | cons c cs ih =>
+    cases p with
+    | nil => contradiction
+    | cons a as =>
+      simp only [count, Nat.add_eq_zero_iff, hasSub, Bool.or_eq_false_iff]
+      rw [← ih]
+      cases isPrefix (a :: as) (c :: cs) <;> simp
+
+example : count "aa".toList "aaa".toList = 2 := by decide +kernel
+example : count "${{".toList "${{x}}${{y}}".toList = 2 := by decide +kernel
+example : count "a".toList [] = 0 := by decide +kernel
+example : count "ab".toList "acb".toList = 0 := by decide +kernel
+
 example : isPrefix [] ['a'] = true := by decide +kernel
 example : isPrefix ['a'] [] = false := by decide +kernel
 example : hasSub [] [] = true := by decide +kernel
