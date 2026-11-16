@@ -125,6 +125,7 @@ private def qualify (src : String) (tokens : Array (L4YAML.Positioned L4YAML.Yam
     | _ => pure ()
 
 private def parseDoc (src : String) : Except Refusal Doc := do
+  if (src.splitOn "\n").any (·.startsWith "%") then throw .directive
   let (tokens, comments) ← (L4YAML.Scanner.scanWithComments src).mapError
     (fun e => .parse none e.toString)
   let docs ← (L4YAML.TokenParser.parseStream tokens).mapError (fun e => .parse none e.toString)
@@ -186,6 +187,21 @@ private def refusal? (src : String) : Option Refusal :=
 #guard refusal? "" = some (.documents 0)
 #guard refusal? "a: b\n---\nc: d\n" = some (.documents 2)
 #guard refusal? "%YAML 1.2\n---\na: b\n" = some .directive
+#guard refusal? "%FOO bar\n---\na: b\n" = some .directive
+#guard refusal? "%YAMLX 1.2\n---\na: b\n" = some .directive
+#guard refusal? "%TAGX !x! x\n---\na: b\n" = some .directive
+#guard refusal? "% ...\n---\na: b\n" = some .directive
+#guard refusal? "%MITOS ${{ github.event.pull_request.title }}\n---\nname: demo\non: pull_request_target\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: \"echo \\x24{{ github.event.pull_request.title }}\"\n" = some .directive
+#guard refusal? "%FOO #${{ x }}\n---\na: \"\\x24{{ x }}\"\n" = some .directive
+#guard refusal? "%FOO ${{ x }}\n%BAR ${{ y }}\n---\na: \"\\x24{{ x }}\"\nb: \"$\\x7b{ y }}\"\n" = some .directive
+#guard refusal? "...\n%FOO ${{ x }}\n---\na: \"\\x24{{ x }}\"\n" = some .directive
+#guard refusal? "a: \"x\n%FOO\ny\"\n" = some .directive
+#guard refusal? "a: 'x\n%FOO\ny'\n" = some .directive
+#guard (read "a: \"%FOO in a value\"\n").isOk
+#guard (read "a: |\n  %FOO ${{ x }}\n").isOk
+#guard (read "a: \"x\n  %FOO\n  y\"\n").isOk
+#guard refusal? "a: ['${{ x }}']\n" = some (.flow [.key "a"])
+#guard refusal? "a: [[x]]\n" = some (.flow [.key "a"])
 #guard refusal? "- a\n" = some .rootNotMapping
 #guard refusal? "a: |1\n  x\n" = some (.blockIndicator 1)
 #guard refusal? "a: &x b\n" = some (.anchor [.key "a"])
