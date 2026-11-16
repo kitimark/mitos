@@ -1,0 +1,45 @@
+# GA-Y1 kernel and interpreter fixtures
+
+phase: gate architecture
+goal: The workflow line reader's small inputs have exact kernel-checked results and matching interpreter behavior.
+statement: 54 exact-result fixture theorems in MitosGate.Yaml
+touches: gate/MitosGate/Yaml/LineCases.lean, gate/MitosGate/WorkflowCli.lean, this file, ops/runs/
+must_not_touch: core/, statements.lock, models.lock, .github/, eval/, plan/, .claude/, .cursor/
+checks: build, workflow-test, live-workflows, PyYAML-differential, fixture-build-time
+budget: 15 iterations · 2h wall · 500k tokens
+escalation: hint → automation → stronger model → pair → split → revisit statement
+
+## Context
+
+This is the dependent fixtures PR for [#348](https://github.com/kitimark/mitos/issues/348).
+The issue requests a second PR with LineCases.lean if the line layer exceeds 400 changed lines.
+The first PR implements the reader, CLI, source-aware coverage and executable tests.
+This PR imports the fixtures from WorkflowCli so the normal executable build checks them.
+
+## Design
+
+depth: build
+revisit_when: none
+modules: LineCases.lean owns short exact-result fixtures. WorkflowCli.lean imports it so Lake checks the fixtures on each affected build.
+types: the first PR's Refusal, Line and Except DecidableEq instances.
+statements: eight exact escape/folding theorems, eight matching interpreter guards, and 46 exact-result regressions.
+reuse: MitosGate.Yaml.Line; no separate scanner, oracle dependency or runtime fixture loading.
+fixtures: hexadecimal, short and long Unicode, NEL, escaped line break, folded double/single/plain; A/B/C/D; comment boundaries; block ownership/indentation; node refusals; flow aliases/escapes; scalar-owner and contextual-separator regressions.
+cut_line: build-time short fixtures only. Real workflow text remains runtime evidence, never include_str input.
+deferrals: external oracle packaging remains #376; standing differential remains #361.
+owner_decisions: Review the exact refusal/acceptance results and the eight escape rows, then obtain the required Opus verdict before owner merge.
+
+## Evidence
+
+`lake build mitos-gate` builds the fixtures with the interpreter enabled and runs all eight guards.
+`gate/workflow-test.sh` passes against that binary. The final reader's source positions and block
+lines match PyYAML 6.0.3 for all six accepted main workflows and #336's land workflow at e91b849.
+The first PR's task records the full check matrix, source ownership model and benchmark method.
+
+## Done when
+
+- [x] All 54 exact-result kernel theorems and all eight interpreter guards compile.
+- [x] The actual binary passes workflow tests and the live scanner differential.
+- [ ] The measured fixture build is at most 10 seconds without unrelated corpus contention.
+- [ ] CodeRabbit is reviewed or explicitly refuses at the final head, with every finding answered.
+- [ ] The required Opus verifier passes before owner merge.
