@@ -11,7 +11,7 @@ cp "$root/.github/scripts/vendor-provenance.sh" "$work/clean/.github/scripts/"
 cp "$root/lean-toolchain" "$work/clean/"
 cp -a "$root/gate/vendor/l4yaml/L4YAML" "$root/gate/vendor/l4yaml/LICENSE" "$work/upstream/"
 cp "$root/lean-toolchain" "$work/upstream/"
-git -C "$work/upstream" init -q
+git -C "$work/upstream" init -q -b v4.35.0
 git -C "$work/upstream" add .
 git -C "$work/upstream" -c user.name=vendor-test -c user.email=vendor-test@invalid commit -qm fixture
 rev=$(git -C "$work/upstream" rev-parse HEAD)
@@ -93,7 +93,7 @@ reset_case
 sed -i '8i public import all L4YAML.Parser.State' "$vendor/L4YAML/Parser/Composition.lean"
 rehash L4YAML/Parser/Composition.lean
 expect "$offline" 1 'unsupported import header'
-for command in '/- prefix -/ initialize pure ()' 'builtin_initialize pure ()' 'macro_rules' 'elab_rules' '@[csimp] theorem extra : True := True.intro'; do
+for command in 'run_cmd IO.println "x"' '#eval 1' 'notation "extra" => True' 'infixl:60 "~extra~" => Nat.add' 'declare_syntax_cat extra' '/- prefix -/ initialize pure ()' 'builtin_initialize pure ()' 'macro_rules' 'elab_rules' '@[csimp] theorem extra : True := True.intro'; do
   reset_case
   printf '\n%s\n' "$command" >> "$vendor/L4YAML/Parser/Composition.lean"
   rehash L4YAML/Parser/Composition.lean
@@ -127,6 +127,12 @@ reset_case
 printf '0000000000000000000000000000000000000000 ../escape.lean' >> "$vendor/MANIFEST"
 expect "$offline" 1 'unsafe row'
 expect "$online" 1 'unsafe row'
+for branch in bad..name /leading trailing/; do
+  reset_case
+  sed -i "s|^branch=.*|branch=$branch|" "$vendor/PIN"
+  expect "$offline" 1 'invalid branch'
+  expect "$online" 1 'invalid branch'
+done
 reset_case
 sed -i '1c url=$(touch SHOULD_NOT_EXIST)' "$vendor/PIN"
 expect "$offline" 1 'invalid fields'
@@ -151,6 +157,21 @@ changed_rev=$(git -C "$work/upstream" rev-parse HEAD)
 reset_case
 sed -i "s/^rev=.*/rev=$changed_rev/" "$vendor/PIN"
 expect "$online" 1 LICENSE
+git -C "$work/upstream" checkout -q --orphan unrelated "$rev"
+git -C "$work/upstream" -c user.name=vendor-test -c user.email=vendor-test@invalid commit -qm unrelated
+orphan_rev=$(git -C "$work/upstream" rev-parse HEAD)
+git -C "$work/upstream" checkout -q v4.35.0
+reset_case
+sed -i "s/^rev=.*/rev=$orphan_rev/" "$vendor/PIN"
+expect "$online" 1 'not on upstream branch'
+reset_case
+expect "$online" 0 'equal upstream'
+branch_tip=$(git -C "$work/upstream" rev-parse v4.35.0)
+git -C "$work/upstream" update-ref refs/heads/v4.35.0 "$orphan_rev"
+expect "$online" 1 'not on upstream branch'
+git -C "$work/upstream" update-ref -d refs/heads/v4.35.0
+expect "$online" 2 'cannot fetch'
+git -C "$work/upstream" update-ref refs/heads/v4.35.0 "$branch_tip"
 
 reset_case
 git -C "$work/case" init -q

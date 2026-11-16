@@ -48,6 +48,8 @@ mapfile -t pin < "$vendor/PIN"
 rev=${pin[1]#rev=}
 toolchain=${pin[3]#toolchain=}
 [ -f "$vendor/LICENSE" ] || fail "$vendor/LICENSE is missing"
+branch=${pin[2]#branch=}
+git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 || fail "$vendor/PIN has an invalid branch"
 previous=
 while read -r hash path extra || [ -n "${hash:-}${path:-}${extra:-}" ]; do
   [[ $hash =~ ^[0-9a-f]{40}$ && -z $extra &&
@@ -67,10 +69,17 @@ metadata=$(find gate/vendor \( -name lean-toolchain -o -name 'lakefile.*' -o -na
 [ -z "$metadata" ] || fail "forbidden build metadata $metadata"
 
 git init --bare -q "$work/upstream" || { echo 'vendor-provenance: cannot initialize fetch directory' >&2; exit 2; }
-if ! git -C "$work/upstream" fetch -q --depth 1 "${pin[0]#url=}" "$rev"; then
+if ! git -C "$work/upstream" fetch -q --no-tags "${pin[0]#url=}" "+refs/heads/$branch:refs/vendor/pinned-branch" "$rev"; then
   echo 'vendor-provenance: cannot fetch pinned revision' >&2
   exit 2
 fi
+ancestry=0
+git -C "$work/upstream" merge-base --is-ancestor "$rev" refs/vendor/pinned-branch || ancestry=$?
+case $ancestry in
+  0) ;;
+  1) fail "$vendor/PIN revision is not on upstream branch $branch" ;;
+  *) echo 'vendor-provenance: cannot check upstream branch ancestry' >&2; exit 2 ;;
+esac
 if ! upstream_toolchain=$(git -C "$work/upstream" show "$rev:lean-toolchain"); then
   fail "upstream lean-toolchain is missing"
 fi
