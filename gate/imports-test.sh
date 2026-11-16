@@ -52,7 +52,7 @@ check() {
   pass=$((pass + 1))
 }
 
-summary='import violation(s) in core/ and gate/MitosGate/Base.lean and gate/MitosGate/Base/ and gate/vendor/l4yaml/ and gate/ outside gate/vendor/ (seam gate/MitosGate/Yaml.lean)'
+summary='import violation(s) in core/ and gate/'
 
 mkdir -p "$tmp/bad/gate/MitosGate/Base"
 printf 'import MitosGate.Land\n' >"$tmp/bad/gate/MitosGate/Base/Bad.lean"
@@ -180,6 +180,58 @@ rm "$tmp/gate-root/gate/Main.lean"
 printf '%s\n' '-- L4YAML' >"$tmp/gate-root/gate/README.md"
 check "the seam scan reads only Lean files" \
   0 "$tmp/gate-root" "0 $summary"
+
+for scope in Mitos/Proofs Mitos/Impl Mitos/Core Challenge Mitos Mitos/ProofsX; do
+  mkdir -p "$tmp/mathlib/core/$scope"
+  printf 'import Mathlib.Data.List.Nodup\n' >"$tmp/mathlib/core/$scope/A.lean"
+  code=1
+  [ "$scope" = Mitos/Proofs ] && code=0
+  if [ "$code" = 0 ]; then
+    check "Mathlib import policy in core/$scope" 0 "$tmp/mathlib" "0 $summary" 0
+  else
+    check "Mathlib import policy in core/$scope" 1 "$tmp/mathlib" "core/$scope/A.lean:1:" 1
+  fi
+  rm "$tmp/mathlib/core/$scope/A.lean"
+done
+
+mkdir -p "$tmp/proofs/core/Mitos/Proofs"
+for module in Lean Batteries.Data.List.Perm MathlibX.Foo; do
+  printf 'import %s\n' "$module" >"$tmp/proofs/core/Mitos/Proofs/A.lean"
+  check "$module is forbidden in Proofs" \
+    1 "$tmp/proofs" "core/Mitos/Proofs/A.lean:1:" 1
+done
+printf 'import Mitos.Proofs.Foo\n' >"$tmp/proofs/core/Mitos/Proofs/A.lean"
+check "Proofs files may import other proofs" 0 "$tmp/proofs" "0 $summary" 0
+
+for scope in Mitos/Impl Challenge Mitos/Core Mitos; do
+  mkdir -p "$tmp/nonproofs/core/$scope"
+  printf 'import Mitos.Proofs.Foo\n' >"$tmp/nonproofs/core/$scope/A.lean"
+  check "core/$scope cannot import Proofs" \
+    1 "$tmp/nonproofs" "core/$scope/A.lean:1:" 1
+  rm "$tmp/nonproofs/core/$scope/A.lean"
+done
+
+mkdir -p "$tmp/graph/core/Mitos/Core"
+printf 'import Mathlib.Data.List.Nodup\n' >"$tmp/graph/core/Mitos/Core/Graph.lean"
+check "the resolver spec cannot import Mathlib yet" \
+  1 "$tmp/graph" "core/Mitos/Core/Graph.lean:1:" 1
+
+for file in MitosGate/Foo.lean Foo.lean; do
+  mkdir -p "$tmp/gate-imports/gate/$(dirname "$file")"
+  for module in Mathlib.Data.List.Nodup Batteries.Data.List.Perm; do
+    printf 'import %s\n' "$module" >"$tmp/gate-imports/gate/$file"
+    check "$file cannot import $module" \
+      1 "$tmp/gate-imports" "gate/$file:1:" 1
+  done
+  printf 'import Lean.Elab.Command\n' >"$tmp/gate-imports/gate/$file"
+  check "$file may import Lean.Elab.Command" 0 "$tmp/gate-imports" "0 $summary" 0
+  rm "$tmp/gate-imports/gate/$file"
+done
+
+mkdir -p "$tmp/lake-prefix/core/.lakex"
+printf 'import Lean\n' >"$tmp/lake-prefix/core/.lakex/Bad.lean"
+check "a core/.lake prefix lookalike is still checked" \
+  1 "$tmp/lake-prefix" "core/.lakex/Bad.lean:1:" 1
 
 check "the repository reports no import violation" \
   0 "$root" "0 $summary"
