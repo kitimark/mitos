@@ -2,6 +2,7 @@ import MitosGate.Lint
 import MitosGate.Accept
 import MitosGate.Imports
 import MitosGate.CheatsRun
+import MitosGate.LockCases
 
 open MitosGate
 

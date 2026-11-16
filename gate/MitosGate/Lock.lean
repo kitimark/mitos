@@ -57,10 +57,14 @@ def generatedSuffixes : List String :=
   ["rec", "sizeOf_spec", "noConfusionType", "ctorIdx", "ofNat_ctorIdx", "toCtorIdx", "ofNat",
    "ctorElim", "ctorElimType", "inj", "injEq", "repr", "decEq"]
 
-def isGenerated (n : Name) : Bool :=
+def isGenerated (env : Environment) (n : Name) : Bool :=
+  let isMatcher (m : Name) := match env.getModuleIdxFor? m with
+    | some idx => (Meta.Match.Extension.extension.getModuleEntries env idx).any (·.name == m)
+    | none => false
   match n with
-  | .str _ s => generatedSuffixes.contains s || s.startsWith "match_" || s.startsWith "eq_" ||
-                s.startsWith "proof_"
+  | .str p s => generatedSuffixes.contains s || isMatcher n ||
+      (s.startsWith "eq_" && (isReservedName env n || isMatcher p)) ||
+      (s.startsWith "proof_" && !(s.drop 6).isEmpty && (s.drop 6).toString.toList.all Char.isDigit)
   | _ => false
 
 def pinned : ConstantInfo → List Expr
@@ -90,7 +94,7 @@ def entries (env : Environment) (prefixes : List Name) : IO (Array String) := do
     | some idx => prefixes.any (·.isPrefixOf env.header.moduleNames[idx.toNat]!)
     | none => false
   let listed (n : Name) : Bool := inCore n &&
-    !(n.isInternal || isAuxRecursor env n || isNoConfusion env n || isGenerated n)
+    !(n.isInternal || isAuxRecursor env n || isNoConfusion env n || isGenerated env n)
   let mut out : Array String := #[]
   for (n, ci) in env.constants.map₁.toList do
     unless listed n do continue
