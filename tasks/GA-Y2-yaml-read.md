@@ -75,3 +75,32 @@ Reader build and guards pass locally with Lean 4.35.0. The CLI/regression PR rec
 leaf equality, seeded differential results and matched build/runtime observations. Independent
 Codex review and the required independent Opus-xhigh verdict are separate; this runtime cannot
 provide an Opus verdict. The owner retains merge authority for both trust-critical PRs.
+
+The no-comments pass found no added comments, suppressions or reshape findings in the reader and
+integration diff. Nothing was deleted or restored. Local `core/lake check` and
+`core/lake comparator --paranoid` both stop before checking at
+`bwrap: setting up uid map: Read-only file system`. The sandbox remains enabled.
+
+## Audit qualification round
+
+Scratch mutations reproduced three gaps in the first audit: aliases could hide a vendor type,
+recursive `partial` definitions hide their runtime body in a compiler companion, and a companion's
+body could reach an `implemented_by` helper absent from the kernel body.
+
+The corrected audit follows type aliases whose declared result reduces to `Sort`, including
+private and generic aliases and an alias of `Type`. It follows vendor compiler companion
+bodies in the same dependency traversal. A companion of a total safe definition can carry
+Lean's generated `partial` flag, as `Scanner.scanLoopFull` does. That compiler artifact stays
+within T3. An opaque source declaration with a runtime companion is refused, as are unsafe
+companions and forbidden metadata or dependencies reached through a companion.
+
+The final clean reader and a clean private opaque dependency compile. Scratch copies with real
+recursive partial dependencies, including one hidden behind a private opaque wrapper, fail with
+the intended audit error. A forged companion that reaches an `implemented_by` helper is also
+rejected at that helper. Safe manually named companions with no forbidden metadata remain a
+compiler-semantics and parser-provenance assumption under T1, T3 and T7; no such manual companion
+exists in the pinned vendor source.
+
+The final mutation matrix has 16 expected outcomes: two clean controls compile and all fourteen
+negative cases fail with their intended audit messages. It includes direct runtime attributes,
+private wrappers, the effective companion-only override, and six public or private type-alias forms.

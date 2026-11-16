@@ -5,6 +5,7 @@ import Lean.Util.CollectAxioms
 import Lean.Compiler.CSimpAttr
 import Lean.Compiler.ImplementedByAttr
 import Lean.Compiler.ExternAttr
+import Lean.Meta
 
 namespace MitosGate.Yaml
 
@@ -245,6 +246,10 @@ private def pipelineAgrees (src : String) : Bool :=
 #guard pipelineAgrees "a: \"${{ \\x6eeeds.x }}\" # retained\nb: [x, y]\n"
 #guard pipelineAgrees "a: |+\n  x\n# tail\nb: {}\n"
 
+private def returnsSort (type : Lean.Expr) : Lean.CoreM Bool :=
+  Lean.Meta.MetaM.run' <| Lean.Meta.forallTelescopeReducing type fun _ body => do
+    return (← Lean.Meta.whnf body).isSort
+
 open Lean in
 #eval show CoreM Unit from do
   let env ← getEnv
@@ -262,18 +267,40 @@ open Lean in
       seen := seen.insert n
       let some info := env.find? n | throwError "YAML audit: unknown declaration {n}"
       if (`L4YAML).isPrefixOf (privateToUserName n) then
-        if info.isUnsafe || info.isPartial || (Compiler.getImplementedBy? env n).isSome ||
+        let companionName := Compiler.mkUnsafeRecName n
+        let companion := env.find? companionName
+        let totalCompanion := match Compiler.isUnsafeRecName? n with
+          | some original => match env.find? original with
+            | some (.defnInfo parent) => parent.safety == .safe
+            | _ => false
+          | none => false
+        let runtimeOverride := companion.any (·.isUnsafe) ||
+          ((info matches .opaqueInfo ..) && companion.isSome)
+        if info.isUnsafe || (info.isPartial && !totalCompanion) || runtimeOverride || (Compiler.getImplementedBy? env n).isSome ||
             (getExternAttrData? env n).isSome then
           throwError "YAML audit: unsafe or overridden parser dependency {n}"
         if (Compiler.CSimp.ext.getState env).map.find? n |>.isSome then
           throwError "YAML audit: csimp parser dependency {n}"
+        if companion.isSome then pending := pending.push companionName
       pending := pending ++ info.type.getUsedConstants
       if let some value := info.value? (allowOpaque := true) then
         pending := pending ++ value.getUsedConstants
   for (n, info) in env.constants.toList do
     if (`MitosGate.Yaml).isPrefixOf n && !isPrivateName n then
-      for used in info.type.getUsedConstants do
-        if (`L4YAML).isPrefixOf (privateToUserName used) then
-          throwError "YAML audit: exported declaration {n} exposes {used}"
+      let mut typePending := info.type.getUsedConstants
+      let mut typeSeen : NameSet := {}
+      let mut typeCursor := 0
+      while typeCursor < typePending.size do
+        let used := typePending[typeCursor]!
+        typeCursor := typeCursor + 1
+        unless typeSeen.contains used do
+          typeSeen := typeSeen.insert used
+          if (`L4YAML).isPrefixOf (privateToUserName used) then
+            throwError "YAML audit: exported declaration {n} exposes {used}"
+          if let some aliasInfo := env.find? used then
+            if ← returnsSort aliasInfo.type then
+              typePending := typePending ++ aliasInfo.type.getUsedConstants
+              if let some value := aliasInfo.value? (allowOpaque := true) then
+                typePending := typePending ++ value.getUsedConstants
 
 end MitosGate.Yaml
