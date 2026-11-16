@@ -410,7 +410,38 @@ finish holds-no-key
 
 outputs_are_data() {
   awk '
-    BEGIN { scope = block = value_indent = -1 }
+    function multiline_quote(line, expect, i, j, c, quote) {
+      expect = 1
+      for (i = 1; i <= length(line); i++) {
+        c = substr(line, i, 1)
+        if (c ~ /[[:space:]]/) continue
+        if (c == "#" && (i == 1 || substr(line, i - 1, 1) ~ /[[:space:]]/)) return 0
+        if (expect && (c == "!" || c == "&")) {
+          while (i < length(line) && substr(line, i + 1, 1) !~ /[[:space:]]/) i++
+          continue
+        }
+        if (expect && (c == "\"" || c == single)) {
+          quote = c
+          for (j = i + 1; j <= length(line); j++) {
+            c = substr(line, j, 1)
+            if (quote == "\"" && c == "\\") { j++; continue }
+            if (c == quote) {
+              if (quote == single && substr(line, j + 1, 1) == single) { j++; continue }
+              break
+            }
+          }
+          if (j > length(line)) return 1
+          i = j; expect = 0
+          continue
+        }
+        if (expect && (c == "[" || c == "{")) { flow++; continue }
+        if (flow && (c == "]" || c == "}")) { flow--; expect = 0; continue }
+        expect = (c == ":" && (flow || i == length(line) || substr(line, i + 1, 1) ~ /[[:space:]]/)) ||
+          (flow && c == ",") || (expect && c == "-" && substr(line, i + 1, 1) ~ /[[:space:]]/)
+      }
+      return 0
+    }
+    BEGIN { scope = block = value_indent = -1; single = sprintf("%c", 39) }
     /^[[:space:]]*$/ { next }
     {
       match($0, /[^ ]/); indent = RSTART - 1
@@ -420,6 +451,7 @@ outputs_are_data() {
       if (indent <= block) block = -1
       if (indent <= value_indent) { value = ""; value_indent = indent }
       if (block < 0) {
+        if (multiline_quote($0)) { print NR ":" $0; bad = 1 }
         if (/^ *(- )?[a-zA-Z0-9_-]+:/) { value = ""; value_indent = indent }
         if (indent == 0) jobs = /^jobs:$/
         if (indent < 2) job = 0
@@ -514,6 +546,132 @@ for snippet in \
   [ "$scope_code" = 1 ] || note "unsafe output scope was accepted or scanner failed: $snippet"
 done
 finish output-scope-fixtures
+
+start
+cat >"$tmp/quoted-safe.yml" <<'YAML'
+jobs:
+  check:
+    if: "needs.decide.outputs.pr != ''"
+    env:
+      INPUT: '${{ needs.decide.outputs.head }}'
+    steps:
+      - run: echo "shell quotes"
+      - run: echo , "unfinished
+      - name: Keep { "quote
+        run: echo 'a [ "b'
+      - run: "echo \"shell\"" # "unclosed comment
+      - run: 'echo ''shell'''
+      - env:
+          INPUT: |
+            "unclosed block text
+        with:
+          script: |
+            const text = "unclosed block text
+YAML
+outputs_are_data "$tmp/quoted-safe.yml" || note "single-line quotes or quotes in plain/block scalars were refused"
+quoted_fixture=0
+: >"$tmp/quoted-unsafe.yml"
+while IFS= read -r line; do
+  if [ "$line" = --- ]; then
+    quoted_fixture=$((quoted_fixture + 1))
+    scope_code=0
+    outputs_are_data "$tmp/quoted-unsafe.yml" >"$tmp/quoted-scope.err" || scope_code=$?
+    [ "$scope_code" = 1 ] || note "multiline quoted scalar fixture $quoted_fixture was accepted or scanner failed"
+    : >"$tmp/quoted-unsafe.yml"
+  else
+    printf '%s\n' "$line" >>"$tmp/quoted-unsafe.yml"
+  fi
+done <<'YAML'
+jobs:
+  check:
+    steps:
+      - run: "echo
+        env:
+          ${{ needs.decide.outputs.answers }}"
+---
+jobs:
+  check:
+    steps:
+      - run: 'echo
+        env:
+          ${{ needs.decide.outputs.answers }}'
+---
+jobs:
+  check:
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: "console.log(`
+        env:
+          ${{ needs.decide.outputs.answers }}`);"
+---
+jobs:
+  check:
+    steps:
+      - run: "echo \"quoted\"
+        env:
+          ${{ needs.decide.outputs.answers }}"
+---
+jobs:
+  check:
+    steps:
+      - run: 'echo ''quoted''
+        env:
+          ${{ needs.decide.outputs.answers }}'
+---
+jobs:
+  check:
+    steps:
+      - {run: "echo
+        env:
+          ${{ needs.decide.outputs.answers }}"}
+---
+jobs:
+  check:
+    steps:
+      - uses: actions/github-script@v7
+        with: {script: "console.log(`
+        env:
+          ${{ needs.decide.outputs.answers }}`);"}
+---
+jobs:
+  check:
+    steps:
+      - run: !!str "echo
+        env:
+          ${{ needs.decide.outputs.answers }}"
+---
+jobs:
+  check:
+    steps:
+      - run:
+          "echo
+        env:
+          ${{ needs.decide.outputs.answers }}"
+---
+jobs:
+  check:
+    steps:
+      - ? run
+        : "echo
+        env:
+          ${{ needs.decide.outputs.answers }}"
+---
+jobs:
+  check:
+    steps:
+      - "r\u0075n": "echo
+        env:
+          ${{ needs.decide.outputs.answers }}"
+---
+env:
+  INPUT: "two
+    lines"
+---
+YAML
+finish quoted-scalar-fixtures
 
 start
 reads=$(grep -cE 'gh api' <<<"$joined")

@@ -1479,12 +1479,30 @@ Section 6, the bullets about this row:
 
 The implementation follows the build-depth design merged in #329 at eac85d2, including its round 2 clarifications, with the corrections below.
 
-- Round 3 repairs the two test gaps from the Claude reviews of #336. The token and merge-route
+- The follow-up to the Claude review of `635f4b8` rejects quoted YAML scalars that span physical
+  lines before recognizing key-shaped text. The workflow uses none. Permanent fixtures refuse
+  double and single quotes, escapes, flow mappings, explicit tags and keys, and delayed scalar
+  starts, including the quoted `run` and write-permission github-script bypasses. Same-line YAML
+  quotes, shell quotes in plain scalars, inline comments and literal block content remain accepted.
+  This is a conservative workflow subset, not a complete YAML parser. An unusual multiline plain
+  scalar containing flow-like text can be refused; #341 tracks that limit alongside aliases,
+  aggregate contexts and computed output names. The root reopened this one-blocker fix round under
+  its interpretation of the owner's latest request to catch up review comments. It did not infer
+  merge approval or a waiver of the live prerequisites. The four double/single quoted run/script
+  workflow mutants pass the old decide suite at 23/0 and fail the corrected suite at 23/1; actionlint
+  accepts all four. Replacing only the corrected scanner with the old one makes the permanent
+  quoted-scalar case fail. Nominal suites pass 24 decide, 40 apply, 20 report, 6 protection and
+  4 app-token cases. Shellcheck, actionlint, imports and run-log checks pass. Tests reuse the
+  hash-bound executable built at `635f4b8`, with a build-only shim that avoids a duplicate Lake
+  writer. The new commit and main's intervening design changes alter no compiled inputs; CI
+  supplies the fresh build at the published head.
+- Round 3 repaired the two test gaps named in the earlier Claude reviews of #336. The token and merge-route
   scans use `grep` and `awk`, and a scan error fails the case. The three token-file, token-stdout
   and second-merge-script mutations passed the old test with `rg` exiting 127. The workflow pin
   tracks YAML indentation and scalar blocks, joining scalar continuation lines and normalizing
-  expression whitespace and case, so `needs.*.outputs` can occur only in environment values or
-  job `if` conditions. Its permanent fixtures accept all three environment scopes and
+  expression whitespace and case, checking recognized direct `needs.*.outputs` references against
+  environment values and job `if` conditions. The later review found the quoted-continuation
+  disguise fixed above; aliases and computed references remain in #341. Its fixtures accept all three environment scopes and
   multiline job conditions, and reject step names, step conditions, scripts and fake `env` text
   inside a script, including spaced, mixed-case and multiline expressions. Hash-prefixed text
   inside literal and quoted scalar continuations remains visible to the check. Event
