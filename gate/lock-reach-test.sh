@@ -31,8 +31,8 @@ expect() {
   ok "$name"
 }
 
-reached='every module under core/Mitos/Core/ is reached from Mitos.Core'
-missed='not reached from Mitos.Core'
+reached='every module under core/Mitos/Core/ is reached from Mitos.Core.Spec'
+missed='not reached from Mitos.Core.Spec'
 
 tree main
 expect "lock --check passes on a copy of the tree" main 0 "$reached" "$missed" lock --check
@@ -40,29 +40,29 @@ expect "lock --check passes on a copy of the tree" main 0 "$reached" "$missed" l
 tree top
 printf 'namespace Mitos\n\ndef unreachedSpec : Nat := 1\n\nend Mitos\n' >"$tmp/top/core/Mitos/Core/Unreached.lean"
 expect "lock --check fails on an unreached module" top 1 \
-  '^core/Mitos/Core/Unreached\.lean: Mitos\.Core does not import Mitos\.Core\.Unreached' "$reached" lock --check
+  '^core/Mitos/Core/Unreached\.lean: Mitos\.Core\.Spec does not import Mitos\.Core\.Unreached' "$reached" lock --check
 expect "the lock lines alone still match, so the reach check is what fails" top 1 \
   'statements\.lock up to date' 'statements\.lock is out of date' lock --check
 expect "lock --check names how many modules it missed" top 1 \
-  '^1 module under core/Mitos/Core/ is not reached from Mitos\.Core' '' lock --check
+  '^1 module under core/Mitos/Core/ is not reached from Mitos\.Core\.Spec' '' lock --check
 
 tree nested
 printf 'def nestedSpec : Nat := 1\n' >"$tmp/nested/core/Mitos/Core/Spec/Nested.lean"
 printf 'def otherSpec : Nat := 1\n' >"$tmp/nested/core/Mitos/Core/Other.lean"
 expect "lock --check fails on unreached modules in a subfolder and at the top" nested 1 \
-  '^2 modules under core/Mitos/Core/ are not reached from Mitos\.Core' "$reached" lock --check
+  '^2 modules under core/Mitos/Core/ are not reached from Mitos\.Core\.Spec' "$reached" lock --check
 expect "the nested module is named" nested 1 \
-  '^core/Mitos/Core/Spec/Nested\.lean: Mitos\.Core does not import Mitos\.Core\.Spec\.Nested' '' lock --check
+  '^core/Mitos/Core/Spec/Nested\.lean: Mitos\.Core\.Spec does not import Mitos\.Core\.Spec\.Nested' '' lock --check
 
 tree dotted
 printf 'def dottedSpec : Nat := 1\n' >"$tmp/dotted/core/Mitos/Core/A.B.lean"
 expect "lock --check fails on a module whose file name holds a dot" dotted 1 \
-  '^core/Mitos/Core/A\.B\.lean: Mitos\.Core does not import' "$reached" lock --check
+  '^core/Mitos/Core/A\.B\.lean: Mitos\.Core\.Spec does not import' "$reached" lock --check
 
 tree write
 printf 'def writtenSpec : Nat := 1\n' >"$tmp/write/core/Mitos/Core/Written.lean"
 expect "lock fails on an unreached module when it writes the file too" write 1 \
-  '^core/Mitos/Core/Written\.lean: Mitos\.Core does not import' "$reached" lock
+  '^core/Mitos/Core/Written\.lean: Mitos\.Core\.Spec does not import' "$reached" lock
 if cmp -s "$root/statements.lock" "$tmp/write/statements.lock"; then
   ok "lock writes the same statements.lock, so the unreached module has no line"
 else
