@@ -1,4 +1,4 @@
-import Mitos.Core
+import Mitos.Core.Spec
 
 namespace Mitos.Impl
 

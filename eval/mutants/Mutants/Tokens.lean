@@ -1,5 +1,5 @@
 import Lean.Elab.Command
-import Mitos.Core
+import Mitos.Core.Spec
 import Mutants.Challenge
 
 open Lean Elab Command in
