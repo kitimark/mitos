@@ -6,7 +6,8 @@ reader PR and a CLI/regression PR so the new trust boundary can be reviewed sepa
 ## Shape
 
 `MitosGate.Yaml.read` returns our `Doc`, or our `Refusal`. The only authored Lean module that
-names the vendor is `gate/MitosGate/Yaml.lean`. It scans with the raw comment side channel,
+names the vendor is `gate/MitosGate/Yaml.lean`. After the source limits, it refuses every
+column-zero `%` line before calling the parser. It scans with the raw comment side channel,
 parses the serialization tree, qualifies tokens, converts it to our `Node`, validates `Doc`,
 and compares source and leaf expression counts. It never composes aliases or uses a vendor theorem.
 
@@ -23,7 +24,7 @@ result of `parseDoc`; their proofs do not unfold the vendor.
 | More than 1024 `[` or `{` characters | `openers` | Bound flow nesting, including quoted openers. |
 | Scanner/parser failure | `parse` | Preserve the upstream rendered error. |
 | Zero or multiple documents | `documents` | Give one root and avoid document-selection disagreement. |
-| A directive | `directive` | Exclude version or tag-handle switches. |
+| A source line starting with `%`, or a reported directive | `directive` | Exclude standard and reserved directives before the pin can discard them. |
 | A root other than mapping | `rootNotMapping` | Workflows must be mappings. |
 | Block header containing indentation digit | `blockIndicator` | Exclude compact-nest indentation disagreements. |
 | Anchor, alias or tag | `anchor`, `alias`, `tag` | Exclude expansion and type resolution. |
@@ -50,8 +51,10 @@ Primary tags are retained by the parser and refused by the seam, or rejected by 
 - `read_conserves`: the source `${{` count equals the sum of leaf expression counts.
 - The build audits these declarations and `Doc.ofNode` for only `propext`, `Classical.choice`,
   and `Quot.sound` axioms. It traverses types and bodies reachable from `read`, including private
-  names, rejecting vendor unsafe/partial declarations, `implemented_by`, `extern`, and compiler
-  `csimp` substitutions. It checks every exported YAML declaration for vendor types.
+  names, rejecting unsafe/partial declarations and `implemented_by`, `extern`, and compiler
+  `csimp` substitutions within the `L4YAML.*` namespace. It checks declarations exported in
+  `MitosGate.Yaml` before the audit for exposed `L4YAML.*` types; the check is not an inventory
+  of arbitrary vendor namespaces, startup code, or later declarations.
 - Real-parser guards cover the refusal constructors, escape table, multi-line scalars, all
   eight #405 cases, and two scan/parse composition drift cases. Alias refusal itself is guarded
   at the seam: the parser rejects undefined aliases, and a valid alias always follows an anchor
@@ -60,7 +63,8 @@ Primary tags are retained by the parser and refused by the seam, or rejected by 
 ## Trust retained
 
 1. T1: the pinned parser reports decoded serialization nodes and raw scanner comments accurately
-   within the qualified subset. Leaf paths come from this unproved correspondence.
+   within the qualified subset. Source filtering excludes every column-zero `%` line, because
+   the pin silently drops reserved directives. Leaf paths come from this unproved correspondence.
 2. T2: the pinned parser's startup and syntax declarations remain as packaged by #397.
 3. T3: the Lean compiler/runtime, including exit-on-panic in the CLI.
 4. T4: the conversion seam and source block-header read, tested but not proved against YAML.
@@ -104,3 +108,22 @@ exists in the pinned vendor source.
 The final mutation matrix has 16 expected outcomes: two clean controls compile and all fourteen
 negative cases fail with their intended audit messages. It includes direct runtime attributes,
 private wrappers, the effective companion-only override, and six public or private type-alias forms.
+
+## Opus directive qualification
+
+The Opus-xhigh review at `335259e` found that reserved directives disappear from the pinned
+scanner's tokens and comments. A source expression in `%MITOS` could therefore balance a new
+expression decoded from `\x24` in a leaf. The original native CLI accepted that complete exploit,
+an ordinary `%FOO` directive, comment-like directive text, multiple balancing directives and a
+directive following a document-end marker.
+
+The source check now refuses any literal column-zero `%` line before scanning, after the size,
+character and opener limits. This is intentionally conservative: YAML accepts quoted scalar
+continuations such as `a: "x\n%FOO\ny"`, but this reader refuses that source form too. Same-line
+quoted percent signs and indented quoted or block-scalar percent data remain accepted. This
+avoids a second quote/comment lexer at the boundary and keeps the vendored bytes unchanged.
+
+Real-parser guards cover the exploit and its directive variants, both excluded quoted-continuation
+styles and accepted percent-data controls. Two additional guards pin expression-bearing flat flow
+lists and nested flow lists. The three read statements and audit remain unchanged. Nonblocking
+Opus findings are tracked with the existing character-guard cleanup in #413.
