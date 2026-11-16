@@ -59,7 +59,7 @@ lake --dir eval/score exe mitos-score --all eval/fixtures [n-before.tsv]  # the 
 | `label` | fixture, the label as the card prints an edge | label, in `labels.tsv` order |
 
   The ratio fields are `Score.ratio` strings such as `0.83 (5/6)` or `n/a`, so a count that moves shows even when the rounded ratio does not. `parseNumbers` reads only these kinds, each with its own field count, and `Nightly.checked` reads every line the run writes, so the writer and the reader cannot drift apart.
-- "Against the baseline" is one of: `No baseline given, so nothing was compared.`; `No change against the baseline.` exactly when this run's lines and the baseline's are the same set (`changed_eq_nil`); or the changes. For each fixture and edge type whose `rates` line changed, the baseline row and this run's row, with `none` on a side that has no such line. Then `**The hand labels changed.**` and each `label` line on one side only. Then each `edge` line on one side only. A fixture that failed in this run is left out of the comparison and gets the line `` `<name>` was not scored in this run, so it is not compared. ``
+- "Against the baseline" is one of: `No baseline given, so nothing was compared.`; `No change against the baseline.` exactly when this run's lines and the baseline's, less the lines of any fixture that failed in this run, are the same set (`changed_eq_nil` applied to that filtered baseline); or the changes. For each fixture and edge type whose `rates` line changed, the baseline row and this run's row, with `none` on a side that has no such line. Then `**The hand labels changed.**` and each `label` line on one side only. Then each `edge` line on one side only. A fixture that failed in this run is left out of the comparison and, when the baseline holds lines for it, gets the line `` `<name>` was not scored in this run, so it is not compared. ``
 - Exit codes:
   - `<fixture-dir>`: as on `main`, and 2 for a lone argument that starts with `-`.
   - `--numbers`: 0 with every line on stdout; 1 with nothing on stdout and one `<fixture>: <error>` line on stderr per failed fixture, so a broken run cannot become the next baseline.
@@ -466,7 +466,7 @@ statements:
 - `Score.Nightly.derivations_keys : (derivations c).map (·.1) = ((resolve c.facts).edges.map (·.repoKey)).eraseDups`. The count covers every repo-level edge the resolver made, each once, whatever the card keeps. Axioms `[propext, Quot.sound]`.
 - `Score.Nightly.le_most : d ∈ ds → d.2 ≤ most ds`. The number printed as "most derivations" bounds every repo-level edge's count, so a wrong maximum cannot hide the D1 tripwire. Axioms `[propext]`.
 - `Score.Nightly.most_mem : ds ≠ [] → ∃ d ∈ ds, d.2 = most ds`. The maximum is some edge's count, not a number above all of them. With `le_most` it fixes `most` exactly. Axioms `[propext, Quot.sound]`.
-- `Score.Nightly.changed_eq_nil : changed cur base = [] ↔ ∀ l, l ∈ cur ↔ l ∈ base`. The report says "No change against the baseline" exactly when this run and the baseline hold the same lines. A line that appeared or disappeared always shows. Axioms `[propext, Classical.choice, Quot.sound]`.
+- `Score.Nightly.changed_eq_nil : changed cur base = [] ↔ ∀ l, l ∈ cur ↔ l ∈ base`. The report says "No change against the baseline" exactly when this run and the baseline, less the lines of any fixture that failed in this run, hold the same lines. A line that appeared or disappeared always shows. Axioms `[propext, Classical.choice, Quot.sound]`.
 - All four are general, with no `decide` on strings, and CI's `checks` job kernel-checks them through `lake --dir eval/score build`.
 - The pins, in file order. Each is a `#guard` that the build evaluates, because string splitting and `render` do not reduce in the kernel (#332 needed `native_decide` for its card theorems). The pins that need a card run the real `score` on a two-repo toy fixture written in the file (`pinFiles n`: `a/deps.toy` with `n` lines `require x`, `b/PROVIDES` with `provide x`, one label `a` → `b`). The others use literal lines or a failed `Result`.
   - G1: the three numbers lines of `pinFiles 2`, exactly (`rates … 2`, `edge … confirmed 2`, `label …`).
@@ -663,7 +663,7 @@ printf 'rates\tchain\tenv/runtime\t1.00 (2/2)\t1.00 (2/2)\t1.00 (2/2)\tn/a\t2\n'
 | W2 | `changed` keeps only `cur.filter (!base.contains ·)` | `changed_eq_nil` stops proving |
 | W3 | `most` with `min` | `le_most` is false and stops proving |
 | W4 | `most` adds 1 to the maximum | `most_mem` is false and stops proving (`le_most`'s proof also stops, though its statement still holds) |
-| W5 | `tp` counts the predicted edges that are not labelled | G1, G5 and G6 |
+| W5 | `tp` counts the predicted edges that are not labelled | at least G1, G5 and G6 |
 | W6 | `consistent` is `true` | G5 |
 | W7 | no "The hand labels changed." section | G13 |
 | W8 | with no baseline the report says "No change against the baseline." | G9 |
@@ -676,7 +676,7 @@ printf 'rates\tchain\tenv/runtime\t1.00 (2/2)\t1.00 (2/2)\t1.00 (2/2)\tn/a\t2\n'
 From the repository root, at the head after the last rebase. `<scratch>` is a folder named for this agent.
 1. `lake --dir eval/score build 2>&1 | grep -E '^(warning|error)'` prints nothing, and the build ends with `Build completed successfully`. A failed pin is an `error:` line (`Expression … did not evaluate to true`). The job count moves with P2-009a's module and with #332's `Policy`.
 2. A scratch `Axioms.lean`, never committed, with `import Score.Nightly` and `#print axioms` for each of the four theorems. `cd eval/score && lake env lean <scratch>/Axioms.lean` prints the axiom lists under `statements`, each a subset of `[propext, Classical.choice, Quot.sound]`.
-3. N1. In a detached worktree of `origin/main` (`git worktree add --detach <scratch>/p2010-main origin/main`), run `mitos-score eval/fixtures/toy`, `…/gomod` and, after P2-009a, `…/chain`, then the same at the head. Each pair is byte equal. Compare with the worktree, not with the hashes above, if `origin/main` has moved the scorer or the fixtures.
+3. N1. In a detached worktree of `origin/main` (`git worktree add --detach <scratch>/p2010-main origin/main`, then `lake --dir eval/score build` in it), run `mitos-score eval/fixtures/toy`, `…/gomod` and, after P2-009a, `…/chain`, then the same at the head. Each pair is byte equal. Compare with the worktree, not with the hashes above, if `origin/main` has moved the scorer or the fixtures.
 4. N2: `--numbers $r/two | sha256sum`.
 5. N3: `--all $r/two | sha256sum`. Then check that the cards are the report's tail: `{ echo; mitos-score $r/two/gomod; echo; mitos-score $r/two/toy; } > c.md`, then `tail -c $(stat -c %s c.md) all.md | cmp - c.md`.
 6. N4.
@@ -696,7 +696,7 @@ Risks:
 - R2. A baseline edited by hand or rewritten to CRLF differs on every line, so every line shows as changed. A line of an unknown kind or with the wrong field count stops the run with exit 1.
 - R3. `TypeCounts.cardLines` copies the text of `render`'s three table rows. A later PR that changes those rows fails G5 in its own build, so it edits `cardLines` in the same PR, and its plan cell must name `eval/score/Score/Nightly.lean`. A shared count function needs `Score.lean` (follow-up).
 - R4. The first nightly after this merges has no baseline and prints "No baseline given, so nothing was compared."
-- R5. `resolve` runs twice per fixture, once in `score` and once in `derivations`. Measured over 3 runs each with the built binary: 6 to 7 ms for `--all` over two fixtures, 5 ms for one card. The reference resolver is O(n³) (P2-001b's deferrals), which is fine at fixture size.
+- R5. `resolve` runs up to five times per fixture in `--all` (in `score`, in `checked` through `numbers`, and in `summary`'s `cur`, `top` and `at?`) and three times in `--numbers`. Measured over 3 runs each with the built binary: 6 to 7 ms for `--all` over two fixtures, 5 ms for one card. The reference resolver is O(n³) (P2-001b's deferrals), which is fine at fixture size.
 - R6. `renderEdge` prints keys raw inside code spans, and the nightly will be posted. A backtick or a newline in a key, or `@` in an error message, reaches the post as it is. The PR comment of the toy card has the same exposure today. Escaping belongs in `Score.lean` (follow-up).
 - R7. The D1 line names the first edge that has the top count. Other edges with the same count are not listed.
 - R8. Fact and unresolved counts are not in the numbers file. A change that only moves unresolved requirements shows in the card but not in the diff.
@@ -726,7 +726,7 @@ It adds no fixture, no CI step and no change to the single-fixture card.
 deferrals:
 - To P2-012 (#213), as the contract:
   - Nightly: `lake --dir eval/score build`, then `mitos-score --numbers eval/fixtures > numbers.tsv`, uploaded as an artifact (for example `scorecard-numbers`), then `mitos-score --all eval/fixtures <baseline> > scorecard.md`, posted. Pass `<baseline>` only when the earlier file exists (R4). Keep each exit code: exit 1 fails the job, and the numbers never do. `--numbers` prints nothing when a fixture fails, so a broken run leaves no baseline even if the upload runs anyway.
-  - "`main`'s" baseline. One option is the `scorecard-numbers` artifact of the last successful nightly on `main` (`gh run list --workflow nightly.yml --branch main --status success --limit 1`, then `gh run download <id> -n scorecard-numbers`, with `actions: read`). What "the diff against `main`'s" means for a nightly that runs on `main`, and for a PR job, is P2-012's call, and the owner merges P2-012.
+  - "`main`'s" baseline. The root's default (owner_decisions, Q-a): the `numbers.tsv` in the `scorecard-numbers` artifact of `main`'s newest nightly that uploaded it, chosen by the artifact and not by a successful run. P2-012 owns the fetch, as its C1 specifies (`actions: read`), and decides whether a PR job compares against it; the owner merges P2-012.
   - `ci.yml`'s scorecard step (`:296-301`) may switch from `eval/fixtures/toy` to `--all eval/fixtures`, so the PR comment covers every fixture. That also lands P2-009b's deferral of running the go.mod card in CI, and it runs `Nightly.checked` on the real fixtures in every PR.
   - When the D1 line is bold, D1 is the owner's to reopen (plan, Scope decisions). The post makes that line visible.
   - `docs/process.md` names only the toy fixture (`:190`, `:492-494`). That wording is the owner's and moves with P2-012.
@@ -746,7 +746,7 @@ deferrals:
 
 owner_decisions:
 - Settled by the plan: this row's cells; an agent merges it; eval code only, with the wiring in P2-012; the D1 threshold of 8 (`plan/phase-2.md:110-111`); and that the numbers never fail a run while a scorer error does (`docs/process.md:190`).
-- No owner call is needed for this row. The cell's "a scorecard module" is one module. The meaning of "`main`'s" baseline in the nightly is P2-012's to set.
+- This row's code needs no owner call: the cell's "a scorecard module" is one module, and `--all` takes any numbers file. Where `main`'s baseline is stored has a root's default, which answers #160 item 3: the `numbers.tsv` in the `scorecard-numbers` artifact of `main`'s newest nightly that uploaded it, fetched as P2-012's C1 specifies, and the diff against it is `--all`'s line-set diff (D3). P2-012 owns the fetch, and the owner can overrule the default.
 - The root's defaults in this design, not owner rulings:
   - D1. Two new modes, `--all` and `--numbers`, and the single mode keeps its bytes. Reason: CI's post, P2-009b's hashes and #332's card theorems all read it.
   - D2. Derivations are counted over every repo-level edge the resolver made, not only the card's. Reason: D1 measures the resolver's records per repo-level edge, so a scorer policy such as Q1 must not hide them.
@@ -787,7 +787,7 @@ Interface depth: eleven names and four theorems, and callers see three commands.
 ### Tradeoffs accepted
 - A numbers format that is only a contract between two runs of this tool, in exchange for a diff with no parsing (R1).
 - A diff that shows "before" and "after" cells side by side, not computed deltas such as `+0.17`.
-- `resolve` running twice per fixture (R5), and a copy of `render`'s row text checked against it (R3), in exchange for no edit to `Score.lean`.
+- `resolve` running several times per fixture (R5), and a copy of `render`'s row text checked against it (R3), in exchange for no edit to `Score.lean`.
 - A fixture with a tab in a key fails instead of being escaped (N11). It is loud, and no fixture has one.
 - Raw keys in the posted text (R6), as the PR comment already has.
 - No baseline on the first nightly (R4).
@@ -807,7 +807,7 @@ Interface depth: eleven names and four theorems, and callers see three commands.
 - A12. Let an IO error abort the run (Design A). One unreadable fixture would hide every card.
 
 ### Open questions and risks
-- Q-a. What "the diff against `main`'s" means for the nightly that runs on `main`, and for a PR job. P2-012 decides; the code takes any numbers file.
+- Q-a. Where `main`'s baseline is stored and how the diff against it is made. Default, the root's: the `numbers.tsv` in the `scorecard-numbers` artifact of `main`'s newest nightly that uploaded it, fetched as P2-012's C1 specifies, and compared by `--all`'s line-set diff (D3). This answers #160 item 3. P2-012 owns the fetch and whether a PR job compares against it, and the owner can overrule the default; the code takes any numbers file.
 - Q-b. Should a numbers line carry a format version? Not now (R1).
 - Not verified: the run on CI's machine, and the chain fixture's numbers (N13, until P2-009a merges).
 
