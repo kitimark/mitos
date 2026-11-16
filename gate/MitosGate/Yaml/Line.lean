@@ -176,6 +176,7 @@ private def scan (n : Nat) : List Char → List Char → Context → Except Refu
     if c == '#' && (rev.isEmpty || rev.head? == some ' ') && outside x then
       if x.flow > 0 then throw (.multiline n)
       return ⟨rev.reverse, c :: cs, x, false⟩
+    if c == '#' && x.mode == .node then throw (.multiline n)
     if x.mode == .double && c == '\\' then throw (.escape n)
     if (x.mode == .closed || x.mode == .singleEnd) && c != ' ' &&
         !(x.mode == .singleEnd && c == '\'') &&

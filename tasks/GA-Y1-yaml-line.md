@@ -54,7 +54,7 @@ with a trailing comment. This conservative subset costs no accepted repository w
 Sequence ownership uses actual source columns, including extra spaces and nested sequence dashes.
 
 The source-context coverage strengthening takes the core reader beyond the issue's approximate
-270-line estimate. The first PR has 434 code lines. The fixtures remain a separate PR as
+270-line estimate. The first PR has 441 code lines. The fixtures remain a separate PR as
 the issue requests. The extra source annotation is retained because per-output partitions alone
 would permit dropping a comment-shaped block line.
 
@@ -81,7 +81,7 @@ The short fixtures cover equal and lower content indents for root, mapping and s
 
 ## Evidence
 
-At the implementation head, the live reader accepts ci, nightly, clear-needs-rebase,
+At the initial main f0aacc7 snapshot, the live reader accepts ci, nightly, clear-needs-rebase,
 land-protection, land and update-prs. It refuses owner-ping at line 27 for its anchor.
 A scratch Lean dump and PyYAML 6.0.3 yaml.scan agree exactly on 284 block lines and 76 expression
 positions across the six accepted main workflows. The open #336 land.yml at e91b849 also accepts
@@ -121,7 +121,9 @@ coverage, scalar owners, context-sensitive boundaries, exact fixture results and
 values. The prescribed Opus model is unavailable, so these are advisory passes and the merge
 remains held for the required Opus verdict.
 
-## Build budget
+## Initial build budget
+
+These measurements cover the first published source and 54 fixtures. The review-round figures below supersede them for the current source.
 
 The claim is a build increase below 30 seconds and fixture compilation below 10 seconds. A
 separate worktree uses copied warmed upstream outputs. Both sides rebuild Main and link the
@@ -149,3 +151,38 @@ compiles in 3.8 to 4.7 seconds across the five runs. This clears both build budg
 
 Five silent successful ci.yml parses on the final reader-and-fixtures binary take 0.069475,
 0.075745, 0.067498, 0.074312 and 0.071689 seconds, below the one-second budget.
+
+## Review-round validation
+
+CodeRabbit found that a hash immediately after a flow opener or comma could be kept as scalar
+text, although YAML treats it as a comment. The following physical lines can then remain in the
+same flow collection. The reader now refuses a hash at a node start after checking ordinary
+separated comments. This closes `a: [#x]`, `a: {#x}` and `a: [b,#x]` without changing quoted,
+plain `x#y` or block-scalar hashes. Three exact refusal fixtures and a positive flow-plain fixture
+bring the total to 58 kernel theorems, with all eight interpreter guards retained. The native
+workflow suite also pins the three refusals and accepted plain/empty-value comments.
+
+Both pull requests were concurrently rebased onto main 583a13b. Their patch IDs and scoped source
+blobs were unchanged. The fix preserves those new remote heads and the upstream oracle workflow.
+The upstream commits change no root Lean build inputs, so the benchmark's before code is unchanged.
+
+Against main 583a13b, all six workflows accept and owner-ping still refuses line 27. PyYAML 6.0.3
+and the final reader agree on 298 block lines and 79 expression positions across the six accepted
+workflows. The open #336 still has head e91b849; its land workflow also accepts and matches the
+oracle exactly. Five silent successful parses of the new 581-line ci.yml take 0.077255, 0.082981,
+0.080108, 0.083578 and 0.084352 seconds.
+
+Three interleaved build pairs refresh the same benchmark method after the review fix. Every build
+exits zero and rebuilds the new modules and Main. The fixture module compiles in 4.1 to 4.6 seconds.
+
+| Run | Before seconds | After seconds |
+| --- | ---: | ---: |
+| 1 | 5.332 | 11.403 |
+| 2 | 4.414 | 12.333 |
+| 3 | 4.643 | 11.947 |
+
+The medians are 4.643 and 11.947 seconds, an increase of 7.304 seconds. The before range is
+4.414 to 5.332 seconds and the after range is 11.403 to 12.333 seconds. Both build budgets and the
+one-second runtime budget pass. A fresh inherited-model advisory check passes 22 focused native
+cases, including four valid multiline-flow disguises, positive comment/hash cases and refusal line
+origins. The required Opus verdict remains pending.
