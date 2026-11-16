@@ -1,0 +1,13 @@
+name = "mitos-yaml-oracle"
+srcDir = "src"
+defaultTargets = ["l4yaml-event"]
+
+[leanOptions]
+autoImplicit = false
+
+[[lean_lib]]
+name = "L4YAML"
+
+[[lean_exe]]
+name = "l4yaml-event"
+root = "Tests.EmitEvents"

@@ -5,10 +5,10 @@ export PATH="$HOME/.elan/bin:$PATH"
 attempts=5
 delay="${INSTALL_RETRY_DELAY:-10}"
 
-toolchain_files_outside_lake() {
-  find . -name lean-toolchain -not -path '*/.lake/*' -print0
+toolchain_files_to_install() {
+  find . -name lean-toolchain -not -path '*/.lake/*' -not -path './eval/yaml-oracle/*' -print0
 }
-toolchains=$(toolchain_files_outside_lake \
+toolchains=$(toolchain_files_to_install \
   | while IFS= read -r -d '' f; do cat "$f"; echo; done | sed '/^[[:space:]]*$/d' | sort -u)
 
 [ -n "$toolchains" ] || { echo "::error::no lean-toolchain file found"; exit 1; }
