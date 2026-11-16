@@ -584,7 +584,8 @@ reject "a trust-critical PR with an unknown verdict token: no merge command" "me
 verdict_row 'wording-only at 2222222, confirmed from the diff'
 expect "a wording-only change on a trust path needs no opus verdict" "$(mline 21 "$H21" "$userkeeps")"
 for f in eval/cheats/c/run.sh .github/workflows/ci.yml statements.lock examples/acme/models.lock core/Mitos/Core.lean \
-  core/Mitos/Core/Spec.lean core/Challenge/A.lean core/comparator.json lean-toolchain lakefile.toml core/lakefile.toml; do
+  core/Mitos/Core/Spec.lean core/Challenge/A.lean core/comparator.json lean-toolchain lakefile.toml core/lakefile.toml \
+  lake-manifest.json core/lake-manifest.json; do
   jq -n --arg f "$f" '[{filename: "src/a.lean"}, {filename: $f}]' >"$work/files-21.json"
   verdict_row 'PASS fable-xhigh at 2222222, author sonnet'
   reject "trust-critical path $f: a non-opus verdict gets no merge command" "merge-ready #21"
@@ -734,7 +735,7 @@ rm -f "$work/pull-21.json"
 
 for f in gate/x.lean eval/cheats/c/run.sh .github/workflows/ci.yml statements.lock examples/acme/models.lock \
   core/Mitos/Core.lean core/Mitos/Core/Spec.lean core/Challenge/A.lean core/comparator.json lean-toolchain \
-  lakefile.toml core/lakefile.toml docs/process.md CLAUDE.md plan/phase-1.md \
+  lakefile.toml core/lakefile.toml lake-manifest.json core/lake-manifest.json docs/process.md CLAUDE.md plan/phase-1.md \
   .cursor/rules/kitimark-mode.mdc .cursor/skills/kitimark-mode/SKILL.md; do
   jq -n --arg f "$f" '[{filename: "src/a.lean"}, {filename: $f}]' >"$work/files-21.json"
   dash "| #21 other | \`2222222\` | green | PASS opus-xhigh at \`2222222\`, author sonnet |"
@@ -744,7 +745,9 @@ done
 echo '[{"filename":"core/Mitos/Resolve.lean","previous_filename":"gate/Old.lean"}]' >"$work/files-21.json"
 run ok
 expect "user-kept: a file renamed out of a user path" "$(mline 21 "$H21" "$userkeeps")"
-for f in core/Mitos/Resolve.lean eval/fixtures/toy/a.json examples/acme/Models/M.lean ops/runs/2026-11-09.ndjson docs/other.md; do
+for f in core/Mitos/Resolve.lean eval/fixtures/toy/a.json examples/acme/Models/M.lean ops/runs/2026-11-09.ndjson docs/other.md \
+  eval/score/lake-manifest.json eval/mutants/lake-manifest.json eval/diff/lake-manifest.json \
+  examples/acme/lake-manifest.json lake-manifest.json.bak core/lake-manifest.json.bak; do
   jq -n --arg f "$f" '[{filename: $f}]' >"$work/files-21.json"
   run ok
   expect "not user-kept: $f" "$(mline 21 "$H21" "an agent merges")"

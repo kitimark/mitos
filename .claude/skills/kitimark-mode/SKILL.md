@@ -466,7 +466,8 @@ watcher's echo filter and the merge rule below rely on both.
   `core/comparator.json`. Everything in `core/Mitos/Core/` is spec, even a change the lock does
   not show. Never add the label, and never route around it (moving statements out of the lock, editing the CI check).
 - **Trust infrastructure.** `gate/`, `eval/cheats/`, `.github/`, the root `lean-toolchain` and
-  `lakefile.toml`, and `core/lakefile.toml`, which sets what `lake check` builds. They decide
+  `lakefile.toml`, `core/lakefile.toml`, the root `lake-manifest.json`, and
+  `core/lake-manifest.json`, which pin what the root build and `lake check` resolve. They decide
   what CI checks and what the gate trusts, so a PR touching them is trust-critical (see Verdicts).
 - **Agent rules and plans.** `docs/process.md`, `CLAUDE.md`, `.claude/`, `.cursor/` and `plan/`.
 - The user merges every PR that needs `spec-approved` or touches a path in the first three
