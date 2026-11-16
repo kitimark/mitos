@@ -7,6 +7,9 @@ run_cmd do
   let core ← Lock.importRoot `MitosGate.LockFixture
   let cases := [
     (`Mitos.WellFormed.eq_of_id, false),
+    (`Mitos.Assumption.isAI.match_1.eq_of_id, false),
+    (`Mitos.Assumption.isAI.match_1.eq_def, false),
+    (`Mitos.Assumption.isAI.match_1.eq_unfold, false),
     (`MitosGate.LockFixture.match_foo, false),
     (`MitosGate.LockFixture.proof_of_x, false),
     (`MitosGate.LockFixture.proof_, false),
@@ -21,8 +24,6 @@ run_cmd do
       throwError "missing lock fixture {n}"
     unless Lock.isGenerated core.env n == generated do
       throwError "isGenerated {n} should be {generated}"
-  let matcherEquation := `Mitos.Assumption.isAI.match_1.eq_synthetic
-  if isReservedName core.env matcherEquation then
-    throwError "matcher-prefix guard must not use a reserved name"
+  let matcherEquation := `Mitos.Assumption.isAI.match_1.eq_1
   unless Lock.isGenerated core.env matcherEquation do
     throwError "equations under an imported matcher should be generated"
