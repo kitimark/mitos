@@ -64,7 +64,7 @@ private def Report.lead : Report → List Char
 
 private def Report.rest : Report → List Char → Bool
   | .names _ _, rest => 2 ≤ rest.length && rest.getLast? == some '\''
-  | .exits _, rest => !rest.isEmpty && rest.all Char.isDigit
+  | .exits _, rest => rest == ['1']
 
 private def Report.matches (line : List Char) (r : Report) : Bool :=
   r.lead.isPrefixOf line && r.rest (line.drop r.lead.length)
@@ -451,5 +451,17 @@ example : Outcome.parse 1 ⟨"Your solution is okay!
 example : Outcome.parse 0 ⟨"Your solution is okay!
 ", "error: Illegal axiom detected: 'sorryAx'
 "⟩ = .ok := by decide +kernel
+
+example : Outcome.parse 1 ⟨"", "error: Lean default exited with 137\n"⟩ =
+    .failed .noJudgment := by decide +kernel
+
+example : Outcome.kernels.all (fun kernel =>
+    Outcome.report ("error: ".toList ++ kernel.toList ++ " exited with 1".toList) ==
+      some .kernelReject) = true := by
+  decide +kernel
+
+example : Outcome.kernels.all (fun kernel =>
+    Outcome.report ("error: ".toList ++ kernel.toList ++ " exited with 137".toList) == none) = true := by
+  decide +kernel
 
 end MitosGate.Accept
