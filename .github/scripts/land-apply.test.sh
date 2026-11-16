@@ -329,9 +329,11 @@ while IFS= read -r request; do
     and all(.args[]; contains("merge-token-secret") | not)' <<<"$request" >/dev/null \
     || note "token outside the merge request: $request"
 done < <(cat "$tmp/runs/"*/requests)
-if rg -lF 'merge-token-secret' "$tmp/runs" -g '*.json' -g output -g stdout -g stderr \
-  | grep -v '/reads/' | grep .; then
+if grep -rlF --exclude-dir=reads --include='*.json' --include=output --include=stdout \
+  --include=stderr 'merge-token-secret' "$tmp/runs"; then
   note "the merge token reached an output or saved response"
+elif [ "$?" != 1 ]; then
+  note "the merge token search failed"
 fi
 finish the-app-token-only-merges
 
@@ -344,12 +346,16 @@ calls=$(grep -E '(^|[[:space:]])gh api' <<<"$joined")
 finish every-call-has-a-timeout
 
 start
-! rg -n 'merge-async|bypass_rules|merge_method=(squash|merge)' "$script" | grep -vE '^[0-9]+:#' \
+awk '!/^#/ && /merge-async|bypass_rules|merge_method=(squash|merge)/ {print; bad=1}
+  END {exit bad}' "$script" \
   || note "another merge route or method"
 [ "$(grep -cF 'gh api -X PUT' "$script")" = 1 ] || note "there is not one PUT site"
-other_routes=$(rg -l 'pulls/[^" ]*/merge|pulls/\$[^" ]*/merge' "$root/.github" \
-  -g '!*.test.sh' -g '!land-apply.sh')
-[ -z "$other_routes" ] || note "another merge route: $other_routes"
+if other_routes=$(grep -rlE --exclude='*.test.sh' --exclude=land-apply.sh \
+  'pulls/[^" ]*/merge|pulls/\$[^" ]*/merge' "$root/.github"); then
+  note "another merge route: $other_routes"
+elif [ "$?" != 1 ]; then
+  note "the merge route search failed"
+fi
 finish no-merge-async-no-bypass
 
 start

@@ -408,6 +408,36 @@ bad_calls=$(grep -vxE 'api rate_limit --jq \.resources\.core\.remaining|api repo
 [ -s "$calls" ] || note "the stub gh saw no call"
 finish holds-no-key
 
+outputs_are_data() {
+  awk '
+    BEGIN { scope = block = value_indent = -1 }
+    /^[[:space:]]*$/ { next }
+    {
+      match($0, /[^ ]/); indent = RSTART - 1
+      if (/^[[:space:]]*#/ && (block < 0 || indent <= block) &&
+          (value_indent < 0 || indent <= value_indent)) next
+      if (indent <= scope) scope = -1
+      if (indent <= block) block = -1
+      if (indent <= value_indent) { value = ""; value_indent = indent }
+      if (block < 0) {
+        if (/^ *(- )?[a-zA-Z0-9_-]+:/) { value = ""; value_indent = indent }
+        if (indent == 0) jobs = /^jobs:$/
+        if (indent < 2) job = 0
+        if (jobs && /^  [a-zA-Z0-9_-]+:$/) job = 1
+        if (indent <= 4) steps = /^    steps:$/
+        if (/^env:$/ || (job && /^    env:$/) || (steps && /^        env:$/) ||
+            (job && /^    if:/)) scope = indent
+        if (/:[[:space:]]*[|>][0-9+-]*([[:space:]]+#.*)?[[:space:]]*$/) block = indent
+      }
+      compact = tolower($0); gsub(/[[:space:]]/, "", compact); value = value compact
+      if (value ~ /needs([.]|\[).*outputs/ && scope < 0) {
+        print NR ":" $0; bad = 1
+      }
+    }
+    END { exit bad }
+  ' "$1"
+}
+
 start
 for pin in "github.ref == 'refs/heads/main'" \
   "github.event.workflow_run.event == 'pull_request'" \
@@ -424,9 +454,66 @@ awk '/^    concurrency:$/ { c = NR } c && NR == c + 1 && /^      group: land-dec
 ! grep -nE '^[[:space:]]*(- )?run:[[:space:]]*[|>]' "$wf" || note "a run: block spans lines"
 while IFS= read -r l; do
   [[ $l =~ ^\ {10}LAND_EVENT_[A-Z]+:\ \$\{\{\ github\.event\.[a-z_.]+\ \}\}$ ]] \
+    && [ "$(grep -cxF -- "$l" "$wf")" = "$(grep -cxF -- "$l" "$decide_wf")" ] \
     || note "event text outside the decide step's env: [$l]"
 done < <(grep -F '${{' "$wf" | grep -F 'github.event.')
+outputs_are_data "$wf" || note "needs outputs outside env values or job if conditions"
 finish filter-pins
+
+start
+cat >"$tmp/output-scopes.yml" <<'YAML'
+env:
+  INPUT: ${{ needs.decide.outputs.head }}
+jobs:
+  check:
+    if: >-
+      needs.decide.outputs.pr != ''
+    env:
+      INPUT: ${{ needs.decide.outputs.head }}
+    steps:
+      - name: Pass outputs as data
+        env:
+          INPUT: >-
+            ${{ needs.decide.outputs.head }}
+        run: check
+YAML
+outputs_are_data "$tmp/output-scopes.yml" || note "env values or a multiline job if were refused"
+for snippet in \
+  '        name: ${{ needs.decide.outputs.pr }}' \
+  "        if: needs.decide.outputs.pr != ''" \
+  '        with:
+          script: |
+            console.log("${{ needs.decide.outputs.answers }}");' \
+  '        with:
+          script: |
+            console.log("${{ needs .decide.outputs.head }}");' \
+  '        with:
+          script: |
+            console.log("${{ needs.decide
+              .outputs.head }}");' \
+  '        name: >-
+          ${{ needs.decide
+            .outputs.pr }}' \
+  '        name: |-
+          # ${{ needs.decide.outputs.head }}' \
+  '        name: |2- # name
+          # ${{ needs.decide.outputs.head }}' \
+  '        name: "Prefix
+          # ${{ needs.decide.outputs.head }}"' \
+  "        name: \${{ Needs [ 'decide' ] .Outputs.head }}" \
+  '        with:
+          script: |
+            const text = `
+              env:
+                INPUT: ${{ needs.decide.outputs.head }}
+            `;'; do
+  cat "$tmp/output-scopes.yml" >"$tmp/output-unsafe.yml"
+  printf '%s\n' "$snippet" >>"$tmp/output-unsafe.yml"
+  scope_code=0
+  outputs_are_data "$tmp/output-unsafe.yml" >"$tmp/output-scope.err" || scope_code=$?
+  [ "$scope_code" = 1 ] || note "unsafe output scope was accepted or scanner failed: $snippet"
+done
+finish output-scope-fixtures
 
 start
 reads=$(grep -cE 'gh api' <<<"$joined")

@@ -1477,7 +1477,33 @@ Section 6, the bullets about this row:
 
 ## Build notes
 
-The implementation follows the build-depth design, including its round 2 clarifications at 05fd848, with the corrections below.
+The implementation follows the build-depth design merged in #329 at eac85d2, including its round 2 clarifications, with the corrections below.
+
+- Round 3 repairs the two test gaps from the Claude reviews of #336. The token and merge-route
+  scans use `grep` and `awk`, and a scan error fails the case. The three token-file, token-stdout
+  and second-merge-script mutations passed the old test with `rg` exiting 127. The workflow pin
+  tracks YAML indentation and scalar blocks, joining scalar continuation lines and normalizing
+  expression whitespace and case, so `needs.*.outputs` can occur only in environment values or
+  job `if` conditions. Its permanent fixtures accept all three environment scopes and
+  multiline job conditions, and reject step names, step conditions, scripts and fake `env` text
+  inside a script, including spaced, mixed-case and multiline expressions. Hash-prefixed text
+  inside literal and quoted scalar continuations remains visible to the check. Event
+  environment values are also confined to `decide`.
+  All six reviewer mutations fail with `rg` absent. The three apply mutations also fail with
+  `rg` exiting 2, and injected recursive `grep` errors fail both scan cases. The report event-env
+  mutation passes the old test and fails this round's test. All 10 gate scripts and all five
+  land/app-token suites pass, including 72 CLI, 23 decide and 40 apply cases. The fresh 117-job
+  build, actionlint, shellcheck, imports and statement lock checks pass. Mutation probes use a
+  separate script copy and the exact fresh executable; nominal suites use the real worktree.
+- The review round rebases onto `main` at 6d10539. Its earlier conflict with 00db1fb retains the PR's deletion of the stale
+  `wake` comment and preserves main's axiom checker. Both main's planted-axiom and non-theorem
+  tests and this PR's `land-answers` tests remain in `gate/land-test.sh`.
+- Follow-up #341 tracks the remaining report marker-filter regression. The advisory report race
+  is already #335, and review-summary edit timestamps are #334. The accepted freshness limits
+  also include the PR body footer, dashboard verdict, stack membership and hold label, which
+  `apply` does not revalidate. Its fresh `spec-approved` check remains. No version-label or
+  replacement `wake` comment is added. `CLAUDE.md` requires the Claude Code footer on public
+  posts even when Codex authors the change.
 
 - Round 2 restores the full-workflow checks for run expressions, multi-line run blocks, event
   values outside the decide environment and inline `gh`. Temporary apply and report mutations passed
