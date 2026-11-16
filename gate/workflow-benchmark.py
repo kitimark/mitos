@@ -118,7 +118,7 @@ parser.add_argument("--base", default="origin/main")
 parser.add_argument("--mode", choices=["runtime", "build", "both"], default="both")
 parser.add_argument("--output", type=pathlib.Path)
 args = parser.parse_args()
-output = args.output or pathlib.Path(tempfile.mkdtemp(prefix="workflow-benchmark-"))
+output = (args.output or pathlib.Path(tempfile.mkdtemp(prefix="workflow-benchmark-"))).resolve()
 output.mkdir(exist_ok=True)
 assert not list(output.iterdir()), "benchmark output directory must be empty"
 print(json.dumps({"output": str(output), "load": os.getloadavg(), "logical_cpus": os.cpu_count()}), flush=True)
