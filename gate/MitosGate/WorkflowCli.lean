@@ -1,5 +1,5 @@
 import MitosGate.Util
-import MitosGate.Yaml.Line
+import MitosGate.Yaml.LineCases
 
 namespace MitosGate.WorkflowCli
 
