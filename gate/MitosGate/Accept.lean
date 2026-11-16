@@ -659,6 +659,12 @@ def judge (c : Config) (i : Inputs) (chal adequacyChal : String) : GateM Unit :=
       for (rel, txt) in paths i.core ++ files do
         if let some p := (dir / rel).parent then IO.FS.createDirAll p
         IO.FS.writeFile (dir / rel) txt
+    atGate .adequacy do
+      match ← examplesLayout m with
+      | .error reason =>
+        report .adequacy false reason
+        throw (.adequacy, .judged)
+      | .ok () => pure ()
     let model ← atGate .adequacy (judgeModel c m dir)
     let before ← atGate .adequacy (buildOutputs dir).run
     pluginGates c (← runComparator c dir "comparator.json")
