@@ -186,7 +186,7 @@ while read -r n sha; do
   if [ ! -e "$dir/files-$n.failed" ]; then
     kt=$(jq -r --argjson files_per_page "$files_per_page" '
       def trust_critical: test("^(gate/|eval/cheats/|\\.github/|core/Mitos/Core/|core/Challenge/)")
-        or IN("lean-toolchain", "lakefile.toml", "core/lakefile.toml", "core/Mitos/Core.lean", "core/comparator.json")
+        or IN("lean-toolchain", "lakefile.toml", "core/lakefile.toml", "lake-manifest.json", "core/lake-manifest.json", "core/Mitos/Core.lean", "core/comparator.json")
         or test("(^|/)(statements|models)\\.lock$");
       def user_kept: trust_critical or test("^(\\.claude/|\\.cursor/|plan/)") or IN("CLAUDE.md", "docs/process.md");
       def yn(f): if any(.[]; f) then "yes" else "no" end;

@@ -3,6 +3,7 @@
 /statements.lock            @kitimark
 /lean-toolchain             @kitimark
 /lakefile.toml              @kitimark
+/lake-manifest.json         @kitimark
 /eval/cheats/               @kitimark
 /.github/                   @kitimark
 /docs/process.md            @kitimark

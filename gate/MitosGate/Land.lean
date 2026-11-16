@@ -97,7 +97,8 @@ def rulePath (p : String) : Bool :=
 def criticalPath (p : String) : Bool :=
   ["gate/", "eval/cheats/", ".github/", "core/Mitos/Core/", "core/Challenge/"].any
     (·.isPrefixOf p) ||
-  ["lean-toolchain", "lakefile.toml", "core/lakefile.toml", "core/Mitos/Core.lean",
+  ["lean-toolchain", "lakefile.toml", "core/lakefile.toml", "lake-manifest.json",
+    "core/lake-manifest.json", "core/Mitos/Core.lean",
     "core/comparator.json", "statements.lock", "models.lock"].contains p ||
   p.endsWith "/statements.lock" || p.endsWith "/models.lock"
 
@@ -1351,17 +1352,26 @@ theorem trustTreesAreCritical :
       [(true, true), (true, true), (true, true), (true, true), (true, true)] := by
   decide +kernel
 theorem trustFilesAreCritical :
-    ["lean-toolchain", "lakefile.toml", "core/lakefile.toml", "core/Mitos/Core.lean",
+    ["lean-toolchain", "lakefile.toml", "core/lakefile.toml", "lake-manifest.json",
+      "core/lake-manifest.json", "core/Mitos/Core.lean",
       "core/comparator.json", "statements.lock", "models.lock", "examples/acme/statements.lock",
       "examples/acme/models.lock"].map (fun p => (keptPath p, criticalPath p)) =
       [(true, true), (true, true), (true, true), (true, true), (true, true), (true, true),
-        (true, true), (true, true), (true, true)] := by
+        (true, true), (true, true), (true, true), (true, true), (true, true)] := by
   decide +kernel
 theorem nearMissesAreNotKept :
     ["gateway/x.lean", "eval/cheatsheet.md", "core/Mitos/CoreX.lean", "plans/x.md",
       "docs/process.md.orig", "xCLAUDE.md", "lean-toolchain.bak", "xstatements.lock",
       "xmodels.lock"].map keptPath =
       [false, false, false, false, false, false, false, false, false] := by
+  decide +kernel
+theorem nonJudgeManifestsAreNotKeptOrCritical :
+    ["eval/score/lake-manifest.json", "eval/mutants/lake-manifest.json",
+      "eval/diff/lake-manifest.json", "examples/acme/lake-manifest.json",
+      "lake-manifest.json.bak", "core/lake-manifest.json.bak"].map
+      (fun p => (keptPath p, criticalPath p)) =
+      [(false, false), (false, false), (false, false), (false, false), (false, false),
+        (false, false)] := by
   decide +kernel
 theorem unreadPathsAreCritical : ({ agentBehind with paths := none } : Obs).critical = true := by
   decide +kernel
@@ -1763,7 +1773,8 @@ open Lean in
       ``stuckDoesNotBlock, ``nextNeverWaits, ``nextIgnoresListingOrder, ``quietAfterRebase,
       ``unknownAuthorCoversNothing, ``standingFailOrHoldCoversNothing,
       ``coverIsAnotherJudgesWord, ``criticalCoverIsAnOpusPassOrWordingOnly,
-      ``mem_queueOf, ``newestOwner_perm, ``toCarry_updaterForcePush] do
+      ``mem_queueOf, ``newestOwner_perm, ``toCarry_updaterForcePush,
+      ``Fixture.trustFilesAreCritical, ``Fixture.nonJudgeManifestsAreNotKeptOrCritical] do
     unless mine.contains n do throwError "{n} is not a theorem of this file"
   let mut bad : Array MessageData := #[]
   for n in mine do
