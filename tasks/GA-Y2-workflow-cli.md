@@ -105,3 +105,15 @@ Local imports, the statement lock and run-log checks pass. Core replay and the p
 stop at the container's read-only bwrap uid map. Toy acceptance passes provenance and lint, then
 stops at the same sandbox setup. The lint suite passes 184 of 190 cases; six namespace-dependent
 runner cases stop at the read-only uid map. No sandbox checks are disabled.
+
+## Review fix for relative benchmark output
+
+CodeRabbit found that a relative `--output` path was repeated when the build runner changed its
+working directory. A real `--mode build` run reproduced `FileNotFoundError` after the first
+baseline build. The runner now resolves the output path before creating directories.
+
+The same command with a relative output directory then completes both warmups and all six
+build trials, writes `results.json`, and validates every resulting executable on ci.yml.
+The independent fix verifier can inspect the before and after logs and the six-result file.
+The original timing samples above stay unchanged. They used an absolute output directory and
+record the runner at the earlier commit; this repair run checks path handling and execution.
