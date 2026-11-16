@@ -1,0 +1,2 @@
+env: X: ${{ needs.a.outputs.x }}
+run: echo ${{ env.X }}

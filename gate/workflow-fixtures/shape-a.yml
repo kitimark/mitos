@@ -1,0 +1,3 @@
+steps:
+  # x: |
+  - run: echo ${{ needs.a.outputs.x }}

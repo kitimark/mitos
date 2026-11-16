@@ -17,7 +17,8 @@ open MitosGate
 def lockedSpecImports : List String := ["Init", "Std", "Mitos.Core"]
 
 def usage : String := s!"usage:
-  mitos-gate workflow parse <file>              refuse YAML outside the workflow line subset
+  mitos-gate workflow parse <file>              refuse YAML outside the workflow subset
+  mitos-gate workflow leaves <file>             print decoded workflow leaves as JSON lines
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.*; spec never imports impl)
                                                  and for gate/MitosGate/Base.lean and gate/MitosGate/Base/
