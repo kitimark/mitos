@@ -10,12 +10,14 @@ import MitosGate.LandCli
 import MitosGate.SpeechCli
 import MitosGate.SnapshotCli
 import MitosGate.ShadowCli
+import MitosGate.WorkflowCli
 
 open MitosGate
 
 def lockedSpecImports : List String := ["Init", "Std", "Mitos.Core"]
 
 def usage : String := "usage:
+  mitos-gate workflow parse <file>              refuse YAML outside the workflow line subset
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.*; spec never imports impl)
                                                  and for gate/MitosGate/Base.lean and gate/MitosGate/Base/
@@ -195,6 +197,7 @@ def cli (args : List String) : IO UInt32 := do
   | "speech" :: rest => SpeechCli.cli rest usage
   | "snapshot" :: rest => SnapshotCli.cli rest usage
   | "shadow" :: rest => ShadowCli.cli rest usage
+  | "workflow" :: rest => WorkflowCli.cli rest usage
   | _ => IO.eprintln usage; return 2
 
 def main (args : List String) : IO UInt32 := do
