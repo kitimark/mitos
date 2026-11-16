@@ -1,0 +1,5 @@
+full=1
+comparator_only=accept
+why=The honest plugin plus `import Models.«..».Models.Extra`. The component `..` is not a plain identifier, so the full run fails at gate 1 and that is the only violation. `Models/Extra.lean` is a model file nothing else imports, so without lint the build accepts the plugin. This pins `import:component`.
+guards=import:component
+lock_append=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  Models/Extra.lean
