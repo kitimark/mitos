@@ -7,7 +7,7 @@ pkg=$root/eval/yaml-oracle
 L4YAML_URL=https://github.com/nasa-jpl/L4YAML
 L4YAML_REV=122064d0c853be8d6c2f4cd255c6fcd67acc4ae8
 SHAPE_D_INPUT='run: "echo ${{ \x6eeeds.decide.outputs.pr }}"'
-SHAPE_D_NEEDLE='=VAL "echo ${{ needs.decide.outputs.pr }}'
+SHAPE_D_NEEDLE='=VAL "echo ${{ needs.decide.outputs.WRONG }}'
 SHAPE_D_ENCODED='\x6eeeds'
 
 version_line() {
