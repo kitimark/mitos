@@ -62,6 +62,7 @@ def readPackageSpec (manifest : Json) : Except String (Option (String × List St
     | .ok (.str s) => pure s
     | .ok _ => throw "packagesDir is not a string"
     | .error _ => pure ".lake/packages"
+  if (dirName : System.FilePath).isAbsolute then throw "packagesDir must be relative to the workspace"
   let mut names : Array String := #[]
   for p in arr do
     match p.getObjValAs? String "name" with
@@ -85,8 +86,8 @@ private def specBad (s : String) : Bool :=
 #guard specNone "{\"packages\":[]}"
 #guard specNone "{\"packagesDir\":\".lake/packages\",\"packages\":[]}"
 #guard specSome "{\"packages\":[{\"name\":\"batteries\"}]}" ".lake/packages" ["batteries"]
-#guard specSome "{\"packagesDir\":\"/opt/pkgs\",\"packages\":[{\"name\":\"a\"},{\"name\":\"b\"}]}"
-  "/opt/pkgs" ["a", "b"]
+#guard specSome "{\"packagesDir\":\"deps\",\"packages\":[{\"name\":\"a\"}]}" "deps" ["a"]
+#guard specBad "{\"packagesDir\":\"/opt/pkgs\",\"packages\":[{\"name\":\"a\"},{\"name\":\"b\"}]}"
 #guard specBad "{\"packages\":[{}]}"
 #guard specBad "{\"packages\":1}"
 
@@ -95,6 +96,7 @@ def packagesMissing : String :=
 
 structure ResolvedPackages where
   dir   : System.FilePath
+  rel   : System.FilePath
   names : List String
 
 inductive PackageLink where
@@ -121,10 +123,11 @@ def resolvedPackages (core : System.FilePath) : ExceptT String IO (Option Resolv
     | .ok s => pure s
     | .error e => throw s!"core/lake-manifest.json: {e}"
   let some (dirName, names) := spec | return none
-  let dir := if (dirName : System.FilePath).isAbsolute then System.FilePath.mk dirName else core / dirName
+  let rel : System.FilePath := dirName
+  let dir := core / rel
   for n in names do
     unless ← (dir / n).isDir do throw packagesMissing
-  return some { dir, names }
+  return some { dir, rel, names }
 
 def clearPackagesLink (dest : System.FilePath) : IO Unit := do
   try
@@ -136,8 +139,9 @@ def clearPackagesLink (dest : System.FilePath) : IO Unit := do
     | e => throw e
 
 def placePackages (workspace : System.FilePath) (reuse : PackageReuse) : IO Bool := do
-  let dest := workspace / ".lake" / "packages"
+  let dest := workspace / reuse.packages.rel
   IO.FS.createDirAll (workspace / ".lake")
+  if let some parent := dest.parent then IO.FS.createDirAll parent
   clearPackagesLink dest
   let src ← IO.FS.realPath reuse.packages.dir
   let out ← match reuse.link with
@@ -146,7 +150,7 @@ def placePackages (workspace : System.FilePath) (reuse : PackageReuse) : IO Bool
     | .copy => IO.Process.output { cmd := "cp", args := #["-a", src.toString, dest.toString] }
   return out.exitCode == 0
 
-def sandboxSees (dir : System.FilePath) (names : List String) : IO Bool := do
+def sandboxSees (dir rel : System.FilePath) (names : List String) : IO Bool := do
   let out ← IO.Process.output {
     cmd := "bwrap"
     args := #[
@@ -160,7 +164,7 @@ def sandboxSees (dir : System.FilePath) (names : List String) : IO Bool := do
       "--unshare-all", "--die-with-parent",
       "--chdir", dir.toString,
       "--", "/bin/sh", "-c",
-      "for n; do test -d \".lake/packages/$n\" || exit 1; done", "sh"
+      "rel=$1; shift; for n; do test -d \"$rel/$n\" || exit 1; done", "sh", rel.toString
     ] ++ names.toArray
   }
   return out.exitCode == 0
@@ -203,7 +207,7 @@ def chooseLink (pkgs : ResolvedPackages) : ExceptT String IO PackageLink := do
     let dir ← IO.FS.createTempDir
     try
       let placed ← placePackages dir { packages := pkgs, link := m }
-      if placed && (← sandboxSees dir pkgs.names) then
+      if placed && (← sandboxSees dir pkgs.rel pkgs.names) then
         let writes ← if m == .symlink then symlinkWrites pkgs else pure false
         if !writes then return m
     finally
@@ -220,7 +224,7 @@ def searchPath (dir : System.FilePath) (reuse : Option PackageReuse) : List Syst
   | none => [built]
   | some r =>
     built :: r.packages.names.map fun (n : String) =>
-      dir / ".lake" / "packages" / (n : System.FilePath) / ".lake" / "build" / "lib" / "lean"
+      dir / r.packages.rel / (n : System.FilePath) / ".lake" / "build" / "lib" / "lean"
 
 def judge (cfg : Config) (toolchain : String) (files : List (String × String))
     (config : Option String) (log : System.FilePath) (reuse : Option PackageReuse) : IO Run := do
@@ -576,7 +580,8 @@ def main (args : List String) : IO UInt32 := do
     | .error e => IO.eprintln e; IO.eprintln usage; return 2
   if cfg.prepare.isSome && cfg.cases.isEmpty then IO.eprintln usage; return 2
   let root : System.FilePath := "."
-  let reuse ← match ← (prepareReuse (root / "core")).run with
+  let prepared ← try (prepareReuse (root / "core")).run catch e => pure (.error (toString e))
+  let reuse ← match prepared with
     | .ok r => pure r
     | .error e => IO.eprintln e; return 2
   if let some r := reuse then IO.eprintln s!"packages: {r.link.name}"
