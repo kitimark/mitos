@@ -47,7 +47,6 @@ prints that line after every sandboxed child it started has exited, and `bwrap` 
 its own PID namespace, whose processes die with it, so nothing the plugin started can write after
 the line. -/
 
-/-- How a report puts the opening quote before the constant's name: `: '` or ` '`. -/
 private inductive Quote
   | colon
   | space
@@ -74,9 +73,8 @@ private structure ReportRule where
   failure : Failure
   reports : List Report
 
-/-- The kernels Lake's comparator runs: with `--paranoid` its bundled ones, then always Lean's own.
-`gate/outcome-test.sh` checks the list against the toolchain's Lake, and the `#guard` beside
-`comparatorJson` checks that the gate's configurations add no kernel. -/
+/-- The kernels Lake's comparator runs: with `--paranoid` its bundled ones, then always Lean's
+own. -/
 def Outcome.kernels : List String :=
   ["Lean paranoid", "lean4lean", "nanoda", "con-leche", "con-ron", "Lean default"]
 
@@ -163,8 +161,6 @@ theorem Outcome.lastLine_of_line {pre l : List Char} (hpre : pre = [] ∨ pre.ge
   · obtain ⟨p, rfl⟩ := List.getLast?_eq_some_iff.1 h
     simpa using lastLine_append (pre := p) hl
 
-/-- The lines of `s` from the last to the first, each without its newline. A final newline ends the
-last line rather than starting an empty one. -/
 private def linesFromLast (s : List Char) : List (List Char) :=
   go (Outcome.lastLine.dropNewline s.reverse) [] []
 where
@@ -197,8 +193,6 @@ private def importClash (line : List Char) : Bool :=
 def Outcome.childExited (code : String) : List Char :=
   "error: Child exited with ".toList ++ code.toList
 
-/-- Only the import clash is read from stdout, the build log, which the plugin's text can forge;
-`pluginFailure_stdout` in `Accept.lean` is why that moves no plugin's rejection. -/
 private def classify (out : Streams) : Failure :=
   let last := Outcome.lastLine out.stderr.toList
   match Outcome.report last with
@@ -284,8 +278,6 @@ private theorem classify_stdout (s₁ s₂ e : String) :
     · simp only [ha, Bool.false_eq_true, ↓reduceIte]
       refine Or.inr ⟨?_, ?_⟩ <;> split <;> simp
 
-/-- Stdout, which holds the plugin's build log, can only choose between `noJudgment` and
-`importClash`, whatever the exit code. -/
 theorem Outcome.parse_stdout {code : UInt32} {s₁ s₂ e : String} {f₁ f₂ : Failure}
     (h₁ : Outcome.parse code ⟨s₁, e⟩ = .failed f₁) (h₂ : Outcome.parse code ⟨s₂, e⟩ = .failed f₂) :
     f₁ = f₂ ∨ (f₁ = .noJudgment ∨ f₁ = .importClash) ∧ (f₂ = .noJudgment ∨ f₂ = .importClash) := by
@@ -340,12 +332,11 @@ theorem Outcome.parse_judged {code : UInt32} {out : Streams} {f : Failure}
   · simp only [h1, Bool.false_eq_true, ↓reduceIte] at h
     exact absurd (Outcome.failed.inj h).symm hf
 
-/-! Each outcome, from the last lines of a run, split into the comparator's stdout (the first
-string) and stderr (the second) as Lake writes them. The gate prints the two joined, stdout first,
-each line after `  | `. An example whose comment names a log takes its text from that log in CI's
-`cheat-logs` artifact for main at c79e03f, unless the comment says otherwise. The other examples are
-not from a cheat log. The exit codes are the ones Lake's `CLI/Check.lean` returns: 0 for an accepted
-run, 1 for any error once the run has started. -/
+/-! Each outcome, from the last lines of a run as the gate prints them, stdout first and then
+stderr, each line after `  | `. An example whose comment names a log takes its text from that log
+in CI's `cheat-logs` artifact for main at c79e03f, unless the comment says otherwise. The other
+examples are not from a cheat log. The exit codes are the ones Lake's `CLI/Check.lean` returns: 0
+for an accepted run, 1 for any error once the run has started. -/
 
 -- The `cd core && lake comparator --paranoid` step of the same CI run: the gate prints no
 -- comparator output for an accepted run.

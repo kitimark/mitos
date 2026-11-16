@@ -115,7 +115,7 @@ private def configKeys (json : String) : List String :=
   | _ => []
 
 -- A configuration adds kernels only with `external_kernels` or `enable_nanoda` (Lake's
--- `Check.Config`). The gate's set neither, so a kernel that rejects is one of `Outcome.kernels`.
+-- `Check.Config`).
 #guard [comparatorJson "P", gate6ComparatorJson "M" ["M.t"] ["M.d"]].all fun json =>
   configKeys json ==
     ["challenge_module", "definition_names", "permitted_axioms", "solution_module", "theorem_names"]
@@ -343,9 +343,6 @@ example :
     pluginFailure .missingConst = .statements ∧ pluginFailure .statement = .statements :=
   ⟨rfl, rfl⟩
 
-/-- The comparator's stdout holds the plugin's build log, so the plugin's text can change it. By
-`Outcome.parse_stdout` it can only choose between `importClash` and `noJudgment`, which this maps
-to one gate, so it cannot move the plugin's rejection. -/
 theorem pluginFailure_stdout {code : UInt32} {s₁ s₂ e : String} {f₁ f₂ : Failure}
     (h₁ : Outcome.parse code ⟨s₁, e⟩ = .failed f₁) (h₂ : Outcome.parse code ⟨s₂, e⟩ = .failed f₂) :
     pluginFailure f₁ = pluginFailure f₂ := by
