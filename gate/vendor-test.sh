@@ -23,6 +23,8 @@ mapfile -t pin < "$vendor/PIN"
    ${pin[4]} == entry=L4YAML.Parser.Composition ]] || fail "$vendor/PIN has invalid fields"
 entry=${pin[4]#entry=}
 [ -f "$vendor/LICENSE" ] || fail "$vendor/LICENSE is missing"
+branch=${pin[2]#branch=}
+git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 || fail "$vendor/PIN has an invalid branch"
 previous=
 while read -r hash path extra || [ -n "${hash:-}${path:-}${extra:-}" ]; do
   [[ $hash =~ ^[0-9a-f]{40}$ && -z $extra &&
@@ -81,7 +83,7 @@ sed '/^LICENSE$/d' "$work/expected" > "$work/modules"
 diff -u "$work/modules" "$work/closed" || fail "$vendor import closure differs"
 
 while read -r path; do
-  grep -nE '(^|-/)[[:space:]]*((public|private|protected|noncomputable|meta|scoped|local)[[:space:]]+)*(initialize|builtin_initialize|syntax|macro|macro_rules|elab|elab_rules)([[:space:]]|$)|(^|-/)[[:space:]]*@\[[^]]*(macro|elab|csimp)|^[[:space:]]*(csimp|command_elab|term_elab)([[:space:]]|\])' "$vendor/$path" \
+  grep -nE '(^|-/)[[:space:]]*((public|private|protected|noncomputable|meta|scoped|local)[[:space:]]+)*(initialize|builtin_initialize|syntax|macro|macro_rules|elab|elab_rules|run_cmd|#eval|notation|infixl|declare_syntax_cat)([[:space:]:]|$)|(^|-/)[[:space:]]*@\[[^]]*(macro|elab|csimp)|^[[:space:]]*(csimp|command_elab|term_elab)([[:space:]]|\])' "$vendor/$path" \
     | sed "s|^|$path:|" || [ "$?" -eq 1 ]
 done < "$work/modules" > "$work/startup"
 cat > "$work/startup.expected" <<'STARTUP'
