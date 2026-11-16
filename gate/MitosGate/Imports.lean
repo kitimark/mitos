@@ -21,9 +21,13 @@ def checkSource (allowed : List String) (src : String) : IO (Array Lint.Violatio
 def checkFile (file : System.FilePath) (allowed : List String) : IO (Array String) := do
   return (← checkSource allowed (← IO.FS.readFile file)).map (·.render file.toString)
 
-def check (dir : System.FilePath) (allowed : List String) : IO (Array String) := do
+def check (dir : System.FilePath) (allowed : List String)
+    (skipDirs : List System.FilePath := []) : IO (Array String) := do
+  if !(← dir.isDir) then return #[]
+  let files ← dir.walkDir fun path => pure (!skipDirs.contains path)
+  let files := (files.filter (·.extension == some "lean")).qsort (·.toString < ·.toString)
   let mut out := #[]
-  for f in ← leanFiles dir do
+  for f in files do
     out := out ++ (← checkFile f allowed)
   return out
 
