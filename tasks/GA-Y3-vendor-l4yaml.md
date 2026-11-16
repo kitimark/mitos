@@ -64,22 +64,28 @@ Raw successful samples are in [GA-Y3-builds.tsv](GA-Y3-builds.tsv). The three cl
 
 The separate clean parser-library builds took 18.050, 18.099, and 18.423 seconds. The median was 18.099 seconds and the range was 18.050 to 18.423 seconds. Each produced 22,175,833 `.lake` bytes and 19 olean files. There were 19 built modules, plus two Lake target jobs.
 
-The baseline graph is commit `391789f47e5bd64571658f2cc83d9294fecec91c`. Authored shell files and unused vendor sources were placed during its sequential trials, without changing the Lake configuration. Parser trials use that graph plus this PR's exact library entry. Their lakefile SHA-256 is `d55f59713bbd5d99a555d9e629fc8af1610791bfd2fa4b5dd6536cbfea218e31`. The after set is pending. No unrelated Lean source changes enter these graphs.
+The baseline graph is commit `391789f47e5bd64571658f2cc83d9294fecec91c`. Authored shell files and unused vendor sources were placed during its sequential trials, without changing the Lake configuration. Parser trials use that graph plus this PR's exact library entry. Their lakefile SHA-256 is `d55f59713bbd5d99a555d9e629fc8af1610791bfd2fa4b5dd6536cbfea218e31`. The three after samples use the unchanged compiler graph at `b254359eb197e995bc24882aebd9baa083c0069a`. No unrelated Lean source changes enter these graphs.
+
+The three after builds took 576.146, 636.947, and 613.914 seconds. The median was 613.914 seconds and the range was 576.146 to 636.947 seconds. All three produced the same 300,290,340 combined build bytes, 64 olean files, and 121 Lake jobs as the baseline. The separate parser builds produced 21 Lake jobs, including 19 modules. The baseline and final after gate binaries have the same SHA-256, `0c5853fb8d845862fad514178a76c0062fb58d85308313f65c07634b09511f49`.
+
+The slower second after sample is retained. Its child user CPU time was 876.691 seconds and its existing `Snapshot.Fixtures` step took 417 seconds. The first after sample used 811.123 user seconds and 367 fixture seconds. The third used 846.125 user seconds and 402 fixture seconds. Baseline user CPU ranged from 809.705 to 831.464 seconds and fixture time ranged from 359 to 386 seconds. Git fixture work and a short Lean parser probe overlapped the after set. The data identifies variation in existing compilation but does not isolate its cause. This sequential three-run comparison supports no causal speedup or regression claim.
+
+The final PR checkout was reconciled with the updater's newer main, which adds the YAML view and vendor import fence. The measured checkout stayed fixed at `b254359`. CI validates the integrated head separately. Its additional upstream changes are outside the measured comparison.
 
 Each plain run deletes the root and core `.lake` directories, then times `lake build` and counts both directories in bytes. Parser-only runs delete the root `.lake` and time `lake build L4YAML`; they do not use core outputs. The plain build outputs were parked and restored between sets. Default targets are identical before and after. Plain `lake build` does not request the parser library yet. These are three descriptive runs per configuration, not a performance adoption verdict. The machine exposes five CPUs with a four-CPU cgroup quota. A process sample identified the existing `Snapshot/Fixtures.lean` compilation on one fully used core as the baseline's long critical step. Its first build reported 386 seconds.
 
 The real vendor check, mutation suite, imports, lock, runlog, bash syntax, REST wrapper, cache-logs, cheat-shard, ci-trust, land-protection, and cancel-superseded tests passed. The gate binary remained byte-identical after adding and building the unused library. Local core replay and all paranoid comparator kernels passed. This container lacks `/run/user`, so those checks used a temporary wrapper that adds a private `/run` tmpfs and retains the existing isolation flags. Local acceptance reached gates 0 and 1, then stalled without a verdict. Its orphaned process group was stopped after the execution environment refreshed. That local result is inconclusive. Required CI ran normal core replay, paranoid comparison, acceptance, and the full cheat corpus successfully at both the original code head and the updater head.
 
-The branch-membership fixtures reject an orphan revision and a rewritten branch with exit 1, accept a valid historical ancestor, and return 2 when the branch is missing. Both validators reject malformed branch fields with exit 1. Removing only the ancestry block made the orphan fixture exit 0 and fail the suite. The complete suite passes with the check present. The startup inventory also rejects each of `run_cmd`, `#eval`, `notation`, precedence-bearing `infixl`, and `declare_syntax_cat` after a manifest rehash. The manual review caveat for future pins remains.
+The branch-membership fixtures reject an orphan revision and a rewritten branch with exit 1, accept a valid historical ancestor, and return 2 when the branch is missing. Both validators reject malformed branch fields with exit 1. Removing only the ancestry block made the orphan fixture exit 0 and fail the suite. The complete suite passes with the check present. A fresh real upstream run with the ancestry check also exits 0, and the final real vendor check builds all 19 modules successfully. The startup inventory also rejects each of `run_cmd`, `#eval`, `notation`, precedence-bearing `infixl`, and `declare_syntax_cat` after a manifest rehash. The manual review caveat for future pins remains.
 
 ## Done when
 
 - [x] Local mutation and upstream-fixture tests pass.
 - [x] Real upstream comparison succeeds and a one-byte change fails.
-- [ ] Three clean before and after measurements are recorded with their spread.
+- [x] Three clean before and after measurements are recorded with their spread.
 - [x] The real 19-module library build passes.
-- [ ] Affected local process checks pass.
-- [ ] CI shows that the upstream provenance step ran.
+- [x] Focused local checks pass. Local acceptance is inconclusive and required CI acceptance passes.
+- [x] CI at the original and updater code heads shows the upstream provenance step ran successfully. The PR body records the final guarded head and links its CI run.
 - [ ] Root no-comments review and independent verification cover the final head.
 - [x] The run-log record is written.
 
