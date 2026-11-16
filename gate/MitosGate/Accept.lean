@@ -350,43 +350,48 @@ theorem pluginFailure_stdout {code : UInt32} {s₁ s₂ e : String} {f₁ f₂ :
 
 structure Judgment where
   outcome : Outcome
-  output  : String
+  streams : Streams
   code    : Option UInt32
+
+def Judgment.output (j : Judgment) : String := j.streams.stdout ++ j.streams.stderr
 
 def runComparator (c : Config) (dir : System.FilePath) (config : String) : IO Judgment := do
   let args := #["comparator", s!"--config={config}"] ++ if c.paranoid then #["--paranoid"] else #[]
   try
     let r ← runOutput "lake" args dir
-    return { outcome := .parse r.exitCode ⟨r.stdout, r.stderr⟩, output := r.stdout ++ r.stderr,
+    return { outcome := .parse r.exitCode ⟨r.stdout, r.stderr⟩, streams := ⟨r.stdout, r.stderr⟩,
              code := some r.exitCode }
   catch e =>
-    return { outcome := .failed .noJudgment, output := s!"error: could not run lake comparator: {e}",
+    return { outcome := .failed .noJudgment,
+             streams := ⟨"", s!"error: could not run lake comparator: {e}"⟩,
              code := none }
 
 def occurs (pat : List Char) : List Char → Bool
   | [] => pat.isEmpty
   | s@(_ :: rest) => pat.isPrefixOf s || occurs pat rest
 
-/-- Whether a failed comparator run ended as a judgment does. It reads two things. The comparator
-ended with code 1, its code for a judgment (2 is its code for a run that could not start). The
-output contains neither `exited with code` nor `failed to execute`: Lake prints
-`Lean exited with code N` for a Lean that is killed, crashes or exits 1 without an error message,
-`external command '…' exited with code N` for an external command, and `failed to execute '…'`
-for a process it could not start. The comparator reports a kernel's non-zero exit as
-`<kernel> exited with <N>`, which this check does not read, so a killed kernel still reads as
-judged. -/
-def endedJudged (code : Option UInt32) (out : String) : Bool :=
+/-- A failed comparator run with exit code 1 and no diagnostic of an abnormal Lean exit,
+process spawn failure or bubblewrap failure. Both streams are checked conservatively: Lake can
+prefix its diagnostics, and a plugin's own matching text can only fail its case. -/
+def endedJudged (code : Option UInt32) (out : Streams) : Bool :=
   code == some 1 && !occurs "exited with code".toList out.toList &&
-    !occurs "failed to execute".toList out.toList
+    !occurs "failed to execute".toList out.toList && !occurs "bwrap:".toList out.toList
 
-def buildRejected (code : Option UInt32) (out : String) : Bool :=
-  endedJudged code out && occurs "error: build failed".toList out.toList
+def buildRejected (code : Option UInt32) (out : Streams) : Bool :=
+  endedJudged code out && Outcome.lastLine out.stderr.toList == Outcome.childExited "1" &&
+    occurs "error: build failed".toList out.stderr.toList
+
+theorem buildRejected_terminal {code : Option UInt32} {out : Streams}
+    (h : buildRejected code out = true) :
+    Outcome.lastLine out.stderr.toList = Outcome.childExited "1" := by
+  simp only [buildRejected, Bool.and_eq_true, beq_iff_eq] at h
+  exact h.1.2
 
 def Judgment.cause (j : Judgment) : Failure → Cause
-  | .noJudgment => if buildRejected j.code j.output then .judged else .noJudgment
-  | _ => if endedJudged j.code j.output then .judged else .noJudgment
+  | .noJudgment | .importClash => if buildRejected j.code j.streams then .judged else .noJudgment
+  | _ => if endedJudged j.code j.streams then .judged else .noJudgment
 
-example : buildRejected (some 1) "error: Plugins/ToyRequire.lean:38:50: Type mismatch
+example : buildRejected (some 1) ⟨"", "error: Plugins/ToyRequire.lean:38:50: Type mismatch
   0
 has type
   Nat
@@ -397,80 +402,104 @@ Some required targets logged failures:
 - Plugins.ToyRequire
 error: build failed
 error: Child exited with 1
-" = true := by decide +kernel
+"⟩ = true := by decide +kernel
 
-example : buildRejected (some 1) "warning: Challenge/ToyRequire.lean:11:8: declaration uses `sorry`
+example : buildRejected (some 1) ⟨"", "warning: Challenge/ToyRequire.lean:11:8: declaration uses `sorry`
 error: Challenge/ToyRequire.lean:12:56: Unknown identifier `_root_.Models.ToyRequire.model`
 error: Challenge/ToyRequire.lean:13:62: Unknown identifier `_root_.Models.ToyRequire.model`
 Some required targets logged failures:
 - Challenge.ToyRequire
 error: build failed
 error: Child exited with 1
-" = true := by decide +kernel
+"⟩ = true := by decide +kernel
 
-example : buildRejected (some 1) "error: Models/ToyRequire/Adequacy.lean:16:13: Unknown identifier `golden_of_requirements`
+example : buildRejected (some 1) ⟨"", "error: Models/ToyRequire/Adequacy.lean:16:13: Unknown identifier `golden_of_requirements`
 error: Models/ToyRequire/Adequacy.lean:15:58: unsolved goals
 ⊢ model.Adequate examples
 Some required targets logged failures:
 - Models.ToyRequire.Adequacy
 error: build failed
 error: Child exited with 1
-" = true := by decide +kernel
+"⟩ = true := by decide +kernel
 
-def killedLean : String := "✖ [13/13] Building Plugins.ToyRequire (639ms)
+def killedLean : Streams := ⟨"", "✖ [13/13] Building Plugins.ToyRequire (639ms)
 error: Lean exited with code 137
 Some required targets logged failures:
 - Plugins.ToyRequire
 error: build failed
 error: Child exited with 1
-"
+"⟩
 
 example : buildRejected (some 1) killedLean = false := by decide +kernel
 
-example : buildRejected (some 137) "" = false := by decide +kernel
+example : buildRejected (some 137) ⟨"", ""⟩ = false := by decide +kernel
 
-example : buildRejected (some 1) "error: Child exited with 137\n" = false := by decide +kernel
+example : buildRejected (some 1) ⟨"", "error: Child exited with 137\n"⟩ = false := by decide +kernel
 
-example : buildRejected (some 1) "error: failed to execute 'lean': resource temporarily unavailable
+example : buildRejected (some 1) ⟨"", "error: failed to execute 'lean': resource temporarily unavailable
 Some required targets logged failures:
 - Plugins.ToyRequire
 error: build failed
 error: Child exited with 1
-" = false := by decide +kernel
+"⟩ = false := by decide +kernel
 
-example : buildRejected (some 137) "error: build failed\n" = false := by decide +kernel
+example : buildRejected (some 137) ⟨"", "error: build failed\n"⟩ = false := by decide +kernel
 
-example : buildRejected (some 2) "error: could not read the configuration: no such file\n" = false := by
+example : buildRejected (some 2) ⟨"", "error: could not read the configuration: no such file\n"⟩ = false := by
   decide +kernel
 
-example : buildRejected none "error: could not run lake comparator: no such file\n" = false := by
+example : buildRejected none ⟨"", "error: could not run lake comparator: no such file\n"⟩ = false := by
   decide +kernel
 
-def endedWith (f : Failure) (out : String) : Judgment :=
-  { outcome := .failed f, output := out, code := some 1 }
+def endedWith (f : Failure) (out : Streams) : Judgment :=
+  { outcome := .failed f, streams := out, code := some 1 }
 
 example : (endedWith .noJudgment killedLean).cause .noJudgment = .noJudgment := by decide +kernel
 
-example : (endedWith .noJudgment "error: build failed\n").cause .noJudgment = .judged := by
+example : (endedWith .noJudgment ⟨"", "error: build failed\nerror: Child exited with 1\n"⟩).cause .noJudgment = .judged := by
   decide +kernel
 
-example : (endedWith .illegalAxiom "error: Illegal axiom detected: 'sorryAx'\n").cause
+example : (endedWith .illegalAxiom ⟨"", "error: Illegal axiom detected: 'sorryAx'\n"⟩).cause
     .illegalAxiom = .judged := by decide +kernel
 
-example : endedJudged (some 1) "Lean default kernel rejected the solution
+example : endedJudged (some 1) ⟨"", "Lean default kernel rejected the solution
 error: Lean default exited with 1
-" = true := by decide +kernel
+"⟩ = true := by decide +kernel
 
-example : endedJudged (some 1) "PANIC at LeanExport.dumpConstant LeanExport.Basic:254:48: Constant ToyRequire.complete not found in environment.
+example : endedJudged (some 1) ⟨"", "PANIC at LeanExport.dumpConstant LeanExport.Basic:254:48: Constant ToyRequire.complete not found in environment.
 error: Child exited with 134
-" = true := by decide +kernel
+"⟩ = true := by decide +kernel
 
 example : (endedWith .illegalAxiom
-    "error: Illegal axiom detected: 'sorryAx'\nerror: Lean exited with code 137\n").cause
+    ⟨"", "error: Illegal axiom detected: 'sorryAx'\nerror: Lean exited with code 137\n"⟩).cause
     .illegalAxiom = .noJudgment := by decide +kernel
 
-example : ({ endedWith .kernelReject "Lean default kernel rejected the solution\n" with
+example : ({ endedWith .kernelReject ⟨"", "Lean default kernel rejected the solution\n"⟩ with
     code := some 137 }).cause .kernelReject = .noJudgment := by decide +kernel
+
+example : buildRejected (some 1)
+    ⟨"error: build failed\n", "error: Child exited with 1\n"⟩ = false := by decide +kernel
+
+example : buildRejected (some 1)
+    ⟨"error: build failed\n", "error: Lean default exited with 137\n"⟩ = false := by decide +kernel
+
+example : buildRejected (some 1) ⟨"", "error: build failed\n"⟩ = false := by decide +kernel
+
+example : (endedWith .importClash
+    ⟨"error: x, environment already contains 'x'\n", "error: Child exited with 1\n"⟩).cause
+    .importClash = .noJudgment := by decide +kernel
+
+example : (endedWith .noJudgment ⟨"", "error: Child exited with 1\n"⟩).cause
+    .noJudgment = .noJudgment := by decide +kernel
+
+example : (endedWith .importClash
+    ⟨"error: x, environment already contains 'x'\n",
+      "error: build failed\nerror: Child exited with 1\n"⟩).cause .importClash = .judged := by
+  decide +kernel
+
+example : (endedWith .kernelReject
+    ⟨"", "bwrap: Creating new namespace failed: Operation not permitted\nerror: Lean default exited with 1\n"⟩).cause
+    .kernelReject = .noJudgment := by decide +kernel
 
 /-- The regular files under `dir`, recursively, relative to it and sorted. Anything else there, such
 as a symlink or a device, is an error: reading it could follow it out of the judging directory or
