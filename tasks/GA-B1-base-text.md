@@ -63,13 +63,20 @@ Checking the optional file reuses the parser and closes the demonstrated transit
 
 ## Evidence
 
-Pending the completed implementation checks and timing runs.
+- `lake build`, `lake exe mitos-gate imports`, and `lake exe mitos-gate lock --check` pass.
+- `gate/imports-test.sh` passes all 15 CLI cases. The old binary accepted a forbidden root import with zero violations; the new binary rejects it with the root file and line.
+- `lake exe mitos-lint-test` passes all 190 cases outside the command sandbox. Inside it, six child-namespace cases fail before their fixtures start.
+- `gate/cheats-shard-test.sh` passes unchanged. Run-log validation passes against main's records.
+- A local characterization compares 400 inputs of at most three characters over seven characters, plus 57 patterns against all 400 inputs. All 23,200 output rows match exactly before and after. The shared SHA-256 is `e08d2e9004053d6ba9b7a40b0e0a6b108ebd4e975d328cf6a807524312e64d6a`.
+- The five generic specifications and the short kernel fixtures compile using implicit Init alone.
+- Core `lake check`, `lake comparator --paranoid`, toy acceptance, and the full cheat corpus were attempted locally. Nested namespaces fail on a read-only uid map. An escalated core check reaches bubblewrap but fails because `/run/user` is absent under its read-only root. No sandbox or checker setting was changed. CI must supply those results.
+- Build timing runs are in progress. They alternate five matched affected-module rebuilds per side and retain unrelated compiled artifacts. They measure compilation and linking through `lake build mitos-gate`, rather than a cold full build or a warm no-op.
 
 ## Done when
 
 - [ ] All applicable checks pass locally or have a recorded environment limitation and a passing CI check.
-- [ ] All five generic statements are proved with no sorry or new axioms.
-- [ ] Old and new helpers produce identical outputs for the recorded short-input characterization.
-- [ ] The unchanged shard CLI script passes.
-- [ ] The new attempt record is added under ops/runs/.
+- [x] All five generic statements are proved with no sorry or new axioms.
+- [x] Old and new helpers produce identical outputs for the recorded short-input characterization.
+- [x] The unchanged shard CLI script passes.
+- [x] The new attempt record is added under ops/runs/.
 - [ ] The user and CodeRabbit review comments are answered at the PR head.
