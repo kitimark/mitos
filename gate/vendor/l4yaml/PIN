@@ -1,0 +1,5 @@
+url=https://github.com/nasa-jpl/L4YAML
+rev=742f7186f59e9c8f7d6ea5bc83518ee55011e110
+branch=v4.35.0
+toolchain=leanprover/lean4:v4.35.0
+entry=L4YAML.Parser.Composition

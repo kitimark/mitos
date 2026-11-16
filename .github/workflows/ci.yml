@@ -151,6 +151,17 @@ jobs:
       - name: Every plan row that links an issue has a task file with a design, or is listed as pending
         run: .claude/scripts/plan-tasks.test.sh
 
+      - name: Vendor checks reject changed bytes, imports and unsafe metadata
+        run: .github/scripts/vendor-provenance.test.sh
+
+      - name: Changed vendor bytes match their pinned upstream revision
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: .github/scripts/vendor-provenance.sh --if-changed
+
       - name: A never-started jobless run does not fail cancel-superseded
         run: .github/scripts/cancel-superseded.test.sh
 

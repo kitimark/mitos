@@ -1,0 +1,5 @@
+ts	phase	decision	why	evidence	result
+2026-11-16T17:59:15Z	setup	Created isolated worktree and held implementation for design synthesis	One owner keeps builds and branch writes separate from research	/workspace/mitos-397	open
+2026-11-16T18:09:07Z	design	Kept two shell entrypoints and a fixed import header subset	The selected design needs no generic helper and preserves the pinned upstream bytes	tasks/GA-Y3-vendor-l4yaml.md	behavior suite green
+2026-11-16T18:09:07Z	provenance	Compared all twenty local files with the real upstream revision	Raw blob and mode checks include the license as well as parser sources	/tmp/mitos-397-owner/provenance-real.log	exit 0; tampered license exit 1
+2026-11-16T18:35:23Z	baseline	Completed three clean baseline builds and three parser library builds	Separate targets show actual packaging cost without claiming an unused library enters the gate binary	tasks/GA-Y3-builds.tsv	all six measured commands exited 0
