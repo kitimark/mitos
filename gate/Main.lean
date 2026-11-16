@@ -16,12 +16,15 @@ open MitosGate
 
 def lockedSpecImports : List String := ["Init", "Std", "Mitos.Core"]
 
-def usage : String := "usage:
+def usage : String := s!"usage:
   mitos-gate workflow parse <file>              refuse YAML outside the workflow line subset
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.*; spec never imports impl)
                                                  and for gate/MitosGate/Base.lean and gate/MitosGate/Base/
                                                  (Init, Std, Lean.Data.Json, MitosGate.Base)
+                                                 and for gate/vendor/l4yaml/ ({", ".intercalate Imports.vendorImports})
+                                                 and for gate/ outside gate/vendor/: {Imports.vendorName}
+                                                 appears only in {Imports.seamFile}, including comments
   mitos-gate lock [--check]                      write or check statements.lock; either fails on a
                                                  module under core/Mitos/Core/ that Mitos.Core does
                                                  not import, directly or transitively
@@ -174,8 +177,11 @@ def cli (args : List String) : IO UInt32 := do
     let rootVs ← if ← baseRoot.pathExists then
       Imports.checkFile baseRoot Imports.baseImports else pure #[]
     let vs := vs ++ rootVs
+    let vs := vs ++ (← Imports.check ("gate" / "vendor" / "l4yaml") Imports.vendorImports)
+    let vs := vs ++ (← Imports.checkSeam "gate")
     for v in vs do IO.println (ciLine v)
-    IO.println s!"{vs.size} import violation(s) in core/ and gate/MitosGate/Base.lean and gate/MitosGate/Base/"
+    IO.println (s!"{vs.size} import violation(s) in core/ and gate/MitosGate/Base.lean and gate/MitosGate/Base/" ++
+      s!" and gate/vendor/l4yaml/ and gate/ outside gate/vendor/ (seam {Imports.seamFile})")
     return if vs.isEmpty then 0 else 1
   | ["lock", "--check-header"] => lockHeaderStatus
   | ["lock"] => lockStatements false

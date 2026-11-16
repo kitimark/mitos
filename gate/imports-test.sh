@@ -29,9 +29,9 @@ check() {
   local last
   last=$(grep -v '^$' "$tmp/out" | tail -n 1)
   case "$last" in
-    *"import violation(s) in core/ and gate/MitosGate/Base.lean and gate/MitosGate/Base/") ;;
+    *"$summary") ;;
     *)
-      echo "FAIL $name: last line does not name both scopes: $last"
+      echo "FAIL $name: last line does not name every scope: $last"
       sed 's/^/  | /' "$tmp/out"
       fail=$((fail + 1))
       return
@@ -47,7 +47,7 @@ check() {
   pass=$((pass + 1))
 }
 
-summary='import violation(s) in core/ and gate/MitosGate/Base.lean and gate/MitosGate/Base/'
+summary='import violation(s) in core/ and gate/MitosGate/Base.lean and gate/MitosGate/Base/ and gate/vendor/l4yaml/ and gate/ outside gate/vendor/ (seam gate/MitosGate/Yaml.lean)'
 
 mkdir -p "$tmp/bad/gate/MitosGate/Base"
 printf 'import MitosGate.Land\n' >"$tmp/bad/gate/MitosGate/Base/Bad.lean"
@@ -103,6 +103,63 @@ mkdir -p "$tmp/core/core/Mitos"
 printf 'import Lean\n' >"$tmp/core/core/Mitos/LeanImport.lean"
 check "a core violation is still reported when Base is absent" \
   1 "$tmp/core" "core/Mitos/LeanImport.lean:1:"
+
+mkdir -p "$tmp/vendor/gate/vendor/l4yaml"
+printf 'import MitosGate.Util\n' >"$tmp/vendor/gate/vendor/l4yaml/Bad.lean"
+check "a vendored gate import fails and names the file" \
+  1 "$tmp/vendor" "gate/vendor/l4yaml/Bad.lean:1:"
+
+for module in Init Std Lean L4YAML L4YAML.Parser; do
+  printf 'module\npublic import %s\nmeta import %s\n' "$module" "$module" \
+    >"$tmp/vendor/gate/vendor/l4yaml/Bad.lean"
+  check "vendored public and meta imports of $module pass" \
+    0 "$tmp/vendor" "0 $summary"
+done
+
+for module in L4YAMLExtra 'L4YAML.«..».MitosGate.Util'; do
+  printf 'import %s\n' "$module" >"$tmp/vendor/gate/vendor/l4yaml/Bad.lean"
+  check "a vendored import of $module fails" \
+    1 "$tmp/vendor" "gate/vendor/l4yaml/Bad.lean:1:"
+done
+
+mkdir -p "$tmp/seam/gate/MitosGate/Workflow"
+for source in 'def value := L4YAML.YamlValue' '-- L4YAML' '/- L4YAML -/' 'def name := "L4YAML"'; do
+  printf '%s\n' "$source" >"$tmp/seam/gate/MitosGate/Workflow/X.lean"
+  check "a gate file containing $source fails" \
+    1 "$tmp/seam" "gate/MitosGate/Workflow/X.lean:"
+done
+
+printf '%s\n' '-- L4YAML L4YAML' 'def name := "L4YAML"' \
+  >"$tmp/seam/gate/MitosGate/Workflow/X.lean"
+check "multiple vendor mentions produce one diagnostic per file" \
+  1 "$tmp/seam" "1 $summary"
+
+rm "$tmp/seam/gate/MitosGate/Workflow/X.lean"
+printf 'import L4YAML\n-- L4YAML.YamlValue\n' >"$tmp/seam/gate/MitosGate/Yaml.lean"
+check "the exact YAML seam may name the vendor" \
+  0 "$tmp/seam" "0 $summary"
+
+mkdir -p "$tmp/seam/gate/MitosGate/Yaml"
+printf '%s\n' '-- L4YAML' >"$tmp/seam/gate/MitosGate/Yaml/Child.lean"
+check "the seam exemption does not cover a directory" \
+  1 "$tmp/seam" "gate/MitosGate/Yaml/Child.lean:"
+
+mkdir -p "$tmp/exclusions/gate/vendor/other" "$tmp/exclusions/gate/vendorish"
+printf '%s\n' '-- L4YAML' >"$tmp/exclusions/gate/vendor/other/Allowed.lean"
+check "all vendors are outside the seam scan" \
+  0 "$tmp/exclusions" "0 $summary"
+printf '%s\n' '-- L4YAML' >"$tmp/exclusions/gate/vendorish/Bad.lean"
+check "a vendor prefix lookalike is inside the seam scan" \
+  1 "$tmp/exclusions" "gate/vendorish/Bad.lean:"
+
+mkdir -p "$tmp/gate-root/gate"
+printf '%s\n' '-- L4YAML' >"$tmp/gate-root/gate/Main.lean"
+check "the seam scan includes files directly under gate" \
+  1 "$tmp/gate-root" "gate/Main.lean:"
+rm "$tmp/gate-root/gate/Main.lean"
+printf '%s\n' '-- L4YAML' >"$tmp/gate-root/gate/README.md"
+check "the seam scan reads only Lean files" \
+  0 "$tmp/gate-root" "0 $summary"
 
 check "the repository reports no import violation" \
   0 "$root" "0 $summary"
