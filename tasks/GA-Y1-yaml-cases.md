@@ -2,7 +2,7 @@
 
 phase: gate architecture
 goal: The workflow line reader's small inputs have exact kernel-checked results and matching interpreter behavior.
-statement: 54 exact-result fixture theorems in MitosGate.Yaml
+statement: 58 exact-result fixture theorems in MitosGate.Yaml
 touches: gate/MitosGate/Yaml/LineCases.lean, gate/MitosGate/WorkflowCli.lean, this file, ops/runs/
 must_not_touch: core/, statements.lock, models.lock, .github/, eval/, plan/, .claude/, .cursor/
 checks: build, workflow-test, live-workflows, PyYAML-differential, fixture-build-time
@@ -22,7 +22,7 @@ depth: build
 revisit_when: none
 modules: LineCases.lean owns short exact-result fixtures. WorkflowCli.lean imports it so Lake checks the fixtures on each affected build.
 types: the first PR's Refusal, Line and Except DecidableEq instances.
-statements: eight exact escape/folding theorems, eight matching interpreter guards, and 46 exact-result regressions.
+statements: eight exact escape/folding theorems, eight matching interpreter guards, and 50 exact-result regressions.
 reuse: MitosGate.Yaml.Line; no separate scanner, oracle dependency or runtime fixture loading.
 fixtures: hexadecimal, short and long Unicode, NEL, escaped line break, folded double/single/plain; A/B/C/D; comment boundaries; block ownership/indentation; node refusals; flow aliases/escapes; scalar-owner and contextual-separator regressions.
 cut_line: build-time short fixtures only. Real workflow text remains runtime evidence, never include_str input.
@@ -38,14 +38,18 @@ The first PR's task records the full check matrix, source ownership model and be
 
 ## Done when
 
-- [x] All 54 exact-result kernel theorems and all eight interpreter guards compile.
+- [x] All 58 exact-result kernel theorems and all eight interpreter guards compile.
 - [x] The actual binary passes workflow tests and the live scanner differential.
-- [x] The measured fixture build is 3.8 to 4.7 seconds across five builds without corpus contention.
+- [x] The measured fixture build is 4.1 to 4.6 seconds across three builds without corpus contention.
 - [ ] CodeRabbit is reviewed or explicitly refuses at the final head, with every finding answered.
 - [ ] The required Opus verifier passes before owner merge.
 
-The complete reader-plus-fixtures target adds 6.444 seconds by median, from 4.078 to 10.522 seconds.
-The first PR records all five interleaved pairs and their spread. Five successful silent parses of
-ci.yml take 0.067498 to 0.075745 seconds on the final binary. The no-comments pass reports zero
+The complete reader-plus-fixtures target adds 7.304 seconds by median, from 4.643 to 11.947 seconds.
+The first PR records all three refreshed interleaved pairs and their spread. Five successful silent parses of
+ci.yml take 0.077255 to 0.084352 seconds on the final binary. The no-comments pass reports zero
 deletions and zero flags. Inherited-model advisory review independently confirms all eight decoded
-YAML values and all 53 lex fixture inputs. These passes do not replace the required Opus verdict.
+YAML values and all 57 lex fixture inputs. These passes do not replace the required Opus verdict.
+
+The review round adds three flow-node hash refusal theorems and a positive flow-plain hash theorem.
+The normal comment branch remains before the new refusal. Current main 583a13b has 298 block lines
+and 79 expression positions across its six accepted workflows; both dumps match PyYAML 6.0.3.

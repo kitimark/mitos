@@ -109,4 +109,13 @@ theorem quotedFlowAliasRefused : lex "a: {\"x\":*q}\n".toList =
 theorem quotedFlowEscapeRefused : lex "a: {\"x\":\"\\x6e\"}\n".toList =
     .error (.escape 1) := by decide +kernel
 
+theorem flowNodeHashSequence : lex "a: [#x]\n".toList =
+    .error (.multiline 1) := by decide +kernel
+theorem flowNodeHashMapping : lex "a: {#x}\n".toList =
+    .error (.multiline 1) := by decide +kernel
+theorem flowNodeHashAfterComma : lex "a: [b,#x]\n".toList =
+    .error (.multiline 1) := by decide +kernel
+theorem flowPlainHashKept : lex "a: [x#y]\n".toList =
+    .ok [(1, .content 0 false "a: [x#y]".toList [])] := by decide +kernel
+
 end MitosGate.Yaml
