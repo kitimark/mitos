@@ -5,7 +5,6 @@ into the output `runOutput` returns. -/
 def flushParentStdoutBeforeChild : IO Unit := do
   (← IO.getStdout).flush
 
-/-- Run `cmd` and return its exit code, stdout and stderr. -/
 def runOutput (cmd : String) (args : Array String) (cwd : Option System.FilePath := none)
     (stdin : Option String := none) : IO IO.Process.Output := do
   flushParentStdoutBeforeChild

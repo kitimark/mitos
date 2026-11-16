@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Every kernel the toolchain's `lake comparator` can run is in `Outcome.kernels`, so its rejection
-# reads as a kernel rejection and not as no judgment. The kernels are the ones Lake bundles for
-# `--paranoid` and Lean's own, which `runBuiltinKernel` always runs.
 set -u
 
 root=$(cd "$(dirname "$0")/.." && pwd)
