@@ -37,9 +37,9 @@ The former shell tests' copied-workflow, control-character, escape and standalon
 Empty block scalars are refused at this pin, including the old copied-workflow fixture with an empty name block.
 The malformed inputs from #354 remain parse refusals. The plain key `?a` remains accepted.
 
-## Verification
+## Original integration verification
 
-The native executable passes 132 fixed fixtures through both verbs, the byte and opener boundaries,
+The original integration at `4815e3f` passed 132 fixed fixtures through both verbs, the byte and opener boundaries,
 missing-file and argument errors, the six accepted workflows and the exact owner-ping anchor refusal.
 The fixed corpus has 44 accepted leaf expectations and 88 refusal expectations. Its 63 legacy inputs
 were also independently extracted from main `fea3fe6` and compared byte for byte.
@@ -62,7 +62,11 @@ Every refusal must have exit 1, a diagnostic and no leaf output. Any panic, othe
 
 ## Runtime and build cost
 
-The native ci.yml parse takes a median 0.188955 seconds over ten runs, with a range of
+These are historical measurements of the original reader/integration at `335259e` and `4815e3f`,
+before the reserved-directive fix and the later main refresh. The current runtime sample is
+recorded separately below. No new matched build-delta claim is made for this fix.
+
+The original native ci.yml parse takes a median 0.188955 seconds over ten runs, with a range of
 0.124068 to 0.239565 seconds. Every run accepts with no output or diagnostic. The input has
 23,485 bytes and 245 leaves, independently compared with PyYAML before timing.
 Each sample starts a fresh process after an unreported strace run warms executable and input pages.
@@ -91,7 +95,7 @@ No other local builds or test runs overlap these measurements.
 
 [Raw timing data](GA-Y2-workflow-timings.json) records every runtime and build sample, full baseline
 and reader commits, source/input/binary hashes, host limits and reset conditions.
-The unchanged final runtime binary is also the one used for the independent 976-source replay.
+That original runtime binary was also the one used for the independent 976-source replay.
 The reusable runner resolves its baseline ref before archiving it and records the full SHA.
 
 Reproduce after `lake build mitos-gate`, with strace installed:
@@ -117,3 +121,46 @@ build trials, writes `results.json`, and validates every resulting executable on
 The independent fix verifier can inspect the before and after logs and the six-result file.
 The original timing samples above stay unchanged. They used an absolute output directory and
 record the runner at the earlier commit; this repair run checks path handling and execution.
+
+## Opus reserved-directive fix
+
+The Opus review of #408 at `335259e` found a balanced expression swap through a discarded
+reserved directive. The native CLI reproduced all five supplied forms before the fix: a
+reserved directive, the full title-injection example, comment-like directive text, multiple
+balanced directive lines and a directive after the document-end marker. Both verbs accepted
+each input and exposed the decoded leaves.
+
+The parent now refuses literal column-zero `%` source lines before scanning. This child adds
+13 deterministic cases, retaining every one of the original 132 entries: ten refused reserved
+directive or unindented quoted-continuation sources, and three accepted quoted/indented percent
+data controls. Valid YAML with a percent line at column zero inside a quoted continuation is
+intentionally outside this conservative subset. No quote lexer or vendor patch is introduced.
+
+The original 700-mutation generator and seed remain unchanged. These directive cases extend
+the fixed corpus rather than silently changing those 28 historical mutation families.
+Both PR branches are refreshed onto main `0e33a5f`; the upstream change adds no callers of the
+deleted Line or LineCases modules, and the integration has no remaining Lean imports of them.
+
+The fresh native executable passes all 145 cases through both verbs, with 47 accepted leaf
+expectations and 98 refusal expectations. The unchanged seeded 700-mutant comparison still
+accepts 250 and refuses 450, with no PyYAML drift or panics. Each of the five originally accepted
+exploit variants now returns the exact directive refusal and no leaf output from either verb.
+
+An independent native matrix checks 1,544 sources through both verbs: 1,460 exact directive
+refusals, 81 accepted percent-data controls whose full leaves match PyYAML, and three checks that
+size/character/opener prefilters take precedence. Seed 354408 and PyYAML 6.0.3 produce no panics,
+leaf drift or exit anomalies. The parent guard-removal controls fail ten source-directive guards
+and one expression-bearing-flow guard respectively.
+
+The current ten-run native ci.yml sample has median 0.067999 seconds and range 0.061614–0.074838
+seconds. All ten parse calls accept without stdout or stderr. The 23,485-byte input still has 245
+PyYAML-equal leaves. Median child CPU time is 0.065560 seconds, close to wall time; the unreported
+strace run totals 0.008064 seconds across 130 syscalls. The measured path is CPU work rather than
+waiting on disk, and no other build or test overlaps the samples. This is a current sample, not
+a speedup comparison with the earlier measurements.
+
+[Directive-fix evidence](GA-Y2-directive-checks.json) retains the raw ten samples, source/input/binary
+hashes, host limits, mutation outcomes and independent matrix counts. Imports and the 206-entry
+statement lock pass; new run logs use UTC folders. Core replay, paranoid comparison and toy
+acceptance stop at the read-only uid map. The lint suite passes 184 of 190 cases, with the same
+six namespace-dependent runner cases blocked. The sandbox stays enabled.

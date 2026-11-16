@@ -130,5 +130,18 @@
   {"name": "decoded-nul","file": "decoded-nul.yml","refusal": ": refused at a: decoded character U+0000 outside LF and printable ASCII"},
   {"name": "decoded-cr","file": "decoded-cr.yml","refusal": ": refused at a: decoded character U+000D outside LF and printable ASCII"},
   {"name": "decoded-ls","file": "decoded-ls.yml","refusal": ": refused at a: decoded character U+2028 outside LF and printable ASCII"},
-  {"name": "decoded-ps","file": "decoded-ps.yml","refusal": ": refused at a: decoded character U+2029 outside LF and printable ASCII"}
+  {"name": "decoded-ps","file": "decoded-ps.yml","refusal": ": refused at a: decoded character U+2029 outside LF and printable ASCII"},
+  {"name":"reserved-directive","file":"reserved-directive.yml","refusal":": refused: directive"},
+  {"name":"reserved-yaml-prefix","file":"reserved-yaml-prefix.yml","refusal":": refused: directive"},
+  {"name":"reserved-tag-prefix","file":"reserved-tag-prefix.yml","refusal":": refused: directive"},
+  {"name":"reserved-bare-directive","file":"reserved-bare-directive.yml","refusal":": refused: directive"},
+  {"name":"reserved-balanced-swap","file":"reserved-balanced-swap.yml","refusal":": refused: directive"},
+  {"name":"reserved-comment-swap","file":"reserved-comment-swap.yml","refusal":": refused: directive"},
+  {"name":"reserved-multiple-swap","file":"reserved-multiple-swap.yml","refusal":": refused: directive"},
+  {"name":"reserved-after-document-end","file":"reserved-after-document-end.yml","refusal":": refused: directive"},
+  {"name":"column-zero-percent-double-continuation","file":"column-zero-percent-double-continuation.yml","refusal":": refused: directive"},
+  {"name":"column-zero-percent-single-continuation","file":"column-zero-percent-single-continuation.yml","refusal":": refused: directive"},
+  {"name":"percent-quoted-value","file":"percent-quoted-value.yml","leaves":[{"path":["a"],"value":"%FOO in a value"}]},
+  {"name":"percent-block-data","file":"percent-block-data.yml","leaves":[{"path":["a"],"value":"%FOO ${{ x }}\n"}]},
+  {"name":"percent-indented-continuation","file":"percent-indented-continuation.yml","leaves":[{"path":["a"],"value":"x %FOO y"}]}
 ]
