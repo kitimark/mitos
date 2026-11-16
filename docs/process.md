@@ -438,14 +438,17 @@ model module declares nothing. Gate 6's layout rule and both of its runs accept 
 gate 3's Challenge, which imports only the model module, does not build, so the case is rejected at
 gate 2 in both modes. With a Challenge that also imported the examples module it is accepted.
 
-Eleven cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
+Ten cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
 `eval_command`, the smuggling variants `char_literal_smuggle`, `raw_string_smuggle` and
-`escaped_attr_smuggle`, the model cases `model_notation`, `model_implemented_by`,
-`model_include_str` and `model_include_str_src`, and the escaped import `plugin_dotdot_import`.
+`escaped_attr_smuggle`, and the model cases `model_notation`, `model_implemented_by`,
+`model_include_str` and `model_include_str_src`.
 The kernel cannot see what code *runs*, only what is *proved*. Those cases are why the lint is a
-required gate rather than a nicety. `model_dotdot_import`, the escaped import in a model, passed the
-comparator on its own too until gate 6 checked the components of every model import; without lint,
-gate 6 now rejects it.
+required gate rather than a nicety. `plugin_dotdot_import` imports
+`Models.«..».Mitos.Impl.Resolve`. Lint rejects that component at gate 1. Without lint the build
+fails at gate 2, because the judging directory is the plugin surface and has no `Mitos.Impl`.
+`model_dotdot_import`, the same import in a model, passed the comparator on its own until gate 6
+checked the components of every model import. That rejection is reported before the plugin is
+built, so the missing file cannot turn it into a gate 2 build error.
 
 ### Security fixes
 
