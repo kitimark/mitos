@@ -29,7 +29,7 @@ check() {
   local last
   last=$(grep -v '^$' "$tmp/out" | tail -n 1)
   case "$last" in
-    *"import violation(s) in core/ and gate/MitosGate/Base/") ;;
+    *"import violation(s) in core/ and gate/MitosGate/Base.lean and gate/MitosGate/Base/") ;;
     *)
       echo "FAIL $name: last line does not name both scopes: $last"
       sed 's/^/  | /' "$tmp/out"
@@ -47,7 +47,7 @@ check() {
   pass=$((pass + 1))
 }
 
-summary='import violation(s) in core/ and gate/MitosGate/Base/'
+summary='import violation(s) in core/ and gate/MitosGate/Base.lean and gate/MitosGate/Base/'
 
 mkdir -p "$tmp/bad/gate/MitosGate/Base"
 printf 'import MitosGate.Land\n' >"$tmp/bad/gate/MitosGate/Base/Bad.lean"
@@ -77,6 +77,27 @@ mkdir -p "$tmp/baseline/gate/MitosGate/Base"
 printf 'import MitosGate.Baseline\n' >"$tmp/baseline/gate/MitosGate/Base/Baseline.lean"
 check "MitosGate.Baseline is not a component prefix of MitosGate.Base" \
   1 "$tmp/baseline" "gate/MitosGate/Base/Baseline.lean:1:"
+
+mkdir -p "$tmp/root/gate/MitosGate"
+printf 'import MitosGate.Util\n' >"$tmp/root/gate/MitosGate/Base.lean"
+check "a forbidden Base root import fails without a Base directory" \
+  1 "$tmp/root" "gate/MitosGate/Base.lean:1:"
+
+mkdir -p "$tmp/root/gate/MitosGate/Base"
+printf 'import MitosGate.Base\n' >"$tmp/root/gate/MitosGate/Base/Leaf.lean"
+check "a child cannot import an unchecked Base root" \
+  1 "$tmp/root" "gate/MitosGate/Base.lean:1:"
+
+printf 'import Std\n' >"$tmp/root/gate/MitosGate/Base.lean"
+check "a permitted Base root and a child importing it pass" \
+  0 "$tmp/root" "0 $summary"
+
+mkdir -p "$tmp/lookalike/gate/MitosGate/Base"
+for module in "MitosGate.BaseX" "MitosGate.Base'" "Lean.Data.JsonRpc" "Lean"; do
+  printf 'import %s\n' "$module" >"$tmp/lookalike/gate/MitosGate/Base/Lookalike.lean"
+  check "$module is not allowed under Base" \
+    1 "$tmp/lookalike" "gate/MitosGate/Base/Lookalike.lean:1:"
+done
 
 mkdir -p "$tmp/core/core/Mitos"
 printf 'import Lean\n' >"$tmp/core/core/Mitos/LeanImport.lean"

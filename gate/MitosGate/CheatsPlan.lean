@@ -1,13 +1,13 @@
 import MitosGate.CheatsRecord
 import MitosGate.CheatsShard
 import MitosGate.DecideList
-import MitosGate.DecideText
+import MitosGate.Base.Text
 
 namespace MitosGate.CheatsAggregate
 
 open MitosGate.CheatsShard
 open MitosGate.DecideList
-open MitosGate.DecideText
+open MitosGate.Base.Text
 
 def dataLines (text : String) (k : Nat) : List String :=
   ((linesOf text).drop 1).filter (· ≠ "") |>.map fun line => s!"{line}\t{k}"

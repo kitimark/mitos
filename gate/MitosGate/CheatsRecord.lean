@@ -1,12 +1,12 @@
 import MitosGate.CheatsShard
 import MitosGate.DecideList
-import MitosGate.DecideText
+import MitosGate.Base.Text
 
 namespace MitosGate.CheatsAggregate
 
 open MitosGate.CheatsShard
 open MitosGate.DecideList
-open MitosGate.DecideText
+open MitosGate.Base.Text
 
 def normalizeExit (t : String) : String :=
   dropTrailNL (String.ofList (dropChar '\r' t.toList))
