@@ -367,11 +367,14 @@ def occurs (pat : List Char) : List Char → Bool
   | [] => pat.isEmpty
   | s@(_ :: rest) => pat.isPrefixOf s || occurs pat rest
 
-/-- Whether a failed comparator run ended as a judgment does. The comparator ended with code 1, its
-code for a judgment (2 is its code for a run that could not start). No compiler or tool ended
-abnormally or failed to start: Lake prints `Lean exited with code N` for a Lean that is killed,
-crashes or exits 1 without an error message, `external command '…' exited with code N` for a tool,
-and `failed to execute '…'` for a process it could not start. -/
+/-- Whether a failed comparator run ended as a judgment does. It reads two things. The comparator
+ended with code 1, its code for a judgment (2 is its code for a run that could not start). The
+output contains neither `exited with code` nor `failed to execute`: Lake prints
+`Lean exited with code N` for a Lean that is killed, crashes or exits 1 without an error message,
+`external command '…' exited with code N` for an external command, and `failed to execute '…'`
+for a process it could not start. The comparator reports a kernel's non-zero exit as
+`<kernel> exited with <N>`, which this check does not read, so a killed kernel still reads as
+judged. -/
 def endedJudged (code : Option UInt32) (out : String) : Bool :=
   code == some 1 && !occurs "exited with code".toList out.toList &&
     !occurs "failed to execute".toList out.toList
