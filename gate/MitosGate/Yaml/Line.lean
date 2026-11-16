@@ -1,4 +1,4 @@
-import Std
+import MitosGate.Yaml.View
 
 /-!
 This reader models a closed, ASCII YAML line subset, not GitHub's parser. It preserves physical
@@ -24,8 +24,6 @@ inductive Line where
   deriving DecidableEq, Repr
 
 deriving instance DecidableEq for Except
-
-def allowedChar (c : Char) : Bool := c == '\n' || (' ' ≤ c && c ≤ '~')
 
 def physicalLines : List Char → List (List Char)
   | [] => []
