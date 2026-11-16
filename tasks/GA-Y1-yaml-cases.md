@@ -40,6 +40,12 @@ The first PR's task records the full check matrix, source ownership model and be
 
 - [x] All 54 exact-result kernel theorems and all eight interpreter guards compile.
 - [x] The actual binary passes workflow tests and the live scanner differential.
-- [ ] The measured fixture build is at most 10 seconds without unrelated corpus contention.
+- [x] The measured fixture build is 3.8 to 4.7 seconds across five builds without corpus contention.
 - [ ] CodeRabbit is reviewed or explicitly refuses at the final head, with every finding answered.
 - [ ] The required Opus verifier passes before owner merge.
+
+The complete reader-plus-fixtures target adds 6.444 seconds by median, from 4.078 to 10.522 seconds.
+The first PR records all five interleaved pairs and their spread. Five successful silent parses of
+ci.yml take 0.067498 to 0.075745 seconds on the final binary. The no-comments pass reports zero
+deletions and zero flags. Inherited-model advisory review independently confirms all eight decoded
+YAML values and all 53 lex fixture inputs. These passes do not replace the required Opus verdict.
