@@ -438,12 +438,15 @@ model module declares nothing. Gate 6's layout rule and both of its runs accept 
 gate 3's Challenge, which imports only the model module, does not build, so the case is rejected at
 gate 2 in both modes. With a Challenge that also imported the examples module it is accepted.
 
-Ten cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
+Eleven cases are expected to pass the comparator on its own: `implemented_by`, `extern`,
 `eval_command`, the smuggling variants `char_literal_smuggle`, `raw_string_smuggle` and
-`escaped_attr_smuggle`, and the model cases `model_notation`, `model_implemented_by`,
-`model_include_str` and `model_include_str_src`.
+`escaped_attr_smuggle`, the model cases `model_notation`, `model_implemented_by`,
+`model_include_str` and `model_include_str_src`, and `plugin_dotdot_surface`.
 The kernel cannot see what code *runs*, only what is *proved*. Those cases are why the lint is a
-required gate rather than a nicety. `plugin_dotdot_import` imports
+required gate rather than a nicety. `plugin_dotdot_surface` imports
+`Models.«..».Models.Extra`. Lint rejects that component, and it is the only violation.
+`Models/Extra.lean` is a model file nothing else imports, so without lint the plugin is accepted,
+which pins `import:component`. `plugin_dotdot_import` imports
 `Models.«..».Mitos.Impl.Resolve`. Lint rejects that component at gate 1. Without lint the build
 fails at gate 2, because the judging directory is the plugin surface and has no `Mitos.Impl`.
 `model_dotdot_import`, the same import in a model, passed the comparator on its own until gate 6
