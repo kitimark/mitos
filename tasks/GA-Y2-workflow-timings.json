@@ -1,0 +1,129 @@
+{
+  "runtime": {
+    "input": "ci.yml",
+    "bytes": 23485,
+    "leaves": 245,
+    "sha256": "f58c0868cd0e65a12551529567293ba7fc0946ff7a1903dfbee434b16240b069",
+    "runs": [
+      {
+        "wall_s": 0.2142038419997334,
+        "cpu_s": 0.20735499999999996
+      },
+      {
+        "wall_s": 0.12406828199982556,
+        "cpu_s": 0.11600800000000011
+      },
+      {
+        "wall_s": 0.14679412699979366,
+        "cpu_s": 0.1409020000000002
+      },
+      {
+        "wall_s": 0.1704375669996807,
+        "cpu_s": 0.16657200000000005
+      },
+      {
+        "wall_s": 0.16334037599972362,
+        "cpu_s": 0.16097299999999992
+      },
+      {
+        "wall_s": 0.23610317800012126,
+        "cpu_s": 0.21540800000000004
+      },
+      {
+        "wall_s": 0.20747201899985157,
+        "cpu_s": 0.20086700000000002
+      },
+      {
+        "wall_s": 0.23916172000008373,
+        "cpu_s": 0.23516199999999987
+      },
+      {
+        "wall_s": 0.2395652830000472,
+        "cpu_s": 0.2356250000000002
+      },
+      {
+        "wall_s": 0.1463491399999839,
+        "cpu_s": 0.14224599999999976
+      }
+    ],
+    "failures": 0,
+    "median_s": 0.18895479299976614,
+    "min_s": 0.12406828199982556,
+    "max_s": 0.2395652830000472,
+    "profile_syscall_time_s": 0.003683
+  },
+  "build": {
+    "command": "lake build mitos-gate",
+    "runs": [
+      {
+        "side": "before",
+        "run": 1,
+        "seconds": 9.412064457999804
+      },
+      {
+        "side": "after",
+        "run": 1,
+        "seconds": 48.96891552999978
+      },
+      {
+        "side": "before",
+        "run": 2,
+        "seconds": 10.034267931999693
+      },
+      {
+        "side": "after",
+        "run": 2,
+        "seconds": 33.4623280349997
+      },
+      {
+        "side": "before",
+        "run": 3,
+        "seconds": 9.995791485999689
+      },
+      {
+        "side": "after",
+        "run": 3,
+        "seconds": 32.09412367699997
+      }
+    ],
+    "failures": 0,
+    "before": {
+      "median_s": 9.995791485999689,
+      "min_s": 9.412064457999804,
+      "max_s": 10.034267931999693
+    },
+    "after": {
+      "median_s": 33.4623280349997,
+      "min_s": 32.09412367699997,
+      "max_s": 48.96891552999978
+    },
+    "delta_s": 23.46653654900001,
+    "baseline_ref": "fea3fe6",
+    "baseline_sha": "fea3fe682b8341a2f0bfef06a94c6aadaa7a3d8a"
+  },
+  "reader_commit": "335259e7e8d5ea7b3925697915f79ab33a7daa34",
+  "binary_sha256": "324834ac01a0922e83e82952d274300df1939f40ffc55af04c8b6a4db7e01a92",
+  "source_sha256": {
+    "gate/MitosGate/Yaml.lean": "b97dfdaa2119766d09f520a2d583295fe1e399045a649ba30325f06fd5527979",
+    "gate/MitosGate/Yaml/View.lean": "1214b8df68d48736b1aa431ac038ec6420239cd6aeba8c9f22d35c775e8f923d",
+    "gate/MitosGate/WorkflowCli.lean": "12404bbfb3f52d23ead3ba616c605a9749ea0b8e2c3c35b32b38892ccafd9ded",
+    "gate/Main.lean": "f38254f5595f00cd2df7f39eee153fc0a95bc784311f5fbe7a188b51e44081c4",
+    "lakefile.toml": "d55f59713bbd5d99a555d9e629fc8af1610791bfd2fa4b5dd6536cbfea218e31",
+    "lean-toolchain": "ca5f1f601d34c49079e38d7e7041eb0f2a9c227fbc1df0f404820069a052330c"
+  },
+  "environment": {
+    "logical_cpus": 5,
+    "cpu_quota": "400000 100000",
+    "memory_max_bytes": 17179869184,
+    "initial_load": [
+      0.61767578125,
+      0.84326171875,
+      1.06640625
+    ]
+  },
+  "method": {
+    "runtime": "ten fresh native process invocations after one unreported strace run; input and OS pages warm; no concurrent local test or build work",
+    "build": "one warmup per side, then three alternating before/after trials; shared dependencies including View warm on both; remove each reader, WorkflowCli/Main and executable outputs; additionally remove entire parser Lean and native IR outputs on after; same lake build mitos-gate command",
+    "validation": "every build exits zero, logs recompiled reader/Main, and new executable successfully parses ci.yml outside timed region"
+  }
+}
