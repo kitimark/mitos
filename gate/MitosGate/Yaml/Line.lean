@@ -3,7 +3,8 @@ import Std
 /-!
 This reader models a closed, ASCII YAML line subset, not GitHub's parser. It preserves physical
 lines and scalar text, cuts only separated comments outside quotes, and refuses unsupported
-nodes and multiline scalars. The proofs concern this model. Refusal bounds the parser gap to
+nodes and multiline scalars. Block headers must share a line with a key or a sequence dash.
+The proofs concern this model. Refusal bounds the parser gap to
 the accepted subset; it does not prove that GitHub gives every accepted file the same meaning.
 -/
 
@@ -209,6 +210,7 @@ private def ordinary (st : State) (l : RawLine) : Except Refusal (State × Line)
     if (match owner with | .entry col => decide (l.indent > col) | .standalone col => decide (l.indent ≥ col)) then
       throw (.multiline origin)
   let s ← scan l.number l.body [] {}
+  if s.block && !s.context.mapping && !dashStart l.body then throw (.multiline l.number)
   let columns := entryColumns l.body l.indent none
   let owner := if s.context.mapping then columns.1 else columns.2
   let scalarOwner := if s.context.mapping || dashStart l.body then PlainOwner.entry owner else

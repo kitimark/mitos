@@ -42,6 +42,16 @@ for text in 'a: [#x]' 'a: {#x}' 'a: [b,#x]'; do
 done
 printf 'a: [x#y]\nb: #comment\n' >"$tmp/hash.yml"
 expect 0 '' parse "$tmp/hash.yml"
+for header in '|' '>-' '|+'; do
+  printf 'a:\n  %s\n  x #${{ y }}\n' "$header" >"$tmp/block.yml"
+  expect 1 ':2: refused: scalar runs onto the next line' parse "$tmp/block.yml"
+done
+printf '%s\n' '-' '  |' '  x #${{ y }}' >"$tmp/block.yml"
+expect 1 ':2: refused: scalar runs onto the next line' parse "$tmp/block.yml"
+printf 'a:\n#c\n  |+\n  x #${{ y }}\n' >"$tmp/block.yml"
+expect 1 ':3: refused: scalar runs onto the next line' parse "$tmp/block.yml"
+printf '%s\n' '- |' '  x #${{ y }}' >"$tmp/block.yml"
+expect 0 '' parse "$tmp/block.yml"
 expect 2 'workflow: cannot read' parse "$tmp/missing.yml"
 expect 2 'usage:' parse
 printf 'workflow tests passed\n'

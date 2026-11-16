@@ -54,7 +54,7 @@ with a trailing comment. This conservative subset costs no accepted repository w
 Sequence ownership uses actual source columns, including extra spaces and nested sequence dashes.
 
 The source-context coverage strengthening takes the core reader beyond the issue's approximate
-270-line estimate. The first PR has 441 code lines. The fixtures remain a separate PR as
+270-line estimate. The first PR has 453 code lines. The fixtures remain a separate PR as
 the issue requests. The extra source annotation is retained because per-output partitions alone
 would permit dropping a comment-shaped block line.
 
@@ -118,8 +118,7 @@ CI repeats the corpus on the final published head.
 The root's no-comments review reports zero deletions and zero flags. The model-gap module doc is
 kept as a public API contract. Separate inherited-model advisory reviews checked the source-aware
 coverage, scalar owners, context-sensitive boundaries, exact fixture results and decoded escape
-values. The prescribed Opus model is unavailable, so these are advisory passes and the merge
-remains held for the required Opus verdict.
+values. This Codex session cannot run Opus. An external Claude Opus review subsequently reported FAIL on B1; the latest validation below records its fix and the required fresh verdict. Advisory passes do not supersede that verdict.
 
 ## Initial build budget
 
@@ -186,3 +185,50 @@ The medians are 4.643 and 11.947 seconds, an increase of 7.304 seconds. The befo
 one-second runtime budget pass. A fresh inherited-model advisory check passes 22 focused native
 cases, including four valid multiline-flow disguises, positive comment/hash cases and refusal line
 origins. The required Opus verdict remains pending.
+
+## Standalone block header validation
+
+The external Claude Opus report on #385 found B1: `a:\n  |\n  x #${{ y }}\n` was accepted while
+its block content was cut as an ordinary trailing comment. The runtime and source audit both used
+the standalone header's indentation instead of its parent owner's column. The earlier claims
+about independent block classification did not cover that admitted shape correctly.
+
+The closed subset now requires a block header on the same physical line as its mapping key or
+sequence dash. A standalone header is refused at its own line with the existing multiline
+refusal. This removes the unsupported shape instead of adding a second pending-parent algorithm
+to the source audit. The module's public contract states this restriction. Source annotation is
+only a specification of the admitted subset, not an oracle for arbitrary YAML.
+
+Five exact fixtures cover the reported mapping case, delayed sequence, folded/chomped forms,
+a comment between key and header, and retained inline sequence block data. There are now 63
+kernel fixture theorems and eight interpreter guards; the longest lexer input is 25 characters.
+The workflow suite pins standalone literal/folded/chomped refusals and inline positives. A fresh
+advisory independently passes 38 valid PyYAML documents: 26 refused standalone forms at the
+correct header line and 12 accepted positives, including literal pipe/hash block data.
+
+All six current-main workflows and #336's land workflow still accept, while owner-ping refuses
+its line-27 anchor. The current-main PyYAML differential remains empty at 298 block lines and 79
+expression positions. Five successful silent ci.yml parses take 0.199628, 0.091565, 0.219108,
+0.167107 and 0.173183 seconds, all below one second.
+
+Three refreshed complete-target build pairs use the same warmed-input/output-deletion method.
+
+| Run | Before seconds | After seconds |
+| --- | ---: | ---: |
+| 1 | 5.387 | 16.423 |
+| 2 | 7.752 | 23.634 |
+| 3 | 5.035 | 12.098 |
+
+The medians are 5.387 and 16.423 seconds, an increase of 11.036 seconds. The before range is
+5.035 to 7.752 seconds and the after range is 12.098 to 23.634 seconds. All paired increases
+are below 30 seconds. Parallel full-build fixture-module durations range from 4.7 to 11 seconds;
+one run exceeds the 10-second fixture target in that parallel schedule. To isolate the fixture
+cost, three runs delete only all LineCases generated outputs with dependencies warm, then run
+`lake build MitosGate.Yaml.LineCases:c.o`. This checks all 63 theorems and eight guards and compiles
+the C object together, in 5.154, 4.704 and 4.820 seconds. Each run exits zero and the logs confirm
+both outputs rebuilt. The isolated complete fixture target clears the 10-second budget; the
+parallel-build outlier is retained here rather than hidden.
+
+The latest reported external Opus verdict is FAIL on B1 at the earlier heads. The fix requires a
+fresh Opus verdict before owner merge. The current Codex advisory and CodeRabbit results cannot
+replace it. B2 is separately fixed by refusing hashes at flow node starts.
