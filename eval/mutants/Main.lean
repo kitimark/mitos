@@ -52,14 +52,188 @@ def coreFiles (core : System.FilePath) : IO (List (String × String)) := do
     out := out.push (rel, ← IO.FS.readFile p)
   return (out.qsort (·.1 < ·.1)).toList
 
+def readPackageSpec (manifest : Json) : Except String (Option (String × List String)) := do
+  let arr ← match manifest.getObjVal? "packages" with
+    | .ok (.arr a) => pure a
+    | .ok _ => throw "packages is not an array"
+    | .error _ => pure (#[] : Array Json)
+  if arr.isEmpty then return none
+  let dirName ← match manifest.getObjVal? "packagesDir" with
+    | .ok (.str s) => pure s
+    | .ok _ => throw "packagesDir is not a string"
+    | .error _ => pure ".lake/packages"
+  let mut names : Array String := #[]
+  for p in arr do
+    match p.getObjValAs? String "name" with
+    | .ok n => names := names.push n
+    | .error _ => throw "a package has no string name"
+  return some (dirName, names.toList)
+
+private def specOf (s : String) : Except String (Option (String × List String)) := do
+  readPackageSpec (← Json.parse s)
+
+private def specNone (s : String) : Bool :=
+  match specOf s with | .ok none => true | _ => false
+
+private def specSome (s dir : String) (names : List String) : Bool :=
+  match specOf s with | .ok (some p) => p.1 == dir && p.2 == names | _ => false
+
+private def specBad (s : String) : Bool :=
+  match specOf s with | .error _ => true | .ok _ => false
+
+#guard specNone "{}"
+#guard specNone "{\"packages\":[]}"
+#guard specNone "{\"packagesDir\":\".lake/packages\",\"packages\":[]}"
+#guard specSome "{\"packages\":[{\"name\":\"batteries\"}]}" ".lake/packages" ["batteries"]
+#guard specSome "{\"packagesDir\":\"/opt/pkgs\",\"packages\":[{\"name\":\"a\"},{\"name\":\"b\"}]}"
+  "/opt/pkgs" ["a", "b"]
+#guard specBad "{\"packages\":[{}]}"
+#guard specBad "{\"packages\":1}"
+
+def packagesMissing : String :=
+  "core's packages are not resolved: run cd core && lake build first"
+
+structure ResolvedPackages where
+  dir   : System.FilePath
+  names : List String
+
+inductive PackageLink where
+  | symlink
+  | hardlink
+  | copy
+  deriving DecidableEq
+
+def PackageLink.name : PackageLink → String
+  | .symlink => "symlink"
+  | .hardlink => "hardlink"
+  | .copy => "copy"
+
+structure PackageReuse where
+  packages : ResolvedPackages
+  link     : PackageLink
+
+def resolvedPackages (core : System.FilePath) : ExceptT String IO (Option ResolvedPackages) := do
+  let text ← IO.FS.readFile (core / "lake-manifest.json")
+  let json ← match Json.parse text with
+    | .ok j => pure j
+    | .error e => throw s!"core/lake-manifest.json: {e}"
+  let spec ← match readPackageSpec json with
+    | .ok s => pure s
+    | .error e => throw s!"core/lake-manifest.json: {e}"
+  let some (dirName, names) := spec | return none
+  let dir := if (dirName : System.FilePath).isAbsolute then System.FilePath.mk dirName else core / dirName
+  for n in names do
+    unless ← (dir / n).isDir do throw packagesMissing
+  return some { dir, names }
+
+def clearPackagesLink (dest : System.FilePath) : IO Unit := do
+  try
+    do
+      let info ← dest.symlinkMetadata
+      if info.type == .symlink then IO.FS.removeFile dest else IO.FS.removeDirAll dest
+  catch
+    | .noFileOrDirectory .. => pure ()
+    | e => throw e
+
+def placePackages (workspace : System.FilePath) (reuse : PackageReuse) : IO Bool := do
+  let dest := workspace / ".lake" / "packages"
+  IO.FS.createDirAll (workspace / ".lake")
+  clearPackagesLink dest
+  let src ← IO.FS.realPath reuse.packages.dir
+  let out ← match reuse.link with
+    | .symlink => IO.Process.output { cmd := "ln", args := #["-s", src.toString, dest.toString] }
+    | .hardlink => IO.Process.output { cmd := "cp", args := #["-al", src.toString, dest.toString] }
+    | .copy => IO.Process.output { cmd := "cp", args := #["-a", src.toString, dest.toString] }
+  return out.exitCode == 0
+
+def sandboxSees (dir : System.FilePath) (names : List String) : IO Bool := do
+  let out ← IO.Process.output {
+    cmd := "bwrap"
+    args := #[
+      "--ro-bind", "/", "/",
+      "--tmpfs", "/home", "--tmpfs", "/root", "--tmpfs", "/run/user", "--tmpfs", "/tmp",
+      "--tmpfs", "/run", "--tmpfs", "/var",
+      "--dir", "/tmp/home", "--dev", "/dev", "--proc", "/proc", "--clearenv",
+      "--ro-bind", dir.toString, dir.toString,
+      "--bind", (dir / ".lake").toString, (dir / ".lake").toString,
+      "--setenv", "PATH", "/usr/bin:/bin",
+      "--unshare-all", "--die-with-parent",
+      "--chdir", dir.toString,
+      "--", "/bin/sh", "-c",
+      "for n; do test -d \".lake/packages/$n\" || exit 1; done", "sh"
+    ] ++ names.toArray
+  }
+  return out.exitCode == 0
+
+def fileSha (p : System.FilePath) : IO (Option String) := do
+  let out ← IO.Process.output { cmd := "sha256sum", args := #[p.toString] }
+  if out.exitCode != 0 then return none
+  match (out.stdout.splitOn " ").head? with
+  | some s => return if s.isEmpty then none else some s
+  | none => return none
+
+def gitIndexMoves (pkg : System.FilePath) : IO (Option Bool) := do
+  let idx := pkg / ".git" / "index"
+  unless ← idx.pathExists do return some false
+  let tmp ← IO.FS.createTempDir
+  try
+    let bak := tmp / "index"
+    let some h1 ← fileSha idx | return none
+    let copied ← IO.Process.output { cmd := "cp", args := #["-a", idx.toString, bak.toString] }
+    if copied.exitCode != 0 then return none
+    let status ← IO.Process.output {
+      cmd := "env"
+      args := #[s!"GIT_INDEX_FILE={bak}", "git", "-C", pkg.toString, "status", "--porcelain"]
+    }
+    if status.exitCode != 0 then return none
+    let some h2 ← fileSha bak | return none
+    return some (h1 != h2)
+  finally
+    IO.FS.removeDirAll tmp
+
+def symlinkWrites (pkgs : ResolvedPackages) : IO Bool := do
+  for n in pkgs.names do
+    match ← gitIndexMoves (pkgs.dir / n) with
+    | some false => pure ()
+    | some true | none => return true
+  return false
+
+def chooseLink (pkgs : ResolvedPackages) : ExceptT String IO PackageLink := do
+  for m in [PackageLink.symlink, .hardlink, .copy] do
+    let dir ← IO.FS.createTempDir
+    try
+      let placed ← placePackages dir { packages := pkgs, link := m }
+      if placed && (← sandboxSees dir pkgs.names) then
+        let writes ← if m == .symlink then symlinkWrites pkgs else pure false
+        if !writes then return m
+    finally
+      IO.FS.removeDirAll dir
+  throw "could not reuse core's packages"
+
+def prepareReuse (core : System.FilePath) : ExceptT String IO (Option PackageReuse) := do
+  let some pkgs ← resolvedPackages core | return none
+  return some { packages := pkgs, link := ← chooseLink pkgs }
+
+def searchPath (dir : System.FilePath) (reuse : Option PackageReuse) : List System.FilePath :=
+  let built := dir / ".lake" / "build" / "lib" / "lean"
+  match reuse with
+  | none => [built]
+  | some r =>
+    built :: r.packages.names.map fun (n : String) =>
+      dir / ".lake" / "packages" / (n : System.FilePath) / ".lake" / "build" / "lib" / "lean"
+
 def judge (cfg : Config) (toolchain : String) (files : List (String × String))
-    (config : Option String) (log : System.FilePath) : IO Run := do
+    (config : Option String) (log : System.FilePath) (reuse : Option PackageReuse) : IO Run := do
   let dir ← IO.FS.createTempDir
   try
     IO.FS.writeFile (dir / "lean-toolchain") toolchain
     for (rel, txt) in files do
       if let some p := (dir / rel).parent then IO.FS.createDirAll p
       IO.FS.writeFile (dir / rel) txt
+    if let some r := reuse then
+      unless ← placePackages dir r do
+        IO.FS.writeFile log "could not reuse core's packages"
+        return .failed
     let args := #["comparator"] ++ (config.map (#[s!"--config={·}"])).getD #[] ++
       (if cfg.paranoid then #["--paranoid"] else #[])
     (← IO.getStdout).flush
@@ -174,7 +348,7 @@ def caseLogs (logDir : System.FilePath) (name : String) : List System.FilePath :
   ["refutation", "values", "approved", "holes"].map fun s => logDir / s!"{name}.{s}.log"
 
 def runCase (cfg : Config) (env : Environment) (a : Approved) (casesDir logDir : System.FilePath)
-    (name : String) : IO Judged := do
+    (name : String) (reuse : Option PackageReuse) : IO Judged := do
   for log in caseLogs logDir name do
     if ← log.pathExists then IO.FS.removeFile log
   let p ← match ← (prepare env a casesDir name).run with
@@ -182,28 +356,31 @@ def runCase (cfg : Config) (env : Environment) (a : Approved) (casesDir logDir :
     | .error e => return .invalid e
   let ran := Judged.ran p.mutant.expect p.mutant.rejects
   unless p.lint.isEmpty do return ran { lint := p.lint }
-  let holes ← judge cfg a.toolchain p.holes (some "holes.json") (logDir / s!"{name}.holes.log")
+  let holes ← judge cfg a.toolchain p.holes (some "holes.json") (logDir / s!"{name}.holes.log") reuse
   if holes != .accepted then return ran { holes }
-  let approved ← judge cfg a.toolchain p.approved none (logDir / s!"{name}.approved.log")
+  let approved ← judge cfg a.toolchain p.approved none (logDir / s!"{name}.approved.log") reuse
   match approved with
   | .accepted =>
     let values ← judge cfg a.toolchain (p.approved ++ p.values) (some "values.json")
-      (logDir / s!"{name}.values.log")
+      (logDir / s!"{name}.values.log") reuse
     return ran { holes, approved, values }
   | .rejected =>
     let some extra := p.refutation | return ran { holes, approved }
     let refutation ← judge cfg a.toolchain (p.approved ++ extra) (some "mutant.json")
-      (logDir / s!"{name}.refutation.log")
+      (logDir / s!"{name}.refutation.log") reuse
     return ran { holes, approved, refutation }
   | .failed => return ran { holes, approved }
 
-def writeFiles (toolchain : String) (dir : System.FilePath) (files : List (String × String)) :
-    IO Unit := do
+def writeFiles (toolchain : String) (dir : System.FilePath) (files : List (String × String))
+    (reuse : Option PackageReuse) : IO Unit := do
   IO.FS.createDirAll dir
   IO.FS.writeFile (dir / "lean-toolchain") toolchain
   for (rel, txt) in files do
     if let some d := (dir / rel).parent then IO.FS.createDirAll d
     IO.FS.writeFile (dir / rel) txt
+  if let some r := reuse then
+    unless ← placePackages dir r do
+      throw <| IO.userError "could not reuse core's packages"
 
 def generatedFor (a : Approved) (casesDir : System.FilePath) (cases : List String) :
     IO (List Output.Gen) := do
@@ -223,8 +400,8 @@ structure Checked where
   commands : Nat
   gens     : Nat
 
-def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
-    ExceptT String IO Checked := do
+def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath)
+    (reuse : Option PackageReuse) : ExceptT String IO Checked := do
   let genPath (k : Nat) : String := s!"Challenge/MutantsOutput{k}.lean"
   let numbered := (List.range gens.length).zip gens
   let outProbes ← Output.outProbes.mapM fun p => do
@@ -243,7 +420,7 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
     IO.FS.writeFile log ""
     let build (what : String) (files : List (String × String)) (mods : List String) :
         ExceptT String IO Unit := do
-      writeFiles a.toolchain dir files
+      writeFiles a.toolchain dir files reuse
       (← IO.getStdout).flush
       let out ← IO.Process.output { cmd := "lake", args := #["build"] ++ mods.toArray, cwd := dir }
       let text := out.stdout ++ out.stderr
@@ -254,7 +431,7 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
         throw s!"lake build of {what} failed: {err} ({log})"
     build "the Challenge module and the cross-check's probes" (a.files ++ first)
       (a.chalModule :: first.map (moduleOf ·.1))
-    initSearchPath (← findSysroot) [dir / ".lake" / "build" / "lib" / "lean"]
+    initSearchPath (← findSysroot) (searchPath dir reuse)
     let import_ (m : String) : IO Environment := importModules #[{ module := m.toName }] {}
     let load (m : String) : ExceptT String IO (Environment × List String × List CrossCheck.Decl) := do
       let env ← import_ m
@@ -308,7 +485,7 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath) :
     IO.FS.removeDirAll dir
 
 def writeWorkspaces (env : Environment) (a : Approved) (casesDir out : System.FilePath)
-    (cases : List String) : IO UInt32 := do
+    (cases : List String) (reuse : Option PackageReuse) : IO UInt32 := do
   let mut code := 0
   for name in cases do
     match ← (prepare env a casesDir name).run with
@@ -318,8 +495,8 @@ def writeWorkspaces (env : Environment) (a : Approved) (casesDir out : System.Fi
         for l in p.lint do IO.eprintln s!"{clean name}: lint: {clean l}"
         code := 1
         continue
-      writeFiles a.toolchain (out / name) (p.approved ++ p.refutation.getD p.values)
-      writeFiles a.toolchain (out / s!"{name}.holes") p.holes
+      writeFiles a.toolchain (out / name) (p.approved ++ p.refutation.getD p.values) reuse
+      writeFiles a.toolchain (out / s!"{name}.holes") p.holes reuse
       IO.println s!"{clean name}: {out / name}"
   return code
 
@@ -399,6 +576,10 @@ def main (args : List String) : IO UInt32 := do
     | .error e => IO.eprintln e; IO.eprintln usage; return 2
   if cfg.prepare.isSome && cfg.cases.isEmpty then IO.eprintln usage; return 2
   let root : System.FilePath := "."
+  let reuse ← match ← (prepareReuse (root / "core")).run with
+    | .ok r => pure r
+    | .error e => IO.eprintln e; return 2
+  if let some r := reuse then IO.eprintln s!"packages: {r.link.name}"
   let casesDir := root / "eval" / "mutants" / "cases"
   let logDir := root / ".lake" / "mutants"
   IO.FS.createDirAll logDir
@@ -412,7 +593,7 @@ def main (args : List String) : IO UInt32 := do
   if cases.isEmpty then IO.eprintln "mitos-mutants: no cases in eval/mutants/cases/"; return 2
   let gens ← generatedFor a casesDir cases
   let t0 ← IO.monoMsNow
-  let checked ← try (leanCheck a gens (logDir / "challenge.log")).run
+  let checked ← try (leanCheck a gens (logDir / "challenge.log") reuse).run
     catch e => pure (.error (toString e))
   let a ← match checked with
   | .ok c =>
@@ -430,9 +611,9 @@ def main (args : List String) : IO UInt32 := do
   let env ← try Lint.syntaxEnv catch e =>
     IO.eprintln s!"mitos-mutants: cannot load Lean's syntax for the lint: {clean (toString e)}"; return 2
   if let some out := cfg.prepare then
-    return ← writeWorkspaces env a casesDir out cases
+    return ← writeWorkspaces env a casesDir out cases reuse
   let start ← IO.monoMsNow
-  let control ← judge cfg a.toolchain a.files none (logDir / "control.log")
+  let control ← judge cfg a.toolchain a.files none (logDir / "control.log") reuse
   let controlText := match control with
     | .accepted => "ACCEPTED" | .rejected => "REJECTED  <-- FAIL" | .failed => "NO JUDGMENT  <-- FAIL"
   IO.println s!"control (unmutated core, approved Challenge and proofs): {controlText}"
@@ -441,7 +622,7 @@ def main (args : List String) : IO UInt32 := do
   let mut results := #[]
   for name in cases do
     let t0 ← IO.monoMsNow
-    let j ← runCase cfg env a casesDir logDir name
+    let j ← runCase cfg env a casesDir logDir name reuse
     let r : Result := { name, judged := j }
     let secs := ((← IO.monoMsNow) - t0 + 50) / 100
     let mark := if r.ok then "" else "  <-- FAIL"
