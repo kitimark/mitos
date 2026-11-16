@@ -5,7 +5,7 @@ goal: Every PR accepts every plugin in `examples/acme/Plugins/` (`ToyRequire` an
 statement: none in `statements.lock` (CI and tooling). The runner's own, appended to `eval/mutants/Mutants/Verdict.lean`: `Mutants.mem_unbroken`, `Mutants.mem_claimed`, `Mutants.mem_unclaimed`, `Mutants.runPasses_corpus`, `Mutants.runPasses_named`, `Mutants.prep_ok_iff`, `Mutants.prep_written_iff`
 touches: .github/workflows/ci.yml (job `checks` only), .github/workflows/nightly.yml (jobs `full` and `canary`, new job `diff`), .github/scripts/accept-plugins.sh (new), .github/scripts/accept-plugins.test.sh (new), .github/scripts/install-go.sh (new), .github/scripts/cheat-shard.test.sh (only its `checks 20` timeout pin, and only under S6), eval/mutants/Mutants/Verdict.lean (one block appended before `end Mutants`), eval/mutants/Main.lean (the `usage` text, `writeWorkspaces`, and in `main` the `--prepare` guard, the `--prepare` branch and the end of the judged run), this file, ops/runs/
 must_not_touch: statements.lock, models.lock, gate/, eval/cheats/, core/, examples/ (`examples/acme/accepted/*.json` included, see S1), every other file under .github/ (the other workflows, .github/actions/, the other scripts), eval/mutants/Mutants/ except Verdict.lean, eval/mutants/cases/, the rest of eval/mutants/Main.lean, eval/diff/, eval/score/, eval/fixtures/, docs/ (O2), plan/, .claude/, .coderabbit.yaml, every lean-toolchain, lakefile.toml and lake-manifest.json
-checks: actionlint on both workflows; `shellcheck -x` on the three new scripts; `.github/scripts/{accept-plugins,cheat-shard,cache-logs,ci-trust,cancel-superseded,land-protection}.test.sh`; `lake --dir eval/mutants build` (warningAsError) and `#print axioms` of the seven statements; fixtures F1 to F21; run-log check; `plan-tasks.test.sh`; `gate` green at the head; one nightly `workflow_dispatch` on the branch (F22)
+checks: actionlint on both workflows; `shellcheck -x` on the three new scripts; `.github/scripts/{accept-plugins,cheat-shard,cache-logs,ci-trust,cancel-superseded,land-protection}.test.sh`; `lake --dir eval/mutants build` (warningAsError) and `#print axioms` of the seven statements; fixtures F1 to F21 and F23; run-log check; `plan-tasks.test.sh`; `gate` green at the head; one nightly `workflow_dispatch` on the branch (F22)
 budget: 10 iterations · 5h wall · 1.5M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
@@ -22,7 +22,7 @@ escalation: hint → automation → stronger model → pair → split → revisi
   - P2-008 (#209, #330, merged 2026-11-15).
   - P2-009b (#211).
   - P2-011 PR A (#283).
-- **Rows not merged** (contract only; each has a `revisit_when` line): P2-001b (#204), P2-005b (#206), P2-009a (#210), P2-010 (#212, task file still pending), P2-011 PR B (#147).
+- **Rows not merged** (contract only; each has a `revisit_when` line): P2-001b (#204), P2-005b (#206), P2-009a (#210), P2-010 (#212, designed in `tasks/P2-010-nightly-scorecard.md`, which C1 follows), P2-011 PR B (#147).
 - **Findings handed to this row:**
   - #107 items 2 to 5.
   - #33 and #275 item 1: a record that matches the tree. These are also P2-007 R1 and P2-001b's deferral.
@@ -52,6 +52,7 @@ escalation: hint → automation → stronger model → pair → split → revisi
   - The scorecard loop printed two cards (`gomod`, `toy`).
   - `actionlint -shellcheck=shellcheck` was clean on both edited workflows. The five existing workflow-reading tests and `accept-plugins.test.sh` (A1 to A10) passed against them.
   - **Not run:** a real `accept-plugins.sh --record` (gate and comparator), a judged run of all 44 cases, CI, and a nightly dispatch.
+- **What round 2 checked** (the PR owner, after review): C1 against P2-010's task file. In a scratch copy of `main` at `eac85d2` with P2-010's `types` text applied (`Score/Nightly.lean` 276 lines, `Main.lean` 78), `lake --dir eval/score build` ended with `Build completed successfully (44 jobs).` in about 10 s. The nightly scorecard step below passed actionlint, and the F23 cases gave the results stated there, one run each.
 - **Landing this design.** The design PR removes `P2-012` from `.claude/scripts/plan-tasks.pending`, which is an owner path, so the owner merges the design PR. The builder's PR leaves `.claude/` alone.
 
 ## Design
@@ -59,7 +60,8 @@ Written once at plan time and amended in place. `touches` and `must_not_touch` a
 
 depth:
 - **Build depth** for every part that rests on merged rows: the three scripts, the Lean, the `ci.yml` steps, `nightly.yml`'s `full` accept, #107 item 4, the `diff` job and the canary line. That text is final, and it was built, linted or run as listed under Context.
-- **Contract only** for the nightly scorecard command and its D1 line (C1, P2-010 not merged). Its workflow step is final apart from the one command, which is a placeholder that actionlint parsed.
+- **Build depth** for the nightly scorecard step, its D1 line and its two artifacts (C1). They rest on P2-010's design, not a merged row: the commands, exit codes and lines that `tasks/P2-010-nightly-scorecard.md` pins with its `#guard`s and its N7. The step ran against P2-010's text, built in scratch (round 2, F23).
+- **Contract only** for one step of C1, the fetch of `main`'s numbers (the baseline). C1 fixes its permission, source, output and failure. Its commands are the builder's, proved against the real API.
 
 revisit_when:
 - re-check after #204 (P2-001b) merges:
@@ -68,7 +70,7 @@ revisit_when:
   - If it adds Challenge theorems, P2-005b's cases must claim them before this row's step can be green (O4).
 - re-check after #206 (P2-005b) merges: the counts in F1 (44 cases, 15 lint), and the claim of every new theorem.
 - re-check after #210 (P2-009a) merges: `eval/fixtures/chain/` joins the PR loop with no workflow change, but it needs a `labels.tsv`; F19 then prints three cards.
-- re-check when P2-010's task file lands, and again after #212 merges: fill C1 (the command, the D1 line, the baseline shape) and decide whether the PR step uses the same command.
+- C1 was filled from P2-010's task file when it landed. Re-check after #212 (P2-010) merges: run F23 at the head. If P2-010's build moved a line C1 reads (the D1 line, the no-edge line, the bold line) or an exit code, amend C1 and the step first. Then decide the PR scorecard (C1, still open).
 - re-check after P2-011 PR B (#147) merges: its re-recorded records must pass the accept step. If P2-012 merges first, tell PR B's owner that CI now checks both records at its head.
 
 modules: each existing file is edited in place, and each new file owns one topic.
@@ -76,8 +78,8 @@ modules: each existing file is edited in place, and each new file owns one topic
 - `.github/scripts/accept-plugins.test.sh` (new, 77 lines): A1 to A10, with a stub `lake` in a scratch git repo. It copies `cancel-superseded.test.sh` (a stub tool, no network).
 - `.github/scripts/install-go.sh` (new, 35 lines): Go from `eval/diff/.go-version`, SHA256 pinned, retried, and its version read back. It copies `install-elan.sh`.
 - `.github/workflows/ci.yml`, job `checks`, about +30 lines. It adds three steps: the accept test, the `eval/diff` step and the `--prepare` step. It changes two: the scorecard loops over every fixture, and the accept step calls the script. There is no new job, checkout or timeout.
-- `.github/workflows/nightly.yml`, about +75 lines:
-  - `full`: the accept step calls the script; `if: ${{ !cancelled() }}` goes on both mutant steps (#107 item 4); the scorecard step (C1) and its artifact are added.
+- `.github/workflows/nightly.yml`, about +100 lines:
+  - `full`: the accept step calls the script; `if: ${{ !cancelled() }}` goes on both mutant steps (#107 item 4); `actions: read` is added to its permissions, and the baseline fetch, the scorecard step and its two artifacts are added (C1).
   - New job `diff`.
   - `canary`: one line.
 - `eval/mutants/Mutants/Verdict.lean`, +104 lines appended: `unbroken`, `claimed`, `unclaimed`, `Scope`, `runPasses`, `Prep` and `prep`, with their statements and `#guard`s, beside `breakers` and `passes`.
@@ -100,6 +102,7 @@ modules: each existing file is edited in place, and each new file owns one topic
 | X11 | A swapped Go archive, or a `.go-version` bump with no hash | SHA256 checked before extraction; `go env GOVERSION` checked after; an unknown version fails closed | F16 |
 | X12 | A fixture directory with no labels is skipped | The loop scores every directory, and `mitos-score` fails without a `labels.tsv` | F19 |
 | X13 | `continue-on-error`, `\|\| true`, or `if: always()` on a check step | None in this design. `!cancelled()` only on evaluation steps. The verifiers read the diff | review |
+| X14 | Reword the scorer's D1 line, so the nightly step reads no number and the report still looks fine | The step fails when the report has neither the D1 line nor P2-010's no-edge line (C1) | F23 |
 
 types:
 
@@ -496,7 +499,15 @@ After "Example workspace builds". The scorecard step is replaced and the toy acc
         run: .github/scripts/accept-plugins.sh --record
 ```
 
-`nightly.yml`, job `full`, final text apart from the C1 command:
+`nightly.yml`, job `full`, final text apart from the baseline fetch (C1). The job gains a `permissions:` block under `runs-on`:
+
+```yaml
+    permissions:
+      contents: read
+      actions: read
+```
+
+Its steps:
 
 ```yaml
       - run: cd examples/acme && lake build
@@ -513,19 +524,34 @@ After "Example workspace builds". The scorecard step is replaced and the toy acc
         shell: bash
         # body unchanged
 
-      - name: Scorecard of every fixture, its diff against main's, and the most derivations per repo-level edge
+      - name: The numbers of main's newest nightly that has them, as the scorecard's baseline
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # C1 fetch, contract only
+
+      - name: Scorecard of every fixture, its diff against main's numbers, and the most derivations any repo-level edge has
         if: ${{ !cancelled() }}
         shell: bash
         run: |
           lake --dir eval/score build
+          base=()
+          if [ -f "$RUNNER_TEMP/base/numbers.tsv" ]; then base=("$RUNNER_TEMP/base/numbers.tsv"); fi
           status=0
-          lake --dir eval/score exe mitos-score --all eval/fixtures > "$RUNNER_TEMP/scorecard.md" || status=$?
+          lake --dir eval/score exe mitos-score --all eval/fixtures "${base[@]}" > "$RUNNER_TEMP/scorecard.md" || status=$?
           cat "$RUNNER_TEMP/scorecard.md" >> "$GITHUB_STEP_SUMMARY"
           [ "$status" -eq 0 ] || exit "$status"
-          n=$(sed -n 's/^most derivations per repo-level edge: \([0-9][0-9]*\)$/\1/p' "$RUNNER_TEMP/scorecard.md")
-          [ -n "$n" ] || { echo "::error::the scorecard has no 'most derivations per repo-level edge' line"; exit 1; }
-          if [ "$n" -gt 8 ]; then
-            echo "::error::a repo-level edge has $n derivations, over 8: D1 reopens (plan/phase-2.md, Scope decisions)"
+          lake --dir eval/score exe mitos-score --numbers eval/fixtures > "$RUNNER_TEMP/numbers.part"
+          mkdir -p "$RUNNER_TEMP/numbers"
+          mv "$RUNNER_TEMP/numbers.part" "$RUNNER_TEMP/numbers/numbers.tsv"
+          n=$(sed -n '/^Most derivations any repo-level edge has: /{s/^Most derivations any repo-level edge has: \([0-9][0-9]*\), .*/\1/p;q;}' "$RUNNER_TEMP/scorecard.md")
+          if [ -n "$n" ]; then
+            echo "Most derivations any repo-level edge has: $n"
+            if grep -q '^\*\*Above [0-9][0-9]*: D1 reopens ' "$RUNNER_TEMP/scorecard.md"; then
+              echo "::warning::a repo-level edge has $n derivations, above D1's threshold, so D1 is the owner's to reopen (plan/phase-2.md, Scope decisions)"
+            fi
+          elif ! grep -Fqx 'No fixture has a repo-level edge, so no derivations were counted.' "$RUNNER_TEMP/scorecard.md"; then
+            echo "::error::the scorecard has no line that starts 'Most derivations any repo-level edge has: <n>, ', so this step and mitos-score --all disagree on its format"
             exit 1
           fi
 
@@ -535,9 +561,16 @@ After "Example workspace builds". The scorecard step is replaced and the toy acc
           name: scorecard
           path: ${{ runner.temp }}/scorecard.md
           if-no-files-found: error
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: scorecard-numbers
+          path: ${{ runner.temp }}/numbers/numbers.tsv
+          if-no-files-found: ignore
 ```
 
-The `# body unchanged` line above only marks the elision; the workflow gets no comment. `mitos-score --all eval/fixtures` is a placeholder until C1 is filled. The builder writes P2-010's command there. The threshold 8 appears once, in this step.
+The `# body unchanged` and `# C1 fetch, contract only` lines above only mark an elision and the one step that is not final; the workflow gets no comment. The scorecard step holds no threshold: P2-010's `d1Threshold` decides its bold line, and the step's `::warning::` follows that line, so 8 lives in one place. The number never fails the step (O7). The step fails on a scorer error, which keeps P2-010's exit code, and when the report has neither the D1 line nor the no-edge line (C1, F23). `numbers.tsv` is moved into place only after `--all` and `--numbers` both exit 0, so a broken run uploads no baseline (P2-010's W11). With a stub `run` in the fetch step, this text passed `actionlint -shellcheck=shellcheck` (round 2).
 
 `nightly.yml`, new job `diff`, placed after `full`. Final text (actionlint clean; each command ran in scratch):
 
@@ -595,18 +628,34 @@ The `# body unchanged` line above only marks the elision; the workflow gets no c
 
 `nightly.yml`, job `canary`. In the `trap` block, `.github/scripts/accept-plugins.sh --no-record` replaces the two-line toy accept. No record is checked, because the toolchain differs.
 
-C1, the contract with P2-010 (#212). Contract only:
-- **Command.** One command, run from the repository root with no network and no Go.
-- **Output.** It prints one Markdown document to stdout with:
-  - a card for each directory under `eval/fixtures/`;
-  - each card's diff against `main`'s baseline;
-  - exactly one line `most derivations per repo-level edge: <n>`, where `n` is the maximum over every fixture.
-- **Exit status.** 0 when every fixture scored; non-zero on a scorer error. A missing baseline prints as such and is not an error.
-- **Baseline.** Where it lives is P2-010's call (#160 item 3), and P2-012 takes one of two shapes:
-  - (a) In the tree, or a commit checked out with `git worktree add`: the step is the command alone, and `permissions` stay `contents: read`.
-  - (b) The last successful nightly's `scorecard` artifact: `nightly.yml` gets `actions: read` on `full`, plus one step that runs `gh run download` into `$RUNNER_TEMP/base` and passes that path.
-- **Anything else stops the builder (S7):** a write permission, a secret, or the network.
-- **The PR scorecard.** If the command also serves PRs, `ci.yml`'s scorecard step uses it, so there is one way to score every fixture. Otherwise the loop above stays.
+C1, the nightly scorecard, as `tasks/P2-010-nightly-scorecard.md` hands it over (its Usage, exit codes and deferrals). Build depth, except the baseline fetch:
+- **Commands.** `lake --dir eval/score exe mitos-score --all eval/fixtures [<baseline>]` prints the report. `lake --dir eval/score exe mitos-score --numbers eval/fixtures` prints the lines that a later run reads as `<baseline>`. Both run from the repository root, with no network and no Go.
+- **Exit codes, as P2-010 sets them.**
+  - `--all`: 0 when every fixture scored; 1 when one did not, with the whole report printed; 1 with nothing printed when the baseline has a line of an unknown kind or the wrong field count; 2 on bad usage.
+  - `--numbers`: 0, or 1 with nothing on stdout.
+  - The numbers never change either code (P2-010's D6). The step exits with any non-zero code, because a scorer error fails the run (`docs/process.md:190`), and it adds none for a number (O7).
+- **The D1 line.** Before any card (P2-010's D7), the report holds exactly one of these two lines, byte for byte as P2-010's `summary` prints them:
+  - ``Most derivations any repo-level edge has: <n>, <edge> in fixture `<name>`. D1 reopens above 8.``, with ``, which that fixture's card leaves out`` before the last `.` when that edge is not in the card;
+  - `No fixture has a repo-level edge, so no derivations were counted.`
+
+  Above the threshold, a later line reads ``**Above 8: D1 reopens (`plan/phase-2.md`, Scope decisions).**``. P2-010's pins G6 to G8 hold the D1 line from `has: <n>, ` on and the bold line's start, `**Above 8: D1 reopens`. No pin of P2-010 holds the words before `has:` or the no-edge line, so F23 holds them.
+- **How the step reads it.** It takes the first line that starts with the stable prefix `Most derivations any repo-level edge has: `, and reads `<n>` as the digits between the prefix and the next `, `. It prints `<n>` in its log. When a line starts with `**Above <digits>: D1 reopens `, it adds a `::warning::`. It fails only when the report has neither the D1 line nor the no-edge line, because then this step and `mitos-score --all` disagree on the format (F23). It does not compare `<n>` with 8 itself, so the threshold lives only in P2-010's `d1Threshold`.
+- **Artifacts.** `scorecard` holds the report, `scorecard.md`. `scorecard-numbers` holds `numbers.tsv`, which is written only when `--all` and `--numbers` both exit 0.
+- **The baseline, shape (b).** This is the root's default; P2-010 leaves "`main`'s" baseline to this row.
+  - It is the `numbers.tsv` of `main`'s newest nightly that uploaded `scorecard-numbers`, placed at `$RUNNER_TEMP/base/numbers.tsv` before the scorecard step. The step passes it only when that file exists.
+  - With none, the report says `No baseline given, so nothing was compared.` That happens on the first night (P2-010's R4) and on F22's branch dispatch, which runs before `main` has any.
+  - Shape (a) is out. A numbers file committed in the tree would have to be rewritten by every PR that moves a number, as a record is (R2). A baseline computed from `main`'s tree would compare a scheduled nightly, which runs on `main`, with itself. The night before's numbers need neither, and they show what changed since.
+- **The fetch step, contract only.**
+  - Permission: `full` gets `actions: read` beside `contents: read`, and nothing else. The step gets `GH_TOKEN: ${{ github.token }}`.
+  - Source: a run of `nightly.yml` on `main` in this repository, other than this run, taken newest first, whose `scorecard-numbers` artifact has not expired. It is never an artifact found by name alone. A pull request's run can upload an artifact under any name, and the artifact route does not say which workflow uploaded it: its `workflow_run` holds only `id`, `repository_id`, `head_repository_id`, `head_branch` and `head_sha` (read on 2026-11-16).
+  - Choose by the artifact, not by `gh run list --status success`. Two of the three newest scheduled nightlies on `main` concluded `failure` (read on 2026-11-16), and a success filter would skip their numbers.
+  - Output: that run's `numbers.tsv` at `$RUNNER_TEMP/base/numbers.tsv`, or no file when no such run has one. A missing artifact is not an error.
+  - Failure: an API error fails the fetch step. The scorecard step still runs under `!cancelled()` and says that it compared nothing.
+  - Proof before the first push: the builder runs the fetch's commands against the real API with the artifact name `mutant-logs`, which `full` uploads on `main` today, and records which run they picked. F22 then shows the no-baseline path.
+- **Anything else stops the builder (S7):** a write permission, a secret, another host, or a change in P2-010's build to a line or an exit code that C1 reads.
+- **Still open:**
+  - The fetch's exact commands, and how many runs it reads before it gives up.
+  - The PR scorecard. P2-010's deferrals let `ci.yml`'s step switch to `--all eval/fixtures`. That would post the summary and the D1 line on every PR, and run `Nightly.checked` there. The loop above stays until the re-check after #212 merges decides, so the PR comment keeps its bytes (F19).
 
 statements:
 - `Mutants.mem_unbroken`: a theorem is unbroken exactly when it is listed and its `breakers` is empty. Through `Mutants.mem_breakers`, `breakers` counts only a refuted case with `breaks=` and no `rejects=`.
@@ -622,12 +671,13 @@ statements:
   - I4. Every night the vendored outputs are Go's, and the pins match sum.golang.org (F17, F18).
   - I5. Go is installed only from an archive whose SHA256 the repository pins (F16).
   - I6. Every fixture directory is scored (F19).
+  - I7. No scorecard number fails the nightly, the D1 number included. A scorer error fails it, and so does a report whose D1 line the step cannot read (F23, O7).
 
 reuse:
 - From the gate: `mitos-gate accept --record` (`Accept.writeRecord`, which writes by temp file and rename).
 - From the mutant runner: `prepare`, `writeWorkspaces`, `Mutants.breakers`, `mem_breakers`, `passes`, `Mutant`, `Stage`, and `readApproved`'s `theorems`.
 - From `eval/diff`, exactly as P2-008's Usage names them: `check-pins.sh` (offline and `--online`), `selftest.sh`, `mitos-diff` and `--refresh`, and `.go-version`.
-- From the scorer: `mitos-score <fixture-dir>`.
+- From the scorer: `mitos-score <fixture-dir>`, and P2-010's `--all` and `--numbers` (C1).
 - From the workflows: `.github/actions/setup` and its `cache` input, `install-elan.sh`'s download, check and retry pattern, `cancel-superseded.test.sh`'s stub style, the `status=0 … || status=$?` pattern of "Mutation testing (paranoid)", and `$GITHUB_STEP_SUMMARY`.
 
 fixtures. To run one workflow step locally (A's harness):
@@ -660,14 +710,28 @@ Run the fixtures at the head, and the variants in a scratch worktree of the head
 - F20 `lint-workflows`: `actionlint -shellcheck=shellcheck .github/workflows/ci.yml .github/workflows/nightly.yml` prints nothing (judge).
 - F21 `existing-tests`: `cheat-shard`, `cache-logs`, `ci-trust`, `cancel-superseded` and `land-protection` `.test.sh` pass on the edited workflows (judge).
 - F22 `nightly-dispatch`: `gh api -X POST repos/{owner}/{repo}/actions/workflows/nightly.yml/dispatches -f ref=<branch>`. Expected:
-  - `full` is green: both accepts pass, mutation testing reads "all N cases as expected" with no `none` row and no UNBROKEN section, and the scorecard step and artifact follow C1.
+  - `full` is green: both accepts pass, mutation testing reads "all N cases as expected" with no `none` row and no UNBROKEN section, and the scorecard step follows C1. Its log prints `Most derivations any repo-level edge has: <n>`, its summary says `No baseline given, so nothing was compared.` because `main` has no `scorecard-numbers` yet, and `scorecard` and `scorecard-numbers` are uploaded.
   - `diff` is green, with the report in its summary.
   - The canary's result is reported. A canary failure on an rc is an early warning, not a blocker.
+- F23 `scorecard-d1-line`, the check that this step and P2-010 still agree. At the head, after #212 merges, run the scorecard step with `eval/fixtures` in its text replaced by each root below. The `d1-8` and `d1-9` roots are P2-010's N7; the others are built the same way, in scratch:
+
+  ```
+  s=$(mktemp -d); RUNNER_TEMP=$s GITHUB_STEP_SUMMARY=$s/summary bash -eo pipefail -c "$(step .github/workflows/nightly.yml 'Scorecard of every fixture' | sed "s#eval/fixtures#$root#g")"
+  ```
+
+  - `eval/fixtures`: exit 0. The log prints `Most derivations any repo-level edge has: 2` (at least 2 once `chain` joins, P2-010's N13), with no `::warning::`, and `numbers/numbers.tsv` holds the `--numbers` lines (27 for `gomod` and `toy`).
+  - The same root with its own `numbers.tsv` at `$s/base/numbers.tsv`: exit 0, and `No change against the baseline.`
+  - `d1-8`: exit 0, `… has: 8`, no `::warning::`.
+  - `d1-9`: exit 0, `… has: 9`, the `::warning::`, and the bold line in the summary. A number never fails the step (O7).
+  - One fixture with an empty `labels.tsv` and only `repos/a/PROVIDES`: exit 0, and the summary has P2-010's no-edge line.
+  - Scorer errors: a fixture with no `labels.tsv` exits 1 and leaves no `numbers.tsv`. A baseline line of the unknown kind `bogus` exits 1 with `baseline line 1: unknown line kind "bogus"`.
+  - Drift: in scratch, change `Most derivations any repo-level edge has:` in `Score/Nightly.lean` to `Most derivations one repo-level edge has:`. P2-010's G6 still passes, because it matches from `has:` on. The step exits 1 with `::error::the scorecard has no line that starts 'Most derivations any repo-level edge has: <n>, ', …`. A rewording that also moves `has:` fails P2-010's own build at G6.
+  - Round 2 ran every case above at `eac85d2`, with P2-010's `types` text built in scratch, and got these results. The step as it stood at `45c541d` read the line `most derivations per repo-level edge: <n>`. That build never prints it, so that step would have exited 1 every night.
 - PR CI at the head: `checks` and `gate` are green. The PR body records each new step's time and the `checks` wall time.
 
 cut_line: ships:
 - In `ci.yml`: the script-run accepts of every plugin with the record check; the `eval/diff` step; `--prepare` of every case with static coverage; the scorecard of every fixture; and the accept test.
-- In `nightly.yml`: the script in `full` and in the canary; #107 item 4; the `diff` job; and the scorecard step with its artifact (C1).
+- In `nightly.yml`: the script in `full` and in the canary; #107 item 4; the `diff` job; and the baseline fetch and the scorecard step with its two artifacts (C1), which reports the D1 number and never fails on it (O7).
 - In the runner: the `prep` rule (#107 item 2) and both coverage checks (#107 item 3).
 
 It leaves out:
@@ -697,7 +761,7 @@ deferrals:
 - From P2-009b: the go.mod scorecard, in the PR loop now and nightly through C1. Its docs wording goes to O2.
 - From P2-011: "CI never builds `eval/mutants`" is done. The canary gaps go to O6.
 - From #158: nothing (#304).
-- To P2-010 (#212): C1.
+- From P2-010 (#212): the nightly run, its artifacts, the baseline download and the post (P2-010's cut_line), all in C1. Whether the PR scorecard switches to `--all` stays open (C1).
 - To P2-011 PR B (#147): its re-recorded records must pass the accept step. They are already in its touches.
 - To one `follow-up` issue the PR owner files, no row (all minor):
   - Cache `eval/mutants/.lake`, `eval/diff/.lake` and `examples/acme/.lake` in `checks` (about 1 to 2 min of cold builds per PR). This goes through the cache paths and `cache-logs.test.sh`.
@@ -714,6 +778,7 @@ owner_decisions:
   - refresh, then run;
   - #107 items 4 and 5, #158 and #33 may ride along;
   - D1 reopens when a repo-level edge has more than 8 derivations;
+  - the scorecard's numbers never fail a run, and a scorer error does (`docs/process.md:190`, the owner's rule; O7);
   - P2-012 lands last.
 - **O1, the Owns cell.**
   - The cell gains `.github/scripts/accept-plugins.sh`, `accept-plugins.test.sh` and `install-go.sh`; the appended block in `eval/mutants/Mutants/Verdict.lean`; and "the lines of `eval/mutants/Main.lean` that #107 items 2 and 3 need" (it said item 3).
@@ -724,11 +789,11 @@ owner_decisions:
   - Rows:
     - Honest plugin accepted, gates 0–6: `.github/scripts/accept-plugins.sh --record` (every plugin in `examples/acme/Plugins/`; each committed record is what `accept --record` writes) | ✓ | ✓ | ✓ | yes.
     - Fixture scorecard: `mitos-score` on every directory of `eval/fixtures/`.
-    - Full evaluation scorecard: the C1 command; nightly; fails above 8 derivations.
+    - Full evaluation scorecard: `lake --dir eval/score exe mitos-score --all eval/fixtures [<baseline>]`, with `<baseline>` the `--numbers` lines of `main`'s newest nightly (C1); nightly; the numbers no, the D1 number included; a scorer error yes.
     - Differential tests against real tools: `lake --dir eval/diff exe mitos-diff eval/diff`. On PRs the build, `check-pins.sh` and `selftest.sh` block, and the comparison warns. Nightly: `--refresh` with Go from `.go-version` and `check-pins.sh --online`.
     - Mutation testing: `mitos-mutants --prepare <dir>` on PRs, which blocks; `mitos-mutants --paranoid` nightly.
 - **O3, where the nightly scorecard goes.**
-  - Root default: the run's job summary and a `scorecard` artifact. This needs no write permission and sends no message.
+  - Root default: the run's job summary and the `scorecard` artifact (C1). This needs no write permission and sends no message.
   - Alternative: one bot comment, edited in place, on a "Nightly scorecard" issue. That is a design amendment with these properties:
     - one job with `issues: write` only, which builds nothing;
     - it runs on `main` or for a named test issue;
@@ -740,7 +805,16 @@ owner_decisions:
   - Root default: exit 1 warns and exit 2 or more is red. This follows the plan: evaluation is not a gate, but an unreadable `eval/diff` is a broken build.
   - Alternatives: block on exit 1 too, or do not compare on PRs at all.
 - **O6, P2-011's canary gaps** (`lock --check`, `mitos-lint-test`, the `eval/score` and `eval/diff` builds, every `lean-toolchain`). Root default: not in this PR, because P2-011 hands them over only "if the owner adds them".
-- **O7, D1 as a red nightly.** Root default: the scorecard step fails above 8, and when the line is missing. A red nightly is the signal the root acts on (it goes to a researcher).
+- **O7, D1 above 8 in the nightly.** The owner's question: should a repo-level edge with more than 8 derivations turn the nightly red?
+  - Root default, not the owner's ruling: no. The nightly reports the number and never fails on it. `docs/process.md:190` says the scorecard's numbers never fail a run and a scorer error does, and P2-010's D6 keeps the D1 line out of the exit code.
+    - The summary shows P2-010's D1 line and, above 8, its bold line. The step prints the number in its log and adds a `::warning::` to the run when the bold line is there (C1).
+    - Nobody is paged. The owner sees the bold line and the warning on the nightly's page, and reopening D1 stays the owner's reading (plan, Scope decisions).
+    - The step still fails on a scorer error, and when the report has neither the D1 line nor the no-edge line. That is a broken contract between this step and `mitos-score --all`, not a number (F23).
+  - A red threshold would change the rule in `docs/process.md`, which the owner keeps. If the owner chose it:
+    - an owner PR beside this one gives `docs/process.md`'s scorecard rule an exception for the D1 number, and O2's "Full evaluation scorecard" row says "fails above 8 derivations";
+    - the step's `::warning::` becomes an `::error::` and `exit 1`, after the summary and `numbers.tsv` are written, so the report still shows (P2-010's D6 reason), and F23's `d1-9` case expects exit 1;
+    - a red nightly is a failure no PR owns, so it goes to a researcher (kitimark-mode, "The root orchestrates"), and a D1 reopening becomes root work instead of a line the owner reads;
+    - P2-010 needs no change, because its exit code stays a scorer's.
 - **Root defaults, not owner rulings,** each with its reason under Rationale. An owner answer replaces any of them:
   - every PR runs the new steps, with no path filter;
   - one accept script;
@@ -773,11 +847,11 @@ Stop conditions for the builder:
 - **S4.** An edit falls outside `touches`, or a step, `--paranoid`, a lint expectation or an `if` that keeps a check running would be dropped or weakened: stop.
 - **S5.** The Go archive's hash differs from the pinned value: stop. Never change the hash without a reviewed source.
 - **S6.** `checks` runs over 15 min warm at the head: raise its `timeout-minutes` to 30 and `cheat-shard.test.sh`'s pin to `checks 30` in the same PR, and report it. Over 25 min: stop. The fallback is a parallel accept job, which changes `prove.needs` and `mitos-gate cheats aggregate` (`gate/`, the owner's).
-- **S7.** C1 needs anything besides shape (a) or (b): stop.
-- **S8, done.** Stop when the PR is open on `main`, `gate` is green, F1 to F22 are done and every thread is answered. Report the head as waiting on the owner, who merges `.github/`.
+- **S7.** C1's fetch needs anything besides `actions: read` and the source C1 names, or P2-010's build changed a line or an exit code that C1 reads (F23 fails): stop.
+- **S8, done.** Stop when the PR is open on `main`, `gate` is green, F1 to F23 are done and every thread is answered. Report the head as waiting on the owner, who merges `.github/`.
 
 ## Done when
-- [ ] all `checks` pass locally; F1 to F21 give the stated results; F22 passes on the branch; `gate` is green at the head
+- [ ] all `checks` pass locally; F1 to F21 and F23 give the stated results; F22 passes on the branch; `gate` is green at the head
 - [ ] `lake --dir eval/mutants build` shows no warning; no `sorry`; `#print axioms` of the seven statements shows standard axioms only
 - [ ] `accept-plugins.sh --record` on the real tree leaves `git status --porcelain examples/acme/accepted` empty
 - [ ] the PR says `Closes #213`, `Closes #33`, `Part of #107` and `Part of #275`, links its `follow-up` issue, and carries the O2 row text
@@ -807,7 +881,7 @@ The plan makes the differential run evaluation, so the PR side may block only on
   - an `eval/diff` step that is red only when `eval/diff` cannot be read, and otherwise warns;
   - one scorecard per fixture in the PR comment.
 - **The owner, each night:**
-  - `full`: accepts, cheats, mutation testing with the UNBROKEN section, and the scorecard;
+  - `full`: accepts, cheats, mutation testing with the UNBROKEN section, and the scorecard with its diff against the night before and the D1 line, which warns above 8 and never fails the run (O7);
   - `diff`: the Go refresh, the comparison and the clean tree;
   - the canary.
 - **A Phase 3 builder adding a plugin:** one line in `PLUGINS`. The set check makes a plugin with no line fail.
@@ -866,7 +940,7 @@ Check S0, then run S1 and S3 on `main`. Apply the Verdict and Main text and run 
 ### Synthesis decision
 Root's default, not the owner's ruling. **Design A (opus) is the base**, for its plan-faithful surface and for these pieces:
 - It handles `docs/process.md` as an owner decision instead of an edit outside the cell (B edited the docs by default, an owner path its cell does not name).
-- C1 is a contract with two permission shapes.
+- C1 is a contract with two permission shapes. Round 2 filled it from P2-010's task file with shape (b).
 - Its owner decisions and stop conditions, the step harness, the record check with a printed diff, `!cancelled()` limited to evaluation steps, and every-PR steps with no path filter.
 
 **Fixed in A:**
