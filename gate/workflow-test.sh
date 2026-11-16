@@ -36,6 +36,12 @@ cat .github/workflows/ci.yml "$tmp/escape.yml" >"$tmp/escape-copy.yml"
 expect 1 'backslash escape in a double-quoted scalar' parse "$tmp/escape-copy.yml"
 printf 'a: <<:x\n' >"$tmp/plain.yml"
 expect 0 '' parse "$tmp/plain.yml"
+for text in 'a: [#x]' 'a: {#x}' 'a: [b,#x]'; do
+  printf '%s\n' "$text" >"$tmp/flow.yml"
+  expect 1 ':1: refused: scalar runs onto the next line' parse "$tmp/flow.yml"
+done
+printf 'a: [x#y]\nb: #comment\n' >"$tmp/hash.yml"
+expect 0 '' parse "$tmp/hash.yml"
 expect 2 'workflow: cannot read' parse "$tmp/missing.yml"
 expect 2 'usage:' parse
 printf 'workflow tests passed\n'
