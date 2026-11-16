@@ -7,6 +7,12 @@ def trustedCoreImports : List String := ["Init", "Std", "Mitos.Core", "Mitos.Imp
 
 def baseImports : List String := ["Init", "Std", "Lean.Data.Json", "MitosGate.Base"]
 
+def vendorName : String := "L4" ++ "YAML"
+
+def vendorImports : List String := ["Init", "Std", "Lean", vendorName]
+
+def seamFile : System.FilePath := "gate/MitosGate/Yaml.lean"
+
 def checkSource (allowed : List String) (src : String) : IO (Array Lint.Violation) := do
   match ← Lint.headerSyntax src with
   | .error v => return #[v]
@@ -19,6 +25,15 @@ def check (dir : System.FilePath) (allowed : List String) : IO (Array String) :=
   let mut out := #[]
   for f in ← leanFiles dir do
     out := out ++ (← checkFile f allowed)
+  return out
+
+def checkSeam (gateDir : System.FilePath) : IO (Array String) := do
+  let mut out := #[]
+  for f in ← leanFiles gateDir do
+    let rel := f.components.drop gateDir.components.length
+    unless rel.head? == some "vendor" || rel == seamFile.components.drop 1 do
+      if (← IO.FS.readFile f).contains vendorName then
+        out := out.push s!"{f}: {vendorName} may appear only under gate/vendor/ or in {seamFile}"
   return out
 
 end MitosGate.Imports
