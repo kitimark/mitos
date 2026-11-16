@@ -118,4 +118,16 @@ theorem flowNodeHashAfterComma : lex "a: [b,#x]\n".toList =
 theorem flowPlainHashKept : lex "a: [x#y]\n".toList =
     .ok [(1, .content 0 false "a: [x#y]".toList [])] := by decide +kernel
 
+theorem standaloneBlockRefused : lex "a:\n  |\n  x #${{ y }}\n".toList =
+    .error (.multiline 2) := by decide +kernel
+theorem delayedSequenceBlockRefused : lex "-\n  |\n  x #${{ y }}\n".toList =
+    .error (.multiline 2) := by decide +kernel
+theorem standaloneFoldedRefused : lex "a:\n  >-\n  x #${{ y }}\n".toList =
+    .error (.multiline 2) := by decide +kernel
+theorem commentedStandaloneBlockRefused : lex "a:\n#c\n  |+\n  x #${{ y }}\n".toList =
+    .error (.multiline 3) := by decide +kernel
+theorem inlineSequenceBlockKept : lex "- |\n  x #${{ y }}\n".toList =
+    .ok [(1, .content 0 true "- |".toList []),
+      (2, .block "  x #${{ y }}".toList)] := by decide +kernel
+
 end MitosGate.Yaml
