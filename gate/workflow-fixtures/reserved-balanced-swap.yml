@@ -1,0 +1,9 @@
+%MITOS ${{ github.event.pull_request.title }}
+---
+name: demo
+on: pull_request_target
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: "echo \x24{{ github.event.pull_request.title }}"

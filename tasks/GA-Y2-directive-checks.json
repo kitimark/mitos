@@ -1,0 +1,118 @@
+{
+  "reader_commit": "66bec2fdfcd414e35b87fc5eb6212eecb35d0724",
+  "compiled_source_commit": "73cc93f148b0cd42f2de2fd320e2a6ecdf55e97d",
+  "binary_sha256": "01780200c1cf1d52077c590a86b7d53a127602d75dd2f01777dbb561202ab8a5",
+  "source_hashes": {
+    "gate/MitosGate/Yaml.lean": "15a79268bdca115542f11c46928769c4b514a43bcca9aa6c504cf39cdfa25605",
+    "gate/MitosGate/WorkflowCli.lean": "12404bbfb3f52d23ead3ba616c605a9749ea0b8e2c3c35b32b38892ccafd9ded",
+    "gate/Main.lean": "f38254f5595f00cd2df7f39eee153fc0a95bc784311f5fbe7a188b51e44081c4"
+  },
+  "fixed_regressions": {
+    "fixtures": 145,
+    "accepted": 47,
+    "refused": 98,
+    "retained_original_entries": 132,
+    "retained_legacy_inputs": 63,
+    "both_verbs": true
+  },
+  "seeded_differential": {
+    "seed": 354405,
+    "mutants": 700,
+    "accepted": 250,
+    "refused": 450,
+    "PyYAML": "6.0.3",
+    "mismatches": 0,
+    "panics": 0
+  },
+  "original_exploit_replay": {
+    "cases": 5,
+    "before_both_verbs_exit": 0,
+    "after_both_verbs_exit": 1,
+    "after_refusal": "directive"
+  },
+  "guard_mutations": [
+    {
+      "name": "no-directive-filter",
+      "code": 1,
+      "failed_guards": 10
+    },
+    {
+      "name": "no-flow-expression-check",
+      "code": 1,
+      "failed_guards": 1
+    }
+  ],
+  "independent_directive_matrix": {
+    "binary_sha256": "01780200c1cf1d52077c590a86b7d53a127602d75dd2f01777dbb561202ab8a5",
+    "cases": 1544,
+    "PyYAML": "6.0.3",
+    "seed": 354408,
+    "directive_refused": 1460,
+    "accepted": 81,
+    "preflight_refused": 3,
+    "failures": 0
+  },
+  "runtime": {
+    "input": "ci.yml",
+    "bytes": 23485,
+    "leaves": 245,
+    "sha256": "f58c0868cd0e65a12551529567293ba7fc0946ff7a1903dfbee434b16240b069",
+    "runs": [
+      {
+        "wall_s": 0.07427922500028217,
+        "cpu_s": 0.06943500000000001
+      },
+      {
+        "wall_s": 0.06864286300060485,
+        "cpu_s": 0.06627700000000006
+      },
+      {
+        "wall_s": 0.06985413699931087,
+        "cpu_s": 0.066746
+      },
+      {
+        "wall_s": 0.07483835199946043,
+        "cpu_s": 0.07216
+      },
+      {
+        "wall_s": 0.06735556100011308,
+        "cpu_s": 0.06484199999999998
+      },
+      {
+        "wall_s": 0.06423962900043989,
+        "cpu_s": 0.061436000000000046
+      },
+      {
+        "wall_s": 0.06637002699972072,
+        "cpu_s": 0.06255000000000002
+      },
+      {
+        "wall_s": 0.06161391899968294,
+        "cpu_s": 0.059177999999999925
+      },
+      {
+        "wall_s": 0.06937749600001553,
+        "cpu_s": 0.06678300000000001
+      },
+      {
+        "wall_s": 0.06508725300045626,
+        "cpu_s": 0.06027899999999997
+      }
+    ],
+    "failures": 0,
+    "median_s": 0.06799921200035897,
+    "min_s": 0.06161391899968294,
+    "max_s": 0.07483835199946043
+  },
+  "host": {
+    "load": [
+      0.45947265625,
+      0.81640625,
+      0.82275390625
+    ],
+    "logical_cpus": 5,
+    "cpu_quota": "400000/100000",
+    "memory_limit_bytes": 17179869184
+  },
+  "note": "Current native runtime sample only. No speedup/regression or new build-delta claim; original three-pair build observations remain historical."
+}
