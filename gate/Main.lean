@@ -167,8 +167,12 @@ def cli (args : List String) : IO UInt32 := do
     let vs ← Imports.check "core" Imports.trustedCoreImports
     let vs := vs ++ (← Imports.check ("core" / "Mitos" / "Core") lockedSpecImports)
     let vs := vs ++ (← Imports.check ("gate" / "MitosGate" / "Base") Imports.baseImports)
+    let baseRoot : System.FilePath := "gate" / "MitosGate" / "Base.lean"
+    let rootVs ← if ← baseRoot.pathExists then
+      Imports.checkFile baseRoot Imports.baseImports else pure #[]
+    let vs := vs ++ rootVs
     for v in vs do IO.println (ciLine v)
-    IO.println s!"{vs.size} import violation(s) in core/ and gate/MitosGate/Base/"
+    IO.println s!"{vs.size} import violation(s) in core/ and gate/MitosGate/Base.lean and gate/MitosGate/Base/"
     return if vs.isEmpty then 0 else 1
   | ["lock", "--check-header"] => lockHeaderStatus
   | ["lock"] => lockStatements false

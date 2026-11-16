@@ -2,14 +2,14 @@ import Lean.CoreM
 import Lean.Util.CollectAxioms
 import MitosGate.CheatsAggregate
 import MitosGate.DecideList
-import MitosGate.DecideText
+import MitosGate.Base.Text
 import MitosGate.IndexMod
 
 namespace MitosGate.CheatsAggregate
 
 open MitosGate.CheatsShard
 open MitosGate.DecideList
-open MitosGate.DecideText
+open MitosGate.Base.Text
 
 namespace Fixture
 

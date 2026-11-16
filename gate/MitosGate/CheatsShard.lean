@@ -1,9 +1,9 @@
-import MitosGate.DecideText
+import MitosGate.Base.Text
 import MitosGate.IndexMod
 
 namespace MitosGate.CheatsShard
 
-open MitosGate.DecideText
+open MitosGate.Base.Text
 open MitosGate.IndexMod
 
 def modeFull : String := "full"
@@ -28,7 +28,7 @@ def Shard.mk? (n k : Nat) : Option Shard :=
 def Shard.parse (s : String) : Option Shard :=
   match splitStr '/' s with
   | [a, b] =>
-    match parseNat a, parseNat b with
+    match parseNatStr a, parseNatStr b with
     | some k, some n => Shard.mk? n k
     | _, _ => none
   | _ => none

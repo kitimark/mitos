@@ -12,11 +12,13 @@ def checkSource (allowed : List String) (src : String) : IO (Array Lint.Violatio
   | .error v => return #[v]
   | .ok (fm, header) => return Lint.importRules fm header allowed (strict := false)
 
+def checkFile (file : System.FilePath) (allowed : List String) : IO (Array String) := do
+  return (← checkSource allowed (← IO.FS.readFile file)).map (·.render file.toString)
+
 def check (dir : System.FilePath) (allowed : List String) : IO (Array String) := do
   let mut out := #[]
   for f in ← leanFiles dir do
-    for v in ← checkSource allowed (← IO.FS.readFile f) do
-      out := out.push (v.render f.toString)
+    out := out ++ (← checkFile f allowed)
   return out
 
 end MitosGate.Imports
