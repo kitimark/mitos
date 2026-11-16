@@ -23,3 +23,9 @@ theorem equation_def (b : Bool) : equation b = match b with
     | false => true := equation.eq_def b
 
 end MitosGate.LockFixture
+
+theorem Mitos.Assumption.isAI.match_1.eq_of_id : True := .intro
+
+theorem Mitos.Assumption.isAI.match_1.eq_def : True := .intro
+
+theorem Mitos.Assumption.isAI.match_1.eq_unfold : True := .intro

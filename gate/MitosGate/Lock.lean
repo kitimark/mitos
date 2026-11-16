@@ -58,13 +58,16 @@ def generatedSuffixes : List String :=
    "ctorElim", "ctorElimType", "inj", "injEq", "repr", "decEq"]
 
 def isGenerated (env : Environment) (n : Name) : Bool :=
+  let numbered (pre s : String) :=
+    let suffix := s.drop pre.length
+    s.startsWith pre && !suffix.isEmpty && suffix.toString.toList.all Char.isDigit
   let isMatcher (m : Name) := match env.getModuleIdxFor? m with
     | some idx => (Meta.Match.Extension.extension.getModuleEntries env idx).any (·.name == m)
     | none => false
   match n with
   | .str p s => generatedSuffixes.contains s || isMatcher n ||
-      (s.startsWith "eq_" && (isReservedName env n || isMatcher p)) ||
-      (s.startsWith "proof_" && !(s.drop 6).isEmpty && (s.drop 6).toString.toList.all Char.isDigit)
+      (s.startsWith "eq_" &&
+        (if isMatcher p then numbered "eq_" s else isReservedName env n)) || numbered "proof_" s
   | _ => false
 
 def pinned : ConstantInfo → List Expr

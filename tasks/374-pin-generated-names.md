@@ -12,16 +12,23 @@ budget: 12 iterations, 2 hours
 
 The owner-selected design is [issue #374](https://github.com/kitimark/mitos/issues/374).
 `isGenerated` takes the imported environment. Equation names use Lean's reserved-name predicate.
-Matcher names use their own module's serialized matcher entries. Matcher equations use the same
-lookup on their prefix. Only a nonempty decimal suffix follows `proof_`.
+Matcher names use their own module's serialized matcher entries. For equation names under a
+matcher, that metadata takes precedence over the reserved-name predicate, and only an
+`eq_<digits>` suffix is generated. Other equation names use Lean's reserved-name predicate.
+Only a nonempty decimal suffix follows `proof_`.
 `generatedSuffixes` stays unchanged. Imports keep extensions unloaded and initializers disabled.
+
+With extensions unloaded, Lean's reserved-name predicate treats a matcher as an ordinary safe
+definition and reserves `eq_def` and `eq_unfold`. Matcher metadata must therefore decide those
+names before that predicate runs.
 
 `LockFixture` supplies hand-written names and forces Lean to emit equation theorems through named
 theorem references. `LockCases` imports that compiled fixture through `Lock.importRoot`, so the
 guards use the same unloaded-extension environment as the lock command. It also checks two real
-core matchers, including a nested matcher. A synthetic non-reserved name under a real matcher
-isolates the matcher-prefix branch. The `proof_2` fixture checks the deliberately lexical rule;
-it does not claim that Lean generated that declaration. `proof_` and `proof_2x` stay listed.
+core matchers, including a nested matcher. A numeric equation name under a real matcher checks
+the matcher-prefix rule. Compiled hand-written `match_1.eq_of_id`, `match_1.eq_def`, and
+`match_1.eq_unfold` stay listed. The `proof_2` fixture checks the deliberately lexical rule.
+It does not claim that Lean generated that declaration. `proof_` and `proof_2x` stay listed.
 The existing lint-test executable builds these guards in CI.
 
 Residual: a hand-written declaration whose final component is in `generatedSuffixes`, such as
@@ -37,6 +44,9 @@ A hand-written `proof_2` also remains unlisted under the intentional lexical `pr
   proof and callers but changes its declared type. Rebuilding core and checking the lock changes
   only the theorem's hash and fails, as required.
 - The classifier guards build. `lake build` and the import check pass.
+- Compiled hand-written theorems under a real matcher fail the old classifier and pass the
+  final classifier for `eq_of_id`, `eq_def`, and `eq_unfold`. The last two remain reserved names
+  in the unloaded environment, so the regression also checks matcher metadata takes precedence.
 - `lake exe mitos-lint-test` passes all 190 existing runtime cases. The cheat corpus passes
   all 50 cases in both full and comparator modes. The honest toy passes all seven gates with
   paranoid kernels.
