@@ -29,6 +29,7 @@ reviews:
     - "!**/lake-manifest.json"
     - "!reports/**"
     - "!research_notes/**"
+    - "!gate/vendor/l4yaml/L4YAML/**"
 
   path_instructions:
     - path: "**"
