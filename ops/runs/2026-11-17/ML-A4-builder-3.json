@@ -1,0 +1,1 @@
+{"task":"ML-A4","role":"builder","model":"Grok 4.7","attempt":3,"iterations":1,"wall_min":8,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"CodeRabbit on #422. packagesDir rejects an absolute path, an empty path, \".\", and any .. component before the link is placed. Default .lake/packages still passes packages-test.sh."}
