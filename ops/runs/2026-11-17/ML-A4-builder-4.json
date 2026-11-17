@@ -1,0 +1,1 @@
+{"task":"ML-A4","role":"builder","model":"Grok 4.7","attempt":4,"iterations":1,"wall_min":10,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"CodeRabbit on #422. A packagesDir whose first component matches a workspace source is rejected before the link replaces that tree. Default .lake/packages still passes packages-test.sh."}
