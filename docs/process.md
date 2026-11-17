@@ -163,8 +163,9 @@ A definition's meaning can live in declarations Lean generates for it: a structu
 `f` compiles to `List.brecOn … f._f`, and a `match`'s patterns live in `f.match_1`. The canonical
 digest walks those unlisted spec declarations and hashes their meaning, so a shift in hygienic
 names does not change a line. Binder names are not pinned. Inductive types, constructors and
-recursors stay named, which keeps the walk acyclic, and so does anything outside `Mitos.Core`
-(pinned by `lean-toolchain`). The walk never enters theorem proofs. A listed name that carries a
+recursors stay named, which keeps the walk acyclic, and so does anything outside `Mitos.Core`.
+`lean-toolchain` pins Init, Std and Lean. A package constant, such as one from Mathlib, stays
+named too, and this lock does not pin that package's revision. The walk never enters theorem proofs. A listed name that carries a
 macro scope is an error, and so is a reached unlisted opaque, axiom or unsafe declaration. CI also
 requires `spec-approved` for any change under `core/Mitos/Core/`, which covers what no kernel term
 references, such as a structure field's default value.
