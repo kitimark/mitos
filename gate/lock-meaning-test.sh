@@ -4,6 +4,10 @@ set -u
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 lake build mitos-gate >/dev/null || { echo "FAIL lake build mitos-gate"; exit 1; }
+bin="$root/.lake/build/bin/mitos-gate"
+LEAN_PATH=$(lake env printenv LEAN_PATH) || { echo "FAIL lake env printenv LEAN_PATH"; exit 1; }
+PATH=$(lake env printenv PATH) || { echo "FAIL lake env printenv PATH"; exit 1; }
+export LEAN_PATH PATH
 tmp=$(mktemp -d)
 trap 'cp "$tmp/Graph.lean" "$root/core/Mitos/Core/Graph.lean"; cp "$tmp/Lines.lean" "$root/core/Mitos/Core/Lines.lean"; cp "$tmp/Adequacy.lean" "$root/core/Mitos/Core/Spec/Adequacy.lean"; cp "$tmp/Derivations.lean" "$root/core/Mitos/Core/Spec/Derivations.lean"; cp "$tmp/lock" "$root/statements.lock"; rm -rf "$tmp"' EXIT
 cp "$root/core/Mitos/Core/Graph.lean" "$tmp/Graph.lean"
@@ -34,7 +38,7 @@ rebuild() {
 
 write_lock() {
   local dest=$1
-  if ! lake exe mitos-gate lock >"$tmp/lock.out" 2>&1; then
+  if ! "$bin" lock >"$tmp/lock.out" 2>&1; then
     echo "FAIL writing canonical lock"
     cat "$tmp/lock.out"
     return 1
@@ -42,8 +46,15 @@ write_lock() {
   cp "$root/statements.lock" "$dest"
 }
 
-write_text() {
-  if ! lake exe mitos-gate lock --text >"$1"; then
+run_lock_and_text() {
+  local canon_dest=$1 text_dest=$2 text_pid
+  "$bin" lock --text >"$text_dest" &
+  text_pid=$!
+  if ! write_lock "$canon_dest"; then
+    wait "$text_pid" 2>/dev/null || true
+    return 1
+  fi
+  if ! wait "$text_pid"; then
     echo "FAIL writing pre-canonical lines"
     fail=$((fail + 1))
     return 1
@@ -65,8 +76,7 @@ bad() {
   fail=$((fail + 1))
 }
 
-write_lock "$tmp/base.canon" || exit 1
-write_text "$tmp/base.text" || exit 1
+run_lock_and_text "$tmp/base.canon" "$tmp/base.text" || exit 1
 
 python3 - <<'PY'
 from pathlib import Path
@@ -90,8 +100,7 @@ p.write_text(text.replace(needle, macros, 1))
 PY
 
 if rebuild "macro_rules"; then
-  write_lock "$tmp/macro.canon" || exit 1
-  if write_text "$tmp/macro.text"; then
+  if run_lock_and_text "$tmp/macro.canon" "$tmp/macro.text"; then
   canon_n=$(changed_ids "$tmp/base.canon" "$tmp/macro.canon" | wc -l)
   text_n=$(changed_ids "$tmp/base.text" "$tmp/macro.text" | wc -l)
   echo "     macro_rules: $text_n pre-canonical lines moved, $canon_n canonical lines moved"
@@ -117,8 +126,7 @@ p.write_text(text.replace(old, new, 1))
 PY
 
 if rebuild "renamed binder"; then
-  write_lock "$tmp/binder.canon" || exit 1
-  if write_text "$tmp/binder.text"; then
+  if run_lock_and_text "$tmp/binder.canon" "$tmp/binder.text"; then
     if cmp -s "$tmp/base.canon" "$tmp/binder.canon" &&
         changed_ids "$tmp/base.text" "$tmp/binder.text" | grep -qx 'theorem Mitos.WellFormed.eq_of_id'; then
       ok "a renamed binder keeps the canonical lock"
@@ -143,8 +151,7 @@ p.write_text(text.replace(needle, probe, 1))
 PY
 
 if rebuild "universe probe"; then
-  write_lock "$tmp/univ-u.canon" || exit 1
-  if write_text "$tmp/univ-u.text"; then
+  if run_lock_and_text "$tmp/univ-u.canon" "$tmp/univ-u.text"; then
   python3 - <<'PY'
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
@@ -152,8 +159,7 @@ p.write_text(p.read_text().replace("def canonProbe.{u} : Type u := Sort u",
                                    "def canonProbe.{v} : Type v := Sort v", 1))
 PY
   if rebuild "renamed universe"; then
-    write_lock "$tmp/univ-v.canon" || exit 1
-    if write_text "$tmp/univ-v.text"; then
+    if run_lock_and_text "$tmp/univ-v.canon" "$tmp/univ-v.text"; then
       if cmp -s "$tmp/univ-u.canon" "$tmp/univ-v.canon" && ! cmp -s "$tmp/univ-u.text" "$tmp/univ-v.text"; then
         ok "a renamed universe parameter keeps the canonical lock"
       else
@@ -279,7 +285,7 @@ fi
 restore_sources
 
 if rebuild "restore"; then
-  if lake exe mitos-gate lock --check >"$tmp/lock.out" 2>&1; then
+  if "$bin" lock --check >"$tmp/lock.out" 2>&1; then
     ok "lock --check passes on the restored tree"
   else
     bad "lock --check after restore"
