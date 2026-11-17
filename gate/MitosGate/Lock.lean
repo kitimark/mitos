@@ -66,7 +66,7 @@ def isGenerated (env : Environment) (n : Name) : Bool :=
     | none => false
   match n with
   | .str p s => generatedSuffixes.contains s || isMatcher n ||
-      (s.startsWith "eq_" &&
+      (s.startsWith "eq_" && (env.find? n).all (·.type.getUsedConstants.contains p) &&
         (if isMatcher p then numbered "eq_" s else isReservedName env n)) || numbered "proof_" s
   | _ => false
 
