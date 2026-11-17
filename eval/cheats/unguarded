@@ -114,3 +114,5 @@ banned:app_unexpander
 banned:app_delab
 banned:delab
 banned:builtin_delab
+banned:run_parser_attribute_hooks
+banned:run_builtin_parser_attribute_hooks
