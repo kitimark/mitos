@@ -167,7 +167,8 @@ names are not pinned. Inductive types, constructors and recursors stay named, wh
 acyclic. `lean-toolchain` pins Init, Std and Lean by name. A listed package declaration reached
 from a spec line is pinned on its own `ext` line, so a package bump that changes what a spec
 statement means turns the lock red, and a bump that changes nothing reached does not. A reached
-listed package inductive also pins each of its constructors, so adding one changes the lock. The walk
+listed package inductive also pins each of its constructors, in declaration order, so adding
+or reordering one changes the lock. The walk
 never enters theorem proofs. A reached unlisted spec opaque, axiom or unsafe declaration is an
 error, and so is a reached package axiom, unsafe declaration, or unlisted opaque. Each module is
 spec, toolchain, or a named package, from where its `.olean` was found; anything else is an error,

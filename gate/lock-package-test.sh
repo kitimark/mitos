@@ -301,9 +301,9 @@ if ! sync_build; then bad "a reached toy inductive gives ext lines for its const
   run_at "$ws" lock
   cp "$ws/statements.lock" "$tmp/color.lock"
   if [ "$lock_ec" = 0 ] \
-      && grep -q '^ext inductive ToyExt.Color ' "$tmp/color.lock" \
-      && grep -q '^ext ctor ToyExt.Color.red ' "$tmp/color.lock" \
-      && grep -q '^ext ctor ToyExt.Color.green ' "$tmp/color.lock" \
+      && grep -q '^ext inductive ToyExt.Color .* ctors=ToyExt.Color.red,ToyExt.Color.green$' "$tmp/color.lock" \
+      && grep -q '^ext ctor ToyExt.Color.red .* cidx=0$' "$tmp/color.lock" \
+      && grep -q '^ext ctor ToyExt.Color.green .* cidx=1$' "$tmp/color.lock" \
       && ! grep -q 'Color.blue' "$tmp/color.lock" \
       && ! grep -q 'uncaught exception' "$out"; then
     ok "a reached toy inductive gives ext lines for its constructors"
@@ -328,6 +328,23 @@ if ! sync_build; then bad "adding a toy constructor changes the lock"; else
       echo "added: $added"
     } >"$out"
     bad "adding a toy constructor changes the lock"
+  fi
+fi
+
+commit_color '| blue | green | red'
+if ! sync_build; then bad "reordering toy constructors changes the lock"; else
+  rm -f "$sentinel"
+  run_at "$ws" lock
+  cp "$ws/statements.lock" "$tmp/color3.lock"
+  if [ "$lock_ec" = 0 ] && ! cmp -s "$tmp/color2.lock" "$tmp/color3.lock" \
+      && grep -q '^ext inductive ToyExt.Color .* ctors=ToyExt.Color.blue,ToyExt.Color.green,ToyExt.Color.red$' "$tmp/color3.lock" \
+      && grep -q '^ext ctor ToyExt.Color.red .* cidx=2$' "$tmp/color3.lock" \
+      && grep -q '^ext ctor ToyExt.Color.blue .* cidx=0$' "$tmp/color3.lock" \
+      && grep -q 'ctors=ToyExt.Color.red,ToyExt.Color.green,ToyExt.Color.blue$' "$tmp/color2.lock" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "reordering toy constructors changes the lock"
+  else
+    bad "reordering toy constructors changes the lock"
   fi
 fi
 

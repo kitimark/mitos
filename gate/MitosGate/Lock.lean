@@ -461,8 +461,14 @@ def declLine (ci : ConstantInfo) (n : Name) (typeDig : String) (valueDig : Optio
   | some v => s!"{base} value={v}"
   | none => base
 
+def extOrder (ci : ConstantInfo) : String :=
+  match ci with
+  | .ctorInfo v => s!" cidx={v.cidx}"
+  | .inductInfo v => s!" ctors={",".intercalate (v.ctors.map toString)}"
+  | _ => ""
+
 def extLine (ci : ConstantInfo) (n : Name) (typeDig : String) (valueDig : Option String) : String :=
-  s!"ext {declLine ci n typeDig valueDig}"
+  s!"ext {declLine ci n typeDig valueDig}{extOrder ci}"
 
 partial def ensure (p : Place) (n : Name) (stack : List Name) : IO Unit := do
   if (← p.memo.get).contains n then return
