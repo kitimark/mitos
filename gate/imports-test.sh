@@ -213,8 +213,31 @@ done
 
 mkdir -p "$tmp/graph/core/Mitos/Core"
 printf 'import Mathlib.Data.List.Nodup\n' >"$tmp/graph/core/Mitos/Core/Graph.lean"
-check "the resolver spec cannot import Mathlib yet" \
+check "a resolver-spec Mathlib import fails when the surface closure is unknown" \
   1 "$tmp/graph" "core/Mitos/Core/Graph.lean:1:" 1
+
+printf 'import Init\n' >"$tmp/graph/core/Mitos/Core.lean"
+check "Graph may import Mathlib when the surface closure does not reach it" \
+  0 "$tmp/graph" "0 $summary" 0
+
+mkdir -p "$tmp/fact/core/Mitos/Core"
+printf 'import Mitos.Core.Fact\n' >"$tmp/fact/core/Mitos/Core.lean"
+printf 'import Mathlib.Data.List.Nodup\n' >"$tmp/fact/core/Mitos/Core/Fact.lean"
+check "Fact may not import Mathlib: it is in the surface closure" \
+  1 "$tmp/fact" "core/Mitos/Core/Fact.lean:1:" 1
+
+mkdir -p "$tmp/reach/core/Mitos/Core"
+printf 'import Mitos.Core.Fact\n' >"$tmp/reach/core/Mitos/Core.lean"
+printf 'import Mitos.Core.Graph\n' >"$tmp/reach/core/Mitos/Core/Fact.lean"
+printf 'import Mathlib.Data.List.Nodup\n' >"$tmp/reach/core/Mitos/Core/Graph.lean"
+check "the surface closure cannot reach Mathlib through a spec file" \
+  1 "$tmp/reach" "core/Mitos/Core/Graph.lean:1:" 1
+
+for module in Batteries.Data.List.Perm Lean; do
+  printf 'import %s\n' "$module" >"$tmp/graph/core/Mitos/Core/Graph.lean"
+  check "Graph may not import $module" \
+    1 "$tmp/graph" "core/Mitos/Core/Graph.lean:1:" 1
+done
 
 for file in MitosGate/Foo.lean Foo.lean; do
   mkdir -p "$tmp/gate-imports/gate/$(dirname "$file")"
