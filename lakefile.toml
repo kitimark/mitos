@@ -1,5 +1,6 @@
 name = "mitos"
 defaultTargets = ["mitos-gate"]
+packagesDir = "core/.lake/packages"
 
 [[require]]
 name = "mitos-core"

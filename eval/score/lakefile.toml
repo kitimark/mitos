@@ -1,5 +1,6 @@
 name = "mitos-score"
 defaultTargets = ["mitos-score", "Policy"]
+packagesDir = "../../core/.lake/packages"
 
 [[require]]
 name = "acme"

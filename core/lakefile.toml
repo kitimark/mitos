@@ -1,6 +1,11 @@
 name = "mitos-core"
 defaultTargets = ["MitosCore", "MitosImpl"]
 
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4"
+rev = "v4.35.0"
+
 [[lean_lib]]
 name = "MitosCore"
 globs = ["Mitos.Core", "Mitos.Core.+"]

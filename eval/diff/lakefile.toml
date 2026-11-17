@@ -1,5 +1,6 @@
 name = "mitos-diff"
 defaultTargets = ["mitos-diff"]
+packagesDir = "../../core/.lake/packages"
 
 [leanOptions]
 warningAsError = true
