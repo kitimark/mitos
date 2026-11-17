@@ -24,7 +24,7 @@ load_predicate() {
     || die "toolchain_files_to_install did not load"
 }
 
-lakefile_program() {
+toml_body() {
   cat <<'AWK'
 function body(line,    i, n, q, c, out) {
   n = length(line)
@@ -39,6 +39,11 @@ function body(line,    i, n, q, c, out) {
   sub(/[[:space:]]+$/, "", out)
   return out
 }
+AWK
+}
+
+lakefile_program() {
+  { toml_body; cat <<'AWK'
 function flush(    i, text, is_math, rev_at) {
   if (n == 0) return
   is_math = 0
@@ -88,6 +93,7 @@ END {
   } else if (seen != 1 || replaced != 1) exit 2
 }
 AWK
+  }
 }
 
 mathlib_state() {
@@ -233,23 +239,30 @@ check_manifests() {
 }
 
 git_require_names() {
-  awk '
-    function flush() {
-      if (in_req && git != "" && name != "") print name
-      in_req = 0
-      git = ""
-      name = ""
-    }
-    /^\[\[require\]\][[:space:]]*$/ { flush(); in_req = 1; next }
-    /^\[\[/ { flush(); next }
-    in_req && /^name[[:space:]]*=[[:space:]]*"/ {
-      name = $0
-      sub(/^name[[:space:]]*=[[:space:]]*"/, "", name)
-      sub(/".*$/, "", name)
-    }
-    in_req && /^git[[:space:]]*=/ { git = 1 }
-    END { flush() }
-  ' "$1"
+  { toml_body; cat <<'AWK'
+function flush() {
+  if (in_req && git != "" && name != "") print name
+  in_req = 0
+  git = ""
+  name = ""
+}
+/^\[\[/ {
+  flush()
+  in_req = (body($0) == "[[require]]")
+  next
+}
+in_req {
+  text = body($0)
+  if (text ~ /^name[[:space:]]*=[[:space:]]*"/) {
+    name = text
+    sub(/^name[[:space:]]*=[[:space:]]*"/, "", name)
+    sub(/".*$/, "", name)
+  }
+  if (text ~ /^git[[:space:]]*=/) git = 1
+}
+END { flush() }
+AWK
+  } | awk -f - "$1"
 }
 
 check_packages() {
