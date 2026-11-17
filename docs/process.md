@@ -172,10 +172,10 @@ constructors, in declaration order, so adding, removing, or reordering one chang
 each constructor line pins that constructor's type. A reached unlisted spec inductive and each of
 its constructors gets a line. The walk enters those constructors, and that line's canonical type
 folds unlisted package declarations, so a package constant that appears only in such a constructor
-type is pinned. A package bump that changes what a spec statement means turns the lock red, and a bump
-that changes nothing reached does not. The walk
+type is pinned. When each package builds and downloads its release inside its own tree, a package bump that changes what a spec statement means turns the lock red, and a bump
+that changes nothing reached does not. A package that sends its build or its release archive elsewhere is out of the lock's reach, and #462 closes that in CI with `LAKE_NO_CACHE=1`. The walk
 never enters theorem proofs. A reached unlisted spec opaque, axiom or unsafe declaration is an
-error, and so is a reached package axiom, unsafe declaration, or unlisted opaque. The location rule assumes each package builds and downloads inside its own tree. A module whose
+error, and so is a reached package axiom, unsafe declaration, or unlisted opaque. The location rule assumes that same in-tree build and download. A module whose
 `.olean` directory is the toolchain is toolchain, and a Lake `.trace` or `.olean.hash` beside that `.olean` is an error. A `Mitos.Core` module whose `.olean` directory
 is core's build is spec when `core/<module>.lean` exists beside that build, and an error when that source does not. A module is a named package when the real path of its `.olean` directory
 is under the real path of `<packagesDir>/<package>/` from the root manifest, including a build
