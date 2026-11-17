@@ -115,18 +115,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Point the lean-toolchain files at the candidate (this checkout only)
+      - name: Point the toolchain at the candidate (this checkout only)
+        shell: bash
         run: |
-          for f in lean-toolchain examples/acme/lean-toolchain eval/mutants/lean-toolchain; do
-            echo "leanprover/lean4:$VERSION" > "$f"
-          done
+          set +e
+          .github/scripts/bump-lean.sh "$VERSION"
+          code=$?
+          set -euo pipefail
           git diff
+          if [ "$code" -eq 3 ]; then
+            printf '### canary %s: waiting for Mathlib'\''s %s tag\n' "$VERSION" "$VERSION" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$code" -ne 0 ]; then
+            printf '### canary %s: FAILED\nEarly warning, not a failure of main: an upgrade to %s breaks a check. Schedule the bump (docs/process.md, tripwires).\n' "$VERSION" "$VERSION" >> "$GITHUB_STEP_SUMMARY"
+            exit "$code"
+          fi
 
       - uses: ./.github/actions/setup
 
-      - name: Run the checks on the candidate toolchain
+      - name: Update manifests for the candidate toolchain
+        shell: bash
         run: |
-          set -e
+          set +e
+          .github/scripts/bump-lean.sh --lock >"$RUNNER_TEMP/bump-lock.txt"
+          code=$?
+          set -euo pipefail
+          cat "$RUNNER_TEMP/bump-lock.txt"
+          grep '^lock: ' "$RUNNER_TEMP/bump-lock.txt" | sed 's/^/### /' >> "$GITHUB_STEP_SUMMARY" || true
+          if [ "$code" -ne 0 ]; then
+            printf '### canary %s: FAILED\nEarly warning, not a failure of main: an upgrade to %s breaks a check. Schedule the bump (docs/process.md, tripwires).\n' "$VERSION" "$VERSION" >> "$GITHUB_STEP_SUMMARY"
+            exit "$code"
+          fi
+
+      - name: Run the checks on the candidate toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
           trap 'printf "### canary %s: FAILED\nEarly warning, not a failure of main: an upgrade to %s breaks a check. Schedule the bump (docs/process.md, tripwires).\n" "$VERSION" "$VERSION" >> "$GITHUB_STEP_SUMMARY"' ERR
           lake build
           (cd core && lake check)

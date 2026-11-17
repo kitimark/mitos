@@ -171,6 +171,9 @@ jobs:
       - name: The Lean cache key covers every manifest and toolchain
         run: .github/scripts/cache-key.test.sh
 
+      - name: The Lean bump script keeps Mathlib on the candidate toolchain
+        run: .github/scripts/bump-lean.test.sh
+
       - name: The cheat corpus is partitioned across the shard matrix
         run: .github/scripts/cheat-shard.test.sh
 
