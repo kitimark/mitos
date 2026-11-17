@@ -946,7 +946,8 @@ if (cd "$tws/core" && lake update toolspoof >"$tmp/lake.out" 2>&1) \
   tool_built=1
 fi
 tool_olean="$tool_prefix/lib/lean/ToolSpoof.olean"
-if [ "$tool_built" = 1 ] && { [ -f "$tool_olean.hash" ] || [ -f "$tool_olean.trace" ]; }; then
+tool_trace="${tool_olean%.olean}.trace"
+if [ "$tool_built" = 1 ] && { [ -f "$tool_olean.hash" ] || [ -f "$tool_trace" ]; }; then
   cp "$root/statements.lock" "$tws/statements.lock"
   run_at "$tws" lock --check
   if [ "$lock_ec" = 1 ] && grep -q 'ToolSpoof' "$out" && grep -q 'Lake .trace or .olean.hash' "$out" \
@@ -957,7 +958,7 @@ if [ "$tool_built" = 1 ] && { [ -f "$tool_olean.hash" ] || [ -f "$tool_olean.tra
   fi
 else
   cat "$tmp/lake.out" >"$out"
-  echo "olean_hash=$([ -f "$tool_olean.hash" ] && echo yes || echo no) trace=$([ -f "$tool_olean.trace" ] && echo yes || echo no)" >>"$out"
+  echo "olean_hash=$([ -f "$tool_olean.hash" ] && echo yes || echo no) trace=$([ -f "$tool_trace" ] && echo yes || echo no)" >>"$out"
   bad "a package buildDir aimed at the toolchain is refused"
 fi
 cleanup_tool
