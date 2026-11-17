@@ -72,10 +72,8 @@ python3 - <<'PY'
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
 text = p.read_text()
-needle = "import Mitos.Core.Fact\n"
-macros = '''import Mitos.Core.Fact
-
-section
+needle = "namespace Mitos\n"
+macros = '''section
 open Lean
 macro_rules | `(term| hygShift1) => throw (.error Syntax.missing "shift")
 macro_rules | `(term| hygShift2) => throw (.error Syntax.missing "shift")
@@ -83,9 +81,11 @@ macro_rules | `(term| hygShift3) => throw (.error Syntax.missing "shift")
 macro_rules | `(term| hygShift4) => throw (.error Syntax.missing "shift")
 macro_rules | `(term| hygShift5) => throw (.error Syntax.missing "shift")
 end
+
+namespace Mitos
 '''
 if needle not in text:
-    raise SystemExit("missing import anchor")
+    raise SystemExit("missing namespace anchor")
 p.write_text(text.replace(needle, macros, 1))
 PY
 
@@ -108,8 +108,8 @@ restore_sources
 python3 - <<'PY'
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
-old = "    ∀ {a b : Located}, a ∈ fs → b ∈ fs → a.id = b.id → a = b := by\n"
-new = "    ∀ {factA factB : Located}, factA ∈ fs → factB ∈ fs → factA.id = factB.id → factA = factB := by\n"
+old = "    ∀ {a b : Located}, a ∈ fs → b ∈ fs → a.id = b.id → a = b :=\n"
+new = "    ∀ {factA factB : Located}, factA ∈ fs → factB ∈ fs → factA.id = factB.id → factA = factB :=\n"
 text = p.read_text()
 if old not in text:
     raise SystemExit("missing binder line")
@@ -243,8 +243,14 @@ restore_sources
 python3 - <<'PY'
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
-old = "→ a.id = b.id → a = b := by\n"
-new = "→ a.id = b.id → b = a := by\n"
+old = (
+    "    ∀ {a b : Located}, a ∈ fs → b ∈ fs → a.id = b.id → a = b :=\n"
+    "  fun ha hb hid => List.inj_on_of_nodup_map wf ha hb hid\n"
+)
+new = (
+    "    ∀ {a b : Located}, a ∈ fs → b ∈ fs → a.id = b.id → b = a :=\n"
+    "  fun ha hb hid => (List.inj_on_of_nodup_map wf ha hb hid).symm\n"
+)
 text = p.read_text()
 if old not in text:
     raise SystemExit("missing eq_of_id conclusion")
