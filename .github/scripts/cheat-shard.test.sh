@@ -39,6 +39,12 @@ awk '
 ' "$wf" >"$work/timeouts"
 expect=$'cancel-superseded 5\nchecks 20\ncheat-shard 30\nprove 10\ngate 30\nscorecard-comment 5'
 [ "$(cat "$work/timeouts")" = "$expect" ] || fail "timeouts are [$(cat "$work/timeouts")]"
+awk '
+  /^jobs:$/ { jobs = 1; next }
+  jobs && /^  [^[:space:]#]/ { sub(/:$/, "", $1); print $1 }
+' "$wf" >"$work/jobs"
+printf '%s\n' "$expect" | cut -d ' ' -f 1 >"$work/expected-jobs"
+cmp -s "$work/jobs" "$work/expected-jobs" || fail "CI job list differs from the pinned jobs"
 ok "job timeouts match the agreed minutes"
 
 awk '
