@@ -1,4 +1,5 @@
 import Mitos.Core.Fact
+import Mathlib.Data.List.Nodup
 
 namespace Mitos
 
@@ -63,19 +64,8 @@ abbrev Resolver := List Located → Resolution
 def WellFormed (fs : List Located) : Prop := (fs.map (·.id)).Nodup
 
 theorem WellFormed.eq_of_id {fs : List Located} (wf : WellFormed fs) :
-    ∀ {a b : Located}, a ∈ fs → b ∈ fs → a.id = b.id → a = b := by
-  unfold WellFormed at wf
-  induction fs with
-  | nil => intro a b ha; simp at ha
-  | cons x xs ih =>
-    simp only [List.map_cons, List.nodup_cons, List.mem_map, not_exists, not_and] at wf
-    intro a b ha hb hid
-    simp only [List.mem_cons] at ha hb
-    rcases ha with rfl | ha <;> rcases hb with rfl | hb
-    · rfl
-    · exact absurd hid.symm (wf.1 b hb)
-    · exact absurd hid (wf.1 a ha)
-    · exact ih wf.2 ha hb hid
+    ∀ {a b : Located}, a ∈ fs → b ∈ fs → a.id = b.id → a = b :=
+  fun ha hb hid => List.inj_on_of_nodup_map wf ha hb hid
 
 def retract (a : Assumption) (fs : List Located) : List Located :=
   fs.filter (fun l => l.origin != a)
