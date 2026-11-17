@@ -52,6 +52,26 @@ def sourcesOnly (dirName : String) (names : List String) (files : List (String �
     List (String × String) :=
   files.filter fun (path, _) => !inPackage dirName names path
 
+theorem inPackage_iff (dirName : String) (names : List String) (path : String) :
+    inPackage dirName names path = true ↔
+      ∃ n, n ∈ names ∧
+        (path = ((dirName : System.FilePath) / n).toString ∨
+          (((dirName : System.FilePath) / n).toString ++
+              System.FilePath.pathSeparator.toString).isPrefixOf path = true) := by
+  simp only [inPackage, List.any_eq_true, Bool.or_eq_true_iff, beq_iff_eq]
+
+theorem sourcesOnly_excludes {dirName : String} {names : List String}
+    {files : List (String × String)} {path body : String}
+    (h : inPackage dirName names path = true) :
+    (path, body) ∉ sourcesOnly dirName names files := by
+  simp [sourcesOnly, List.mem_filter, h]
+
+theorem sourcesOnly_keeps {dirName : String} {names : List String}
+    {files : List (String × String)} {path body : String}
+    (hmem : (path, body) ∈ files) (h : inPackage dirName names path = false) :
+    (path, body) ∈ sourcesOnly dirName names files := by
+  simp [sourcesOnly, List.mem_filter, hmem, h]
+
 def coreFiles (core : System.FilePath) (skip : List String := []) : IO (List (String × String)) := do
   let paths ← core.walkDir fun p => do
     if p.fileName == some ".lake" then return false
