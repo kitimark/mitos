@@ -250,7 +250,14 @@ def ruleCases : List (String × String × List Lint.Rule) :=
     ("plugin", "import Mitos.Core\n@[app_unexpander] def marker : Nat := 0\n", [.banned "app_unexpander"]),
     ("plugin", "import Mitos.Core\n@[app_delab Nat] def marker : Nat := 0\n", [.banned "app_delab"]),
     ("plugin", "import Mitos.Core\n@[delab] def marker : Nat := 0\n", [.banned "delab"]),
-    ("plugin", "import Mitos.Core\n@[builtin_delab] def marker : Nat := 0\n", [.banned "builtin_delab"]) ]
+    ("plugin", "import Mitos.Core\n@[builtin_delab] def marker : Nat := 0\n", [.banned "builtin_delab"]),
+    ("plugin", "import Mitos.Core\n@[conv_parser] def marker : Nat := 0\n", [.banned "conv_parser"]),
+    ("plugin", "import Mitos.Core\n@[mcasesPat_parser] def marker : Nat := 0\n",
+      [.banned "mcasesPat_parser"]),
+    ("plugin", "import Mitos.Core\n@[run_parser_attribute_hooks] def marker : Nat := 0\n",
+      [.banned "run_parser_attribute_hooks"]),
+    ("plugin", "import Mitos.Core\n@[run_builtin_parser_attribute_hooks] def marker : Nat := 0\n",
+      [.banned "run_builtin_parser_attribute_hooks"]) ]
 
 def unguardedBans : List String :=
   [ "sorry", "admit", "axiom", "unsafe", "partial", "opaque", "noncomputable",
@@ -311,7 +318,8 @@ def unguardedBans : List String :=
     "app_unexpander",
     "app_delab",
     "delab",
-    "builtin_delab" ]
+    "builtin_delab",
+    "run_parser_attribute_hooks", "run_builtin_parser_attribute_hooks" ]
 
 def cheatGuards : IO (Array (String × String)) := do
   let mut out := #[]

@@ -210,7 +210,8 @@ def runsAsAttribute : List String :=
    "builtin_sym_discharger", "sym_discharger", "builtin_try_tactic", "try_tactic",
    "builtin_term_elab", "term_elab", "builtin_macro",
    "builtin_command_elab", "command_elab", "builtin_doElem_elab", "doElem_elab",
-   "app_unexpander", "app_delab", "delab", "builtin_delab"]
+   "app_unexpander", "app_delab", "delab", "builtin_delab",
+   "run_parser_attribute_hooks", "run_builtin_parser_attribute_hooks"]
 
 def banned : List String :=
   [ "sorry", "admit", "axiom", "unsafe", "partial", "opaque", "noncomputable",
@@ -258,6 +259,9 @@ def tokenRules (toks : Array Token) (what := "plugins") : Array Violation := Id.
         if let some rule := componentRules.find? (fun r =>
             r.tokenComponent == some c || r.tokenComponent.map (· ++ "%") == some c) then
           vs := vs.push { line := t.line, col := t.col, rule,
+                          msg := s!"`{c}` is not allowed in {what}" }
+        else if c.endsWith "_parser" then
+          vs := vs.push { line := t.line, col := t.col, rule := .banned c,
                           msg := s!"`{c}` is not allowed in {what}" }
   return vs
 
