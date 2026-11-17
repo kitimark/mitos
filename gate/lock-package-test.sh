@@ -9,7 +9,17 @@ cd "$root"
 lake build mitos-gate >/dev/null || { echo "FAIL lake build mitos-gate"; exit 1; }
 bin="$root/.lake/build/bin/mitos-gate"
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+cleanup_tool() {
+  if [ -n "${tool_before:-}" ] && [ -f "$tool_before" ]; then
+    local after="$tmp/tool-after"
+    find "$tool_prefix" -print | sort >"$after"
+    comm -13 "$tool_before" "$after" | awk '{ print length($0) "\t" $0 }' | sort -nr | cut -f2- |
+      while IFS= read -r f; do
+        rm -rf -- "$f"
+      done
+  fi
+}
+trap 'cleanup_tool; rm -rf "$tmp"' EXIT
 out="$tmp/out"
 sentinel="$tmp/init-sentinel"
 
@@ -477,6 +487,94 @@ if ! sync_build; then bad "bumping a package constant behind an unlisted spec co
   expect_stale "bumping a package constant behind an unlisted spec constructor changes the lock" "$tmp/kw.lock"
 fi
 
+commit_file ToyExt/Hole.lean "hole one" <<'EOF'
+import Lean
+open Lean Meta Elab Term
+
+namespace ToyExt
+
+inductive Foo
+| a
+| b
+
+private instance : Inhabited Foo := ⟨Foo.a⟩
+
+private def privK : Nat := 1
+
+elab "privKTerm" : term => do
+  let n := mkPrivateNameCore `ToyExt.Hole `ToyExt.privK
+  mkConst n
+
+end ToyExt
+EOF
+write_spec $'import ToyExt.Hole\n' $'private inductive WI\n| mk : (default : ToyExt.Foo) = ToyExt.Foo.a → WI\ndef claimInst : Prop := Nonempty WI\nprivate inductive WK\n| mk : privKTerm = 1 → WK\ndef claimK : Prop := Nonempty WK\n'
+if ! sync_build; then bad "an unlisted package definition behind an unlisted spec constructor is pinned"; else
+  rm -f "$sentinel"
+  run_at "$ws" lock
+  cp "$ws/statements.lock" "$tmp/hole.lock"
+  if [ "$lock_ec" = 0 ] && grep -q 'WI.mk' "$tmp/hole.lock" && grep -q 'WK.mk' "$tmp/hole.lock" \
+      && ! grep -q 'instInhabitedFoo' "$tmp/hole.lock" && ! grep -q 'privK' "$tmp/hole.lock" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "an unlisted package definition behind an unlisted spec constructor is pinned"
+  else
+    {
+      echo "exit $lock_ec"
+      grep -E 'WI|WK|instInhabited|privK' "$tmp/hole.lock" || true
+    } >"$out"
+    bad "an unlisted package definition behind an unlisted spec constructor is pinned"
+  fi
+fi
+
+commit_file ToyExt/Hole.lean "hole instance" <<'EOF'
+import Lean
+open Lean Meta Elab Term
+
+namespace ToyExt
+
+inductive Foo
+| a
+| b
+
+private instance : Inhabited Foo := ⟨Foo.b⟩
+
+private def privK : Nat := 1
+
+elab "privKTerm" : term => do
+  let n := mkPrivateNameCore `ToyExt.Hole `ToyExt.privK
+  mkConst n
+
+end ToyExt
+EOF
+if ! sync_build; then bad "bumping a private instance behind an unlisted spec constructor changes the lock"; else
+  rm -f "$sentinel"
+  expect_stale "bumping a private instance behind an unlisted spec constructor changes the lock" "$tmp/hole.lock"
+fi
+
+commit_file ToyExt/Hole.lean "hole privk" <<'EOF'
+import Lean
+open Lean Meta Elab Term
+
+namespace ToyExt
+
+inductive Foo
+| a
+| b
+
+private instance : Inhabited Foo := ⟨Foo.a⟩
+
+private def privK : Nat := 2
+
+elab "privKTerm" : term => do
+  let n := mkPrivateNameCore `ToyExt.Hole `ToyExt.privK
+  mkConst n
+
+end ToyExt
+EOF
+if ! sync_build; then bad "bumping a private definition behind an unlisted spec constructor changes the lock"; else
+  rm -f "$sentinel"
+  expect_stale "bumping a private definition behind an unlisted spec constructor changes the lock" "$tmp/hole.lock"
+fi
+
 write_spec '' $'private opaque hiddenSpec : Nat := 0\nprivate inductive HiddenW : Type\n| mk : hiddenSpec = 0 → HiddenW\ndef usedHiddenW : Prop := Nonempty HiddenW\n'
 if ! (cd "$ws/core" && lake build >"$tmp/lake.out" 2>&1); then
   cat "$tmp/lake.out" >"$out"
@@ -725,6 +823,180 @@ else
   bad "a package buildDir under the package tree is refused for Mitos.Core"
 fi
 
+spoof_case() {
+  local name=$1
+  local builddir=$2
+  local sremote="$tmp/spoof-remote-$name"
+  local sws="$tmp/spoof-$name"
+  spoof_built=0
+  spoof_olean=""
+  git init -q "$sremote"
+  cp "$root/lean-toolchain" "$sremote/lean-toolchain"
+  mkdir -p "$sremote/Mitos/Core"
+  cat >"$sremote/lakefile.toml" <<EOF
+name = "$name"
+buildDir = "$builddir"
+defaultTargets = ["BadName"]
+
+[[lean_lib]]
+name = "BadName"
+roots = ["Mitos.Core.Plant"]
+EOF
+  cat >"$sremote/Mitos/Core/Plant.lean" <<'EOF'
+def planted : Nat := 1
+EOF
+  git -C "$sremote" add -A
+  git -C "$sremote" -c commit.gpgsign=false commit -q -m "spoof $name"
+  local srev
+  srev=$(git -C "$sremote" rev-parse HEAD)
+  mkdir -p "$sws/core/Mitos/Core"
+  cp "$root/lean-toolchain" "$sws/lean-toolchain"
+  cp "$root/lean-toolchain" "$sws/core/lean-toolchain"
+  cat >"$sws/lakefile.toml" <<'EOF'
+name = "toy-root"
+
+[[require]]
+name = "toy-core"
+path = "core"
+EOF
+  cat >"$sws/core/lakefile.toml" <<EOF
+name = "toy-core"
+packagesDir = "../.lake/packages"
+defaultTargets = ["ToyCore"]
+
+[[require]]
+name = "$name"
+git = "file://$sremote"
+rev = "$srev"
+
+[[lean_lib]]
+name = "ToyCore"
+roots = ["Mitos.Core.Spec"]
+EOF
+  cat >"$sws/core/Mitos/Core/Spec.lean" <<'EOF'
+import Mitos.Core.Plant
+
+namespace Mitos.Core.Spec
+
+def usedPlant : Nat := planted
+
+end Mitos.Core.Spec
+EOF
+  if (cd "$sws/core" && lake update "$name" >"$tmp/lake.out" 2>&1) \
+      && (cd "$sws" && lake update >"$tmp/lake.out" 2>&1) \
+      && (cd "$sws/core" && lake build >"$tmp/lake.out" 2>&1); then
+    spoof_built=1
+  fi
+  spoof_olean=$(find "$sws" -path '*/Mitos/Core/Plant.olean' 2>/dev/null | head -1)
+}
+
+tool_prefix=$(cd "$root" && lean --print-prefix)
+tool_before="$tmp/tool-before"
+find "$tool_prefix" -print | sort >"$tool_before"
+tws="$tmp/tws"
+tpkg="$tws/toolspoof"
+mkdir -p "$tpkg" "$tws/core/Mitos/Core"
+tool_rel=$(realpath --relative-to="$tpkg" "$tool_prefix")
+cat >"$tpkg/lakefile.toml" <<EOF
+name = "toolspoof"
+buildDir = "$tool_rel"
+defaultTargets = ["ToolSpoof"]
+
+[[lean_lib]]
+name = "ToolSpoof"
+EOF
+cat >"$tpkg/ToolSpoof.lean" <<'EOF'
+def toolMarker : Nat := 1
+EOF
+cp "$root/lean-toolchain" "$tws/lean-toolchain"
+cp "$root/lean-toolchain" "$tws/core/lean-toolchain"
+cat >"$tws/lakefile.toml" <<'EOF'
+name = "toy-root"
+
+[[require]]
+name = "toy-core"
+path = "core"
+EOF
+cat >"$tws/core/lakefile.toml" <<'EOF'
+name = "toy-core"
+packagesDir = "../.lake/packages"
+defaultTargets = ["ToyCore"]
+
+[[require]]
+name = "toolspoof"
+path = "../toolspoof"
+
+[[lean_lib]]
+name = "ToyCore"
+globs = ["Mitos.Core.+"]
+EOF
+cat >"$tws/core/Mitos/Core/Spec.lean" <<'EOF'
+import ToolSpoof
+
+namespace Mitos.Core.Spec
+
+def usedTool : Nat := toolMarker
+
+end Mitos.Core.Spec
+EOF
+tool_built=0
+if (cd "$tws/core" && lake update toolspoof >"$tmp/lake.out" 2>&1) \
+    && (cd "$tws" && lake update >"$tmp/lake.out" 2>&1) \
+    && (cd "$tws/core" && lake build >"$tmp/lake.out" 2>&1); then
+  tool_built=1
+fi
+tool_olean="$tool_prefix/lib/lean/ToolSpoof.olean"
+if [ "$tool_built" = 1 ] && { [ -f "$tool_olean.hash" ] || [ -f "$tool_olean.trace" ]; }; then
+  cp "$root/statements.lock" "$tws/statements.lock"
+  run_at "$tws" lock --check
+  if [ "$lock_ec" = 1 ] && grep -q 'ToolSpoof' "$out" && grep -q 'Lake .trace or .olean.hash' "$out" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "a package buildDir aimed at the toolchain is refused"
+  else
+    bad "a package buildDir aimed at the toolchain is refused"
+  fi
+else
+  cat "$tmp/lake.out" >"$out"
+  echo "olean_hash=$([ -f "$tool_olean.hash" ] && echo yes || echo no) trace=$([ -f "$tool_olean.trace" ] && echo yes || echo no)" >>"$out"
+  bad "a package buildDir aimed at the toolchain is refused"
+fi
+cleanup_tool
+
+spoof_case outbuild "../../../core/.lake/build"
+if [ "$spoof_built" = 1 ] && printf '%s\n' "$spoof_olean" | grep -q '/core/.lake/build/' \
+    && ! printf '%s\n' "$spoof_olean" | grep -q '/.lake/packages/'; then
+  cp "$root/statements.lock" "$tmp/spoof-outbuild/statements.lock"
+  run_at "$tmp/spoof-outbuild" lock --check
+  if [ "$lock_ec" = 1 ] && grep -q 'Mitos.Core.Plant' "$out" && grep -q 'does not exist' "$out" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "a package buildDir at core's build is refused"
+  else
+    bad "a package buildDir at core's build is refused"
+  fi
+else
+  cat "$tmp/lake.out" >"$out"
+  echo "olean=$spoof_olean built=$spoof_built" >>"$out"
+  bad "a package buildDir at core's build is refused"
+fi
+
+spoof_case suffixbuild "../../../x/core/.lake/build"
+if [ "$spoof_built" = 1 ] && printf '%s\n' "$spoof_olean" | grep -q '/x/core/.lake/build/'; then
+  cp "$tmp/spoof-suffixbuild/core/.lake/build/lib/lean/Mitos/Core/Spec.olean" \
+    "$(dirname "$spoof_olean")/Spec.olean"
+  cp "$root/statements.lock" "$tmp/spoof-suffixbuild/statements.lock"
+  run_at "$tmp/spoof-suffixbuild" lock --check
+  if [ "$lock_ec" = 1 ] && grep -q 'Mitos.Core.Plant' "$out" && grep -q 'does not exist' "$out" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "a package buildDir whose path only ends like core's build is refused"
+  else
+    bad "a package buildDir whose path only ends like core's build is refused"
+  fi
+else
+  cat "$tmp/lake.out" >"$out"
+  echo "olean=$spoof_olean built=$spoof_built" >>"$out"
+  bad "a package buildDir whose path only ends like core's build is refused"
+fi
+
 pin() {
   local rev=$1
   cat <<EOF
@@ -748,6 +1020,7 @@ fi
 pin aaa >"$mandir/core/lake-manifest.json"
 mkdir -p "$mandir/core/Mitos"
 cp -R "$root/core/Mitos/Core" "$mandir/core/Mitos/Core"
+cp "$root/core/Mitos/Core.lean" "$mandir/core/Mitos/Core.lean"
 lock_ec=0
 (cd "$mandir" && "$bin" lock --check >"$out" 2>&1) || lock_ec=$?
 if [ "$lock_ec" = 0 ] && grep -q 'statements.lock up to date' "$out"; then
@@ -809,6 +1082,7 @@ cp "$root/statements.lock" "$copy/statements.lock"
 cp "$root/lake-manifest.json" "$copy/lake-manifest.json"
 cp "$root/core/lake-manifest.json" "$copy/core/lake-manifest.json"
 cp -R "$root/core/Mitos/Core" "$copy/core/Mitos/Core"
+cp "$root/core/Mitos/Core.lean" "$copy/core/Mitos/Core.lean"
 repo_env
 lock_ec=0
 (cd "$copy" && "$bin" lock >"$out" 2>&1) || lock_ec=$?
