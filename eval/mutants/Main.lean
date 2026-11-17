@@ -98,6 +98,21 @@ private def specBad (s : String) : Bool :=
 #guard specBad "{\"packages\":[{}]}"
 #guard specBad "{\"packages\":1}"
 
+def pathTop (p : System.FilePath) : Option String :=
+  (p.components.filter fun c => c != "." && !c.isEmpty).head?
+
+def overlapsSources (rel : System.FilePath) (files : List (String × String)) : Bool :=
+  match pathTop rel with
+  | none => true
+  | some top => files.any fun (path, _) => pathTop path == some top
+
+#guard overlapsSources ".lake/packages" [("Mitos/Core.lean", "")] == false
+#guard overlapsSources "deps" [("Challenge/Resolver.lean", "")] == false
+#guard overlapsSources "Mitos" [] == false
+#guard overlapsSources "Mitos" [("Mitos/Core.lean", "")]
+#guard overlapsSources "Mitos/Proofs" [("Mitos/Core.lean", "")]
+#guard overlapsSources "lakefile.toml" [("lakefile.toml", "")]
+
 def packagesMissing : String :=
   "core's packages are not resolved: run cd core && lake build first"
 
@@ -145,7 +160,9 @@ def clearPackagesLink (dest : System.FilePath) : IO Unit := do
     | .noFileOrDirectory .. => pure ()
     | e => throw e
 
-def placePackages (workspace : System.FilePath) (reuse : PackageReuse) : IO Bool := do
+def placePackages (workspace : System.FilePath) (reuse : PackageReuse)
+    (files : List (String × String) := []) : IO Bool := do
+  if overlapsSources reuse.packages.rel files then return false
   let dest := workspace / reuse.packages.rel
   IO.FS.createDirAll (workspace / ".lake")
   if let some parent := dest.parent then IO.FS.createDirAll parent
@@ -242,7 +259,7 @@ def judge (cfg : Config) (toolchain : String) (files : List (String × String))
       if let some p := (dir / rel).parent then IO.FS.createDirAll p
       IO.FS.writeFile (dir / rel) txt
     if let some r := reuse then
-      unless ← placePackages dir r do
+      unless ← placePackages dir r files do
         IO.FS.writeFile log "could not reuse core's packages"
         return .failed
     let args := #["comparator"] ++ (config.map (#[s!"--config={·}"])).getD #[] ++
@@ -390,7 +407,7 @@ def writeFiles (toolchain : String) (dir : System.FilePath) (files : List (Strin
     if let some d := (dir / rel).parent then IO.FS.createDirAll d
     IO.FS.writeFile (dir / rel) txt
   if let some r := reuse then
-    unless ← placePackages dir r do
+    unless ← placePackages dir r files do
       throw <| IO.userError "could not reuse core's packages"
 
 def generatedFor (a : Approved) (casesDir : System.FilePath) (cases : List String) :
@@ -598,6 +615,10 @@ def main (args : List String) : IO UInt32 := do
   let a ← match ← (readApproved root).run with
     | .ok a => pure a
     | .error e => IO.eprintln s!"mitos-mutants: {clean e}"; return 2
+  if let some r := reuse then
+    if overlapsSources r.packages.rel a.files then
+      IO.eprintln "packagesDir overlaps the workspace sources"
+      return 2
   let cases ← if cfg.cases.isEmpty then do
       unless ← casesDir.isDir do IO.eprintln "mitos-mutants: no eval/mutants/cases/"; return 2
       pure (((← casesDir.readDir).map (·.fileName)).qsort (· < ·)).toList
