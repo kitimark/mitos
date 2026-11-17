@@ -187,7 +187,7 @@ def tokenize (env : Environment) (src : String) : IO (Except Violation (Array To
   return (← parse env src).map fun (fm, header, cmds) => allTokens fm header cmds
 
 def runsInTerm : List String :=
-  ["run_tac", "builtin_run_tac", "by_elab", "builtin_by_elab", "try?", "suggestions"]
+  ["run_tac", "builtin_run_tac", "by_elab", "builtin_by_elab", "try?", "suggestions", "autoParam"]
 
 def runsAsCommand : List String :=
   ["run_cmd", "run_elab", "run_meta",
@@ -198,7 +198,19 @@ def runsAsCommand : List String :=
    "set_library_suggestions", "register_error_explanation", "register_try?_tactic"]
 
 def runsAsAttribute : List String :=
-  ["try_suggestion", "sevalproc", "builtin_sevalproc", "library_suggestions"]
+  ["try_suggestion", "sevalproc", "builtin_sevalproc", "library_suggestions",
+   "builtin_term_parser", "term_parser", "builtin_command_parser", "command_parser",
+   "builtin_prio_parser", "prio_parser", "builtin_attr_parser", "attr_parser",
+   "builtin_doElem_parser", "doElem_parser", "builtin_level_parser",
+   "builtin_syntax_parser", "stx_parser", "builtin_prec_parser", "prec_parser",
+   "builtin_tactic_parser", "tactic_parser", "builtin_structInstFieldDecl_parser",
+   "builtin_doElem_control_info", "doElem_control_info",
+   "builtin_tactic", "tactic", "builtin_grind_tactic", "grind_tactic",
+   "builtin_sym_dsimproc", "sym_dsimproc", "builtin_sym_simproc", "sym_simproc",
+   "builtin_sym_discharger", "sym_discharger", "builtin_try_tactic", "try_tactic",
+   "builtin_term_elab", "term_elab", "builtin_macro",
+   "builtin_command_elab", "command_elab", "builtin_doElem_elab", "doElem_elab",
+   "app_unexpander", "app_delab", "delab", "builtin_delab"]
 
 def banned : List String :=
   [ "sorry", "admit", "axiom", "unsafe", "partial", "opaque", "noncomputable",
