@@ -348,6 +348,135 @@ if ! sync_build; then bad "reordering toy constructors changes the lock"; else
   fi
 fi
 
+commit_file() {
+  local path=$1
+  local msg=$2
+  cat >"$remote/$path"
+  git -C "$remote" add -A
+  git -C "$remote" -c commit.gpgsign=false commit -q -m "$msg"
+  rev=$(git -C "$remote" rev-parse HEAD)
+}
+
+expect_stale() {
+  local name=$1
+  local old=$2
+  cp "$old" "$ws/statements.lock"
+  run_at "$ws" lock --check
+  if [ "$lock_ec" = 1 ] && grep -q 'out of date' "$out" && ! grep -q 'uncaught exception' "$out"; then
+    ok "$name"
+  else
+    bad "$name"
+  fi
+}
+
+mkdir -p "$remote/ToyExt"
+commit_file ToyExt/Card.lean "card two" <<'EOF'
+namespace ToyExt
+
+private inductive H
+| left
+| right
+
+def Card : Type := H
+
+end ToyExt
+EOF
+write_spec $'import ToyExt.Card\n' $'def usedCard : Prop := ∀ x y : ToyExt.Card, x = y\n'
+if ! sync_build; then bad "a private toy inductive is pinned"; else
+  rm -f "$sentinel"
+  run_at "$ws" lock
+  cp "$ws/statements.lock" "$tmp/card.lock"
+  if [ "$lock_ec" = 0 ] && grep -q 'left' "$tmp/card.lock" && grep -q 'right' "$tmp/card.lock" \
+      && grep -q '^ext inductive ' "$tmp/card.lock" && ! grep -q 'uncaught exception' "$out"; then
+    ok "a private toy inductive is pinned"
+  else
+    bad "a private toy inductive is pinned"
+  fi
+fi
+
+commit_file ToyExt/Card.lean "card one" <<'EOF'
+namespace ToyExt
+
+private inductive H
+| left
+
+def Card : Type := H
+
+end ToyExt
+EOF
+if ! sync_build; then bad "dropping a private toy constructor changes the lock"; else
+  rm -f "$sentinel"
+  expect_stale "dropping a private toy constructor changes the lock" "$tmp/card.lock"
+fi
+
+commit_file ToyExt/Pair.lean "pair unit" <<'EOF'
+namespace ToyExt
+
+structure S where
+  private mk ::
+  x : Unit
+
+end ToyExt
+EOF
+write_spec $'import ToyExt.Pair\n' $'def usedS : Prop := ∀ a b : ToyExt.S, a = b\n'
+if ! sync_build; then bad "a private toy constructor is pinned"; else
+  rm -f "$sentinel"
+  run_at "$ws" lock
+  cp "$ws/statements.lock" "$tmp/pair.lock"
+  if [ "$lock_ec" = 0 ] && grep -q '^ext ctor ' "$tmp/pair.lock" && grep -q 'cidx=0' "$tmp/pair.lock" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "a private toy constructor is pinned"
+  else
+    bad "a private toy constructor is pinned"
+  fi
+fi
+
+commit_file ToyExt/Pair.lean "pair bool" <<'EOF'
+namespace ToyExt
+
+structure S where
+  private mk ::
+  x : Bool
+
+end ToyExt
+EOF
+if ! sync_build; then bad "changing a private toy field changes the lock"; else
+  rm -f "$sentinel"
+  expect_stale "changing a private toy field changes the lock" "$tmp/pair.lock"
+fi
+
+commit_file ToyExt/Kw.lean "kw one" <<'EOF'
+namespace ToyExt
+
+def Kw : Nat := 1
+
+end ToyExt
+EOF
+write_spec $'import ToyExt.Kw\n' $'private inductive W : Type\n| mk : ToyExt.Kw = 1 → W\ndef usedW : Prop := Nonempty W\n'
+if ! sync_build; then bad "a package constant behind an unlisted spec constructor is pinned"; else
+  rm -f "$sentinel"
+  run_at "$ws" lock
+  cp "$ws/statements.lock" "$tmp/kw.lock"
+  if [ "$lock_ec" = 0 ] && grep -q '^ext def ToyExt.Kw ' "$tmp/kw.lock" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "a package constant behind an unlisted spec constructor is pinned"
+  else
+    bad "a package constant behind an unlisted spec constructor is pinned"
+  fi
+fi
+
+commit_file ToyExt/Kw.lean "kw two" <<'EOF'
+namespace ToyExt
+
+def Kw : Nat := 2
+
+end ToyExt
+EOF
+if ! sync_build; then bad "bumping a package constant behind an unlisted spec constructor changes the lock"; else
+  rm -f "$sentinel"
+  expect_stale "bumping a package constant behind an unlisted spec constructor changes the lock" "$tmp/kw.lock"
+fi
+
 write_spec $'import ToyExt.Axiom\n' $'noncomputable def usedBoom : Nat := ToyExt.Axiom.boom\n'
 if ! (cd "$ws/core" && lake build >"$tmp/lake.out" 2>&1); then
   cat "$tmp/lake.out" >"$out"
@@ -402,6 +531,39 @@ else
   else
     echo "exit $lock_ec sentinel_exists=$([ -e "$sentinel" ] && echo yes || echo no)" >"$out"
     bad "a toy initialize that writes a file leaves no file after lock"
+  fi
+fi
+
+mkdir -p "$ws/odd"
+cat >"$ws/odd/lakefile.toml" <<'EOF'
+name = "odd"
+defaultTargets = ["Stray"]
+
+[[lean_lib]]
+name = "Stray"
+EOF
+cat >"$ws/odd/Stray.lean" <<'EOF'
+def strayMarker : Nat := 1
+EOF
+cat >>"$ws/core/lakefile.toml" <<'EOF'
+
+[[require]]
+name = "odd"
+path = "../odd"
+EOF
+write_spec $'import Stray\n' $'def usedStray : Nat := strayMarker\n'
+if ! (cd "$ws/core" && lake update odd >"$tmp/lake.out" 2>&1) \
+    || ! (cd "$ws" && lake update >"$tmp/lake.out" 2>&1) \
+    || ! (cd "$ws/core" && lake build >"$tmp/lake.out" 2>&1); then
+  cat "$tmp/lake.out" >"$out"
+  bad "a module outside the toolchain, core, and packages is refused"
+else
+  run_at "$ws" lock --check
+  if [ "$lock_ec" = 1 ] && grep -q 'Stray' "$out" && grep -q 'not the toolchain' "$out" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "a module outside the toolchain, core, and packages is refused"
+  else
+    bad "a module outside the toolchain, core, and packages is refused"
   fi
 fi
 
@@ -473,6 +635,79 @@ if [ "$bad_built" = 1 ]; then
 else
   cat "$tmp/lake.out" >"$out"
   bad "a toy module named Mitos.Core.X is refused"
+fi
+
+bdremote="$tmp/bdremote"
+bdws="$tmp/bdws"
+git init -q "$bdremote"
+cp "$root/lean-toolchain" "$bdremote/lean-toolchain"
+mkdir -p "$bdremote/Mitos/Core"
+cat >"$bdremote/lakefile.toml" <<'EOF'
+name = "builddir"
+buildDir = "core/.lake/build"
+defaultTargets = ["BadName"]
+
+[[lean_lib]]
+name = "BadName"
+globs = ["Mitos.Core.+"]
+EOF
+cat >"$bdremote/Mitos/Core/X.lean" <<'EOF'
+def planted : Nat := 1
+EOF
+cat >"$bdremote/Mitos/Core/Spec.lean" <<'EOF'
+import Mitos.Core.X
+
+def usedPlant : Nat := planted
+EOF
+git -C "$bdremote" add -A
+git -C "$bdremote" -c commit.gpgsign=false commit -q -m "buildDir core"
+bdrev=$(git -C "$bdremote" rev-parse HEAD)
+mkdir -p "$bdws/core"
+cp "$root/lean-toolchain" "$bdws/lean-toolchain"
+cp "$root/lean-toolchain" "$bdws/core/lean-toolchain"
+cat >"$bdws/lakefile.toml" <<'EOF'
+name = "toy-root"
+
+[[require]]
+name = "toy-core"
+path = "core"
+EOF
+cat >"$bdws/core/lakefile.toml" <<EOF
+name = "toy-core"
+packagesDir = "../.lake/packages"
+defaultTargets = ["Dummy"]
+
+[[require]]
+name = "builddir"
+git = "file://$bdremote"
+rev = "$bdrev"
+
+[[lean_lib]]
+name = "Dummy"
+EOF
+cat >"$bdws/core/Dummy.lean" <<'EOF'
+import Mitos.Core.Spec
+EOF
+bd_built=0
+if (cd "$bdws/core" && lake update builddir >"$tmp/lake.out" 2>&1) \
+   && (cd "$bdws" && lake update >"$tmp/lake.out" 2>&1) \
+   && (cd "$bdws/core" && lake build >"$tmp/lake.out" 2>&1); then
+  bd_built=1
+fi
+bd_olean=$(find "$bdws/.lake/packages/builddir" -path '*/core/.lake/build/lib/lean/Mitos/Core/X.olean' 2>/dev/null | head -1)
+if [ "$bd_built" = 1 ] && [ -n "$bd_olean" ]; then
+  cp "$root/statements.lock" "$bdws/statements.lock"
+  run_at "$bdws" lock --check
+  if [ "$lock_ec" = 1 ] && grep -q 'Mitos.Core.X' "$out" && grep -q 'builddir' "$out" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "a package buildDir under the package tree is refused for Mitos.Core"
+  else
+    bad "a package buildDir under the package tree is refused for Mitos.Core"
+  fi
+else
+  cat "$tmp/lake.out" >"$out"
+  echo "olean=$bd_olean" >>"$out"
+  bad "a package buildDir under the package tree is refused for Mitos.Core"
 fi
 
 pin() {
