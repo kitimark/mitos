@@ -62,7 +62,10 @@ def readPackageSpec (manifest : Json) : Except String (Option (String × List St
     | .ok (.str s) => pure s
     | .ok _ => throw "packagesDir is not a string"
     | .error _ => pure ".lake/packages"
-  if (dirName : System.FilePath).isAbsolute then throw "packagesDir must be relative to the workspace"
+  let p : System.FilePath := dirName
+  let comps := p.components.filter fun c => c != "." && !c.isEmpty
+  if p.isAbsolute || comps.isEmpty || comps.any (· == "..") then
+    throw "packagesDir must be a relative path inside the workspace"
   let mut names : Array String := #[]
   for p in arr do
     match p.getObjValAs? String "name" with
@@ -88,6 +91,10 @@ private def specBad (s : String) : Bool :=
 #guard specSome "{\"packages\":[{\"name\":\"batteries\"}]}" ".lake/packages" ["batteries"]
 #guard specSome "{\"packagesDir\":\"deps\",\"packages\":[{\"name\":\"a\"}]}" "deps" ["a"]
 #guard specBad "{\"packagesDir\":\"/opt/pkgs\",\"packages\":[{\"name\":\"a\"},{\"name\":\"b\"}]}"
+#guard specBad "{\"packagesDir\":\"..\",\"packages\":[{\"name\":\"a\"}]}"
+#guard specBad "{\"packagesDir\":\"../x\",\"packages\":[{\"name\":\"a\"}]}"
+#guard specBad "{\"packagesDir\":\"\",\"packages\":[{\"name\":\"a\"}]}"
+#guard specBad "{\"packagesDir\":\".\",\"packages\":[{\"name\":\"a\"}]}"
 #guard specBad "{\"packages\":[{}]}"
 #guard specBad "{\"packages\":1}"
 
