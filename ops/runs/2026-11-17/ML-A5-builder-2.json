@@ -1,2 +1,1 @@
 {"task":"ML-A5","role":"builder","model":"Grok 4.7","attempt":2,"iterations":3,"wall_min":20,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"CodeRabbit review 5938957780: a trailing comment hid the mathlib require, a rev before name rewrote the next table, and run_case swallowed a failed assertion inside if. Fixed all three. Test still prints 7 passed, 0 failed. Comment Sicko on grok-4.7-high: deletion count 0. No opus verifier. #442 still open."}
-
