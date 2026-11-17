@@ -66,3 +66,54 @@ The staged global hook hold was rejected because it leaves the second consumer m
 The native build completes all176 jobs with standard-kernel proofs and axiom audits. Snapshot/raw native-hook/actual record tests pass148 controls; Land68, Shadow62 and land-decide16 pass. Imports has zero violations, the207-declaration statement lock is unchanged, and the run log validates. All450 frozen version-1 records reproduce both the frozen native decisions and their recorded decisions; every input hash matches and the entire shadow report is byte-identical. Historical inputs/reports are unchanged.
 
 The hook adapter passes681 deterministic assertions with an external host-metadata shim. The unmodified local-host run passes641 and fails39 existing ownership/freshness controls because `/` and `/tmp` belong to uid65534; one conditional assertion cannot run there. CI invokes the raw, unshimmed suite once. Local core check and paranoid comparator stop during nested bubblewrap namespace setup on this host's read-only filesystem; CI must supply those checks. No local pass or Opus review is claimed for them.
+
+## Retired parser compatibility obligations
+
+The first published review required restoration of every old parser assertion. `Snapshot/LegacyFixtures.lean` imports the existing fixtures, keeps all 26 original public `Fixture` theorem names and identical `v`/`a` input-output semantics, and confines parser/helper implementations to private compatibility scope. The three structural Cell proofs, the old cell-observation relation and six changed old snapshot-case expressions remain kernel-checked compatibility obligations. The active source controls remain unchanged.
+
+This module is absent from normal Snapshot/Obs/CLI/hook imports and is not linked into the gate executable. `gate/provenance-legacy-test.sh` explicitly builds it in the existing CI test loop and checks all 36 named obligations against the standard axiom set. Compatibility proofs describe retired behavior; they supply no current author, provider, verdict or favorable prose fallback. `verdictsFromTheSource` remains the live observation obligation.
+
+Names below are relative to `MitosGate.Snapshot`. The original `PassNamesNoFail` and `VerdictsFromTheCell` property bodies survive in private `Fixture.Compatibility` scope with their corresponding proofs.
+
+| Old assertion | Restored assertion |
+|---|---|
+| `Fixture.carriedPassOfOneJudge` | `Fixture.carriedPassOfOneJudge` |
+| `Fixture.twoJudges` | `Fixture.twoJudges` |
+| `Fixture.failOfOneJudge` | `Fixture.failOfOneJudge` |
+| `Fixture.wordingOnlyIsTheRoots` | `Fixture.wordingOnlyIsTheRoots` |
+| `Fixture.noVerdictSaysNothing` | `Fixture.noVerdictSaysNothing` |
+| `Fixture.passThenFailSaysNothing` | `Fixture.passThenFailSaysNothing` |
+| `Fixture.judgelessPassSaysNothing` | `Fixture.judgelessPassSaysNothing` |
+| `Fixture.judgesInAParenthesis` | `Fixture.judgesInAParenthesis` |
+| `Fixture.judgesInBothPlacesSayNothing` | `Fixture.judgesInBothPlacesSayNothing` |
+| `Fixture.aParenthesisOfProseIsNoJudge` | `Fixture.aParenthesisOfProseIsNoJudge` |
+| `Fixture.aParenthesisAfterAWordIsNoJudge` | `Fixture.aParenthesisAfterAWordIsNoJudge` |
+| `Fixture.unknownEffortSaysNothing` | `Fixture.unknownEffortSaysNothing` |
+| `Fixture.judgedWordingOnlySaysNothing` | `Fixture.judgedWordingOnlySaysNothing` |
+| `Fixture.ambiguousPrefixSaysNothing` | `Fixture.ambiguousPrefixSaysNothing` |
+| `Fixture.unknownCommitSaysNothing` | `Fixture.unknownCommitSaysNothing` |
+| `Fixture.shortShaSaysNothing` | `Fixture.shortShaSaysNothing` |
+| `Fixture.unclosedTickSaysNothing` | `Fixture.unclosedTickSaysNothing` |
+| `Fixture.upperCaseHexSaysNothing` | `Fixture.upperCaseHexSaysNothing` |
+| `Fixture.lowerCasePassSaysNothing` | `Fixture.lowerCasePassSaysNothing` |
+| `Fixture.authorNoteInAParenthesis` | `Fixture.authorNoteInAParenthesis` |
+| `Fixture.authorNote` | `Fixture.authorNote` |
+| `Fixture.mixedAuthorIsNone` | `Fixture.mixedAuthorIsNone` |
+| `Fixture.twoAuthorNotesAreNone` | `Fixture.twoAuthorNotesAreNone` |
+| `Fixture.noAuthorNoteIsNone` | `Fixture.noAuthorNoteIsNone` |
+| `Fixture.coauthorIsNoNote` | `Fixture.coauthorIsNoNote` |
+| `Fixture.unknownModelIsNone` | `Fixture.unknownModelIsNone` |
+| `resolveKnown_spec` | `Fixture.Compatibility.resolveKnown_spec` |
+| `verdictsOf_spec` | `Fixture.Compatibility.verdictsOf_spec` |
+| `passNamesNoFail` | `Fixture.Compatibility.passNamesNoFail` |
+| `verdictsFromTheCell` | `Fixture.Compatibility.verdictsFromTheCell` |
+| `Fixture.noRowIsNotEligible` | `Fixture.Compatibility.noRowIsNotEligible` |
+| `Fixture.anOpusAuthorIsNotCoveredByItsOwnModel` | `Fixture.Compatibility.anOpusAuthorIsNotCoveredByItsOwnModel` |
+| `Fixture.noAuthorNoteIsNotEligible` | `Fixture.Compatibility.noAuthorNoteIsNotEligible` |
+| `Fixture.aVerdictOnAnOlderHeadCarriesOverTheUpdatersPush` | `Fixture.Compatibility.aVerdictOnAnOlderHeadCarriesOverTheUpdatersPush` |
+| `Fixture.aVerdictOnOtherContentDoesNotCarry` | `Fixture.Compatibility.aVerdictOnOtherContentDoesNotCarry` |
+| `Fixture.theContentIdsAsked` | `Fixture.Compatibility.theContentIdsAsked` |
+
+The six live `Fixture` source-migration counterparts in the last six rows also remain in their original current locations. The separate theorem-colocation minor is tracked in [#480](https://github.com/kitimark/mitos/issues/480); no admission-fixture refactor is included in this repair round.
+
+Review-fix verification: the isolated compatibility module compiles and audits all 36 obligations; the 26 original case bodies and v/a helpers, and the complete Cell implementation/structural proofs, byte-match the merge base after private-visibility normalization. The native build stays cached with the identical executable hash, and active snapshot/native-hook/raw-record controls remain148/148. Imports, wrapper syntax/shellcheck and runlog checks pass. The new head still requires fresh CI and independent review.
