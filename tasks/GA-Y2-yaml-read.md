@@ -7,7 +7,8 @@ reader PR and a CLI/regression PR so the new trust boundary can be reviewed sepa
 
 `MitosGate.Yaml.read` returns our `Doc`, or our `Refusal`. The only authored Lean module that
 names the vendor is `gate/MitosGate/Yaml.lean`. After the source limits, it refuses every
-column-zero `%` line before calling the parser. It scans with the raw comment side channel,
+column-zero `%` line and sources with more than 2,048 raw `-?:,[{` characters before calling the parser.
+It scans with the raw comment side channel,
 parses the serialization tree, qualifies tokens, converts it to our `Node`, validates `Doc`,
 and compares source and leaf expression counts. It never composes aliases or uses a vendor theorem.
 
@@ -19,9 +20,10 @@ result of `parseDoc`; their proofs do not unfold the vendor.
 
 | Input feature | Refusal | Why |
 |---|---|---|
-| More than 65536 UTF-8 bytes | `tooLarge` | Bound parser work. |
+| More than 65536 UTF-8 bytes | `tooLarge` | Bound input size. This cap alone does not establish a practical time or memory guarantee. |
 | Outside LF and printable ASCII | `char` | Exclude control and line-break disagreements before parsing. |
 | More than 1024 `[` or `{` characters | `openers` | Bound flow nesting, including quoted openers. |
+| More than 2048 raw `-`, `?`, `:`, `,`, `[` or `{` characters | `structureChars` | Bound admitted collection indicators before scanning. Quoted, comment and scalar data also count. |
 | Scanner/parser failure | `parse` | Preserve the upstream rendered error. |
 | Zero or multiple documents | `documents` | Give one root and avoid document-selection disagreement. |
 | A source line starting with `%`, or a reported directive | `directive` | Exclude standard and reserved directives before the pin can discard them. |
@@ -59,6 +61,35 @@ Primary tags are retained by the parser and refused by the seam, or rejected by 
   eight #405 cases, and two scan/parse composition drift cases. Alias refusal itself is guarded
   at the seam: the parser rejects undefined aliases, and a valid alias always follows an anchor
   that the source-order seam refuses first. A real-parser guard checks anchor/alias preservation.
+
+## Design for #420
+
+problem: Compact block sequences bypass the flow-opener cap and cause quadratic scanner work and retained parser paths. Wide mappings also cause quadratic owned validation work.
+usage: Callers continue to call Yaml.read once and receive Doc or Refusal. Both workflow verbs return exit 1 with no leaves when source structure exceeds the allowance.
+modules: Yaml.lean owns the private source counter, its limit and the owned refusal. workflow-check.py and workflow-fixtures own native behavior cases. workflow-resource-benchmark.py owns repeatable adversarial input generation and process measurements.
+types: Refusal gains structureChars carrying the full raw count. The counter and maxStructureChars remain private, with no vendor types exposed.
+statements: The existing read_size, read_chars and read_conserves statements and proof bodies stay unchanged. No theorem connects this count to vendor runtime complexity.
+reuse: The new guard runs inside parseDoc, after the existing directive filter and before scanWithComments. Existing size, character, opener and directive priority remains unchanged.
+fixtures: Exact allowance and one-over cases, a 65,535-byte compact sequence, conservative scalar and comment refusals, mixed block/flow structure, commas in flat flow lists and refusal-priority collisions run through both CLI verbs.
+cut_line: Bound source admission without changing vendor bytes, View validation, audit traversal, theorem statements, CLI flags or existing caller behavior on accepted sources.
+deferrals: The general duplicate-key optimization remains #413 m2. Residual multiline scalar cost is #431, before #359, #360 and #361 consume pull-request YAML.
+owner_decisions: The owner merges this trust-infrastructure change. The required Opus-xhigh verifier is unavailable in this runtime, and no substitute verdict satisfies that requirement.
+
+The architect comparison selected a single document-wide raw punctuation allowance over per-line
+indicator and indentation limits. Boundary discipline puts the check before all vendor work.
+Minimize reader load keeps it within the existing adapter with one counter and one refusal.
+The alternative geometry limits require a more involved nesting argument and leave wide maps
+unrestricted. The selected policy also charges commas so flat flow breadth spends the same allowance.
+
+The allowance of 2,048 preserves the existing 1,024-quoted-opener acceptance case and leaves
+1,086 characters above ci.yml's current count of 962. This is a conservative subset decision.
+Long scripts, quoted data and comments can be refused even when their punctuation is not YAML
+structure. No quote lexer is added. The unchanged quadratic algorithms can still be expensive
+inside the allowance. Measurements describe tested families, not a universal time or memory bound.
+
+The issue's literal formula with 32,766 dashes occupies 65,537 bytes and already hits tooLarge.
+The regression uses 32,765 dashes, occupies 65,535 bytes and reaches the new structure refusal.
+The oversized formula remains a separate precedence control.
 
 ## Trust retained
 

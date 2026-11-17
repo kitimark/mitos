@@ -164,3 +164,57 @@ hashes, host limits, mutation outcomes and independent matrix counts. Imports an
 statement lock pass; new run logs use UTC folders. Core replay, paranoid comparison and toy
 acceptance stop at the read-only uid map. The lint suite passes 184 of 190 cases, with the same
 six namespace-dependent runner cases blocked. The sandbox stays enabled.
+
+## Source structure allowance for #420
+
+The earlier inferred claim of about two seconds at the 64 KiB cap is withdrawn. Input size alone
+does not prevent resource exhaustion. The reader now refuses more than 2,048 raw `-?:,[{`
+characters before scanning. The task's [reader design](GA-Y2-yaml-read.md#design-for-420) records
+the conservative admission policy and its alternatives. The vendor and the three reader theorem
+statements and proof bodies are unchanged.
+
+The original safe 2,048-dash fixture exits 0 on main through both verbs. Its new regression fails
+with `AssertionError: ('source-structure-budget', 0, '', 0, '')`. With the fix, both verbs exit 1
+with `refused: 2049 structural characters exceeds 2048` and no leaf output. All 146 fixed fixtures
+and 35 generated structure cases pass. The existing 700-mutation comparison keeps 250 accepts
+and 450 refusals, with zero leaf mismatches and no `PANIC` markers. All six workflow leaf counts remain equal
+to PyYAML 6.0.3.
+
+The resource experiment measures 23 input families, with five fresh native processes per family.
+Twenty-one inputs are exactly 65,536 bytes. The compact reproducer is 65,535 bytes, and ci.yml is
+23,485 bytes. Accepted leaves match PyYAML or explicit expectations for deeply nested paths.
+Every refusal has an exact expected diagnostic and no stdout. Trials alternate forward and reverse
+family order. No builds or other tests overlap the timed region. Leaf qualification warms the
+executable and input pages first. The native command is `mitos-gate workflow parse <input>`.
+
+| Family | Median seconds | Range seconds | Maximum RSS, KiB |
+| --- | ---: | ---: | ---: |
+| Refused 65,535-byte compact sequence | 0.056894 | 0.053646 to 0.062197 | 99,176 |
+| Accepted 2,047-level compact sequence at byte cap | 0.253613 | 0.244506 to 0.301336 | 168,424 |
+| Accepted 2,048-key mapping with long shared prefixes | 2.619652 | 2.487568 to 2.694645 | 105,076 |
+| Accepted quoted scalar with 21,840 one-space continuation lines | 12.155507 | 11.870566 to 13.228187 | 104,792 |
+
+The dense quoted scalar is the slowest tested family. Its median child CPU time is 12.136629
+seconds. The separate two-space quoted sample spends 0.024172 seconds in 130 syscalls under
+strace, compared with its measured median 6.4692 seconds of child CPU time. The parser is doing
+CPU work. The pinned quoted scanner rebuilds accumulated content on each folded line.
+The multiline plain family reaches 666,684 KiB RSS. These residual scalar costs remain outside
+the collection-depth fix and are tracked in [#431](https://github.com/kitimark/mitos/issues/431)
+before #359, #360 or #361 consumes pull-request YAML. The general duplicate-key optimization remains #413 m2. None of these
+measurements proves a universal maximum or a two-second bound.
+
+[Resource evidence](GA-Y2-resource-checks.json) retains all 115 samples, source and executable
+hashes, per-child RSS, exact diagnostics and trace output. The first 22-family matrix and the
+dense scalar extension name their runner revisions separately. The host has five logical CPUs,
+a four-CPU quota and a 16 GiB memory limit.
+
+Reproduce the complete matrix after building the executable:
+
+```bash
+python3 gate/workflow-resource-benchmark.py --output /tmp/workflow-resource-checks
+```
+
+Imports and the 206-entry statement lock pass. Core builds. Core replay, paranoid comparison,
+toy acceptance, cheat runs and six of 190 lint cases encounter read-only uid maps. No sandbox
+check is disabled. The CodeRabbit CLI installs but its login reports `environment_unsupported`.
+Remote PR review remains separate. The runtime cannot supply the required Opus-xhigh verdict.
