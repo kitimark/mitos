@@ -1,3 +1,4 @@
+import Mathlib.Data.List.Nodup
 import Mitos.Proofs.Resolve.Basic
 
 namespace Mitos.Proofs
@@ -32,30 +33,14 @@ theorem resolve_edges_nodup : Spec.EdgesNodup resolve := by
       (resolve fs).edges.map Edge.key =
         fs.flatMap fun r => (providers fs r).map fun p => Derivation.direct r.id p.id := by
     simp only [resolve, List.map_flatMap, List.map_map, Function.comp_def, mkEdge]
-  unfold List.Nodup at *
-  rw [hkeys, List.pairwise_flatMap]
-  refine ⟨fun r _ => ?_, ?_⟩
-  · have hsub : List.Sublist ((providers fs r).map (·.id)) (fs.map (·.id)) := by
-      unfold providers
-      exact List.filter_sublist.map _
-    have hids : ((providers fs r).map (·.id)).Nodup := List.Nodup.sublist hsub wf
-    have hpair : (providers fs r).Pairwise (fun a b => a.id ≠ b.id) :=
-      List.Pairwise.of_map (·.id) (fun _ _ h => h) hids
-    have H : ∀ a b : Located, a.id ≠ b.id →
-        Derivation.direct r.id a.id ≠ Derivation.direct r.id b.id := by
-      intro a b hne heq
-      exact hne (Derivation.direct.inj heq).2
-    exact List.Pairwise.map (fun p => Derivation.direct r.id p.id) H hpair
-  · have hids : fs.Pairwise (fun a b => a.id ≠ b.id) :=
-      List.Pairwise.of_map (·.id) (fun _ _ h => h) wf
-    have H : ∀ {a b : Located}, a.id ≠ b.id →
-        ∀ x ∈ (providers fs a).map (fun p => Derivation.direct a.id p.id),
-          ∀ y ∈ (providers fs b).map (fun p => Derivation.direct b.id p.id), x ≠ y := by
-      intro a b hne x hx y hy heq
-      obtain ⟨_, _, rfl⟩ := List.mem_map.mp hx
-      obtain ⟨_, _, rfl⟩ := List.mem_map.mp hy
-      exact hne (Derivation.direct.inj heq).1
-    exact hids.imp H
+  have inj := List.inj_on_of_nodup_map wf
+  rw [hkeys, List.nodup_flatMap]
+  refine ⟨fun r _ => ((List.Nodup.of_map _ wf).filter _).map_on fun p hp q hq h => ?_,
+    (List.pairwise_map.mp wf).imp fun hne _ ha hb => ?_⟩
+  · exact inj (mem_providers.mp hp).1 (mem_providers.mp hq).1 (Derivation.direct.inj h).2
+  · obtain ⟨_, _, rfl⟩ := List.mem_map.mp ha
+    obtain ⟨_, _, h⟩ := List.mem_map.mp hb
+    exact hne (Derivation.direct.inj h).1.symm
 
 theorem resolve_edge_list_nodup {fs : List Located} (wf : WellFormed fs) :
     (resolve fs).edges.Nodup := by
