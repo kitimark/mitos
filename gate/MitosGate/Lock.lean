@@ -335,25 +335,68 @@ def loadRoots : IO Roots := do
   let mut packages : Array (String × System.FilePath) := #[]
   if let some (dir, names) := loaded then
     for name in names do
-      let p := dir / name / ".lake" / "build" / "lib" / "lean"
-      if ← p.pathExists then
-        packages := packages.push (name, ← realPathNormalized p)
+      let pkgRoot := dir / name
+      if ← pkgRoot.isDir then
+        packages := packages.push (name, ← realPathNormalized pkgRoot)
   return { sysroot, packages }
+
+def underComponents (dir root : List String) : Bool :=
+  !dir.isEmpty && dir.isPrefixOf root
+
+def packageAtComponents (packages : List (String × List String)) (root : List String) : Option String :=
+  let best := packages.foldl (init := none) fun best (name, dir) =>
+    if underComponents dir root then
+      match best with
+      | none => some (name, dir.length)
+      | some (prev, k) => if dir.length > k then some (name, dir.length) else some (prev, k)
+    else
+      best
+  best.map (·.1)
+
+def originOfComponents (sysroot : List String) (packages : List (String × List String))
+    (mod : Name) (root : List String) (shown : String) : Except String Origin :=
+  match packageAtComponents packages root with
+  | some name =>
+    if (`Mitos.Core).isPrefixOf mod then
+      .error s!"module {mod} is Mitos.Core.* but its .olean is in package {name}"
+    else
+      .ok (.package name)
+  | none =>
+    if root == sysroot then
+      .ok .toolchain
+    else if coreBuildSuffix.isSuffixOf root && (`Mitos.Core).isPrefixOf mod then
+      .ok .spec
+    else
+      .error s!"module {mod} .olean at {shown} is not the toolchain, core's build, or a package in the root manifest"
+
+def originOf (roots : Roots) (mod : Name) (root : System.FilePath) : Except String Origin :=
+  originOfComponents roots.sysroot.components
+    (roots.packages.toList.map fun (n, dir) => (n, dir.components)) mod root.components (toString root)
+
+example : underComponents [".lake", "packages", "badname"]
+    [".lake", "packages", "badname", "core", ".lake", "build", "lib", "lean"] = true := by
+  decide
+
+example : underComponents [".lake", "packages", "bad"]
+    [".lake", "packages", "badname", "core", ".lake", "build", "lib", "lean"] = false := by
+  decide
+
+example : packageAtComponents [("badname", ["", "repo", ".lake", "packages", "badname"])]
+    ["", "repo", ".lake", "packages", "badname", "core", ".lake", "build", "lib", "lean"] = some "badname" := by
+  decide
+
+example : packageAtComponents [] ["", "repo", "core", ".lake", "build", "lib", "lean"] = none := by
+  decide
+
+example : coreBuildSuffix.isSuffixOf ["", "repo", ".lake", "build", "lib", "lean"] = false := by
+  decide
 
 def classify (roots : Roots) (mod : Name) : IO (Except String Origin) := do
   let root ← try
     pure (← oleanRoot mod)
   catch e =>
     return .error s!"module {mod}: {e}"
-  if root == roots.sysroot then
-    return .ok .toolchain
-  if let some name := roots.packages.findSome? fun (n, r) => if r == root then some n else none then
-    if (`Mitos.Core).isPrefixOf mod then
-      return .error s!"module {mod} is Mitos.Core.* but its .olean is in package {name}"
-    return .ok (.package name)
-  if coreBuildSuffix.isSuffixOf root.components && (`Mitos.Core).isPrefixOf mod then
-    return .ok .spec
-  return .error s!"module {mod} .olean at {root} is not the toolchain, core's build, or a package in the root manifest"
+  return originOf roots mod root
 
 structure Place where
   env : Environment
@@ -528,36 +571,50 @@ def lineOf (p : Place) (n : Name) (ci : ConstantInfo) (ext : Bool) : IO String :
   let typeDig ← sha256Short ty.encode
   return if ext then extLine ci n typeDig valueDig else declLine ci n typeDig valueDig
 
+def refuseReached (p : Place) (n : Name) (ci : ConstantInfo) : IO Unit := do
+  match ← constOrigin p n with
+  | .package pkg =>
+    if ci matches .axiomInfo _ then
+      throw <| IO.userError s!"reached axiom {n} in package {pkg}"
+    if ci.isUnsafe then
+      throw <| IO.userError s!"reached unsafe declaration {n} in package {pkg}"
+    if !(← packageListed p n) && ci matches .opaqueInfo _ then
+      throw <| IO.userError s!"reached unlisted opaque {n} in package {pkg}"
+  | _ => pure ()
+
+def emitExt (p : Place) (n : Name) : IO Bool := do
+  match ← constOrigin p n with
+  | .package _ =>
+    let some ci := p.env.find? n | return false
+    if ci matches .axiomInfo _ || ci.isUnsafe then return false
+    if isSkeleton ci then return true
+    return nameListed p.env n
+  | _ => return false
+
 partial def collect (p : Place) (n : Name) (seen : NameSet) : IO NameSet := do
   if seen.contains n then return seen
   let mut seen := seen.insert n
   let some ci := p.env.find? n | return seen
+  refuseReached p n ci
   if let .inductInfo val := ci then
-    if ← packageListed p n then
+    unless (← constOrigin p n) matches .toolchain do
       for ctor in val.ctors do
-        if ← packageListed p ctor then
-          seen ← collect p ctor seen
+        seen ← collect p ctor seen
   warm p (pinned ci)
   for e in pinned ci do
     for d in e.getUsedConstants do
-      let recurse ← match p.env.find? d with
-        | none => pure false
-        | some dci =>
-          if isSkeleton dci then
-            match ← constOrigin p d with
-            | .package _ => packageListed p d
-            | _ => pure false
+      let some dci := p.env.find? d | continue
+      refuseReached p d dci
+      let recurse ← match ← constOrigin p d with
+        | .toolchain => pure false
+        | .spec =>
+          if ← specListed p d then
+            pure false
+          else if isSkeleton dci then
+            pure true
           else
-            match ← constOrigin p d with
-            | .toolchain => pure false
-            | .spec => pure (!(← specListed p d) && !blockedMeaning dci)
-            | .package _ =>
-              if dci matches .axiomInfo _ || dci.isUnsafe then
-                pure false
-              else if !(← packageListed p d) && dci matches .opaqueInfo _ then
-                pure false
-              else
-                pure true
+            pure !blockedMeaning dci
+        | .package _ => pure true
       if recurse then
         seen ← collect p d seen
   return seen
@@ -600,12 +657,8 @@ def entries (env : Environment) (prefixes : List Name) : IO (Array String) := do
     seen ← collect p n seen
   let mut extNames : Array Name := #[]
   for n in seen do
-    if ← packageListed p n then
-      match env.find? n with
-      | some ci =>
-        unless ci matches .axiomInfo _ || ci.isUnsafe do
-          extNames := extNames.push n
-      | none => pure ()
+    if ← emitExt p n then
+      extNames := extNames.push n
   for n in extNames do
     if let some ci := env.find? n then
       out := out.push (← lineOf p n ci true)
