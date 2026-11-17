@@ -47,10 +47,16 @@ printf '\n[[require]]\nname = "toypkg"\ngit = "%s"\nrev = "%s"\n' "$tmp/toy" "$r
 python3 - "$tmp/wt" << 'PY'
 import pathlib, sys
 wt = pathlib.Path(sys.argv[1])
-chal = wt / "core/Challenge/Resolver.lean"
-chal.write_text(chal.read_text().replace("import Mitos.Core\n", "import Mitos.Core\nimport ToyPkg\n", 1))
-proof = wt / "core/Mitos/Proofs/Impact.lean"
-proof.write_text(proof.read_text().replace("import Mitos.Impl.Impact\n", "import Mitos.Impl.Impact\nimport ToyPkg\n", 1))
+
+def insert_import(path, needle):
+    text = path.read_text()
+    updated = text.replace(needle, needle + "import ToyPkg\n", 1)
+    if updated == text:
+        sys.exit(f"replacement missed in {path}: no {needle!r}")
+    path.write_text(updated)
+
+insert_import(wt / "core/Challenge/Resolver.lean", "import Mitos.Core.Spec\n")
+insert_import(wt / "core/Mitos/Proofs/Impact.lean", "import Mitos.Impl.Impact\n")
 PY
 lake_step() {
   if ! ( cd "$1" && shift && "$@" ) > "$tmp/lake.log" 2>&1; then
