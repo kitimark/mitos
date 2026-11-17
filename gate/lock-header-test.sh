@@ -49,6 +49,8 @@ tail -n +4 "$root/statements.lock" >"$tmp/drop/statements.lock"
 head -n 3 "$root/statements.lock" | head -c -1 >"$tmp/nonl/statements.lock"
 for d in good line1; do
   mkdir -p "$tmp/$d/core/Mitos" && cp -R "$root/core/Mitos/Core" "$tmp/$d/core/Mitos/Core"
+  cp "$root/lake-manifest.json" "$tmp/$d/lake-manifest.json"
+  cp "$root/core/lake-manifest.json" "$tmp/$d/core/lake-manifest.json"
 done
 
 expect "the repository header matches" 0 "$root"
