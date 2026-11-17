@@ -28,8 +28,15 @@ trap 'git -C "$root" worktree remove --force "$tmp/wt" >/dev/null 2>&1 || true; 
 rm -rf .lake/mutants
 "$exe" "$case" > "$tmp/plain.out" 2> "$tmp/plain.err"
 test -s "$tmp/plain.out"
-if [ -s "$tmp/plain.err" ]; then
-  fail "no-packages run wrote to stderr: $(cat "$tmp/plain.err")"
+if jq -e '.packages | length > 0' core/lake-manifest.json >/dev/null; then
+  grep -qxE 'packages: (symlink|hardlink|copy)' "$tmp/plain.err" \
+    || fail "baseline stderr: $(cat "$tmp/plain.err")"
+  test "$(grep -cvE '^$' "$tmp/plain.err")" = 1 \
+    || fail "baseline stderr: $(cat "$tmp/plain.err")"
+else
+  if [ -s "$tmp/plain.err" ]; then
+    fail "no-packages run wrote to stderr: $(cat "$tmp/plain.err")"
+  fi
 fi
 plain=$(result_of "$tmp/plain.out")
 test -n "$plain"
@@ -64,9 +71,15 @@ lake_step() {
     fail "$* in $1"
   fi
 }
-lake_step "$tmp/wt/core" lake update
-lake_step "$tmp/wt" lake update
-lake_step "$tmp/wt/eval/mutants" lake update
+lake_update() {
+  MATHLIB_NO_CACHE_ON_UPDATE=1 lake_step "$@"
+  if grep -q 'cache get' "$tmp/lake.log"; then
+    fail "$* ran the Mathlib cache hook"
+  fi
+}
+lake_update "$tmp/wt/core" lake update
+lake_update "$tmp/wt" lake update
+lake_update "$tmp/wt/eval/mutants" lake update
 lake_step "$tmp/wt/core" lake build
 test -d "$tmp/wt/core/.lake/packages/toypkg"
 before=$(pkg_hash "$tmp/wt/core/.lake/packages")
