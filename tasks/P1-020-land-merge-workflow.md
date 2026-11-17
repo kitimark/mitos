@@ -1388,10 +1388,13 @@ Each run is reported on #179, as Done when asks.
 
 ### Shadow evidence
 
-Section 6's bullet below sets the bar. The window: records whose `tool` is P1-019's merge commit
-or later, fetched once with the head's `gate/shadow-fetch.sh kitimark/mitos <the date of that merge>
-<dir>` (it also writes `repo.json` and each merge's `reviews`, which `main`'s scorer ignores) and
-scored twice, with `mitos-gate shadow` built at `origin/main` and at the build PR's head. Every
+The [approved A3 shadow-entry requirement](#approved-a3-shadow-entry-requirement) below sets the
+acceptance bar. The following fixed P1-019 window remains mandatory historical evidence; its
+failures are preserved separately from prospective validation. The historical window: records
+whose `tool` is P1-019's merge commit or later, fetched once with the head's
+`gate/shadow-fetch.sh kitimark/mitos <the date of that merge> <dir>` (it also writes `repo.json`
+and each merge's `reviews`, which `main`'s scorer ignores) and scored twice, with
+`mitos-gate shadow` built at `origin/main` and at the build PR's head. Every
 `agrees` of the head's scorer is one of `main`'s (`ASummaryOnlyTakesAgreementAway`, same records),
 and the PR body lists each `agrees` that became `disagrees` with the owner summary behind it. A
 scorer built after P1-018 marks every record made before it as drifted wherever P1-018 changed the
@@ -1470,8 +1473,44 @@ Section 5, the cases this row adds:
 Section 6, the bullets about this row:
 
 - **It ships before step 5.** The old loop keeps every branch on `main`'s tip, and `carry` covers its pushes. So an approved PR merges when its `gate` turns green there, and a race ends in a 405 or a 409.
-- **Shadow evidence for A3.** In the scorer's report on #191, every kept PR that the owner merged in the window reads `agrees`. With only owner entries in the queue, that reading is the `merge` plan at the merged head. Each `disagrees` is explained in A3's PR body.
+- **Shadow evidence for A3.** The [approved requirement below](#approved-a3-shadow-entry-requirement) replaces the former requirement that every kept historical owner merge reads `agrees`. The complete failed historical report remains mandatory; prospective validation starts only at the declared deployed truthful-provenance repair. This amendment alone authorizes no merge.
 - **Rollback, lightest first.** `/hold` on one PR. Then the owner disables the `land` workflow (`gh workflow disable land.yml`), or merges by hand a one-line PR that sets the constant off. Then revert A4 and A3. A1 and A2 stay, because nothing acts on a `merge` plan then. The owner can merge by hand at any time, as today.
+
+### Approved A3 shadow-entry requirement
+
+The owner approved this replacement acceptance contract on 18 November 2026 (Asia/Bangkok),
+[recorded on #191](https://github.com/kitimark/mitos/issues/191#issuecomment-6960918370).
+That approval supersedes the proposal's pending-approval status. It does not deploy the
+provenance repair, establish a passing prospective window, or authorize merging #336. Only the
+A3 shadow-entry requirement changes; the recorder, scorer, runtime guards and other acceptance
+requirements stay in force.
+
+> **Historical evidence remains mandatory.** Publish the complete P1-019-to-cutoff shadow report and every disagreement, using unchanged archived records and identical inputs for main and the A3 feature scorer. State main/feature provenance and any differences. The historical report is never rewritten as a pass and unknown identity never counts as coverage.
+>
+> **Prospective validation begins at a declared deployed repair.** Name the exact main commit that deploys the truthful provenance repair and its deployment/merge time. Fetch every recorder run/attempt, available record and owner merge from that beginning through the declared latest-main cutoff. Include skipped, cancelled, missing, expired, refused, drifted and unreadable inputs in the inventory; explain every exclusion required by the declared boundary. Keep every actual record unchanged.
+>
+> **The new window must contain at least one real kept owner merge whose recorded prerequisites make it ready.** Readiness is evaluated from the unchanged shadow reader and recorded inputs before comparing with what actually merged: its predicted step must be `present <head>` or `awaitPush <replay>` under the already-approved owner-word assumption, where that assumption is allowed. Its author must be known truthfully, covering independent verification and required Opus verification must hold, and ordinary protection, bot-review, conversation/label and runtime guards must pass. Unknown or ineligible observations cannot satisfy the required positive case. Do not define eligibility by whether the final reported finding is `agrees`.
+>
+> **Every such ready kept case must read `agrees`.** Compare the predicted head/replay to actual merged content. An unexpected head, other tree, missing pairing, drift or unreadable evidence for a qualifying case fails this prospective bar. This tests substantive correspondence rather than excluding a disagreement after seeing it.
+>
+> **Account for all remaining cases.** List every kept owner merge that was ineligible or held, every unknown author, incomplete read, edit-induced hold, absent/uncarryable bot review, missing label/answer/footer guard, and every other disagreement. Explain these recorded refusals individually. They stay refusals; none is called agreement or positive validation. Any newly introduced feature disagreement against main remains a blocker and must be fixed or explicitly decided by the owner.
+>
+> **No merge is authorized solely by this amendment.** R0b and the existing current-head CI, review, independence and owner-merge requirements remain in force.
+
+The readiness decision is recorded before inspecting the final finding. Retain its input
+hashes and predicted step alongside each case, so a disagreement cannot be reclassified as
+ineligible after comparison. Truthful provider/model/author identity and the policy accepting
+independent verifiers remain separate under [#327](https://github.com/kitimark/mitos/issues/327);
+GPT/Codex identity is not renamed to Claude/Opus and unknown identity remains a refusal. The
+separate bot-review provenance limitation remains [#309](https://github.com/kitimark/mitos/issues/309).
+
+| Required evidence | What must be recorded |
+|---|---|
+| Historical P1-019 window | The [complete failed report](https://github.com/kitimark/mitos/issues/191#issuecomment-6960727741), unchanged records/input hashes, exact main/feature provenance and every disagreement; its 35 kept failures remain failures. |
+| Prospective boundary and completeness | Exact deployed repair main SHA and time; declared latest-main cutoff; every run/attempt, record and owner merge, with every unavailable/refused/excluded input accounted for. |
+| Nonvacuous ready correspondence | At least one independently ready real kept owner merge; pre-finding readiness and predicted head/replay; every such case agrees with actual merged content. |
+| Remaining refusals and scorer differences | An individual explanation for every ineligible/held/unknown case and other disagreement; any new feature/main disagreement remains blocking unless the owner explicitly decides it. |
+| Separate merge prerequisites | [R0b's live-GET/local-intercept IO evidence](https://github.com/kitimark/mitos/issues/191#issuecomment-6960447923), current-head CI, reviews and independence, and owner merge control. R0b does not establish planner eligibility or authorize a merge. |
 
 ## Done when
 - [ ] `land-apply.test.sh`, `land-report.test.sh` and `app-token.test.sh` pass, and run in ci
@@ -1479,8 +1518,9 @@ Section 6, the bullets about this row:
       actionlint and shellcheck report nothing
 - [ ] `lake build` passes with each module's axiom check: the statements under `statements` proved,
       no `sorry`, no new axiom
-- [ ] R0b ran, and the shadow evidence is posted on #191, with each `disagrees` explained in the PR
-      body
+- [ ] R0b ran, and the mandatory historical report plus the complete prospective evidence required
+      by the [approved A3 shadow-entry contract](#approved-a3-shadow-entry-requirement) are posted
+      on #191; each remaining refusal or disagreement is explained in the PR body
 - [ ] after the merge: R1 to R16, reported on #179
 - [ ] all `checks` pass locally
 - [ ] run-log record written (ops/runs/)
