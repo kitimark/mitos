@@ -15,6 +15,9 @@ The owner-selected design is [issue #374](https://github.com/kitimark/mitos/issu
 Matcher names use their own module's serialized matcher entries. For equation names under a
 matcher, that metadata takes precedence over the reserved-name predicate, and only an
 `eq_<digits>` suffix is generated. Other equation names use Lean's reserved-name predicate.
+An existing equation declaration must also reference its owner in its type. A hand-written
+theorem declared before that owner cannot reference it, even when the declarations come from
+separate modules. An absent reserved name remains a generated-name probe.
 Only a nonempty decimal suffix follows `proof_`.
 `generatedSuffixes` stays unchanged. Imports keep extensions unloaded and initializers disabled.
 
@@ -24,10 +27,15 @@ names before that predicate runs.
 
 `LockFixture` supplies hand-written names and forces Lean to emit equation theorems through named
 theorem references. `LockCases` imports that compiled fixture through `Lock.importRoot`, so the
-guards use the same unloaded-extension environment as the lock command. It also checks two real
-core matchers, including a nested matcher. A numeric equation name under a real matcher checks
-the matcher-prefix rule. Compiled hand-written `match_1.eq_of_id`, `match_1.eq_def`, and
-`match_1.eq_unfold` stay listed. The `proof_2` fixture checks the deliberately lexical rule.
+guards use the same unloaded-extension environment as the lock command. It imports only `Init`
+and generates its own compound-pattern and nested matchers, so the standalone lint target needs
+no Core import or Core build output. Existing generated equation theorems and absent reserved
+equation names have separate guards. Compiled hand-written `match_1.eq_of_id`, `match_1.eq_def`,
+and `match_1.eq_unfold` mention the matcher in their types and stay listed. Assertions preserve
+those owner references and the unloaded reserved-name results, so the new type condition cannot
+mask a broken matcher-priority rule. Ordinary `equation.eq_of_id` also mentions its owner.
+The early ordinary and matcher equation fixtures precede their owners and stay listed.
+The `proof_2` fixture checks the deliberately lexical rule.
 It does not claim that Lean generated that declaration. `proof_` and `proof_2x` stay listed.
 The existing lint-test executable builds these guards in CI.
 
@@ -47,6 +55,14 @@ A hand-written `proof_2` also remains unlisted under the intentional lexical `pr
 - Compiled hand-written theorems under a real matcher fail the old classifier and pass the
   final classifier for `eq_of_id`, `eq_def`, and `eq_unfold`. The last two remain reserved names
   in the unloaded environment, so the regression also checks matcher metadata takes precedence.
+- Round 3 reproduces both early-name gaps with actual compiled declarations in the same file
+  and in sibling modules. The owner module does not import the sibling theorem module. The
+  previous classifier omits all four theorems and accepts their changed statements. The fixed
+  classifier lists all four and rejects the same statement mutations. The committed early-name
+  guards fail the previous classifier, and all nine targeted classifier mutants are killed.
+  Across the existing 611 core constants, classification is unchanged from round 2.
+- The forbidden fixture import reproduces one import violation. The self-contained fixture
+  passes `imports`, all 59 import shell tests, and its guards with Core omitted from `LEAN_PATH`.
 - `lake exe mitos-lint-test` passes all 190 existing runtime cases. The cheat corpus passes
   all 50 cases in both full and comparator modes. The honest toy passes all seven gates with
   paranoid kernels.
