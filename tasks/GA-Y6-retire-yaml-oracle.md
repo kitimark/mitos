@@ -23,7 +23,7 @@ modules: ci.yml retains checks, cheat-shard, prove, and gate. The toolchain inst
 types: prove needs exactly checks and cheat-shard. CHECKS and SHARDS receive those jobs' actual results and are passed to cheats aggregate.
 statements: The independent PyYAML check remains in checks. Failed, cancelled, or skipped required upstream jobs cannot satisfy the aggregate. The retired toolchain and oracle job have no live callers.
 reuse: Existing cheat-shard.test.sh job and timeout assertions, cheats aggregate failure-status fixtures, workflow-fixtures/shape-d.yml, and cases.json old-script-escape.
-fixtures: Nine planted workflow regressions remove either dependency, add the retired dependency, replace either result with success, remove either aggregate argument, remove always(), or add an unpinned job.
+fixtures: Ten planted workflow regressions remove either dependency, add the retired dependency, replace either result with success, remove either aggregate argument, remove always(), or add an unpinned job with or without a timeout.
 cut_line: Retire the duplicate parser and pin prove's coupling. Change no parser, independent comparison, or core statement.
 deferrals: The repository-required Opus verdict and owner review of the removed check remain merge prerequisites.
 owner_decisions: The owner reviews and merges this trust-infrastructure change. No spec approval is needed.
@@ -32,9 +32,13 @@ owner_decisions: The owner reviews and merges this trust-infrastructure change. 
 
 The affected CI tests pass, including cache-key, cache-logs, cancel-superseded, ci-trust, and land-protection.
 The cache-key check still finds five cache blocks, eleven tracked pin files, and six cache paths.
-All nine planted workflow regressions fail cheat-shard.test.sh with exit 1.
+All ten primary workflow regressions fail cheat-shard.test.sh with exit 1.
+Five additional added-job variants also fail: underscore names, uppercase names, quoted keys, inline mappings, and trailing comments.
 A stub elan records only `toolchain install leanprover/lean4:v4.35.0` from the real installer.
 Shell syntax checks, actionlint 1.7.12, and shellcheck 0.11.0 at warning severity pass.
+A supplemental verifier caught an added job without a timeout that the old timeout scan missed.
+An independent job-key comparison now rejects that case. The verifier also caught the hidden oracle .gitignore, which is deleted with the package.
+
 Shellcheck's informational SC2016 notices describe intentional literal workflow expressions already used by this test.
 
 The preserved Shape D fixtures assert that `"${{ \\x6eeeds.decide.outputs.pr }}"` decodes to `needs`.
