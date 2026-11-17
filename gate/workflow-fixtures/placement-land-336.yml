@@ -1,0 +1,160 @@
+name: land
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  LAND_MERGE: 'on'
+
+jobs:
+  decide:
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.event == 'pull_request' &&
+          github.event.workflow_run.head_repository.full_name == github.repository) ||
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+          github.event.comment.user.login == github.repository_owner))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: land-decide
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      checks: read
+      actions: read
+    env:
+      LAND_DASHBOARD: 43
+    outputs:
+      pr: ${{ steps.decide.outputs.pr }}
+      head: ${{ steps.decide.outputs.head }}
+      approval: ${{ steps.decide.outputs.approval }}
+      digest: ${{ steps.decide.outputs.digest }}
+      requires_spec: ${{ steps.decide.outputs.requires_spec }}
+      answers: ${{ steps.decide.outputs.answers }}
+    steps:
+      - id: t0
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.elan
+            .lake
+            core/.lake
+          key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+      - run: .github/scripts/install-elan.sh
+      - run: .github/scripts/install-toolchains.sh
+      - run: lake build mitos-gate
+      - name: Decide
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAND_T0: ${{ steps.t0.outputs.at }}
+          LAND_EVENT: ${{ github.event_name }}
+          LAND_EVENT_HEAD: ${{ github.event.workflow_run.head_sha }}
+          LAND_EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          LAND_EVENT_PR: ${{ github.event.issue.number }}
+          LAND_EVENT_COMMENT: ${{ github.event.comment.id }}
+        run: .github/scripts/land-decide.sh "$GITHUB_REPOSITORY" "$LAND_DASHBOARD" "$RUNNER_TEMP/land"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: land-record-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/land/record.json
+          retention-days: 90
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: land-reads-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/land/reads
+          retention-days: 7
+
+  apply:
+    needs: decide
+    if: >-
+      github.ref == 'refs/heads/main' && github.run_attempt == '1' &&
+      needs.decide.outputs.pr != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # The app's key is a secret of `trusted`, whose deployment branch rule admits only main (see
+    # update-prs.yml). No toolchain and no pull request's code runs here: the checkout is this
+    # workflow's own commit, and only its scripts.
+    environment: trusted
+    concurrency:
+      group: land-apply
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      outcome: ${{ steps.apply.outputs.outcome }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Mint an app token that can only merge
+        id: app
+        if: env.LAND_MERGE == 'on'
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547
+        with:
+          app-id: ${{ vars.PR_UPDATER_APP_ID }}
+          private-key: ${{ secrets.PR_UPDATER_APP_KEY }}
+          permission-contents: write
+          permission-workflows: write
+      - name: Read the pull request and its conversation again, then merge pinned to the head
+        id: apply
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAND_MERGE_TOKEN: ${{ steps.app.outputs.token }}
+          LAND_PR: ${{ needs.decide.outputs.pr }}
+          LAND_HEAD: ${{ needs.decide.outputs.head }}
+          LAND_APPROVAL: ${{ needs.decide.outputs.approval }}
+          LAND_DIGEST: ${{ needs.decide.outputs.digest }}
+          LAND_REQUIRES_SPEC: ${{ needs.decide.outputs.requires_spec }}
+        run: .github/scripts/land-apply.sh "$GITHUB_REPOSITORY" "$RUNNER_TEMP/land-apply"
+
+  report:
+    needs: [decide, apply]
+    if: >-
+      always() && github.ref == 'refs/heads/main' && needs.decide.result == 'success' &&
+      ((needs.decide.outputs.answers != '' && needs.decide.outputs.answers != '[]') ||
+        needs.decide.outputs.pr != '')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Answer each owner word whose answer changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAND_ANSWERS: ${{ needs.decide.outputs.answers }}
+          LAND_PR: ${{ needs.decide.outputs.pr }}
+          LAND_HEAD: ${{ needs.decide.outputs.head }}
+          LAND_APPLY_RESULT: ${{ needs.apply.result }}
+          LAND_APPLIED: ${{ needs.apply.outputs.outcome }}
+        run: .github/scripts/land-report.sh "$GITHUB_REPOSITORY"

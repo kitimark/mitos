@@ -17,6 +17,7 @@ open MitosGate
 def usage : String := s!"usage:
   mitos-gate workflow parse <file>              refuse YAML outside the workflow subset
   mitos-gate workflow leaves <file>             print decoded workflow leaves as JSON lines
+  mitos-gate workflow placement <file>          enforce needs placement and expression-free code
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.Core, Mitos.Impl;
                                                  core/Mitos/Proofs may also import Mitos.Proofs and Mathlib;
