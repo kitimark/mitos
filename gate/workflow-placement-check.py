@@ -32,6 +32,7 @@ bases = [ROOT / ".github/workflows/land.yml",
          ROOT / "gate/workflow-fixtures/placement-land-336.yml"]
 needs = "${{ needs.d.outputs.p }}"
 prefix = "jobs:\n  a:\n    steps:\n"
+github_script = "      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b\n        with:\n"
 cases = [
     ("shape-a", prefix + "      # x: |\n      - run: echo " + needs + "\n", "rule N"),
     ("shape-b", prefix + "      - name: |\n          step\n        run: echo " + needs + "\n", "rule N"),
@@ -43,6 +44,8 @@ cases = [
     ("from-json", prefix + "      - run: fromJSON(toJSON(needs)).decide.outputs.answers\n", "rule N"),
     ("upper-needs", prefix + "      - run: NEEDS.x\n", "rule N"),
     ("with-script", prefix + "      - with:\n          script: " + needs + "\n", "rule N"),
+    ("uppercase-script", prefix + github_script + "          SCRIPT: ${{ github.event.comment.body }}\n", "rule X"),
+    ("mixedcase-script", "env:\n  X: " + needs + "\n" + prefix + github_script + "          sCrIpT: ${{ env.X }}\n", "rule X"),
     ("hash-content", prefix + "      - run: echo a#" + needs + "\n", "rule N"),
     ("shape-e", "env:\n  X: " + needs + "\n" + prefix + "      - run: echo ${{ env.X }}\n", "rule X"),
     ("script-indirection", "env:\n  X: " + needs + "\n" + prefix + "      - with:\n          script: ${{ env.X }}\n", "rule X"),
@@ -58,7 +61,8 @@ for char in ["\r", "\x85", "\u2028", "\u2029"]:
     cases.append(("shape-c", prefix + "      - run: echo ok" + char + "needs.x\n",
                   "outside LF and printable ASCII"))
 
-lines = {"shape-a": 5, "shape-b": 6, "with-script": 5, "script-indirection": 7,
+lines = {"shape-a": 5, "shape-b": 6, "with-script": 5, "uppercase-script": 6,
+         "mixedcase-script": 8, "script-indirection": 7,
          "shape-e": 6, "job-name": 3, "nested-env": 3}
 
 accepted = [
