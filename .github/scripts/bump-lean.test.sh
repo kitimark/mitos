@@ -176,10 +176,10 @@ prepare() {
 assert_toolchains() {
   local fx=$1 ws
   for ws in lean-toolchain examples/acme/lean-toolchain eval/score/lean-toolchain \
-      eval/mutants/lean-toolchain eval/diff/lean-toolchain eval/extra/lean-toolchain; do
+      eval/mutants/lean-toolchain eval/diff/lean-toolchain eval/extra/lean-toolchain \
+      eval/yaml-oracle/lean-toolchain; do
     [ "$(cat "$fx/$ws")" = "$candidate" ] || { printf 'toolchain not rewritten: %s\n' "$ws" >&2; return 1; }
   done
-  [ "$(cat "$fx/eval/yaml-oracle/lean-toolchain")" = 'leanprover/lean4:v4.32.0' ]
   [ "$(cat "$fx/.lake/packages/decoy/lean-toolchain")" = 'leanprover/lean4:v4.0.0' ]
 }
 
@@ -301,7 +301,7 @@ case_phase1_never_calls_lake() {
   assert_toolchains "$fx"
 }
 
-case_yaml_oracle_stays() {
+case_predicate_selects_yaml_oracle() {
   local out code
   prepare yes "$rev_old" leave 1
   set +e
@@ -309,7 +309,7 @@ case_yaml_oracle_stays() {
   code=$?
   set -e
   [ "$code" -eq 0 ] || { printf '%s\n' "$out" >&2; return 1; }
-  [ "$(cat "$fx/eval/yaml-oracle/lean-toolchain")" = 'leanprover/lean4:v4.32.0' ]
+  [ "$(cat "$fx/eval/yaml-oracle/lean-toolchain")" = "$candidate" ]
   [ "$(cat "$fx/.lake/packages/decoy/lean-toolchain")" = 'leanprover/lean4:v4.0.0' ]
   [ "$(cat "$fx/eval/extra/lean-toolchain")" = "$candidate" ]
 }
@@ -388,7 +388,7 @@ run_case "tag missing" case_tag_missing
 run_case "no mathlib require" case_no_mathlib
 run_case "manifest disagrees" case_manifest_disagrees
 run_case "phase 1 never calls lake" case_phase1_never_calls_lake
-run_case "yaml-oracle toolchain stays" case_yaml_oracle_stays
+run_case "predicate selects yaml-oracle" case_predicate_selects_yaml_oracle
 run_case "package toolchain mismatch" case_package_mismatch
 printf '%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
