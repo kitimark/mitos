@@ -241,10 +241,10 @@ check_manifests() {
 git_require_names() {
   { toml_body; cat <<'AWK'
 function flush() {
-  if (in_req && git != "" && name != "") print name
+  if (in_req && path == "" && name != "") print name
   in_req = 0
-  git = ""
   name = ""
+  path = ""
 }
 /^\[\[/ {
   flush()
@@ -258,7 +258,7 @@ in_req {
     sub(/^name[[:space:]]*=[[:space:]]*"/, "", name)
     sub(/".*$/, "", name)
   }
-  if (text ~ /^git[[:space:]]*=/) git = 1
+  if (text ~ /^path[[:space:]]*=/) path = 1
 }
 END { flush() }
 AWK
