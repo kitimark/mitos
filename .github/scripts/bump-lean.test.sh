@@ -56,7 +56,7 @@ name = "other"
 path = "../other"
 rev = "keep-me"
 
-[[require]]
+[[require]] # mathlib
 git = "https://github.com/leanprover-community/mathlib4"
 rev = "v4.35.0" # pin
 name = "mathlib" # proof dependency
@@ -212,6 +212,7 @@ case_tag_exists() {
   [ "$code" -eq 0 ] || { printf '%s\n' "$out" >&2; return 1; }
   assert_toolchains "$fx"
   grep -q 'rev = "v4.36.0-rc2"' "$fx/core/lakefile.toml"
+  grep -qxF '[[require]] # mathlib' "$fx/core/lakefile.toml"
   grep -q 'name = "mathlib" # proof dependency' "$fx/core/lakefile.toml"
   grep -q 'rev = "keep-me"' "$fx/core/lakefile.toml"
   grep -q 'rev = "leave-me"' "$fx/core/lakefile.toml"
