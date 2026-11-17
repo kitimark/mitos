@@ -1,0 +1,1 @@
+{"task":"ML-B2","role":"builder","model":"Grok 4.7","attempt":5,"iterations":1,"wall_min":8,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"A reached unlisted spec opaque, axiom, or unsafe declaration is refused, including one reached only through a constructor of an unlisted spec inductive. statements.lock on main is unchanged."}

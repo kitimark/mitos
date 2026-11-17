@@ -573,6 +573,9 @@ def lineOf (p : Place) (n : Name) (ci : ConstantInfo) (ext : Bool) : IO String :
 
 def refuseReached (p : Place) (n : Name) (ci : ConstantInfo) : IO Unit := do
   match ← constOrigin p n with
+  | .spec =>
+    if !(← specListed p n) && blockedMeaning ci then
+      throw <| IO.userError s!"unlisted declaration {n} is opaque, an axiom, or unsafe"
   | .package pkg =>
     if ci matches .axiomInfo _ then
       throw <| IO.userError s!"reached axiom {n} in package {pkg}"
@@ -580,7 +583,7 @@ def refuseReached (p : Place) (n : Name) (ci : ConstantInfo) : IO Unit := do
       throw <| IO.userError s!"reached unsafe declaration {n} in package {pkg}"
     if !(← packageListed p n) && ci matches .opaqueInfo _ then
       throw <| IO.userError s!"reached unlisted opaque {n} in package {pkg}"
-  | _ => pure ()
+  | .toolchain => pure ()
 
 def emitExt (p : Place) (n : Name) : IO Bool := do
   match ← constOrigin p n with

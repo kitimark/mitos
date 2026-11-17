@@ -477,6 +477,21 @@ if ! sync_build; then bad "bumping a package constant behind an unlisted spec co
   expect_stale "bumping a package constant behind an unlisted spec constructor changes the lock" "$tmp/kw.lock"
 fi
 
+write_spec '' $'private opaque hiddenSpec : Nat := 0\nprivate inductive HiddenW : Type\n| mk : hiddenSpec = 0 → HiddenW\ndef usedHiddenW : Prop := Nonempty HiddenW\n'
+if ! (cd "$ws/core" && lake build >"$tmp/lake.out" 2>&1); then
+  cat "$tmp/lake.out" >"$out"
+  bad "a reached unlisted spec opaque is refused"
+else
+  rm -f "$sentinel"
+  run_at "$ws" lock --check
+  if [ "$lock_ec" = 1 ] && grep -q 'opaque' "$out" && grep -q 'hiddenSpec' "$out" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "a reached unlisted spec opaque is refused"
+  else
+    bad "a reached unlisted spec opaque is refused"
+  fi
+fi
+
 write_spec $'import ToyExt.Axiom\n' $'noncomputable def usedBoom : Nat := ToyExt.Axiom.boom\n'
 if ! (cd "$ws/core" && lake build >"$tmp/lake.out" 2>&1); then
   cat "$tmp/lake.out" >"$out"
