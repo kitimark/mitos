@@ -168,6 +168,9 @@ jobs:
       - name: Cached logs cannot reach this run
         run: .github/scripts/cache-logs.test.sh
 
+      - name: The Lean cache key covers every manifest and toolchain
+        run: .github/scripts/cache-key.test.sh
+
       - name: The cheat corpus is partitioned across the shard matrix
         run: .github/scripts/cheat-shard.test.sh
 
@@ -186,8 +189,11 @@ jobs:
             ~/.elan
             .lake
             core/.lake
-          key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+            examples/acme/.lake
+            eval/score/.lake
+            eval/mutants/.lake
+          key: lean-${{ hashFiles('core/lake-manifest.json', 'eval/diff/lake-manifest.json', 'eval/diff/lean-toolchain', 'eval/mutants/lake-manifest.json', 'eval/mutants/lean-toolchain', 'eval/score/lake-manifest.json', 'eval/score/lean-toolchain', 'examples/acme/lake-manifest.json', 'examples/acme/lean-toolchain', 'lake-manifest.json', 'lean-toolchain') }}-${{ github.sha }}
+          restore-keys: lean-${{ hashFiles('core/lake-manifest.json', 'eval/diff/lake-manifest.json', 'eval/diff/lean-toolchain', 'eval/mutants/lake-manifest.json', 'eval/mutants/lean-toolchain', 'eval/score/lake-manifest.json', 'eval/score/lean-toolchain', 'examples/acme/lake-manifest.json', 'examples/acme/lean-toolchain', 'lake-manifest.json', 'lean-toolchain') }}-
 
       - uses: actions/cache@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -196,8 +202,11 @@ jobs:
             ~/.elan
             .lake
             core/.lake
-          key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+            examples/acme/.lake
+            eval/score/.lake
+            eval/mutants/.lake
+          key: lean-${{ hashFiles('core/lake-manifest.json', 'eval/diff/lake-manifest.json', 'eval/diff/lean-toolchain', 'eval/mutants/lake-manifest.json', 'eval/mutants/lean-toolchain', 'eval/score/lake-manifest.json', 'eval/score/lean-toolchain', 'examples/acme/lake-manifest.json', 'examples/acme/lean-toolchain', 'lake-manifest.json', 'lean-toolchain') }}-${{ github.sha }}
+          restore-keys: lean-${{ hashFiles('core/lake-manifest.json', 'eval/diff/lake-manifest.json', 'eval/diff/lean-toolchain', 'eval/mutants/lake-manifest.json', 'eval/mutants/lean-toolchain', 'eval/score/lake-manifest.json', 'eval/score/lean-toolchain', 'examples/acme/lake-manifest.json', 'examples/acme/lean-toolchain', 'lake-manifest.json', 'lean-toolchain') }}-
 
       # #168's setup action owns this rm. A restored .lake can hold another run's logs.
       - name: Drop restored cheat and mutant logs
@@ -354,8 +363,11 @@ jobs:
             ~/.elan
             .lake
             core/.lake
-          key: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+            examples/acme/.lake
+            eval/score/.lake
+            eval/mutants/.lake
+          key: lean-${{ hashFiles('core/lake-manifest.json', 'eval/diff/lake-manifest.json', 'eval/diff/lean-toolchain', 'eval/mutants/lake-manifest.json', 'eval/mutants/lean-toolchain', 'eval/score/lake-manifest.json', 'eval/score/lean-toolchain', 'examples/acme/lake-manifest.json', 'examples/acme/lean-toolchain', 'lake-manifest.json', 'lean-toolchain') }}-${{ github.sha }}
+          restore-keys: lean-${{ hashFiles('core/lake-manifest.json', 'eval/diff/lake-manifest.json', 'eval/diff/lean-toolchain', 'eval/mutants/lake-manifest.json', 'eval/mutants/lean-toolchain', 'eval/score/lake-manifest.json', 'eval/score/lean-toolchain', 'examples/acme/lake-manifest.json', 'examples/acme/lean-toolchain', 'lake-manifest.json', 'lean-toolchain') }}-
 
       - name: Drop restored cheat and mutant logs
         if: always()
