@@ -20,7 +20,9 @@ def usage : String := s!"usage:
   mitos-gate lint <file.lean>...                 gate 1 on plugin sources
   mitos-gate imports                             import rule for core/ (Init, Std, Mitos.Core, Mitos.Impl;
                                                  core/Mitos/Proofs may also import Mitos.Proofs and Mathlib;
-                                                 spec imports only Init, Std, Mitos.Core)
+                                                 a core/Mitos/Core file outside the plugin-surface closure
+                                                 may also import Mathlib; a file in that closure imports
+                                                 only Init, Std, Mitos.Core)
                                                  and for gate/ (Init, Std, Lean, MitosGate)
                                                  and for gate/MitosGate/Base.lean and gate/MitosGate/Base/
                                                  (Init, Std, Lean.Data.Json, MitosGate.Base)
