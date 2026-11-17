@@ -145,7 +145,7 @@ def lockReach (core : Lock.ImportedRoot) : IO UInt32 := do
 
 def lockStatements (check : Bool) : IO UInt32 := do
   let man ← Lock.manifestStatus
-  if man != 0 then return man
+  if man != 0 && !check then return man
   try
     let headerCode ← if check then lockHeaderStatus else pure 0
     let core ← Lock.importRoot `Mitos.Core.Spec
@@ -153,7 +153,7 @@ def lockStatements (check : Bool) : IO UInt32 := do
     let code ← writeOrCheck "statements.lock" (Lock.render es) check s!"{es.size} declarations"
       "the meaning of the trusted core changed"
     let reachCode ← lockReach core
-    return if headerCode != 0 || code != 0 || reachCode != 0 then 1 else 0
+    return if man != 0 || headerCode != 0 || code != 0 || reachCode != 0 then 1 else 0
   catch e =>
     IO.println (ciLine s!"{e}")
     return 1
