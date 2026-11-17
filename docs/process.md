@@ -113,6 +113,7 @@ when the plan lands (`.claude/skills/kitimark-mode/SKILL.md`, Plan-time designs)
 | Orchestrator | agent, the session the owner talks to | task choice, agent briefs, merges of verified PRs, catch-ups on GitHub (§4) | any repository file, which it hands to other agents |
 | Planner | agent | task files; draft statements, submitted as a spec PR | proofs, gate, eval |
 | Builder | agent (a few in parallel) | code and proofs inside the task's `touches` | statements, lock files, `gate/`, `eval/`, models |
+| Implementor | outside agent (Codex, Cursor or another) building a task's issue | code and proofs inside the task's `touches`, its own PR's branch and body, replies on its PR's review threads, the task file and the run log | the Owner dashboard (#43), its verdict cell included; a verdict on its own PR; the owner's assignment on any item; labels |
 | Red team | agent | new cases in `eval/cheats/`, counterexamples | anything merged into trusted code |
 | Verifier | agent that did not write the PR, on another model, plus an `opus` one on a trust-critical PR | a pass or fail verdict on one PR head | the code it checks |
 | Evaluator | CI and nightly job | scorecards, logs | — |
@@ -535,6 +536,12 @@ The owner catches up on GitHub, not in a chat session:
   or a bot makes gets no ping. Never label a PR to show the owner its state. A label is not a
   status flag: any label change still starts `gate`, which reads the labels live and does not
   rerun the corpus.
+- **Only the orchestrator writes the dashboard and assigns the owner.** An implementor (§2)
+  reports its head and evidence in its PR body or a PR comment, and the orchestrator assigns the
+  owner once the PR waits on them, after its verdict (#441). A check an implementor runs with its
+  own model is an input to a verdict, not a verdict. `pr-state.sh` reads the dashboard's verdict
+  cell, so an implementor's own PASS there printed a merge command before any verifier had
+  passed that head (#327).
 - **`/no-comments` before a hand-over.** A PR whose diff adds comments goes to the owner only
   after the orchestrator's `/no-comments` pass over its head and the push of what the pass
   accepts. A verifier then gives a verdict at that cleaned head. A wording-only change still gets
