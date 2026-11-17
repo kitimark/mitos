@@ -27,7 +27,8 @@ def allowedAt : List Yaml.Seg → Bool
 
 def codeAt : List Yaml.Seg → Bool
   | [.key "jobs", .key _, .key "steps", .idx _, .key "run"] => true
-  | [.key "jobs", .key _, .key "steps", .idx _, .key "with", .key "script"] => true
+  | [.key "jobs", .key _, .key "steps", .idx _, .key "with", .key input] =>
+    input.toList.map lowerAscii == "script".toList
   | _ => false
 
 def leafPlacementOk (leaf : Yaml.Leaf) : Bool :=
@@ -129,6 +130,13 @@ example : allowedAt [.key "jobs", .key "a", .key "if"] = true := by decide +kern
 example : allowedAt [.key "jobs", .key "a", .key "env", .key "X"] = true := by decide +kernel
 example : allowedAt [.key "jobs", .key "a", .key "steps", .idx 0, .key "env", .key "X"] = true := by decide +kernel
 example : leafPlacementOk ⟨scriptPath, .text "${{ steps.a.outputs.x }}"⟩ = false := by decide +kernel
+example : leafPlacementOk ⟨[.key "jobs", .key "a", .key "steps", .idx 0, .key "with", .key "SCRIPT"],
+    .text "${{ github.event.comment.body }}"⟩ = false := by decide +kernel
+example : leafPlacementOk ⟨[.key "jobs", .key "a", .key "steps", .idx 0, .key "with", .key "sCrIpT"],
+    .text "${{ env.X }}"⟩ = false := by decide +kernel
+example : codeAt [.key "jobs", .key "a", .key "steps", .idx 0, .key "with", .key "value"] = false := by decide +kernel
+example : codeAt [.key "JOBS", .key "a", .key "steps", .idx 0, .key "run"] = false := by decide +kernel
+example : codeAt [.key "jobs", .key "a", .key "steps", .idx 0, .key "RUN"] = false := by decide +kernel
 example : leafPlacementOk ⟨[.key "env", .key "X"], .text "needs"⟩ = true := by decide +kernel
 
 private def indirectionFixture : Yaml.Doc :=

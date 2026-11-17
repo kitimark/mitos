@@ -24,7 +24,8 @@ exact; nested maps under an environment variable and step `if` values are outsid
 Structural keywords use their lowercase workflow spelling. Job and variable names are wildcards.
 
 Rule X refuses every `${{` token in `jobs.*.steps[i].run` and
-`jobs.*.steps[i].with.script`, including expressions that name no `needs`. Supplying a value
+`jobs.*.steps[i].with.script`, including expressions that name no `needs`. The final action
+input name is compared with ASCII case folding, so `SCRIPT` and `sCrIpT` also match. Supplying a value
 through `env.X`, a step output or `$GITHUB_ENV` does not bypass the code-site rule. Ordinary
 shell `$X` expansion remains accepted.
 
@@ -79,7 +80,7 @@ each allowed site, dependency sequences, ordinary shell expansion and nonmatchin
 
 The native build passes. `gate/workflow-test.sh` preserves 147 reader fixtures, 35 structure
 cases, 37 line-work cases and six PyYAML-equal live workflows. Placement passes both land
-workflows, 48 mutations with exact line/reason assertions, ten accepted controls, the escaped
+workflows, 52 mutations with exact line/reason assertions, ten accepted controls, the escaped
 value/comment control, missing-file handling and usage errors. Both new theorems depend only
 on `propext`, `Classical.choice` and `Quot.sound`.
 
@@ -96,13 +97,12 @@ measures source elaboration, including examples and audits, not a clean native r
 
 | Scope | Trial seconds | Range | Spread |
 | --- | --- | --- | --- |
-| Baseline YAML + CLI | 3.708281, 3.494014, 3.331532 | 3.331532–3.708281 | 0.376748 |
-| Head YAML + Placement + CLI | 5.769550, 5.870484, 5.752133 | 5.752133–5.870484 | 0.118350 |
+| Baseline YAML + CLI | 4.754146, 4.053214, 3.792342 | 3.792342–4.754146 | 0.961804 |
+| Head YAML + Placement + CLI | 8.455691, 6.956694, 6.888903 | 6.888903–8.455691 | 1.566788 |
 
-The median added elaboration is 2.275536 seconds. Individual baseline `(YAML, CLI)` samples
-are `(2.884459, 0.823821)`, `(2.681714, 0.812300)`, `(2.522541, 0.808992)`; head
-`(YAML, Placement, CLI)` samples are `(2.749366, 2.147762, 0.872421)`,
-`(2.899492, 2.164932, 0.806059)`, `(2.822884, 2.057576, 0.871673)`.
+After the action-input security fix, the median added elaboration is 2.903480 seconds.
+Individual baseline `(YAML, CLI)` samples are (3.604005, 1.150141), (3.037318, 1.015896), (2.782168, 1.010174);
+head `(YAML, Placement, CLI)` samples are (3.153926, 3.417399, 1.884367), (3.493551, 2.500096, 0.963047), (3.050032, 2.867362, 0.971508).
 
 The requested no-comments pass accepted the source with zero deletions, flags, suppressions
 or open constraints. CodeRabbit CLI 0.9.5 installed, but version/auth status/login all fail
@@ -111,3 +111,32 @@ XDG overrides do not change that location. A writable `~/.coderabbit`, followed 
 `coderabbit auth login --agent`, is required for that local review; remote PR review is separate.
 The independent Opus-xhigh verifier required for trust infrastructure is unavailable here;
 this task does not authorize a merge or claim that verdict.
+
+## Review fix: case-insensitive action input names
+
+CodeRabbit reproduced `with.SCRIPT: ${{ github.event.comment.body }}` passing at `f1e5af3`.
+The same native input exited 0 locally; adding the CLI regression before the fix made the
+suite fail with that exit. This differs from workflow structural keywords: the runner's
+[input handler](https://github.com/actions/runner/blob/main/src/Runner.Worker/Handlers/Handler.cs#L175)
+uppercases action input names to `INPUT_*`, and the toolkit's
+[getInput](https://github.com/actions/toolkit/blob/main/packages/core/src/core.ts#L151) does the same.
+
+`codeAt` now folds only the final action input name. Lowercase `script` remains covered,
+ordinary inputs remain outside the code set, and structural `jobs`, `steps`, `with` and `run`
+keywords retain their exact spelling. Kernel controls pin all of those distinctions. Two
+native cases on each land workflow use the verified github-script v7 commit
+`f28e40c7f34bde8b3046d885e986cb6290c5673b`: uppercase `SCRIPT` with the comment body, and mixed
+case with `${{ env.X }}` after an allowed environment value refers to `needs`. Neither script
+value mentions `needs`, so these controls require rule X rather than rule N. The direct
+reproducer now exits 1 with rule X at the actual sixth source line.
+
+The related environment-only `INPUT_SCRIPT` route was also inspected. For github-script,
+ActionManifestManager gives the declared script input an empty default, ActionRunner fills
+absent inputs from those defaults, and the handler overwrites `INPUT_SCRIPT` with that input.
+No additional environment-only github-script bypass was established. This is an inspection
+of that action path, not a claim about arbitrary third-party action behavior.
+
+The security-fix delta rebuild and full workflow suite pass, as do imports and the unchanged
+statement lock. The requested no-comments delta pass reports zero comments, suppressions,
+deletions, flags or open constraints. The security review thread is answered with the fixing
+commit and left open for the owner under the repository's review policy.
