@@ -218,3 +218,10 @@ Imports and the 206-entry statement lock pass. Core builds. Core replay, paranoi
 toy acceptance, cheat runs and six of 190 lint cases encounter read-only uid maps. No sandbox
 check is disabled. The CodeRabbit CLI installs but its login reports `environment_unsupported`.
 Remote PR review remains separate. The runtime cannot supply the required Opus-xhigh verdict.
+
+CodeRabbit's review requested a proof of the new source-admission invariant. The private
+`read_structure` now proves that every accepted source meets the raw-character allowance and
+passes the existing axiom audit. Runtime admission code and the existing three proofs are unchanged.
+The resource samples remain measurements of the executable at `9bbd900`, identified by the
+recorded hashes. The proof addition does not justify repeating those measurements or claiming a
+vendor runtime bound.

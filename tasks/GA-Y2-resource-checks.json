@@ -1150,5 +1150,6 @@
     },
     "panic_markers": 0
   },
-  "limits": "No universal latency or memory ceiling is claimed. Existing quadratic scalar folding, key validation and token qualification remain."
+  "limits": "No universal latency or memory ceiling is claimed. Existing quadratic scalar folding, key validation and token qualification remain.",
+  "measured_commit": "9bbd9003349d5ae64fd9fd636cdf8671a8a12ee3"
 }
