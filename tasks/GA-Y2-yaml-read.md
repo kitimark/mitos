@@ -7,7 +7,10 @@ reader PR and a CLI/regression PR so the new trust boundary can be reviewed sepa
 
 `MitosGate.Yaml.read` returns our `Doc`, or our `Refusal`. The only authored Lean module that
 names the vendor is `gate/MitosGate/Yaml.lean`. After the source limits, it refuses every
-column-zero `%` line and sources with more than 2,048 raw `-?:,[{` characters before calling the parser.
+column-zero `%` line, sources with more than 2,048 raw `-?:,[{` characters, and cumulative
+line-prefix work above 16,777,216 bytes before calling the parser. The latter sums the one-based
+UTF-8 byte offsets ending in LF; [#431's design and qualification](GA-Y2-multiline-bound.md)
+records its conservative policy and finite resource evidence.
 It scans with the raw comment side channel,
 parses the serialization tree, qualifies tokens, converts it to our `Node`, validates `Doc`,
 and compares source and leaf expression counts. It never composes aliases or uses a vendor theorem.
@@ -24,6 +27,7 @@ result of `parseDoc`; their proofs do not unfold the vendor.
 | Outside LF and printable ASCII | `char` | Exclude control and line-break disagreements before parsing. |
 | More than 1024 `[` or `{` characters | `openers` | Bound flow nesting, including quoted openers. |
 | More than 2048 raw `-`, `?`, `:`, `,`, `[` or `{` characters | `structureChars` | Bound admitted collection indicators before scanning. Quoted, comment and scalar data also count. |
+| Cumulative one-based byte offsets ending LF exceed 16777216 | `lineWork` | Bound raw prefix geometry before scanning, after the earlier source guards. Every LF context contributes. |
 | Scanner/parser failure | `parse` | Preserve the upstream rendered error. |
 | Zero or multiple documents | `documents` | Give one root and avoid document-selection disagreement. |
 | A source line starting with `%`, or a reported directive | `directive` | Exclude standard and reserved directives before the pin can discard them. |
@@ -53,6 +57,8 @@ Primary tags are retained by the parser and refused by the seam, or rejected by 
 - `read_conserves`: the source `${{` count equals the sum of leaf expression counts.
 - The private `read_structure` proves that an accepted source has at most `maxStructureChars`
   charged characters. It unfolds only owned checks and is included in the axiom audit.
+- The private `read_lineWork` proves the cumulative byte-prefix allowance for accepted sources
+  and joins the same audit. It makes no vendor runtime claim; the three public proofs are unchanged.
 - The build audits these declarations and `Doc.ofNode` for only `propext`, `Classical.choice`,
   and `Quot.sound` axioms. It traverses types and bodies reachable from `read`, including private
   names, rejecting unsafe/partial declarations and `implemented_by`, `extern`, and compiler

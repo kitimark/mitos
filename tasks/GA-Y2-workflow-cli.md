@@ -225,3 +225,19 @@ passes the existing axiom audit. Runtime admission code and the existing three p
 The resource samples remain measurements of the executable at `9bbd900`, identified by the
 recorded hashes. The proof addition does not justify repeating those measurements or claiming a
 vendor runtime bound.
+
+## Multiline admission for #431
+
+The reader now refuses cumulative line-prefix work above 16,777,216 before vendor scanning,
+after directive and structure checks. Work is the sum of one-based UTF-8 byte offsets ending
+in LF, in every source context. Both verbs render the full count with no leaf output.
+[The design and qualification](GA-Y2-multiline-bound.md) records the rejected LF-only design,
+the replacement policy, exact boundary/priority tests and [raw evidence](GA-Y2-multiline-checks.json).
+Historical samples above remain unchanged.
+
+The native matrix passes 90 families × five fresh processes (450 samples); maximum observed
+child CPU is 0.507467 seconds and RSS 166,504 KiB. These qualify named families on the recorded
+host, not a universal two-second bound. All 147 fixtures, unchanged 35 structure cases and 37
+line-work cases pass. The unchanged differential keeps 250 accepts/450 refusals with zero
+leaf mismatches; current workflow leaf counts remain equal to PyYAML. The new task note records
+the read-only UID-map checks and unavailable CodeRabbit CLI/Opus verification separately.
