@@ -317,13 +317,32 @@ def moduleOLeanSuffix (mod : Name) : Except String (List String) :=
     | none => .error s!"module {mod} is anonymous"
     | some last => .ok (cs.dropLast ++ [last ++ ".olean"])
 
-def oleanRoot (mod : Name) : IO System.FilePath := do
-  let file ← realPathNormalized (← findOLean mod)
+def oleanPlace (mod : Name) : IO (System.FilePath × System.FilePath) := do
+  let file ← findOLean mod
+  let real ← realPathNormalized file
   let suf ← liftExcept (moduleOLeanSuffix mod)
-  match suf.isSuffixOf? file.components with
+  match suf.isSuffixOf? real.components with
   | none =>
-    throw <| IO.userError s!"olean path {file} does not end with the path of module {mod}"
-  | some root => realPathNormalized (System.mkFilePath root)
+    throw <| IO.userError s!"olean path {real} does not end with the path of module {mod}"
+  | some root =>
+    return (file, ← realPathNormalized (System.mkFilePath root))
+
+def oleanRoot (mod : Name) : IO System.FilePath := do
+  let (_, root) ← oleanPlace mod
+  return root
+
+def lakeBeside (olean : System.FilePath) : IO Bool := do
+  let marked (p : System.FilePath) : IO Bool := do
+    let hash := System.FilePath.mk (p.toString ++ ".hash")
+    let trace := System.FilePath.mk (p.toString ++ ".trace")
+    return (← hash.pathExists) || (← trace.pathExists)
+  if ← marked olean then return true
+  marked (← realPathNormalized olean)
+
+def specSource (oleanRoot : System.FilePath) (mod : Name) : Option System.FilePath :=
+  match coreBuildSuffix.isSuffixOf? oleanRoot.components with
+  | none => none
+  | some repo => some (modToFilePath (System.mkFilePath repo / "core") mod "lean")
 
 def loadRoots : IO Roots := do
   let sysroot ← realPathNormalized ((← findSysroot) / "lib" / "lean")
@@ -392,11 +411,26 @@ example : coreBuildSuffix.isSuffixOf ["", "repo", ".lake", "build", "lib", "lean
   decide
 
 def classify (roots : Roots) (mod : Name) : IO (Except String Origin) := do
-  let root ← try
-    pure (← oleanRoot mod)
+  let placed ← try
+    pure (← oleanPlace mod)
   catch e =>
     return .error s!"module {mod}: {e}"
-  return originOf roots mod root
+  let (file, root) := placed
+  match originOf roots mod root with
+  | .error e => return .error e
+  | .ok .toolchain =>
+    if ← lakeBeside file then
+      return .error s!"module {mod} .olean at {root} is the toolchain but a Lake .trace or .olean.hash sits beside it"
+    return .ok .toolchain
+  | .ok .spec =>
+    match specSource root mod with
+    | none =>
+      return .error s!"module {mod} .olean at {root} is counted as spec but its build path has no core source root"
+    | some src =>
+      unless ← src.pathExists do
+        return .error s!"module {mod} .olean at {root} is counted as spec but {src} does not exist"
+      return .ok .spec
+  | .ok o => return .ok o
 
 structure Place where
   env : Environment
@@ -594,6 +628,16 @@ def emitExt (p : Place) (n : Name) : IO Bool := do
     return nameListed p.env n
   | _ => return false
 
+def emitUnlistedSpecSkeleton (p : Place) (n : Name) : IO Bool := do
+  match ← constOrigin p n with
+  | .spec =>
+    if ← specListed p n then return false
+    let some ci := p.env.find? n | return false
+    return match ci with
+      | .inductInfo _ | .ctorInfo _ => true
+      | _ => false
+  | _ => return false
+
 partial def collect (p : Place) (n : Name) (seen : NameSet) : IO NameSet := do
   if seen.contains n then return seen
   let mut seen := seen.insert n
@@ -659,12 +703,18 @@ def entries (env : Environment) (prefixes : List Name) : IO (Array String) := do
   for n in specRoots do
     seen ← collect p n seen
   let mut extNames : Array Name := #[]
+  let mut skelNames : Array Name := #[]
   for n in seen do
     if ← emitExt p n then
       extNames := extNames.push n
+    if ← emitUnlistedSpecSkeleton p n then
+      skelNames := skelNames.push n
   for n in extNames do
     if let some ci := env.find? n then
       out := out.push (← lineOf p n ci true)
+  for n in skelNames do
+    if let some ci := env.find? n then
+      out := out.push (← lineOf p n ci false)
   return out.qsort (· < ·)
 
 def render (es : Array String) : String :=

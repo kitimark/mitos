@@ -149,7 +149,7 @@ enforces it. `main` is protected: changes arrive by pull request with the `gate`
 
 | File | Pins | Regenerate with | Changing it needs |
 |---|---|---|---|
-| `statements.lock` | every declaration in `Mitos.Core.*` (not `Mitos.Impl`/`Mitos.Proofs`), read from `Mitos.Core.Spec` with the prefix `Mitos.Core`: SHA-256 of the canonical form of its type, and of its value for definitions. The canonical form drops binder names and metadata, numbers universe parameters by position, and replaces an unlisted spec declaration with the digest of that declaration's own canonical pin. A package declaration the listing rule would list, when a spec line reaches it, gets an `ext` line and is referenced by name. A reached package inductive, constructor, or recursor gets an `ext` line even when it is unlisted, and the inductive line records its constructors in declaration order. Any other unlisted package declaration is folded into the referencing line. Format `canon-1`. Generated declarations get no line of their own. A module under `core/Mitos/Core/` that `Mitos.Core.Spec` does not import has no line. The check fails when the root and `core` git dependencies disagree | `lake exe mitos-gate lock` | `spec-approved` label |
+| `statements.lock` | every declaration in `Mitos.Core.*` (not `Mitos.Impl`/`Mitos.Proofs`), read from `Mitos.Core.Spec` with the prefix `Mitos.Core`: SHA-256 of the canonical form of its type, and of its value for definitions. The canonical form drops binder names and metadata, numbers universe parameters by position, and replaces an unlisted spec declaration with the digest of that declaration's own canonical pin. A package declaration the listing rule would list, when a spec line reaches it, gets an `ext` line and is referenced by name. A reached package inductive, constructor, or recursor gets an `ext` line even when it is unlisted, and the inductive line records its constructors in declaration order. Any other unlisted package declaration is folded into the referencing line. A reached unlisted spec inductive and each of its constructors gets a line, and that line folds those package declarations. Format `canon-1`. Generated declarations get no line of their own. A module under `core/Mitos/Core/` that `Mitos.Core.Spec` does not import has no line. The check fails when the root and `core` git dependencies disagree | `lake exe mitos-gate lock` | `spec-approved` label |
 | `<workspace>/models.lock` | the SHA-256 of every human-reviewed model file, examples modules included | `lake exe mitos-gate lock-models --workspace <workspace>` | `spec-approved` label |
 | `core/Challenge/`, `core/comparator.json` | the theorems the core implementation must prove | edited by hand in a spec PR | `spec-approved` label |
 
@@ -169,14 +169,15 @@ acyclic. `lean-toolchain` pins Init, Std and Lean by name. A package declaration
 would list, and every package inductive, constructor, or recursor, gets its own `ext` line when a
 spec line reaches it, listed or not. A reached package inductive also pins each of its
 constructors, in declaration order, so adding, removing, or reordering one changes the lock, and
-each constructor line pins that constructor's type. The walk also enters the constructors of an
-unlisted spec inductive, so a package constant that appears only in such a constructor type is
-pinned. A package bump that changes what a spec statement means turns the lock red, and a bump
+each constructor line pins that constructor's type. A reached unlisted spec inductive and each of
+its constructors gets a line. The walk enters those constructors, and that line's canonical type
+folds unlisted package declarations, so a package constant that appears only in such a constructor
+type is pinned. A package bump that changes what a spec statement means turns the lock red, and a bump
 that changes nothing reached does not. The walk
 never enters theorem proofs. A reached unlisted spec opaque, axiom or unsafe declaration is an
 error, and so is a reached package axiom, unsafe declaration, or unlisted opaque. A module whose
-`.olean` directory is the toolchain is toolchain. A `Mitos.Core` module whose `.olean` directory
-is core's build is spec. A module is a named package when the real path of its `.olean` directory
+`.olean` directory is the toolchain is toolchain, and a Lake `.olean.trace` or `.olean.hash` beside that `.olean` is an error. A `Mitos.Core` module whose `.olean` directory
+is core's build is spec when `core/<module>.lean` exists beside that build, and an error when that source does not. A module is a named package when the real path of its `.olean` directory
 is under the real path of `<packagesDir>/<package>/` from the root manifest, including a build
 directory the package places inside that tree, and a `Mitos.Core` module found there is an error.
 Anything else is an error. The root `lake-manifest.json` and
