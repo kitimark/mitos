@@ -11,10 +11,16 @@ import MitosGate.SpeechCli
 import MitosGate.SnapshotCli
 import MitosGate.ShadowCli
 import MitosGate.WorkflowCli
+import MitosGate.ProvenanceCli
 
 open MitosGate
 
 def usage : String := s!"usage:
+  mitos-gate provenance render <repo> <file>     render the canonical versioned publication block
+  mitos-gate provenance candidates <dir> <repo> <owner>
+                                                 identify structured-source entries needing final reads
+  mitos-gate provenance hook <dir> <repo> <owner> <main>
+                                                 shared provenance admission, using only local git objects
   mitos-gate workflow parse <file>              refuse YAML outside the workflow subset
   mitos-gate workflow leaves <file>             print decoded workflow leaves as JSON lines
   mitos-gate workflow placement <file>          enforce needs placement and expression-free code
@@ -225,6 +231,7 @@ def cli (args : List String) : IO UInt32 := do
   | "snapshot" :: rest => SnapshotCli.cli rest usage
   | "shadow" :: rest => ShadowCli.cli rest usage
   | "workflow" :: rest => WorkflowCli.cli rest usage
+  | "provenance" :: rest => ProvenanceCli.cli rest usage
   | _ => IO.eprintln usage; return 2
 
 def main (args : List String) : IO UInt32 := do
