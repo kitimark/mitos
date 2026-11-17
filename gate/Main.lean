@@ -34,7 +34,8 @@ def usage : String := s!"usage:
                                                  module under core/Mitos/Core/ that Mitos.Core.Spec does
                                                  not import, directly or transitively
   mitos-gate lock --check-header                 statements.lock starts with MitosGate.Lock.header,
-                                                 the newline after its second line included
+                                                 the newline after its format line included
+  mitos-gate lock --text                         print pre-canonical toString digest lines
   mitos-gate lock-models --workspace <dir> [--check]
                                                  write or check <dir>/models.lock, as gate 0 reads the models
   mitos-gate accept --workspace <dir> --plugin <Name> --model <Module.const>
@@ -183,6 +184,11 @@ def cli (args : List String) : IO UInt32 := do
     IO.println s!"{vs.size} import violation(s) in core/ and gate/"
     return if vs.isEmpty then 0 else 1
   | ["lock", "--check-header"] => lockHeaderStatus
+  | ["lock", "--text"] =>
+    let core ← Lock.importRoot `Mitos.Core.Spec
+    let es ← Lock.textEntries core.env [`Mitos.Core]
+    IO.println (String.intercalate "\n" es.toList)
+    return 0
   | ["lock"] => lockStatements false
   | ["lock", "--check"] => lockStatements true
   | ["lock-models", "--workspace", ws] => lockModels ws false

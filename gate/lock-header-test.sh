@@ -35,16 +35,18 @@ expect() {
   pass=$((pass + 1))
 }
 
-mkdir -p "$tmp/good" "$tmp/line1" "$tmp/line2" "$tmp/drop" "$tmp/empty" "$tmp/both" "$tmp/swap" \
-  "$tmp/nonl"
+mkdir -p "$tmp/good" "$tmp/line1" "$tmp/line2" "$tmp/line3" "$tmp/drop" "$tmp/empty" \
+  "$tmp/both" "$tmp/swap" "$tmp/nonl"
 cp "$root/statements.lock" "$tmp/good/statements.lock"
 cp "$root/statements.lock" "$tmp/line1/statements.lock"
 cp "$root/statements.lock" "$tmp/line2/statements.lock"
+cp "$root/statements.lock" "$tmp/line3/statements.lock"
 sed -i '1s/.*/# edited by hand/' "$tmp/line1/statements.lock"
 sed -i '2s/.*/# edited by hand/' "$tmp/line2/statements.lock"
-tail -n +3 "$root/statements.lock" >"$tmp/drop/statements.lock"
+sed -i '3s/.*/# edited by hand/' "$tmp/line3/statements.lock"
+tail -n +4 "$root/statements.lock" >"$tmp/drop/statements.lock"
 : >"$tmp/empty/statements.lock"
-head -n 2 "$root/statements.lock" | head -c -1 >"$tmp/nonl/statements.lock"
+head -n 3 "$root/statements.lock" | head -c -1 >"$tmp/nonl/statements.lock"
 for d in good line1; do
   mkdir -p "$tmp/$d/core/Mitos" && cp -R "$root/core/Mitos/Core" "$tmp/$d/core/Mitos/Core"
 done
@@ -53,9 +55,10 @@ expect "the repository header matches" 0 "$root"
 expect "a copy of the header matches" 0 "$tmp/good"
 expect "a changed first line fails" 1 "$tmp/line1"
 expect "a changed second line fails" 1 "$tmp/line2"
+expect "a changed format line fails" 1 "$tmp/line3"
 expect "a file with the header removed fails" 1 "$tmp/drop"
 expect "an empty file fails" 1 "$tmp/empty"
-expect "both header lines with no newline after the second fail" 1 "$tmp/nonl"
+expect "the header with no newline after the format line fails" 1 "$tmp/nonl"
 
 got=0
 (cd "$tmp/good" && "$bin" lock --check >"$tmp/out" 2>&1) || got=$?
