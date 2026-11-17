@@ -4,6 +4,8 @@ import subprocess
 import sys
 import tempfile
 
+import yaml
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "gate/workflow-fixtures"
 BIN = pathlib.Path(sys.argv[1]).resolve()
@@ -121,11 +123,95 @@ with tempfile.TemporaryDirectory(prefix="workflow-test-") as tmp:
         file = tmp / (name + ".yml")
         file.write_text(source)
         check({"name": name, **expected}, file)
+    def work(source):
+        return sum(i for i, byte in enumerate(source.encode(), 1) if byte == 10)
+
+    def work_refusal(source):
+        return {"refusal": f": refused: cumulative line-prefix bytes {work(source)} exceeds 16777216"}
+
+    work_cases = []
+    for delta in [-1, 0, 1]:
+        source = "a: x\n" + "\n" * 5786 + "#" + "x" * (697 + delta) + "\n"
+        assert work(source) == 16777216 + delta
+        expected = {"leaves": [{"path": ["a"], "value": "x"}]} if delta <= 0 else work_refusal(source)
+        work_cases.append((f"work-boundary-{delta}", source, expected))
+    for name, source in [
+        ("blank", "a: x\n" + "\n" * 6000),
+        ("comments", "# x\n" * 3000 + "a: x\n"),
+        ("plain", "a: " + "x" * 50000 + "\n" + " x\n" * 400),
+        ("single", "a: '" + "x" * 50000 + "\n" + " x\n" * 400 + " x'\n"),
+        ("double", 'a: "' + "x" * 50000 + "\n" + " x\n" * 400 + ' x"\n'),
+        ("escaped", 'a: "' + "x" * 50000 + "\\\n" + " x\\\n" * 400 + ' x"\n'),
+        ("literal", "a: |\n " + "x" * 50000 + "\n" + " x\n" * 400),
+        ("folded", "a: >\n " + "x" * 50000 + "\n" + " x\n" * 400),
+        ("multiple-scalars", "a: " + "x" * 25000 + "\n" + " x\n" * 225 + "b: " + "x" * 25000 + "\n" + " x\n" * 225),
+        ("root", "x\n" * 4096),
+        ("root-single", "'" + "x\n" * 4095 + "x'\n"),
+        ("root-double", '"' + "x\n" * 4095 + 'x"\n'),
+        ("document-ends", "...\n" * 3000),
+        ("compact-and-ends", "a:\n" + "- " * 2047 + "x\n" + "...\n" * 2500),
+        ("malformed", "a: '" + "x" * 50000 + "\n" + " x\n" * 400),
+        ("anchor", "a: &x b\n" + "\n" * 6000),
+        ("duplicate", "a: x\na: y\n" + "\n" * 6000),
+        ("comment-expression", "a: x # ${{ x }}\n" + "\n" * 6000),
+        ("created-expression", 'a: "\\x24{{"\n' + "\n" * 6000),
+    ]:
+        assert work(source) > 16777216 and len(source.encode()) <= 65536, name
+        work_cases.append(("work-over-" + name, source, work_refusal(source)))
+    over = "a: x\n" + "\n" * 5786 + "#" + "x" * 698 + "\n"
+    work_cases.extend([
+        ("work-short-many-lines", "a: x\n" + "\n" * 1024,
+         {"leaves": [{"path": ["a"], "value": "x"}]}),
+        ("work-unterminated-last-line", "a: x\n" + "\n" * 1024 + "# tail",
+         {"leaves": [{"path": ["a"], "value": "x"}]}),
+        ("work-root-last", "x\n" * 4095, {"refusal": ": refused: root is not a mapping"}),
+        ("work-blanks-last", "\n" * 5792, {"refusal": ": refused: expected one document, found 0"}),
+        ("work-blanks-first", "\n" * 5793, work_refusal("\n" * 5793)),
+        ("bytes-before-work", over + "x" * (65537 - len(over)),
+         {"refusal": ": refused: 65537 bytes exceeds 65536"}),
+        ("char-before-work", over + "\t",
+         {"refusal": ":5789: refused: character U+0009 outside LF and printable ASCII"}),
+        ("openers-before-work", 'a: "' + "[" * 1025 + '"\n' + over,
+         {"refusal": ": refused: 1025 opening brackets exceeds 1024"}),
+        ("directive-before-work", "%FOO\n" + over, {"refusal": ": refused: directive"}),
+        ("structure-before-work", "a: " + "-" * 2048 + "\n" * 6000,
+         {"refusal": ": refused: 2049 structural characters exceeds 2048"}),
+        ("work-within-anchor", "a: &x b\n" + "\n" * 1024, {"refusal": ": refused at a: anchor"}),
+        ("work-within-duplicate", "a: x\na: y\n" + "\n" * 1024,
+         {"refusal": ": refused at a: duplicate key a (ignoring ASCII case)"}),
+        ("work-within-comment-expression", "a: x # ${{ x }}\n" + "\n" * 1024,
+         {"refusal": ":1: refused: ${{ in a comment"}),
+        ("work-within-created-expression", 'a: "\\x24{{"\n' + "\n" * 1024,
+         {"refusal": ": refused: expression count differs (text 0, leaves 1)"}),
+        ("work-within-preserved-expression", "a: ${{ x }}\n" + "\n" * 1024,
+         {"leaves": [{"path": ["a"], "value": "${{ x }}"}]}),
+    ])
+    for name, source, expected in work_cases:
+        file = tmp / (name + ".yml")
+        file.write_text(source)
+        check({"name": name, **expected}, file)
 for name in ["ci", "nightly", "clear-needs-rebase", "land-protection", "land", "update-prs"]:
-    out = invoke("parse", ROOT / f".github/workflows/{name}.yml")
-    assert out.returncode == 0 and not out.stdout and not out.stderr, (name, out)
+    file = ROOT / f".github/workflows/{name}.yml"
+    pending = [(yaml.compose(file.read_text(), Loader=yaml.SafeLoader), [])]
+    expected = []
+    while pending:
+        node, path = pending.pop()
+        if isinstance(node, yaml.ScalarNode):
+            expected.append({"path": path, "value": node.value})
+        elif isinstance(node, yaml.MappingNode):
+            if not node.value:
+                expected.append({"path": path, "value": {}})
+            pending.extend((child, path + [key.value]) for key, child in reversed(node.value))
+        elif isinstance(node, yaml.SequenceNode):
+            if not node.value:
+                expected.append({"path": path, "value": []})
+            pending.extend((child, path + [i]) for i, child in reversed(list(enumerate(node.value))))
+        else:
+            raise AssertionError(node)
+    check({"name": name, "leaves": expected}, file)
+    print(f"workflow {name}: {len(expected)} PyYAML-equal leaves")
 owner = ROOT / ".github/workflows/owner-ping.yml"
 out = invoke("parse", owner)
 assert out.returncode == 1 and not out.stdout, out
 assert out.stderr == str(owner) + ": refused at jobs.issue.steps[0]: anchor\n", out.stderr
-print(f"workflow tests passed ({len(cases)} fixtures, {len(structure_cases)} structure cases, both verbs, boundaries and live workflows)")
+print(f"workflow tests passed ({len(cases)} fixtures, {len(structure_cases)} structure cases, {len(work_cases)} line-work cases, both verbs, boundaries and live workflows)")

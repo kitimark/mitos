@@ -12,13 +12,20 @@ namespace MitosGate.Yaml
 def maxBytes : Nat := 65536
 def maxOpeners : Nat := 1024
 private def maxStructureChars : Nat := 2048
+private def maxLineWork : Nat := 16777216
 
 private def sourceStructureCount (src : String) : Nat :=
   src.toList.countP fun c => c == '-' || c == '?' || c == ':' || c == ',' || c == '[' || c == '{'
 
+private def sourceLineWork (src : String) : Nat :=
+  (src.toByteArray.foldl (fun (offset, total) byte =>
+    let next := offset + 1
+    (next, if byte == 10 then total + next else total)) (0, 0)).2
+
 inductive Refusal where
   | tooLarge (bytes : Nat) | char (line : Nat) (c : Char) | openers (n : Nat)
   | structureChars (n : Nat)
+  | lineWork (prefixBytes : Nat)
   | parse (line : Option Nat) (what : String)
   | documents (n : Nat) | directive | rootNotMapping | blockIndicator (line : Nat)
   | anchor (path : List Seg) | alias (path : List Seg) | tag (path : List Seg)
@@ -49,6 +56,7 @@ def Refusal.render : Refusal → String
   | .char line c => s!":{line}: refused: character U+{hex c} outside LF and printable ASCII"
   | .openers n => s!": refused: {n} opening brackets exceeds {maxOpeners}"
   | .structureChars n => s!": refused: {n} structural characters exceeds {maxStructureChars}"
+  | .lineWork n => s!": refused: cumulative line-prefix bytes {n} exceeds {maxLineWork}"
   | .parse line what => (line.map (fun n => s!":{n}") |>.getD "") ++ ": refused: parse: " ++ what
   | .documents n => s!": refused: expected one document, found {n}"
   | .directive => ": refused: directive"
@@ -134,6 +142,8 @@ private def parseDoc (src : String) : Except Refusal Doc := do
   if (src.splitOn "\n").any (·.startsWith "%") then throw .directive
   let structureChars := sourceStructureCount src
   if structureChars > maxStructureChars then throw (.structureChars structureChars)
+  let lineWork := sourceLineWork src
+  if lineWork > maxLineWork then throw (.lineWork lineWork)
   let (tokens, comments) ← (L4YAML.Scanner.scanWithComments src).mapError
     (fun e => .parse none e.toString)
   let docs ← (L4YAML.TokenParser.parseStream tokens).mapError (fun e => .parse none e.toString)
@@ -193,6 +203,27 @@ private theorem read_structure (h : read src = .ok d) :
       · exact ⟨.directive, by simp [parseDoc, hd, bind, Except.bind, throw, throwThe]; rfl⟩
       · exact ⟨.structureChars (sourceStructureCount src), by
           simp [parseDoc, hd, hover, bind, Except.bind, throw, throwThe]; rfl⟩
+    obtain ⟨e, he⟩ := failure
+    unfold read at h
+    split at h <;> try contradiction
+    split at h <;> try contradiction
+    dsimp only at h
+    split at h <;> try contradiction
+    simp [he] at h
+
+private theorem read_lineWork (h : read src = .ok d) :
+    sourceLineWork src ≤ maxLineWork := by
+  by_cases hb : sourceLineWork src ≤ maxLineWork
+  · exact hb
+  · have hover : sourceLineWork src > maxLineWork := Nat.lt_of_not_ge hb
+    have failure : ∃ e, parseDoc src = .error e := by
+      by_cases hd : (src.splitOn "\n").any (·.startsWith "%") = true
+      · exact ⟨.directive, by simp [parseDoc, hd, bind, Except.bind, throw, throwThe]; rfl⟩
+      · by_cases hs : sourceStructureCount src > maxStructureChars
+        · exact ⟨.structureChars (sourceStructureCount src), by
+            simp [parseDoc, hd, hs, bind, Except.bind, throw, throwThe]; rfl⟩
+        · exact ⟨.lineWork (sourceLineWork src), by
+            simp [parseDoc, hd, hs, hover, bind, Except.bind, throw, throwThe]; rfl⟩
     obtain ⟨e, he⟩ := failure
     unfold read at h
     split at h <;> try contradiction
@@ -303,7 +334,8 @@ private def returnsSort (type : Lean.Expr) : Lean.CoreM Bool :=
 open Lean in
 #eval show CoreM Unit from do
   let env ← getEnv
-  for n in [``read, ``Doc.ofNode, ``read_size, ``read_chars, ``read_conserves, ``read_structure] do
+  for n in [``read, ``Doc.ofNode, ``read_size, ``read_chars, ``read_conserves, ``read_structure,
+      ``read_lineWork] do
     for a in ← collectAxioms n do
       unless [``propext, ``Classical.choice, ``Quot.sound].contains a do
         throwError "YAML audit: {n} depends on axiom {a}"
