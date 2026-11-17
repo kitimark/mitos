@@ -143,5 +143,6 @@
   {"name":"column-zero-percent-single-continuation","file":"column-zero-percent-single-continuation.yml","refusal":": refused: directive"},
   {"name":"percent-quoted-value","file":"percent-quoted-value.yml","leaves":[{"path":["a"],"value":"%FOO in a value"}]},
   {"name":"percent-block-data","file":"percent-block-data.yml","leaves":[{"path":["a"],"value":"%FOO ${{ x }}\n"}]},
-  {"name":"percent-indented-continuation","file":"percent-indented-continuation.yml","leaves":[{"path":["a"],"value":"x %FOO y"}]}
+  {"name":"percent-indented-continuation","file":"percent-indented-continuation.yml","leaves":[{"path":["a"],"value":"x %FOO y"}]},
+  {"name":"source-structure-budget","file":"structure.yml","refusal":": refused: 2049 structural characters exceeds 2048"}
 ]
