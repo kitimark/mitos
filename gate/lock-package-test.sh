@@ -279,6 +279,58 @@ fi
 publish 1 "$proof_short" 2
 if ! sync_build; then bad "restore the toy package"; else ok "restore the toy package"; fi
 
+commit_color() {
+  mkdir -p "$remote/ToyExt"
+  cat >"$remote/ToyExt/Color.lean" <<EOF
+namespace ToyExt
+
+inductive Color
+$1
+
+end ToyExt
+EOF
+  git -C "$remote" add -A
+  git -C "$remote" -c commit.gpgsign=false commit -q -m "color"
+  rev=$(git -C "$remote" rev-parse HEAD)
+}
+
+commit_color '| red | green'
+write_spec $'import ToyExt.Color\n' $'def usedColor : ToyExt.Color := ToyExt.Color.red\n'
+if ! sync_build; then bad "a reached toy inductive gives ext lines for its constructors"; else
+  rm -f "$sentinel"
+  run_at "$ws" lock
+  cp "$ws/statements.lock" "$tmp/color.lock"
+  if [ "$lock_ec" = 0 ] \
+      && grep -q '^ext inductive ToyExt.Color ' "$tmp/color.lock" \
+      && grep -q '^ext ctor ToyExt.Color.red ' "$tmp/color.lock" \
+      && grep -q '^ext ctor ToyExt.Color.green ' "$tmp/color.lock" \
+      && ! grep -q 'Color.blue' "$tmp/color.lock" \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "a reached toy inductive gives ext lines for its constructors"
+  else
+    bad "a reached toy inductive gives ext lines for its constructors"
+  fi
+fi
+
+commit_color '| red | green | blue'
+if ! sync_build; then bad "adding a toy constructor changes the lock"; else
+  rm -f "$sentinel"
+  run_at "$ws" lock
+  cp "$ws/statements.lock" "$tmp/color2.lock"
+  added=$(comm -13 <(body "$tmp/color.lock") <(body "$tmp/color2.lock"))
+  if [ "$lock_ec" = 0 ] && ! cmp -s "$tmp/color.lock" "$tmp/color2.lock" \
+      && printf '%s\n' "$added" | grep -q '^ext ctor ToyExt.Color.blue ' \
+      && ! grep -q 'uncaught exception' "$out"; then
+    ok "adding a toy constructor changes the lock"
+  else
+    {
+      echo "exit $lock_ec"
+      echo "added: $added"
+    } >"$out"
+    bad "adding a toy constructor changes the lock"
+  fi
+fi
+
 write_spec $'import ToyExt.Axiom\n' $'noncomputable def usedBoom : Nat := ToyExt.Axiom.boom\n'
 if ! (cd "$ws/core" && lake build >"$tmp/lake.out" 2>&1); then
   cat "$tmp/lake.out" >"$out"

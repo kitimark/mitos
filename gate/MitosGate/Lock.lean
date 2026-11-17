@@ -327,14 +327,17 @@ def oleanRoot (mod : Name) : IO System.FilePath := do
 
 def loadRoots : IO Roots := do
   let sysroot ← realPathNormalized ((← findSysroot) / "lib" / "lean")
-  let j ← readManifest "lake-manifest.json" "root"
-  let dir ← liftExcept (parsePackagesDir j)
-  let names ← liftExcept (packageNames "root" j)
+  let loaded : Option (System.FilePath × List String) ← try
+    let j ← readManifest "lake-manifest.json" "root"
+    pure (some (← liftExcept (parsePackagesDir j), ← liftExcept (packageNames "root" j)))
+  catch _ =>
+    pure none
   let mut packages : Array (String × System.FilePath) := #[]
-  for name in names do
-    let p := dir / name / ".lake" / "build" / "lib" / "lean"
-    if ← p.pathExists then
-      packages := packages.push (name, ← realPathNormalized p)
+  if let some (dir, names) := loaded then
+    for name in names do
+      let p := dir / name / ".lake" / "build" / "lib" / "lean"
+      if ← p.pathExists then
+        packages := packages.push (name, ← realPathNormalized p)
   return { sysroot, packages }
 
 def classify (roots : Roots) (mod : Name) : IO (Except String Origin) := do
@@ -523,6 +526,11 @@ partial def collect (p : Place) (n : Name) (seen : NameSet) : IO NameSet := do
   if seen.contains n then return seen
   let mut seen := seen.insert n
   let some ci := p.env.find? n | return seen
+  if let .inductInfo val := ci then
+    if ← packageListed p n then
+      for ctor in val.ctors do
+        if ← packageListed p ctor then
+          seen ← collect p ctor seen
   warm p (pinned ci)
   for e in pinned ci do
     for d in e.getUsedConstants do
@@ -530,7 +538,9 @@ partial def collect (p : Place) (n : Name) (seen : NameSet) : IO NameSet := do
         | none => pure false
         | some dci =>
           if isSkeleton dci then
-            pure false
+            match ← constOrigin p d with
+            | .package _ => packageListed p d
+            | _ => pure false
           else
             match ← constOrigin p d with
             | .toolchain => pure false
