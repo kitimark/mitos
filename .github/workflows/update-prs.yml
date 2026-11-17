@@ -40,10 +40,13 @@ jobs:
       - name: Mint a short-lived app token
         id: app
         if: steps.cfg.outputs.ok == 'true'
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           app-id: ${{ vars.PR_UPDATER_APP_ID }}
           private-key: ${{ secrets.PR_UPDATER_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
 
       - uses: actions/checkout@v4
         if: steps.cfg.outputs.ok == 'true'
