@@ -192,6 +192,7 @@ with tempfile.TemporaryDirectory(prefix="workflow-test-") as tmp:
         check({"name": name, **expected}, file)
 for name in ["ci", "nightly", "clear-needs-rebase", "land-protection", "land", "update-prs"]:
     file = ROOT / f".github/workflows/{name}.yml"
+    assert invoke("parse", file).returncode == 0, name
     pending = [(yaml.compose(file.read_text(), Loader=yaml.SafeLoader), [])]
     expected = []
     while pending:

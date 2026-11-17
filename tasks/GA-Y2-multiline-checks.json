@@ -6330,5 +6330,22 @@
     "accepted": true,
     "added_comments_or_docstrings": 0,
     "source_changes_by_pass": false
+  },
+  "post_review_live_alias_guard": {
+    "source": "loop: &loop [*loop]\n",
+    "before": {
+      "timeout": true,
+      "wall_s": 2.003902433999883
+    },
+    "after": {
+      "timeout": false,
+      "exit": 1,
+      "stdout": "",
+      "stderr_tail": "AssertionError: ci",
+      "wall_s": 0.22352807299967026
+    },
+    "driver": "import json,pathlib,subprocess,sys,tempfile,time\nscript=pathlib.Path('/workspace/mitos-431/gate/workflow-check.py')\nbinary=pathlib.Path('/workspace/mitos-431/.lake/build/bin/mitos-gate')\ndriver='''import pathlib,sys\nscript,binary,root=sys.argv[1:]\nsource=pathlib.Path(script).read_text()\nsys.argv=[script,binary]\nns={\"__file__\":script}\nexec(source[:source.index(\"cases = json.loads\")],ns)\nns[\"ROOT\"]=pathlib.Path(root)\nexec(source[source.index('for name in [\"ci\"'):source.index('owner = ROOT')],ns)\n'''\nwith tempfile.TemporaryDirectory(prefix='mitos-431-cycle-') as tmp:\n p=pathlib.Path(tmp)/'.github/workflows/ci.yml';p.parent.mkdir(parents=True);p.write_text('loop: &loop [*loop]\\n')\n started=time.perf_counter()\n try:\n  r=subprocess.run([sys.executable,'-c',driver,str(script),str(binary),tmp],capture_output=True,text=True,timeout=2)\n  result={'timeout':False,'exit':r.returncode,'stdout':r.stdout,'stderr_tail':r.stderr.splitlines()[-1],'wall_s':time.perf_counter()-started}\n except subprocess.TimeoutExpired:\n  result={'timeout':True,'wall_s':time.perf_counter()-started}\n print(json.dumps(result))\n",
+    "behavior_output": "workflow ci: 247 PyYAML-equal leaves\nworkflow nightly: 55 PyYAML-equal leaves\nworkflow clear-needs-rebase: 15 PyYAML-equal leaves\nworkflow land-protection: 29 PyYAML-equal leaves\nworkflow land: 50 PyYAML-equal leaves\nworkflow update-prs: 27 PyYAML-equal leaves\nworkflow tests passed (147 fixtures, 35 structure cases, 37 line-work cases, both verbs, boundaries and live workflows)\n",
+    "resource_reader_runner_changed": false
   }
 }

@@ -161,6 +161,11 @@ maps. Lint passes 184/190; the remaining six cases have the same namespace failu
 check is disabled. CodeRabbit CLI 0.9.5 is installed, but version/auth prerequisites fail with
 `EROFS` creating `/home/agent/.coderabbit`; no CLI review ran. Remote PR review is separate.
 The no-comments pass found zero added comments/docstrings and changed no source.
+CodeRabbit then identified a recursive-alias hang in the new live-workflow oracle traversal.
+A one-line native admission check now runs before composition: a temporary recursive-alias
+workflow changes from a two-second timeout to a prompt failed check (0.224 seconds), and the
+complete 147+35+37/live-leaf behavior suite still passes. The reader and resource runner are
+unchanged; the retained resource samples remain tied to the measured pre-rebase executable.
 
 Reproduce after building the native executable:
 
