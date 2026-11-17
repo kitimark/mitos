@@ -42,7 +42,7 @@ def allowedCommands : List String :=
     ``Parser.Command.end, ``Parser.Command.open, ``Parser.Command.definition,
     ``Parser.Command.theorem, ``Parser.Command.abbrev, ``Parser.Command.example].map toString
 
-def runsCodeInTerm : List String := ["by_elab", "run_tac"]
+def runsCodeInTerm : List String := MitosGate.Lint.runsInTerm
 
 def commandsInTerm : List String := ["set_option", "attribute"]
 

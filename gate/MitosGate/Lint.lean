@@ -186,6 +186,15 @@ private def allTokens (fm : FileMap) (header : Syntax) (cmds : Array Syntax) : A
 def tokenize (env : Environment) (src : String) : IO (Except Violation (Array Token)) := do
   return (← parse env src).map fun (fm, header, cmds) => allTokens fm header cmds
 
+def runsInTerm : List String :=
+  ["run_tac", "builtin_run_tac", "by_elab", "builtin_by_elab"]
+
+def runsAsCommand : List String :=
+  ["run_cmd", "run_elab", "run_meta",
+   "simproc", "builtin_simproc", "dsimproc", "builtin_dsimproc",
+   "simproc_decl", "builtin_simproc_decl", "dsimproc_decl", "builtin_dsimproc_decl",
+   "cbv_simproc", "builtin_cbv_simproc", "cbv_simproc_decl", "builtin_cbv_simproc_decl"]
+
 def banned : List String :=
   [ "sorry", "admit", "axiom", "unsafe", "partial", "opaque", "noncomputable",
     "implemented_by", "extern", "export", "csimp", "init", "builtin_init", "never_extract",
@@ -193,7 +202,7 @@ def banned : List String :=
     "notation", "infix", "infixl", "infixr", "prefix", "postfix",
     "macro", "macro_rules", "syntax", "elab", "elab_rules", "declare_syntax_cat",
     "binder_predicate", "instance", "scoped", "meta", "initialize", "builtin_initialize",
-    "run_cmd", "run_elab", "run_meta", "debug", "Lean" ]
+    "debug", "Lean" ] ++ runsInTerm ++ runsAsCommand
 
 def Rule.tokenComponent : Rule → Option String
   | .includeStr => some (Rule.id .includeStr)
