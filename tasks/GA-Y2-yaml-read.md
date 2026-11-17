@@ -51,6 +51,8 @@ Primary tags are retained by the parser and refused by the seam, or rejected by 
 - `read_size`: an accepted source has at most `maxBytes` UTF-8 bytes.
 - `read_chars`: every accepted source character satisfies `allowedChar`.
 - `read_conserves`: the source `${{` count equals the sum of leaf expression counts.
+- The private `read_structure` proves that an accepted source has at most `maxStructureChars`
+  charged characters. It unfolds only owned checks and is included in the axiom audit.
 - The build audits these declarations and `Doc.ofNode` for only `propext`, `Classical.choice`,
   and `Quot.sound` axioms. It traverses types and bodies reachable from `read`, including private
   names, rejecting unsafe/partial declarations and `implemented_by`, `extern`, and compiler
@@ -68,7 +70,7 @@ problem: Compact block sequences bypass the flow-opener cap and cause quadratic 
 usage: Callers continue to call Yaml.read once and receive Doc or Refusal. Both workflow verbs return exit 1 with no leaves when source structure exceeds the allowance.
 modules: Yaml.lean owns the private source counter, its limit and the owned refusal. workflow-check.py and workflow-fixtures own native behavior cases. workflow-resource-benchmark.py owns repeatable adversarial input generation and process measurements.
 types: Refusal gains structureChars carrying the full raw count. The counter and maxStructureChars remain private, with no vendor types exposed.
-statements: The existing read_size, read_chars and read_conserves statements and proof bodies stay unchanged. No theorem connects this count to vendor runtime complexity.
+statements: The existing read_size, read_chars and read_conserves statements and proof bodies stay unchanged. The private read_structure proves the owned source-count allowance for every accepted source. No theorem connects this count to vendor runtime complexity.
 reuse: The new guard runs inside parseDoc, after the existing directive filter and before scanWithComments. Existing size, character, opener and directive priority remains unchanged.
 fixtures: Exact allowance and one-over cases, a 65,535-byte compact sequence, conservative scalar and comment refusals, mixed block/flow structure, commas in flat flow lists and refusal-priority collisions run through both CLI verbs.
 cut_line: Bound source admission without changing vendor bytes, View validation, audit traversal, theorem statements, CLI flags or existing caller behavior on accepted sources.

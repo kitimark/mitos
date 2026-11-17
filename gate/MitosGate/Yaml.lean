@@ -183,6 +183,24 @@ theorem read_conserves (h : read src = .ok d) :
   split at h <;> try contradiction
   split at h <;> simp_all
 
+private theorem read_structure (h : read src = .ok d) :
+    sourceStructureCount src ≤ maxStructureChars := by
+  by_cases hb : sourceStructureCount src ≤ maxStructureChars
+  · exact hb
+  · have hover : sourceStructureCount src > maxStructureChars := Nat.lt_of_not_ge hb
+    have failure : ∃ e, parseDoc src = .error e := by
+      by_cases hd : (src.splitOn "\n").any (·.startsWith "%") = true
+      · exact ⟨.directive, by simp [parseDoc, hd, bind, Except.bind, throw, throwThe]; rfl⟩
+      · exact ⟨.structureChars (sourceStructureCount src), by
+          simp [parseDoc, hd, hover, bind, Except.bind, throw, throwThe]; rfl⟩
+    obtain ⟨e, he⟩ := failure
+    unfold read at h
+    split at h <;> try contradiction
+    split at h <;> try contradiction
+    dsimp only at h
+    split at h <;> try contradiction
+    simp [he] at h
+
 private def refusal? (src : String) : Option Refusal :=
   match read src with
   | .ok _ => none
@@ -285,7 +303,7 @@ private def returnsSort (type : Lean.Expr) : Lean.CoreM Bool :=
 open Lean in
 #eval show CoreM Unit from do
   let env ← getEnv
-  for n in [``read, ``Doc.ofNode, ``read_size, ``read_chars, ``read_conserves] do
+  for n in [``read, ``Doc.ofNode, ``read_size, ``read_chars, ``read_conserves, ``read_structure] do
     for a in ← collectAxioms n do
       unless [``propext, ``Classical.choice, ``Quot.sound].contains a do
         throwError "YAML audit: {n} depends on axiom {a}"
