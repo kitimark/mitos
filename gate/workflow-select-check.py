@@ -77,4 +77,22 @@ with tempfile.TemporaryDirectory(prefix="workflow-select-") as tmp:
         file.write_text("jobs: [\n")
         out = invoke(verb, str(file), "jobs")
         assert out.returncode == 1 and not out.stdout and "refused" in out.stderr, out
-    print("ok workflow selectors: every Pick, subtrees, order, cardinality, and refused grammar")
+    for marker in ["::error title=pwn::forged annotation", "::add-mask::secretword",
+                   "  ::stop-commands::forged", "##[error]forged", "text ##[warning]forged"]:
+        file.write_text("jobs:\n  first:\n    steps:\n      - name: Harmless\n        run: echo safe\n"
+                        "      - name: Selected\n        run: |\n          harmless preamble\n"
+                        f"          {marker}\n")
+        expect("get", "jobs.first.steps[1].run", "", 1)
+        expect("each", "jobs.*.steps[*]", "", 1)
+        file.write_text(f"name: '{marker}'\n")
+        expect("get", "name", "", 1)
+        if "##[" in marker:
+            expect("each", "*", "", 1)
+        else:
+            expect("each", "*", f"name\t{marker}\n")
+    file.write_text("safe: value\n::add-mask::k: v\n")
+    expect("each", "*", "", 1)
+    file.write_text("run: |\n  echo '::notice::harmless'\n  :single-colon\n")
+    expect("get", "run", "echo '::notice::harmless'\n:single-colon\n\n")
+    expect("each", "*", "run\techo '::notice::harmless'\n:single-colon\n\n")
+    print("ok workflow selectors: every Pick, subtrees, order, cardinality, refused grammar, and safe output")
