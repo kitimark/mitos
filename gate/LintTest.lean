@@ -106,6 +106,22 @@ def rejected : List (String × String) :=
     ("include_str", model "def s : String := include_str \"../comparator.json\""),
     ("Lean.ofReduceBool", model "def x := Lean.ofReduceBool"),
     ("trustCompiler", model "def x := Lean.trustCompiler"),
+    ("run_tac", model "def x := run_tac"),
+    ("builtin_run_tac", model "def x := builtin_run_tac"),
+    ("by_elab", model "def x := by_elab"),
+    ("builtin_by_elab", model "def x := builtin_by_elab"),
+    ("simproc", model "def x := simproc"),
+    ("builtin_simproc", model "def x := builtin_simproc"),
+    ("dsimproc", model "def x := dsimproc"),
+    ("builtin_dsimproc", model "def x := builtin_dsimproc"),
+    ("simproc_decl", model "def x := simproc_decl"),
+    ("builtin_simproc_decl", model "def x := builtin_simproc_decl"),
+    ("dsimproc_decl", model "def x := dsimproc_decl"),
+    ("builtin_dsimproc_decl", model "def x := builtin_dsimproc_decl"),
+    ("cbv_simproc", model "def x := cbv_simproc"),
+    ("builtin_cbv_simproc", model "def x := builtin_cbv_simproc"),
+    ("cbv_simproc_decl", model "def x := cbv_simproc_decl"),
+    ("builtin_cbv_simproc_decl", model "def x := builtin_cbv_simproc_decl"),
     ("set_option debug in a proof", model "theorem t : 1 = 1 := by\n  set_option debug.skipKernelTC true in rfl"),
     ("unknown syntax", model "def x : Nat := 1 ⊞ 2") ]
 
@@ -178,7 +194,12 @@ def unguardedBans : List String :=
     "notation", "infix", "infixl", "infixr", "prefix", "postfix",
     "macro", "macro_rules", "syntax", "elab", "elab_rules", "declare_syntax_cat",
     "binder_predicate", "instance", "scoped", "meta", "initialize", "builtin_initialize",
-    "run_cmd", "run_elab", "run_meta", "debug", "Lean" ]
+    "run_cmd", "run_elab", "run_meta", "debug", "Lean",
+    "run_tac", "builtin_run_tac", "by_elab", "builtin_by_elab",
+    "simproc",
+    "builtin_simproc", "dsimproc", "builtin_dsimproc",
+    "simproc_decl", "builtin_simproc_decl", "dsimproc_decl", "builtin_dsimproc_decl",
+    "cbv_simproc", "builtin_cbv_simproc", "cbv_simproc_decl", "builtin_cbv_simproc_decl" ]
 
 def cheatGuards : IO (Array (String × String)) := do
   let mut out := #[]

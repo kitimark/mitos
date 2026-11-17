@@ -1,0 +1,3 @@
+full=1
+comparator_only=reject@2
+why=Runs an elaborator during elaboration with `by_elab`.
