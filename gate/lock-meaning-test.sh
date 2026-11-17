@@ -1,0 +1,277 @@
+#!/usr/bin/env bash
+set -u
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root"
+lake build mitos-gate >/dev/null || { echo "FAIL lake build mitos-gate"; exit 1; }
+tmp=$(mktemp -d)
+trap 'cp "$tmp/Graph.lean" "$root/core/Mitos/Core/Graph.lean"; cp "$tmp/Lines.lean" "$root/core/Mitos/Core/Lines.lean"; cp "$tmp/Adequacy.lean" "$root/core/Mitos/Core/Spec/Adequacy.lean"; cp "$tmp/Derivations.lean" "$root/core/Mitos/Core/Spec/Derivations.lean"; cp "$tmp/lock" "$root/statements.lock"; rm -rf "$tmp"' EXIT
+cp "$root/core/Mitos/Core/Graph.lean" "$tmp/Graph.lean"
+cp "$root/core/Mitos/Core/Lines.lean" "$tmp/Lines.lean"
+cp "$root/core/Mitos/Core/Spec/Adequacy.lean" "$tmp/Adequacy.lean"
+cp "$root/core/Mitos/Core/Spec/Derivations.lean" "$tmp/Derivations.lean"
+cp "$root/statements.lock" "$tmp/lock"
+
+pass=0
+fail=0
+
+restore_sources() {
+  cp "$tmp/Graph.lean" "$root/core/Mitos/Core/Graph.lean"
+  cp "$tmp/Lines.lean" "$root/core/Mitos/Core/Lines.lean"
+  cp "$tmp/Adequacy.lean" "$root/core/Mitos/Core/Spec/Adequacy.lean"
+  cp "$tmp/Derivations.lean" "$root/core/Mitos/Core/Spec/Derivations.lean"
+  cp "$tmp/lock" "$root/statements.lock"
+}
+
+rebuild() {
+  if ! lake build mitos-gate >"$tmp/build.out" 2>&1; then
+    echo "FAIL $1: lake build"
+    tail -40 "$tmp/build.out"
+    fail=$((fail + 1))
+    return 1
+  fi
+}
+
+write_lock() {
+  local dest=$1
+  if ! lake exe mitos-gate lock >"$tmp/lock.out" 2>&1; then
+    echo "FAIL writing canonical lock"
+    cat "$tmp/lock.out"
+    return 1
+  fi
+  cp "$root/statements.lock" "$dest"
+}
+
+write_text() {
+  lake exe mitos-gate lock --text >"$1"
+}
+
+changed_ids() {
+  diff <(grep -v '^#' "$1" | grep -v '^$' | sort) <(grep -v '^#' "$2" | grep -v '^$' | sort) |
+    awk '/^[<>]/ { sub(/^[<>] /, ""); print $1, $2 }' | sort -u
+}
+
+ok() {
+  echo "ok   $1"
+  pass=$((pass + 1))
+}
+
+bad() {
+  echo "FAIL $1"
+  fail=$((fail + 1))
+}
+
+write_lock "$tmp/base.canon" || exit 1
+write_text "$tmp/base.text"
+
+python3 - <<'PY'
+from pathlib import Path
+p = Path("core/Mitos/Core/Graph.lean")
+text = p.read_text()
+needle = "import Mitos.Core.Fact\n"
+macros = '''import Mitos.Core.Fact
+
+section
+open Lean
+macro_rules | `(term| hygShift1) => throw (.error Syntax.missing "shift")
+macro_rules | `(term| hygShift2) => throw (.error Syntax.missing "shift")
+macro_rules | `(term| hygShift3) => throw (.error Syntax.missing "shift")
+macro_rules | `(term| hygShift4) => throw (.error Syntax.missing "shift")
+macro_rules | `(term| hygShift5) => throw (.error Syntax.missing "shift")
+end
+'''
+if needle not in text:
+    raise SystemExit("missing import anchor")
+p.write_text(text.replace(needle, macros, 1))
+PY
+
+if rebuild "macro_rules"; then
+  write_lock "$tmp/macro.canon"
+  write_text "$tmp/macro.text"
+  canon_n=$(changed_ids "$tmp/base.canon" "$tmp/macro.canon" | wc -l)
+  text_n=$(changed_ids "$tmp/base.text" "$tmp/macro.text" | wc -l)
+  echo "     macro_rules: $text_n pre-canonical lines moved, $canon_n canonical lines moved"
+  if [ "$canon_n" = 0 ] && [ "$text_n" -gt 0 ]; then
+    ok "five throwing macro_rules move no canonical line"
+  else
+    bad "five throwing macro_rules: canonical $canon_n, pre-canonical $text_n"
+    changed_ids "$tmp/base.canon" "$tmp/macro.canon" | sed 's/^/  canon /'
+  fi
+fi
+restore_sources
+
+python3 - <<'PY'
+from pathlib import Path
+p = Path("core/Mitos/Core/Graph.lean")
+old = "    ∀ {a b : Located}, a ∈ fs → b ∈ fs → a.id = b.id → a = b := by\n"
+new = "    ∀ {factA factB : Located}, factA ∈ fs → factB ∈ fs → factA.id = factB.id → factA = factB := by\n"
+text = p.read_text()
+if old not in text:
+    raise SystemExit("missing binder line")
+p.write_text(text.replace(old, new, 1))
+PY
+
+if rebuild "renamed binder"; then
+  write_lock "$tmp/binder.canon"
+  write_text "$tmp/binder.text"
+  if cmp -s "$tmp/base.canon" "$tmp/binder.canon" &&
+      changed_ids "$tmp/base.text" "$tmp/binder.text" | grep -qx 'theorem Mitos.WellFormed.eq_of_id'; then
+    ok "a renamed binder keeps the canonical lock"
+  else
+    bad "a renamed binder"
+    echo "  canonical:"; diff -u "$tmp/base.canon" "$tmp/binder.canon" | head -20
+    echo "  pre-canonical:"; changed_ids "$tmp/base.text" "$tmp/binder.text"
+  fi
+fi
+restore_sources
+
+python3 - <<'PY'
+from pathlib import Path
+p = Path("core/Mitos/Core/Graph.lean")
+text = p.read_text()
+needle = "namespace Mitos\n"
+probe = "namespace Mitos\n\ndef canonProbe.{u} : Type u := Sort u\n"
+if needle not in text:
+    raise SystemExit("missing namespace")
+p.write_text(text.replace(needle, probe, 1))
+PY
+
+if rebuild "universe probe"; then
+  write_lock "$tmp/univ-u.canon"
+  write_text "$tmp/univ-u.text"
+  python3 - <<'PY'
+from pathlib import Path
+p = Path("core/Mitos/Core/Graph.lean")
+p.write_text(p.read_text().replace("def canonProbe.{u} : Type u := Sort u",
+                                   "def canonProbe.{v} : Type v := Sort v", 1))
+PY
+  if rebuild "renamed universe"; then
+    write_lock "$tmp/univ-v.canon"
+    write_text "$tmp/univ-v.text"
+    if cmp -s "$tmp/univ-u.canon" "$tmp/univ-v.canon" && ! cmp -s "$tmp/univ-u.text" "$tmp/univ-v.text"; then
+      ok "a renamed universe parameter keeps the canonical lock"
+    else
+      bad "a renamed universe parameter"
+      diff -u "$tmp/univ-u.canon" "$tmp/univ-v.canon" | head -20
+    fi
+  fi
+fi
+restore_sources
+
+python3 - <<'PY'
+from pathlib import Path
+p = Path("core/Mitos/Core/Graph.lean")
+old = "  | .ai _ => true\n"
+new = "  | .ai _ => false\n"
+text = p.read_text()
+if old not in text:
+    raise SystemExit("missing isAI arm")
+p.write_text(text.replace(old, new, 1))
+a = Path("core/Mitos/Core/Spec/Adequacy.lean")
+proof = """theorem trusting_ai_not_honest :
+    ¬ StatusHonest (fun _ => ⟨[{ goodEdge with assumes := [.extractor "npm", .ai "investigator"] }], []⟩) := by
+  intro h
+  have := h [req, provAI] wfAI
+  revert this
+  decide
+"""
+sorry_proof = """theorem trusting_ai_not_honest :
+    ¬ StatusHonest (fun _ => ⟨[{ goodEdge with assumes := [.extractor "npm", .ai "investigator"] }], []⟩) := by
+  sorry
+"""
+src = a.read_text()
+if proof not in src:
+    raise SystemExit("missing trusting_ai_not_honest proof")
+a.write_text(src.replace(proof, sorry_proof, 1))
+PY
+
+if rebuild "isAI arm"; then
+  write_lock "$tmp/isai.canon"
+  got=$(changed_ids "$tmp/base.canon" "$tmp/isai.canon")
+  if [ "$got" = "def Mitos.Assumption.isAI" ]; then
+    ok "an isAI match arm change moves only Mitos.Assumption.isAI"
+  else
+    bad "an isAI match arm change"
+    printf '%s\n' "$got" | sed 's/^/  /'
+  fi
+fi
+restore_sources
+
+python3 - <<'PY'
+from pathlib import Path
+p = Path("core/Mitos/Core/Lines.lean")
+text = p.read_text()
+old = "  | [], o, reversedLine => [(o, reversedLine.reverse)]\n"
+new = "  | [], o, reversedLine => [(o, reversedLine.reverse), (o, [])]\n"
+if old not in text:
+    raise SystemExit("missing lines.go arm")
+text = text.replace(old, new, 1)
+start = text.index("theorem lines.go_anchor")
+end = text.index("\nend Mitos\n")
+text = text[:start] + """theorem lines.go_anchor (s : List Char) (o : Utf8ByteCount) (reversedLine : List Char) :
+    ∀ p ∈ lines.go s o reversedLine, ∃ pre post,
+      reversedLine.reverse ++ s = pre ++ p.2 ++ post ∧ p.1 = o + utf8Len pre := by
+  sorry
+
+theorem mem_lines {s : List Char} {o : Nat} {l : List Char} (h : (o, l) ∈ lines s) :
+    Span.text ⟨o, utf8Len l⟩ s = some l := by
+  sorry
+""" + text[end:]
+p.write_text(text)
+PY
+
+if rebuild "lines.go body"; then
+  write_lock "$tmp/lines.canon"
+  got=$(changed_ids "$tmp/base.canon" "$tmp/lines.canon")
+  if [ "$got" = "def Mitos.lines.go" ]; then
+    ok "a lines.go body change moves def Mitos.lines.go"
+  else
+    bad "a lines.go body change"
+    printf '%s\n' "$got" | sed 's/^/  /'
+  fi
+fi
+restore_sources
+
+python3 - <<'PY'
+from pathlib import Path
+p = Path("core/Mitos/Core/Graph.lean")
+old = "→ a.id = b.id → a = b := by\n"
+new = "→ a.id = b.id → b = a := by\n"
+text = p.read_text()
+if old not in text:
+    raise SystemExit("missing eq_of_id conclusion")
+p.write_text(text.replace(old, new, 1))
+d = Path("core/Mitos/Core/Spec/Derivations.lean")
+src = d.read_text()
+src = src.replace(
+    "exact wf.eq_of_id hq hp\n        (H (Chain.direct r q) (mem_derivations.mpr ⟨r, hr, q, hq, hqm, rfl⟩) rfl)",
+    "exact Eq.symm (wf.eq_of_id hq hp\n        (H (Chain.direct r q) (mem_derivations.mpr ⟨r, hr, q, hq, hqm, rfl⟩) rfl))",
+    1)
+src = src.replace("have hrr : r' = r := wf.eq_of_id hr' hr hid",
+                  "have hrr : r' = r := Eq.symm (wf.eq_of_id hr' hr hid)", 1)
+d.write_text(src)
+PY
+
+if rebuild "eq_of_id"; then
+  write_lock "$tmp/eq.canon"
+  got=$(changed_ids "$tmp/base.canon" "$tmp/eq.canon")
+  if [ "$got" = "theorem Mitos.WellFormed.eq_of_id" ]; then
+    ok "an eq_of_id statement change moves its line"
+  else
+    bad "an eq_of_id statement change"
+    printf '%s\n' "$got" | sed 's/^/  /'
+  fi
+fi
+restore_sources
+
+if rebuild "restore"; then
+  if lake exe mitos-gate lock --check >"$tmp/lock.out" 2>&1; then
+    ok "lock --check passes on the restored tree"
+  else
+    bad "lock --check after restore"
+    cat "$tmp/lock.out"
+  fi
+fi
+
+echo "$pass passed, $fail failed"
+[ "$fail" = 0 ]

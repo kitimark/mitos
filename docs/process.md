@@ -149,7 +149,7 @@ enforces it. `main` is protected: changes arrive by pull request with the `gate`
 
 | File | Pins | Regenerate with | Changing it needs |
 |---|---|---|---|
-| `statements.lock` | every declaration in `Mitos.Core.*` (not `Mitos.Impl`/`Mitos.Proofs`), read from `Mitos.Core.Spec` with the prefix `Mitos.Core`: SHA-256 of its type, of its value for definitions, and (`aux=`) of every generated declaration it reaches; generated declarations get no line of their own. A module under `core/Mitos/Core/` that `Mitos.Core.Spec` does not import has no line | `lake exe mitos-gate lock` | `spec-approved` label |
+| `statements.lock` | every declaration in `Mitos.Core.*` (not `Mitos.Impl`/`Mitos.Proofs`), read from `Mitos.Core.Spec` with the prefix `Mitos.Core`: SHA-256 of the canonical form of its type, and of its value for definitions. The canonical form drops binder names and metadata, numbers universe parameters by position, and replaces an unlisted spec declaration with the digest of that declaration's own canonical pin. Format `canon-1`. Generated declarations get no line of their own. A module under `core/Mitos/Core/` that `Mitos.Core.Spec` does not import has no line | `lake exe mitos-gate lock` | `spec-approved` label |
 | `<workspace>/models.lock` | the SHA-256 of every human-reviewed model file, examples modules included | `lake exe mitos-gate lock-models --workspace <workspace>` | `spec-approved` label |
 | `core/Challenge/`, `core/comparator.json` | the theorems the core implementation must prove | edited by hand in a spec PR | `spec-approved` label |
 
@@ -160,12 +160,14 @@ re-proving is fine, changing what is proved is not. (`Expr.hash` is not used: it
 width is only 32 bits.)
 
 A definition's meaning can live in declarations Lean generates for it: a structurally recursive
-`f` compiles to `List.brecOn … f._f`, and a `match`'s patterns live in `f.match_1`. So a line's
-`aux=` hashes, in name order, the type (and value, for definitions) of every unlisted `Mitos.Core`
-declaration its own type or value references, transitively. The walk stops at declarations that
-have their own line and at anything outside `Mitos.Core` (pinned by `lean-toolchain`); it never
-enters theorem proofs. CI also requires `spec-approved` for any change under `core/Mitos/Core/`,
-which covers what no kernel term references, such as a structure field's default value.
+`f` compiles to `List.brecOn … f._f`, and a `match`'s patterns live in `f.match_1`. The canonical
+digest walks those unlisted spec declarations and hashes their meaning, so a shift in hygienic
+names does not change a line. Binder names are not pinned. Inductive types, constructors and
+recursors stay named, which keeps the walk acyclic, and so does anything outside `Mitos.Core`
+(pinned by `lean-toolchain`). The walk never enters theorem proofs. A listed name that carries a
+macro scope is an error, and so is a reached unlisted opaque, axiom or unsafe declaration. CI also
+requires `spec-approved` for any change under `core/Mitos/Core/`, which covers what no kernel term
+references, such as a structure field's default value.
 
 ### What runs where
 
@@ -173,7 +175,7 @@ which covers what no kernel term references, such as a structure field's default
 |---|---|---|---|---|---|
 | Build core and gate | `lake build` | ✓ | ✓ | ✓ | yes |
 | Core imports only `Init`, `Std`, `Mitos.*`; `core/Mitos/Proofs` may also import `Mathlib`, and only Proofs files import `Mitos.Proofs`; a file under `core/Mitos/Core/` outside the plugin-surface closure may also import `Mathlib`, and a file in that closure imports only `Init`, `Std` and `Mitos.Core`; gate imports only `Init`, `Std`, `Lean`, `MitosGate`, except the vendored parser and its exact YAML seam; the spec never imports implementations | `lake exe mitos-gate imports` | ✓ | ✓ | ✓ | yes |
-| Lock matches the compiled core. The first two lines of `statements.lock` match `MitosGate.Lock.header` | `lake exe mitos-gate lock --check` | ✓ | ✓ | ✓ | yes |
+| Lock matches the compiled core. `statements.lock` starts with `MitosGate.Lock.header`, including the `# format: canon-1` line | `lake exe mitos-gate lock --check` | ✓ | ✓ | ✓ | yes |
 | `pr-state.sh`, `watch-github.sh` and the files they source run `gh` only as `gh api` in their wrappers, and never name GraphQL | `.claude/scripts/gh-api-rest.test.sh` | ✓ | ✓ | | yes |
 | `hook-state.sh` and every `.claude/scripts/lib/*.sh` name bash with a shebang, and `shellcheck -x` follows the scripts that source them | `.claude/scripts/sourced-bash.test.sh` | ✓ | ✓ | | yes |
 | `main-tool.sh` finds and builds main's tool in a checkout inside the git directory, builds only when a tool input changed, and `ensure` waits out another caller's build | `.claude/scripts/main-tool.test.sh` | ✓ | | | no |
@@ -617,8 +619,9 @@ lake exe mitos-gate cheats
   lock now omits them to keep spec diffs reviewable.
 - Omitting generated declarations hid real meaning: the body of `Mitos.lines.go` lives in
   `lines.go._f` and `lines.go.match_1`, so changing it left the lock unchanged, and so did the
-  spec-approved check, which looked only at lock and Challenge paths. Each lock line now hashes
-  the generated declarations it reaches (`aux=`), and the label check covers `core/Mitos/Core/`.
+  spec-approved check, which looked only at lock and Challenge paths. Each lock line's canonical
+  digest now folds in the generated declarations it reaches, and the label check covers
+  `core/Mitos/Core/`.
 - Gate 1 first checked models against a hand-written list of syntax-declaring keywords, which
   did not cover every such command, and it ran none of the plugin rules on them. An approved
   model's `@[implemented_by evilRun] def honestRun`, used by a clean plugin, passed gates 0–5
