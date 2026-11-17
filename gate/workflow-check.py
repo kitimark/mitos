@@ -78,6 +78,49 @@ with tempfile.TemporaryDirectory(prefix="workflow-test-") as tmp:
     cap.write_text('a: "' + "[" * 1024 + '"\n')
     parsed = invoke("parse", cap)
     assert parsed.returncode == 0 and not parsed.stdout and not parsed.stderr, parsed
+    structure_cases = [
+        ("compact-at-budget", "a:\n" + "- " * 2047 + "x\n",
+         {"leaves": [{"path": ["a"] + [0] * 2047, "value": "x"}]}),
+        ("compact-over-budget", "a:\n" + "- " * 2048 + "x\n",
+         {"refusal": ": refused: 2049 structural characters exceeds 2048"}),
+        ("compact-under-byte-cap", "a:\n" + "- " * 32765 + "x\n",
+         {"refusal": ": refused: 32766 structural characters exceeds 2048"}),
+        ("compact-over-byte-cap", "a:\n" + "- " * 32766 + "x\n",
+         {"refusal": ": refused: 65537 bytes exceeds 65536"}),
+        ("flat-flow-at-budget", "a: [" + ",".join(["x"] * 2047) + "]\n",
+         {"leaves": [{"path": ["a", i], "value": "x"} for i in range(2047)]}),
+        ("flat-flow-over-budget", "a: [" + ",".join(["x"] * 2048) + "]\n",
+         {"refusal": ": refused: 2049 structural characters exceeds 2048"}),
+        ("mixed-structure-over-budget", "a:\n" + "- " * 1024 + "[" * 1024 + "x" + "]" * 1024,
+         {"refusal": ": refused: 2049 structural characters exceeds 2048"}),
+        ("mixed-structure-at-budget", "a:\n" + "- " * 2046 + "[x]\n",
+         {"leaves": [{"path": ["a"] + [0] * 2047, "value": "x"}]}),
+        ("multiline-sequence-over-budget", "a:\n" + "- x\n" * 2048,
+         {"refusal": ": refused: 2049 structural characters exceeds 2048"}),
+        ("multiline-mapping-over-budget", "".join(f"k{i}: x\n" for i in range(2049)),
+         {"refusal": ": refused: 2049 structural characters exceeds 2048"}),
+        ("multiline-explicit-keys-over-budget", "? x\n" * 2049,
+         {"refusal": ": refused: 2049 structural characters exceeds 2048"}),
+        ("structure-before-parse", "- " * 2049 + "'",
+         {"refusal": ": refused: 2049 structural characters exceeds 2048"}),
+        ("char-before-structure", "a:\n\t" + "- " * 2049,
+         {"refusal": ":2: refused: character U+0009 outside LF and printable ASCII"}),
+        ("openers-before-structure", "[" * 1025 + "-" * 2049,
+         {"refusal": ": refused: 1025 opening brackets exceeds 1024"}),
+        ("directive-before-structure", "%FOO\na: " + "-" * 2049,
+         {"refusal": ": refused: directive"}),
+    ]
+    for marker in "-?:,":
+        for prefix, suffix in [('a: "', '"\n'), ("a: '", "'\n"), ("a: |\n  ", "\n"), ("a: x\n# ", "\n")]:
+            structure_cases.append(("raw-punctuation-data", prefix + marker * 2048 + suffix,
+                                    {"refusal": ": refused: 2049 structural characters exceeds 2048"}))
+        structure_cases.append(("quoted-punctuation-at-budget", 'a: "' + marker * 2047 + '"\n',
+                                {"leaves": [{"path": ["a"], "value": marker * 2047}]}))
+    assert len(structure_cases[2][1].encode()) == 65535
+    for name, source, expected in structure_cases:
+        file = tmp / (name + ".yml")
+        file.write_text(source)
+        check({"name": name, **expected}, file)
 for name in ["ci", "nightly", "clear-needs-rebase", "land-protection", "land", "update-prs"]:
     out = invoke("parse", ROOT / f".github/workflows/{name}.yml")
     assert out.returncode == 0 and not out.stdout and not out.stderr, (name, out)
@@ -85,4 +128,4 @@ owner = ROOT / ".github/workflows/owner-ping.yml"
 out = invoke("parse", owner)
 assert out.returncode == 1 and not out.stdout, out
 assert out.stderr == str(owner) + ": refused at jobs.issue.steps[0]: anchor\n", out.stderr
-print(f"workflow tests passed ({len(cases)} fixtures, both verbs, boundaries and live workflows)")
+print(f"workflow tests passed ({len(cases)} fixtures, {len(structure_cases)} structure cases, both verbs, boundaries and live workflows)")

@@ -11,9 +11,14 @@ namespace MitosGate.Yaml
 
 def maxBytes : Nat := 65536
 def maxOpeners : Nat := 1024
+private def maxStructureChars : Nat := 2048
+
+private def sourceStructureCount (src : String) : Nat :=
+  src.toList.countP fun c => c == '-' || c == '?' || c == ':' || c == ',' || c == '[' || c == '{'
 
 inductive Refusal where
   | tooLarge (bytes : Nat) | char (line : Nat) (c : Char) | openers (n : Nat)
+  | structureChars (n : Nat)
   | parse (line : Option Nat) (what : String)
   | documents (n : Nat) | directive | rootNotMapping | blockIndicator (line : Nat)
   | anchor (path : List Seg) | alias (path : List Seg) | tag (path : List Seg)
@@ -43,6 +48,7 @@ def Refusal.render : Refusal → String
   | .tooLarge n => s!": refused: {n} bytes exceeds {maxBytes}"
   | .char line c => s!":{line}: refused: character U+{hex c} outside LF and printable ASCII"
   | .openers n => s!": refused: {n} opening brackets exceeds {maxOpeners}"
+  | .structureChars n => s!": refused: {n} structural characters exceeds {maxStructureChars}"
   | .parse line what => (line.map (fun n => s!":{n}") |>.getD "") ++ ": refused: parse: " ++ what
   | .documents n => s!": refused: expected one document, found {n}"
   | .directive => ": refused: directive"
@@ -126,6 +132,8 @@ private def qualify (src : String) (tokens : Array (L4YAML.Positioned L4YAML.Yam
 
 private def parseDoc (src : String) : Except Refusal Doc := do
   if (src.splitOn "\n").any (·.startsWith "%") then throw .directive
+  let structureChars := sourceStructureCount src
+  if structureChars > maxStructureChars then throw (.structureChars structureChars)
   let (tokens, comments) ← (L4YAML.Scanner.scanWithComments src).mapError
     (fun e => .parse none e.toString)
   let docs ← (L4YAML.TokenParser.parseStream tokens).mapError (fun e => .parse none e.toString)
@@ -183,6 +191,14 @@ private def refusal? (src : String) : Option Refusal :=
 #guard refusal? (String.ofList (List.replicate 65537 'a')) = some (.tooLarge 65537)
 #guard refusal? "a: b\r\n" = some (.char 1 '\r')
 #guard refusal? (String.ofList (List.replicate 1025 '[')) = some (.openers 1025)
+#guard sourceStructureCount "-?:,[{" = 6
+#guard sourceStructureCount " abc\n]}'\"#|>!&*%" = 0
+#guard sourceStructureCount (String.ofList (List.replicate 2048 '-')) = maxStructureChars
+#guard refusal? ("a:\n" ++ String.join (List.replicate 2048 "- ") ++ "x\n") =
+  some (.structureChars 2049)
+#guard refusal? ("a: \"" ++ String.ofList (List.replicate 2048 ',') ++ "\"\n") =
+  some (.structureChars 2049)
+#guard refusal? ("%FOO\na: " ++ String.ofList (List.replicate 2048 '-')) = some .directive
 #guard (read "a: [\n").isOk = false
 #guard refusal? "" = some (.documents 0)
 #guard refusal? "a: b\n---\nc: d\n" = some (.documents 2)
