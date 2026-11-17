@@ -316,14 +316,38 @@ case_predicate_selects_yaml_oracle() {
 
 case_package_mismatch() {
   local out code
+  assert_mismatch() {
+    : >"$LAKE_LOG"
+    set +e
+    out=$( { run_bump "$fx" "$stubs" "$version" && run_bump "$fx" "$stubs" --lock; } 2>&1 )
+    code=$?
+    set -e
+    [ "$code" -eq 1 ] || { printf 'exit %s\n%s\n' "$code" "$out" >&2; return 1; }
+    printf '%s\n' "$out" | grep -q '^mathlib: lean-toolchain is leanprover/lean4:v4.0.0, candidate is leanprover/lean4:v4.36.0-rc2$'
+    if grep $'\t'"exe " "$LAKE_LOG" >/dev/null; then
+      return 1
+    fi
+  }
   prepare yes "$rev_old" mismatch 1
-  set +e
-  out=$( { run_bump "$fx" "$stubs" "$version" && run_bump "$fx" "$stubs" --lock; } 2>&1 )
-  code=$?
-  set -e
-  [ "$code" -eq 1 ] || { printf 'exit %s\n%s\n' "$code" "$out" >&2; return 1; }
-  printf '%s\n' "$out" | grep -q '^mathlib: lean-toolchain is leanprover/lean4:v4.0.0, candidate is leanprover/lean4:v4.36.0-rc2$'
-  ! grep $'\t'"exe " "$LAKE_LOG" >/dev/null
+  assert_mismatch
+  cat >"$fx/core/lakefile.toml" <<'EOF'
+name = "mitos-core"
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.35.0"
+EOF
+  assert_mismatch
+  cat >"$fx/core/lakefile.toml" <<'EOF'
+name = "mitos-core"
+
+[[require]]
+name = "mathlib"
+git.url = "https://github.com/leanprover-community/mathlib4"
+rev = "v4.35.0"
+EOF
+  assert_mismatch
 }
 
 check_workflow() {
