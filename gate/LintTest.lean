@@ -186,7 +186,27 @@ def ruleCases : List (String × String × List Lint.Rule) :=
     ("plugin", "import Mitos.Core\nbuiltin_cbv_simproc marker (True) := True\n", [.banned "builtin_cbv_simproc"]),
     ("plugin", "import Mitos.Core\ncbv_simproc_decl marker (True) := True\n", [.banned "cbv_simproc_decl"]),
     ("plugin", "import Mitos.Core\nbuiltin_cbv_simproc_decl marker (True) := True\n",
-      [.banned "builtin_cbv_simproc_decl"]) ]
+      [.banned "builtin_cbv_simproc_decl"]),
+    ("plugin", "import Mitos.Core\n@[try_suggestion] def marker : Nat := 0\n", [.banned "try_suggestion"]),
+    ("plugin", "import Mitos.Core\ntheorem marker : True := by try?\n", [.banned "try?"]),
+    ("plugin", "import Mitos.Core\ntheorem marker : True := by suggestions\n", [.banned "suggestions"]),
+    ("plugin", "import Mitos.Core\nregister_try?_tactic skip\n", [.banned "register_try?_tactic"]),
+    ("plugin", "import Mitos.Core\nset_library_suggestions True\n", [.banned "set_library_suggestions"]),
+    ("plugin", "import Mitos.Core\n@[library_suggestions] def marker : Nat := 0\n",
+      [.banned "library_suggestions"]),
+    ("plugin", "import Mitos.Core\nregister_error_explanation n True\n",
+      [.banned "register_error_explanation"]),
+    ("plugin", "import Mitos.Core\ndef marker : Nat := 0\nsimproc_pattern% True => marker\n",
+      [.banned "simproc_pattern"]),
+    ("plugin", "import Mitos.Core\ndef marker : Nat := 0\nbuiltin_simproc_pattern% True => marker\n",
+      [.banned "builtin_simproc_pattern"]),
+    ("plugin", "import Mitos.Core\ndef marker : Nat := 0\ncbv_simproc_pattern% True => marker\n",
+      [.banned "cbv_simproc_pattern"]),
+    ("plugin", "import Mitos.Core\ndef marker : Nat := 0\nbuiltin_cbv_simproc_pattern% True => marker\n",
+      [.banned "builtin_cbv_simproc_pattern"]),
+    ("plugin", "import Mitos.Core\n@[sevalproc] def marker : Nat := 0\n", [.banned "sevalproc"]),
+    ("plugin", "import Mitos.Core\n@[builtin_sevalproc] def marker : Nat := 0\n",
+      [.banned "builtin_sevalproc"]) ]
 
 def unguardedBans : List String :=
   [ "sorry", "admit", "axiom", "unsafe", "partial", "opaque", "noncomputable",
@@ -200,7 +220,10 @@ def unguardedBans : List String :=
     "simproc",
     "builtin_simproc", "dsimproc", "builtin_dsimproc",
     "simproc_decl", "builtin_simproc_decl", "dsimproc_decl", "builtin_dsimproc_decl",
-    "cbv_simproc", "builtin_cbv_simproc", "cbv_simproc_decl", "builtin_cbv_simproc_decl" ]
+    "cbv_simproc", "builtin_cbv_simproc", "cbv_simproc_decl", "builtin_cbv_simproc_decl",
+    "try?", "suggestions", "register_try?_tactic", "set_library_suggestions", "library_suggestions",
+    "register_error_explanation", "simproc_pattern", "builtin_simproc_pattern",
+    "cbv_simproc_pattern", "builtin_cbv_simproc_pattern", "sevalproc", "builtin_sevalproc" ]
 
 def cheatGuards : IO (Array (String × String)) := do
   let mut out := #[]

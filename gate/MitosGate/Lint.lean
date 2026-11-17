@@ -187,13 +187,18 @@ def tokenize (env : Environment) (src : String) : IO (Except Violation (Array To
   return (← parse env src).map fun (fm, header, cmds) => allTokens fm header cmds
 
 def runsInTerm : List String :=
-  ["run_tac", "builtin_run_tac", "by_elab", "builtin_by_elab"]
+  ["run_tac", "builtin_run_tac", "by_elab", "builtin_by_elab", "try?", "suggestions"]
 
 def runsAsCommand : List String :=
   ["run_cmd", "run_elab", "run_meta",
    "simproc", "builtin_simproc", "dsimproc", "builtin_dsimproc",
    "simproc_decl", "builtin_simproc_decl", "dsimproc_decl", "builtin_dsimproc_decl",
-   "cbv_simproc", "builtin_cbv_simproc", "cbv_simproc_decl", "builtin_cbv_simproc_decl"]
+   "cbv_simproc", "builtin_cbv_simproc", "cbv_simproc_decl", "builtin_cbv_simproc_decl",
+   "simproc_pattern", "builtin_simproc_pattern", "cbv_simproc_pattern", "builtin_cbv_simproc_pattern",
+   "set_library_suggestions", "register_error_explanation", "register_try?_tactic"]
+
+def runsAsAttribute : List String :=
+  ["try_suggestion", "sevalproc", "builtin_sevalproc", "library_suggestions"]
 
 def banned : List String :=
   [ "sorry", "admit", "axiom", "unsafe", "partial", "opaque", "noncomputable",
@@ -202,7 +207,7 @@ def banned : List String :=
     "notation", "infix", "infixl", "infixr", "prefix", "postfix",
     "macro", "macro_rules", "syntax", "elab", "elab_rules", "declare_syntax_cat",
     "binder_predicate", "instance", "scoped", "meta", "initialize", "builtin_initialize",
-    "debug", "Lean" ] ++ runsInTerm ++ runsAsCommand
+    "debug", "Lean" ] ++ runsInTerm ++ runsAsCommand ++ runsAsAttribute
 
 def Rule.tokenComponent : Rule → Option String
   | .includeStr => some (Rule.id .includeStr)
@@ -238,7 +243,8 @@ def tokenRules (toks : Array Token) (what := "plugins") : Array Violation := Id.
                         msg := s!"`set_option {(nextTok.map (·.text)).getD ""}` is not allowed" }
     else
       for c in components t.text do
-        if let some rule := componentRules.find? (fun r => r.tokenComponent == some c) then
+        if let some rule := componentRules.find? (fun r =>
+            r.tokenComponent == some c || r.tokenComponent.map (· ++ "%") == some c) then
           vs := vs.push { line := t.line, col := t.col, rule,
                           msg := s!"`{c}` is not allowed in {what}" }
   return vs

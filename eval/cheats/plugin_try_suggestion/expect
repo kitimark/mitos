@@ -1,0 +1,4 @@
+full=1
+comparator_only=accept
+why=Registers a tactic generator with `try_suggestion`.
+guards=banned:try_suggestion
