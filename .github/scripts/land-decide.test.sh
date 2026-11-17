@@ -408,67 +408,19 @@ bad_calls=$(grep -vxE 'api rate_limit --jq \.resources\.core\.remaining|api repo
 [ -s "$calls" ] || note "the stub gh saw no call"
 finish holds-no-key
 
-outputs_are_data() {
-  awk '
-    function multiline_quote(line, expect, i, j, c, quote) {
-      expect = 1
-      for (i = 1; i <= length(line); i++) {
-        c = substr(line, i, 1)
-        if (c ~ /[[:space:]]/) continue
-        if (c == "#" && (i == 1 || substr(line, i - 1, 1) ~ /[[:space:]]/)) return 0
-        if (expect && (c == "!" || c == "&")) {
-          while (i < length(line) && substr(line, i + 1, 1) !~ /[[:space:]]/) i++
-          continue
-        }
-        if (expect && (c == "\"" || c == single)) {
-          quote = c
-          for (j = i + 1; j <= length(line); j++) {
-            c = substr(line, j, 1)
-            if (quote == "\"" && c == "\\") { j++; continue }
-            if (c == quote) {
-              if (quote == single && substr(line, j + 1, 1) == single) { j++; continue }
-              break
-            }
-          }
-          if (j > length(line)) return 1
-          i = j; expect = 0
-          continue
-        }
-        if (expect && (c == "[" || c == "{")) { flow++; continue }
-        if (flow && (c == "]" || c == "}")) { flow--; expect = 0; continue }
-        expect = (c == ":" && (flow || i == length(line) || substr(line, i + 1, 1) ~ /[[:space:]]/)) ||
-          (flow && c == ",") || (expect && c == "-" && substr(line, i + 1, 1) ~ /[[:space:]]/)
-      }
-      return 0
-    }
-    BEGIN { scope = block = value_indent = -1; single = sprintf("%c", 39) }
-    /^[[:space:]]*$/ { next }
-    {
-      match($0, /[^ ]/); indent = RSTART - 1
-      if (/^[[:space:]]*#/ && (block < 0 || indent <= block) &&
-          (value_indent < 0 || indent <= value_indent)) next
-      if (indent <= scope) scope = -1
-      if (indent <= block) block = -1
-      if (indent <= value_indent) { value = ""; value_indent = indent }
-      if (block < 0) {
-        if (multiline_quote($0)) { print NR ":" $0; bad = 1 }
-        if (/^ *(- )?[a-zA-Z0-9_-]+:/) { value = ""; value_indent = indent }
-        if (indent == 0) jobs = /^jobs:$/
-        if (indent < 2) job = 0
-        if (jobs && /^  [a-zA-Z0-9_-]+:$/) job = 1
-        if (indent <= 4) steps = /^    steps:$/
-        if (/^env:$/ || (job && /^    env:$/) || (steps && /^        env:$/) ||
-            (job && /^    if:/)) scope = indent
-        if (/:[[:space:]]*[|>][0-9+-]*([[:space:]]+#.*)?[[:space:]]*$/) block = indent
-      }
-      compact = tolower($0); gsub(/[[:space:]]/, "", compact); value = value compact
-      if (value ~ /needs([.]|\[).*outputs/ && scope < 0) {
-        print NR ":" $0; bad = 1
-      }
-    }
-    END { exit bad }
-  ' "$1"
+
+placement_refused() {
+  local name=$1 file=$2 reason=$3 line=${4:-} status=0
+  "$real" workflow placement "$file" >"$tmp/placement.out" 2>"$tmp/placement.err" || status=$?
+  [ "$status" = 1 ] || note "$name: exit $status, expected 1"
+  [ ! -s "$tmp/placement.out" ] || note "$name: unexpected stdout"
+  grep -qF -- "$reason" "$tmp/placement.err" || note "$name: wrong refusal: $(cat "$tmp/placement.err")"
+  if [ -n "$line" ]; then
+    grep -qF -- "$file:$line: refused" "$tmp/placement.err" \
+      || note "$name: wrong source line: $(cat "$tmp/placement.err")"
+  fi
 }
+
 
 start
 for pin in "github.ref == 'refs/heads/main'" \
@@ -489,8 +441,10 @@ while IFS= read -r l; do
     && [ "$(grep -cxF -- "$l" "$wf")" = "$(grep -cxF -- "$l" "$decide_wf")" ] \
     || note "event text outside the decide step's env: [$l]"
 done < <(grep -F '${{' "$wf" | grep -F 'github.event.')
-outputs_are_data "$wf" || note "needs outputs outside env values or job if conditions"
+"$real" workflow placement "$wf" || note "workflow placement was refused"
 finish filter-pins
+
+base_lines=$(wc -l <"$wf")
 
 start
 cat >"$tmp/output-scopes.yml" <<'YAML'
@@ -509,7 +463,8 @@ jobs:
             ${{ needs.decide.outputs.head }}
         run: check
 YAML
-outputs_are_data "$tmp/output-scopes.yml" || note "env values or a multiline job if were refused"
+"$real" workflow placement "$tmp/output-scopes.yml" || note "env values or a multiline job if were refused"
+scope_fixture=0
 for snippet in \
   '        name: ${{ needs.decide.outputs.pr }}' \
   "        if: needs.decide.outputs.pr != ''" \
@@ -539,12 +494,18 @@ for snippet in \
               env:
                 INPUT: ${{ needs.decide.outputs.head }}
             `;'; do
-  cat "$tmp/output-scopes.yml" >"$tmp/output-unsafe.yml"
-  printf '%s\n' "$snippet" >>"$tmp/output-unsafe.yml"
-  scope_code=0
-  outputs_are_data "$tmp/output-unsafe.yml" >"$tmp/output-scope.err" || scope_code=$?
-  [ "$scope_code" = 1 ] || note "unsafe output scope was accepted or scanner failed: $snippet"
+  cat "$wf" >"$tmp/output-unsafe.yml"
+  printf '\n  placement-fixture:\n    steps:\n      - run: check\n%s\n' "$snippet" >>"$tmp/output-unsafe.yml"
+  scope_fixture=$((scope_fixture + 1))
+  reason='rule N'
+  relative=5
+  case $scope_fixture in
+    3 | 4 | 5 | 11) relative=6 ;;
+    8) reason='block indentation indicator' ;;
+  esac
+  placement_refused "output-scope-$scope_fixture" "$tmp/output-unsafe.yml" "$reason" "$((base_lines + relative))"
 done
+[ "$scope_fixture" = 11 ] || note "expected 11 original output-scope fixtures"
 finish output-scope-fixtures
 
 start
@@ -568,15 +529,37 @@ jobs:
           script: |
             const text = "unclosed block text
 YAML
-outputs_are_data "$tmp/quoted-safe.yml" || note "single-line quotes or quotes in plain/block scalars were refused"
+"$real" workflow placement "$tmp/quoted-safe.yml" || note "single-line quotes or quotes in plain/block scalars were refused"
 quoted_fixture=0
 : >"$tmp/quoted-unsafe.yml"
 while IFS= read -r line; do
   if [ "$line" = --- ]; then
     quoted_fixture=$((quoted_fixture + 1))
-    scope_code=0
-    outputs_are_data "$tmp/quoted-unsafe.yml" >"$tmp/quoted-scope.err" || scope_code=$?
-    [ "$scope_code" = 1 ] || note "multiline quoted scalar fixture $quoted_fixture was accepted or scanner failed"
+    cat "$wf" >"$tmp/quoted-mutation.yml"
+    if [ "$quoted_fixture" = 12 ]; then
+      printf '\n  placement-fixture:\n    env:\n' >>"$tmp/quoted-mutation.yml"
+      sed '1d; s/^/  /' "$tmp/quoted-unsafe.yml" >>"$tmp/quoted-mutation.yml"
+    else
+      printf '\n  placement-fixture:\n' >>"$tmp/quoted-mutation.yml"
+      tail -n +3 "$tmp/quoted-unsafe.yml" >>"$tmp/quoted-mutation.yml"
+    fi
+    if [ "$quoted_fixture" = 12 ]; then
+      "$real" workflow placement "$tmp/quoted-mutation.yml" || note "multiline quoted environment data was refused"
+    elif [ "$quoted_fixture" = 13 ]; then
+      placement_refused quoted-env-code "$tmp/quoted-mutation.yml" 'rule X' "$((base_lines + 7))"
+    elif [ "$quoted_fixture" = 6 ]; then
+      placement_refused quoted-flow-run "$tmp/quoted-mutation.yml" 'unsupported flow collection'
+    else
+      quote=double
+      relative=4
+      case $quoted_fixture in
+        2 | 5) quote=single ;;
+        3) relative=8 ;;
+        7 | 9 | 10) relative=5 ;;
+      esac
+      placement_refused "quoted-$quoted_fixture" "$tmp/quoted-mutation.yml" \
+        "parse: under-indented continuation line in $quote-quoted scalar at line $((base_lines + relative))"
+    fi
     : >"$tmp/quoted-unsafe.yml"
   else
     printf '%s\n' "$line" >>"$tmp/quoted-unsafe.yml"
@@ -601,7 +584,7 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         with:
           script: "console.log(`
         env:
@@ -631,7 +614,7 @@ jobs:
 jobs:
   check:
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         with: {script: "console.log(`
         env:
           ${{ needs.decide.outputs.answers }}`);"}
@@ -670,8 +653,84 @@ env:
   INPUT: "two
     lines"
 ---
+jobs:
+  check:
+    env:
+      INPUT: "two
+        lines"
+    steps:
+      - run: "${{ env.INPUT }}"
+---
 YAML
+[ "$quoted_fixture" = 13 ] || note "expected 12 original quoted fixtures and one paired code-site refusal"
 finish quoted-scalar-fixtures
+
+
+start
+while IFS='|' read -r name reason relative; do
+  snippet=''
+  while IFS= read -r line && [ "$line" != --- ]; do snippet+="$line"$'\n'; done
+  cat "$wf" >"$tmp/placement-mutation.yml"
+  printf '\n  placement-fixture:\n    steps:\n%s' "$snippet" >>"$tmp/placement-mutation.yml"
+  placement_refused "$name" "$tmp/placement-mutation.yml" "$reason" "$((base_lines + relative))"
+done <<'YAML'
+shape-a|rule N|5
+      # x: |
+      - run: echo ${{ needs.d.outputs.p }}
+---
+shape-b|rule N|6
+      - name: |
+          step
+        run: echo ${{ needs.d.outputs.p }}
+---
+shape-d|rule N|4
+      - run: "${{ \x6eeeds.d.outputs.p }}"
+---
+shape-d2|expression count differs|4
+      - run: "\x24{{ needs.d.outputs.p }}"
+---
+shape-e|rule X|6
+      - env:
+          X: ${{ needs.d.outputs.p }}
+        run: echo ${{ env.X }}
+---
+alias|alias|4
+      - run: *answers
+---
+to-json|rule N|4
+      - name: ${{ toJSON(needs) }}
+---
+from-json|rule N|4
+      - run: echo ${{ fromJSON(toJSON(needs)).decide.outputs.answers }}
+---
+computed-member|rule N|4
+      - run: echo ${{ needs.decide[format('{0}puts','out')].answers }}
+---
+hash-content|rule N|4
+      - run: echo a#${{ needs.d.outputs.p }}
+---
+script-indirection|rule X|7
+      - env:
+          X: ${{ needs.d.outputs.p }}
+        with:
+          script: ${{ env.X }}
+---
+multiline-plain-code|rule X|4
+      - run: echo ${{ env.X }}
+          [literal
+      - run: echo , "unfinished
+---
+YAML
+cat "$wf" >"$tmp/placement-mutation.yml"
+printf '\n  placement-fixture:\n    steps:\n      - run: echo ok\rneeds.x\n' >>"$tmp/placement-mutation.yml"
+placement_refused shape-c "$tmp/placement-mutation.yml" 'character U+000D outside LF and printable ASCII' "$((base_lines + 4))"
+cat "$wf" >"$tmp/placement-mutation.yml"
+printf '\n  placement-fixture:\n    env:\n      X: &answers ${{ needs.decide.outputs.answers }}\n    steps:\n      - run: *answers\n' >>"$tmp/placement-mutation.yml"
+placement_refused env-anchor-alias "$tmp/placement-mutation.yml" 'anchor'
+cat "$wf" >"$tmp/placement-mutation.yml"
+printf '\n  placement-fixture:\n    steps:\n      - run: echo\n          [literal\n      - run: echo , "unfinished\n' >>"$tmp/placement-mutation.yml"
+"$real" workflow placement "$tmp/placement-mutation.yml" || note "valid multiline plain shell data was refused"
+finish decoded-placement-mutations
 
 start
 reads=$(grep -cE 'gh api' <<<"$joined")
