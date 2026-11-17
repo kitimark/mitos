@@ -1,6 +1,7 @@
 import MitosGate.Util
 import MitosGate.Yaml
 import MitosGate.Workflow.Placement
+import MitosGate.Workflow.Select
 import Lean.Data.Json
 
 namespace MitosGate.WorkflowCli
@@ -19,6 +20,11 @@ def leafJson (leaf : Leaf) : Json :=
     | .emptyMap => Json.mkObj []
     | .emptySeq => Json.arr #[]
   Json.mkObj [("path", .arr path.toArray), ("value", value)]
+
+private def scalarText : Scalar → String
+  | .text s => s
+  | .emptyMap => "{}"
+  | .emptySeq => "[]"
 
 private def pathText (path : List Seg) : String :=
   path.foldl (fun s seg => match seg with
@@ -40,27 +46,51 @@ private def placement (file source : String) (doc : Doc) : IO UInt32 := do
       return 1
   return 0
 
+
+private def request (args : List String) (usage : String) :
+    Except String (String × String × Option Workflow.Selector) := do
+  match args with
+    | [verb, file] =>
+      if verb == "parse" || verb == "leaves" || verb == "placement" then return (verb, file, none)
+      else throw usage
+    | [verb, file, query] =>
+      if verb != "get" && verb != "each" then throw usage
+      let sel ← (Workflow.parseSelector query.toList).mapError
+        fun why => ciLine s!"workflow: refused selector: {why}"
+      return (verb, file, some sel)
+    | _ => throw usage
+
 def cli (args : List String) (usage : String) : IO UInt32 := do
   setExitOnPanic true
-  let [verb, file] := args | do
-    IO.eprintln usage
+  match request args usage with
+  | .error why =>
+    IO.eprintln why
     return 2
-  unless verb == "parse" || verb == "leaves" || verb == "placement" do
-    IO.eprintln usage
-    return 2
-  let text ← try IO.FS.readFile file catch e =>
-    IO.eprintln (ciLine s!"workflow: cannot read {file}: {e}")
-    return 2
-  match read text with
-  | .ok doc =>
-    if verb == "placement" then return ← placement file text doc
-    if verb == "leaves" then
-      for leaf in doc.leaves do IO.println (leafJson leaf).compress
-    return 0
-  | .error refusal =>
-    let line := if verb == "placement" then
-      (refusal.sourceLine? text).map (fun n => s!":{n}") |>.getD "" else ""
-    IO.eprintln (ciLine (file ++ line ++ refusal.render))
-    return 1
+  | .ok (verb, file, selector) =>
+    let text ← try IO.FS.readFile file catch e =>
+      IO.eprintln (ciLine s!"workflow: cannot read {file}: {e}")
+      return 2
+    match read text with
+    | .ok doc =>
+      if verb == "placement" then return ← placement file text doc
+      match selector with
+      | none =>
+        if verb == "leaves" then
+          for leaf in doc.leaves do IO.println (leafJson leaf).compress
+      | some sel =>
+        if verb == "each" then
+          for leaf in Workflow.each doc sel do
+            IO.println (pathText leaf.path ++ "\t" ++ scalarText leaf.value)
+        else match Workflow.get doc sel with
+          | .ok value => IO.println (scalarText value)
+          | .error why =>
+            IO.eprintln (ciLine s!"workflow: {why}")
+            return 1
+      return 0
+    | .error refusal =>
+      let line := if verb == "placement" then
+        (refusal.sourceLine? text).map (fun n => s!":{n}") |>.getD "" else ""
+      IO.eprintln (ciLine (file ++ line ++ refusal.render))
+      return 1
 
 end MitosGate.WorkflowCli
