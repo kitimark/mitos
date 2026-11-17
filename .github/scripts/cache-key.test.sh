@@ -33,9 +33,8 @@ eval/mutants/.lake
 EOF
 
 : >"$work/blocks"
-while IFS= read -r workflow; do
-  rel=${workflow#"$root"/}
-  awk -v file="$rel" '
+read_blocks() {
+  awk -v file="$2" '
     function strip(s,    q) {
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
       q = "\047"
@@ -44,6 +43,7 @@ while IFS= read -r workflow; do
       return s
     }
     function hash_of(line,    s, n, i, part, out) {
+      sub(/[[:space:]]#.*$/, "", line)
       if (!match(line, /hashFiles\([^)]*\)/)) return ""
       s = substr(line, RSTART + 10, RLENGTH - 11)
       out = ""
@@ -107,7 +107,12 @@ while IFS= read -r workflow; do
       restore_files = hash_of($0)
     }
     END { if (in_step) emit() }
-  ' "$workflow" >>"$work/blocks"
+  ' "$1"
+}
+
+while IFS= read -r workflow; do
+  rel=${workflow#"$root"/}
+  read_blocks "$workflow" "$rel" >>"$work/blocks"
 done < <(find "$root/.github" -type f \( -name '*.yml' -o -name '*.yaml' \) | sort)
 
 block_n=0
@@ -157,6 +162,19 @@ while IFS= read -r line || [ -n "$line" ]; do
 done <"$work/blocks"
 
 [ "$block_n" -eq 5 ] || fail "found $block_n lean cache blocks, want 5: $(paste -sd ' ' "$work/names")"
+
+cat >"$work/comment-only.yml" <<'EOF'
+    - uses: actions/cache@v4
+      with:
+        key: lean-fixed # ${{ hashFiles('lean-toolchain') }}
+        restore-keys: lean-fixed # ${{ hashFiles('lean-toolchain') }}
+EOF
+read_blocks "$work/comment-only.yml" "comment-only.yml" >"$work/comment-blocks"
+grep -q $'BLOCK\tcomment-only.yml setup save' "$work/comment-blocks" \
+  || fail "comment-only.yml setup save was not read"
+if grep -q lean-toolchain "$work/comment-blocks"; then
+  fail "comment-only.yml setup save: hashFiles in a trailing comment was accepted"
+fi
 
 file_n=$(wc -l <"$work/expected" | tr -d ' ')
 path_n=$(wc -l <"$work/expected-paths" | tr -d ' ')
