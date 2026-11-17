@@ -31,6 +31,13 @@ private def pathText (path : List Seg) : String :=
     | .key k => if s.isEmpty then k else s ++ "." ++ k
     | .idx i => s ++ s!"[{i}]") ""
 
+private def printSelection (values : List String) : IO UInt32 := do
+  if values.any (fun value => (value.splitOn "\n").any (fun line => decide (startsCommand line))) then
+    IO.eprintln (ciLine "workflow: refused output containing a runner command")
+    return 1
+  for value in values do IO.println value
+  return 0
+
 private def placement (file source : String) (doc : Doc) : IO UInt32 := do
   for leaf in doc.leaves do
     unless Workflow.leafPlacementOk leaf do
@@ -79,10 +86,10 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
           for leaf in doc.leaves do IO.println (leafJson leaf).compress
       | some sel =>
         if verb == "each" then
-          for leaf in Workflow.each doc sel do
-            IO.println (pathText leaf.path ++ "\t" ++ scalarText leaf.value)
+          return ← printSelection ((Workflow.each doc sel).map fun leaf =>
+            pathText leaf.path ++ "\t" ++ scalarText leaf.value)
         else match Workflow.get doc sel with
-          | .ok value => IO.println (scalarText value)
+          | .ok value => return ← printSelection [scalarText value]
           | .error why =>
             IO.eprintln (ciLine s!"workflow: {why}")
             return 1
