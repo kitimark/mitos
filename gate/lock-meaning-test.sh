@@ -41,6 +41,7 @@ write_lock() {
   if ! "$bin" lock >"$tmp/lock.out" 2>&1; then
     echo "FAIL writing canonical lock"
     cat "$tmp/lock.out"
+    fail=$((fail + 1))
     return 1
   fi
   cp "$root/statements.lock" "$dest"
