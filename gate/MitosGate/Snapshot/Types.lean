@@ -1,4 +1,5 @@
 import MitosGate.Speech
+import MitosGate.Provenance
 
 namespace MitosGate.Snapshot
 
@@ -16,6 +17,7 @@ structure Global where
   protection : Option Protection
   stacked : Option (List Nat)
   verdictCells : Option (List (Pr × List Char))
+  provenance : Option (List Provenance.PullFact) := none
 
 structure Pull where
   number : Nat

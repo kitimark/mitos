@@ -1,10 +1,13 @@
 import MitosGate.Snapshot.Types
-import MitosGate.Snapshot.Cell
 
 namespace MitosGate.Snapshot
 
 open Land (Sha Pr Teammate Obs Verdict Author Result Base Gate Word Mark Push Entry)
 open Speech (Comment Stamp lines lead blank isSha hex digit)
+
+def within (p : List Char) : List Char → Bool
+  | [] => p.isEmpty
+  | c :: cs => p.isPrefixOf (c :: cs) || within p cs
 
 def enforced (g : Global) : Bool :=
   g.protection.any fun p => p.admins && p.strict && p.checks.contains "gate"

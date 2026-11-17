@@ -64,13 +64,17 @@ trap 'rm -rf "$dir"' EXIT
 
 closed_pp=50
 files_per_page=100
-hook_timeout_s=15 fetch_rounds=2 fetch_timeout_s=5 fetch_kill_s=1
-(( fetch_rounds * (fetch_timeout_s + fetch_kill_s) < hook_timeout_s )) || unavailable "fetch budget exceeds the hook timeout"
+hook_timeout_s=15 fetch_rounds=2 fetch_timeout_s=3 fetch_kill_s=1
+provenance_calls=2 provenance_timeout_s=1 provenance_kill_s=1
+(( fetch_rounds * (fetch_timeout_s + fetch_kill_s) + provenance_calls * (provenance_timeout_s + provenance_kill_s) < hook_timeout_s )) \
+  || unavailable "fetch and provenance budget exceeds the hook timeout"
 fetch() {
-  timeout -k "$fetch_kill_s" "$fetch_timeout_s" gh api "$2" >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
+  timeout -k "$fetch_kill_s" "$fetch_timeout_s" gh api "$2" >"$dir/$1.json" 2>/dev/null \
+    || { rm -f "$dir/$1.json"; touch "$dir/$1.failed"; }
 }
 fetch_all_pages() {
-  timeout -k "$fetch_kill_s" "$fetch_timeout_s" gh api "$2" --paginate --slurp >"$dir/$1.json" 2>/dev/null || touch "$dir/$1.failed"
+  timeout -k "$fetch_kill_s" "$fetch_timeout_s" gh api "$2" --paginate --slurp >"$dir/$1.json" 2>/dev/null \
+    || { rm -f "$dir/$1.json"; touch "$dir/$1.failed"; }
 }
 fetch open "repos/$repo/pulls?state=open&per_page=11" &
 fetch closed "repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=$closed_pp" &
@@ -85,56 +89,110 @@ for n in open closed main ci; do
   [ -e "$dir/$n.failed" ] && unavailable "gh api for $n failed or timed out"
 done
 
-verdicts=null
-if [ ! -e "$dir/dash.failed" ]; then
-  verdicts=$(jq -c --arg owner "$owner" '
-    def model_family: [scan("opus|sonnet|haiku|fable")] | unique | if length == 1 then .[0] else null end;
-    def verdicts_from_dashboard:
-      [(.body // "") | if type == "string" then . else error("bad body") end | split("\n")[]
-       | select(test("^\\s*\\|\\s*#[0-9]+"))
-       | (capture("^\\s*\\|\\s*#(?<n>[0-9]+)").n) as $n
-       | [split("|")[] | gsub("^\\s+|\\s+$"; "") | select(. != "")] as $cells
-       | ($cells[-1] | gsub("^[*_]+"; "")) as $v
-       | (($cells[1] // "" | capture("(?<h>[0-9a-f]{7,40})").h)? // null) as $headcell
-       | ($v | test("^PASS\\b")) as $pass
-       | (if $pass or ($v | test("^wording-only\\b"; "i")) then
-            (if ($v | test("\\bcarried\\b")) then
-               (($v | capture("carried (from `?[0-9a-f]{7,40}`? )?to `?(?<h>[0-9a-f]{7,40})").h)? // $headcell)
-             else (($v | capture("\\bat `?(?<h>[0-9a-f]{7,40})\\b").h)? // null) end)
-          else null end) as $h
-       | (if $pass then
-            [($v | ascii_downcase | ((capture("^pass\\b(?<s>[^,]*?)(\\s+(at|carried)\\b|,|$)") // {s: ""}).s)
-              | scan("([a-z][a-z0-9.-]*)-(?:low|medium|high|xhigh|max)\\b") | .[0] | model_family | select(. != null))] | unique
-          else [] end) as $models
-       | ((($v | ascii_downcase | capture("\\bauthor\\s+(?<a>[a-z][a-z0-9.-]*)").a?) // null) as $raw
-          | if $raw == null then null else ($raw | model_family) // "?" end) as $author
-       | {key: $n, value: {h: $h, k: (if $pass then "pass" else "other" end), m: $models, a: $author}}] | from_entries;
-
-    [.[] | select(type == "object" and .title == "Owner dashboard" and .pull_request == null
-                  and .user.login == $owner)][0]
-    | if . == null then {} else verdicts_from_dashboard end' "$dir/dash.json" 2>/dev/null) || verdicts=null
-  [ -n "$verdicts" ] || verdicts=null
-fi
-
 jq -r --arg owner "$owner" '.[0:10][]
   | select(type == "object" and (.user.login? // "") == $owner and (.number | type) == "number"
            and ((.head.sha // "") | type == "string" and test("^[0-9a-f]{40}$")))
   | "\(.number) \(.head.sha)"' "$dir/open.json" >"$dir/heads" 2>/dev/null || : >"$dir/heads"
+main_sha=$(jq -r '.commit.sha // empty' "$dir/main.json" 2>/dev/null)
+provenance=null provenance_hold=main-tool-unavailable tool_bin=''
+if [[ $main_sha =~ ^[0-9a-f]{40}$ ]] && [ ! -e "$dir/dash.failed" ]; then
+  # shellcheck source-path=SCRIPTDIR source=../scripts/lib/main-tool.sh
+  if . "$hook_dir/../scripts/lib/main-tool.sh" 2>"$dir/tool.err"; then
+    tool_dir=$(main_tool_dir) || tool_dir=''
+    if [ -n "$tool_dir" ]; then
+      [[ $tool_dir == /* ]] || tool_dir=$PWD/$tool_dir
+      if MAIN_TOOL_READY_WAIT=0 main_tool ready "$tool_dir" "$main_sha" 2>"$dir/tool.err"; then
+        tool_bin=$(main_tool_bin "$tool_dir")
+        provenance_hold=''
+      fi
+    fi
+  fi
+elif [ -e "$dir/dash.failed" ]; then
+  provenance_hold='source-unavailable'
+else
+  provenance_hold=main-unavailable
+fi
+
+provenance_output_ok() {
+  local file=$1 mode=$2 bytes
+  bytes=$(wc -c <"$file") || return 1
+  [ "$bytes" -le 16384 ] || return 1
+  jq -e --stream -s '
+    [.[] | select(length == 2)] as $values
+    | all($values[]; ((.[0] | length) == 2) or (.[0] == [] and .[1] == {}))
+      and (($values | map(.[0]) | unique | length) == ($values | length))
+  ' "$file" >/dev/null 2>&1 || return 1
+  jq -e -s --arg mode "$mode" --rawfile heads "$dir/heads" '
+    ($heads | split("\n") | map(select(. != "") | split(" ") | {key: .[0], value: .[1]}) | from_entries) as $expected
+    | length == 1 and (.[0] | type == "object"
+      and (keys == ($expected | keys))
+      and all(to_entries[];
+        (.key | test("^[1-9][0-9]*$"))
+        and (.value | type == "object" and keys == ["candidate", "eligible", "head", "reason"])
+        and (.value.head | type == "string" and test("^[0-9a-f]{40}$"))
+        and (.value.head == $expected[.key])
+        and (.value.candidate | type == "boolean")
+        and (.value.eligible | type == "boolean")
+        and (.value.reason | type == "string" and test("^[a-z][a-z0-9-]{0,39}$"))
+        and (.value.eligible == false or .value.candidate == true)
+        and ($mode != "candidates" or .value.eligible == false)))
+  ' "$file" >/dev/null 2>&1
+}
+
+provenance_read() {
+  local mode=$1 status=0
+  if [ "$mode" = candidates ]; then
+    (cd "$proj" && timeout -k "$provenance_kill_s" "$provenance_timeout_s" "$tool_bin" \
+      provenance candidates "$dir" "$repo" "$owner") >"$dir/provenance.json" 2>"$dir/provenance.err" || status=$?
+  else
+    (cd "$proj" && timeout -k "$provenance_kill_s" "$provenance_timeout_s" "$tool_bin" \
+      provenance hook "$dir" "$repo" "$owner" "$main_sha") >"$dir/provenance.json" 2>"$dir/provenance.err" || status=$?
+  fi
+  if [ "$status" != 0 ]; then
+    provenance_hold=native-unavailable
+    [ "$status" != 124 ] && [ "$status" != 137 ] || provenance_hold=native-timeout
+    provenance=null
+    return 1
+  fi
+  if ! provenance_output_ok "$dir/provenance.json" "$mode"; then
+    provenance_hold=native-output-invalid
+    provenance=null
+    return 1
+  fi
+  if [ "$mode" = hook ] && ! jq -e --slurpfile initial "$dir/provenance-candidates.json" '
+    all(to_entries[]; .value.candidate == $initial[0][.key].candidate)
+  ' "$dir/provenance.json" >/dev/null 2>&1; then
+    provenance_hold=native-output-invalid
+    provenance=null
+    return 1
+  fi
+  provenance=$(jq -c . "$dir/provenance.json") || { provenance_hold=native-output-invalid; provenance=null; return 1; }
+  if [ "$mode" = candidates ]; then cp "$dir/provenance.json" "$dir/provenance-candidates.json"; fi
+}
+
+if [ -z "$provenance_hold" ]; then provenance_read candidates || :; fi
+
 : >"$dir/full_thread_prs"
 while read -r n sha; do
   fetch "gate-$n" "repos/$repo/commits/$sha/check-runs?check_name=gate&per_page=30" &
   fetch "files-$n" "repos/$repo/pulls/$n/files?per_page=$files_per_page" &
-  v=$(jq -r --arg n "$n" '.[$n].h // empty' <<<"$verdicts" 2>/dev/null)
-  if [[ $v =~ ^[0-9a-f]{7,40}$ && $sha == "$v"* ]]; then
+  candidate=$(jq -r --arg n "$n" '.[$n].candidate // false' <<<"$provenance" 2>/dev/null)
+  if [ "$candidate" = true ]; then
     echo "$n" >>"$dir/full_thread_prs"
     fetch "pull-$n" "repos/$repo/pulls/$n" &
     fetch_all_pages "thread-ic-$n" "repos/$repo/issues/$n/comments?per_page=100" &
     fetch_all_pages "thread-rc-$n" "repos/$repo/pulls/$n/comments?per_page=100" &
     fetch_all_pages "thread-rv-$n" "repos/$repo/pulls/$n/reviews?per_page=100" &
+    ref=$(jq -r --argjson n "$n" '.[] | select(.number == $n) | .head.ref // empty | select(type == "string")' "$dir/open.json" 2>/dev/null)
+    if [ -n "$ref" ]; then
+      ref_uri=$(jq -rn --arg ref "refs/heads/$ref" '$ref | @uri')
+      fetch_all_pages "activity-$n" "repos/$repo/activity?ref=$ref_uri&direction=desc&per_page=100" &
+    else
+      touch "$dir/activity-$n.failed"
+    fi
   fi
 done <"$dir/heads"
 
-main_sha=$(jq -r '.commit.sha // empty' "$dir/main.json" 2>/dev/null)
 compare=''
 if [ -n "$rules_loaded_at" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]] && [ "$rules_loaded_at" != "$main_sha" ]; then
   if git -C "$proj" cat-file -e "$main_sha^{commit}" 2>/dev/null \
@@ -148,6 +206,8 @@ if [ -n "$rules_loaded_at" ] && [[ $main_sha =~ ^[0-9a-f]{40}$ ]] && [ "$rules_l
   fi
 fi
 wait
+
+if [ -z "$provenance_hold" ]; then provenance_read hook || :; fi
 
 fresh=''
 [ -n "$state_refused" ] && fresh="Rule freshness unknown: the hook state folder is not a private folder of this user, so this session's rules commit is not recorded. Read .claude/skills/kitimark-mode/SKILL.md, CLAUDE.md and docs/process.md on origin/main before acting."
@@ -176,7 +236,7 @@ fi
 
 : >"$dir/extra.ndjson"
 while read -r n sha; do
-  gate='?' user_kept='?' trust_critical='?'
+  gate='?' user_kept='?'
   if [ ! -e "$dir/gate-$n.failed" ]; then
     gate=$(jq -r '[.check_runs | if type == "array" then .[] else error("no runs") end | select(.name == "gate")]
       | if length == 0 then "none" else max_by(.id) | if .status == "completed" then .conclusion else "pending" end end
@@ -184,20 +244,18 @@ while read -r n sha; do
       "$dir/gate-$n.json" 2>/dev/null) || gate='?'
   fi
   if [ ! -e "$dir/files-$n.failed" ]; then
-    kt=$(jq -r --argjson files_per_page "$files_per_page" '
+    user_kept=$(jq -r --argjson files_per_page "$files_per_page" '
       def trust_critical: test("^(gate/|eval/cheats/|\\.github/|core/Mitos/Core/|core/Challenge/)")
         or IN("lean-toolchain", "lakefile.toml", "core/lakefile.toml", "lake-manifest.json", "core/lake-manifest.json", "core/Mitos/Core.lean", "core/comparator.json")
         or test("(^|/)(statements|models)\\.lock$");
       def user_kept: trust_critical or test("^(\\.claude/|\\.cursor/|plan/)") or IN("CLAUDE.md", "docs/process.md");
       def yn(f): if any(.[]; f) then "yes" else "no" end;
-      if type != "array" then error("not an array") elif length >= $files_per_page then "? ?"
+      if type != "array" then error("not an array") elif length >= $files_per_page then "?"
       else [.[] | .filename, (.previous_filename // empty)
             | if type == "string" then . else error("bad name") end]
-        | "\(yn(user_kept)) \(yn(trust_critical))" end' "$dir/files-$n.json" 2>/dev/null) || kt='? ?'
-    read -r user_kept trust_critical <<<"$kt"
+        | yn(user_kept) end' "$dir/files-$n.json" 2>/dev/null) || user_kept='?'
   fi
   [ -n "$gate" ] || gate='?'
-  # The list route has no mergeable fields, so only a candidate (verdict at the head) reads its PR.
   mergeable=unread
   if grep -qx "$n" "$dir/full_thread_prs"; then
     mergeable='?'
@@ -219,7 +277,6 @@ while read -r n sha; do
     fi
   fi
   [ -n "$user_kept" ] || user_kept='?'
-  [ -n "$trust_critical" ] || trust_critical='?'
   full_thread_unanswered=null
   if grep -qx "$n" "$dir/full_thread_prs"; then
     full_thread_unanswered='"?"'
@@ -241,8 +298,8 @@ while read -r n sha; do
       [ -n "$full_thread_unanswered" ] || full_thread_unanswered='"?"'
     fi
   fi
-  jq -cn --argjson n "$n" --arg sha "$sha" --arg gate "$gate" --arg user_kept "$user_kept" --arg trust_critical "$trust_critical" --arg mergeable "$mergeable" --argjson full_thread_unanswered "$full_thread_unanswered" \
-    '{n: $n, sha: $sha, mergeable: $mergeable, gate: $gate, user_kept: $user_kept, trust_critical: $trust_critical, full_thread_unanswered: $full_thread_unanswered}' >>"$dir/extra.ndjson"
+  jq -cn --argjson n "$n" --arg sha "$sha" --arg gate "$gate" --arg user_kept "$user_kept" --arg mergeable "$mergeable" --argjson full_thread_unanswered "$full_thread_unanswered" \
+    '{n: $n, sha: $sha, mergeable: $mergeable, gate: $gate, user_kept: $user_kept, full_thread_unanswered: $full_thread_unanswered}' >>"$dir/extra.ndjson"
 done <"$dir/heads"
 
 owner_unanswered_by_thread=null
@@ -271,7 +328,7 @@ cutoff=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) \
   || unavailable "cannot compute the 24 hour cutoff"
 
 out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp" --arg repo "$repo" \
-  --arg fresh "$fresh" --argjson verdicts "$verdicts" --argjson owner_unanswered_by_thread "$owner_unanswered_by_thread" \
+  --arg fresh "$fresh" --argjson provenance "$provenance" --arg provenance_hold "$provenance_hold" --argjson owner_unanswered_by_thread "$owner_unanswered_by_thread" \
   --slurpfile open "$dir/open.json" --slurpfile closed "$dir/closed.json" \
   --slurpfile main "$dir/main.json" --slurpfile ci "$dir/ci.json" --slurpfile extra "$dir/extra.ndjson" '
   def arr: if type == "array" then . else error("not an array") end;
@@ -288,14 +345,6 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
            elif length > 6 then (.[0:6] | join(",")) + ",+\(length - 6)"
            else join(",") end;
   def hm: .[0:16] + "Z";
-  def merge_hold_reason($vi; $trust_critical):
-    if $vi == null or $vi.k != "pass" then null
-    elif $vi.a == null then "the verdict cell names no author model"
-    elif $vi.a == "?" then "the author in the verdict cell is not exactly one of opus, sonnet, haiku, fable"
-    elif ($vi.m | length) == 0 then "the verdict cell names no verifier model"
-    elif all($vi.m[]; . == $vi.a) then "every verdict is from the author model, \($vi.a | .[0:20])"
-    elif $trust_critical and ($vi.m | any(. == "opus") | not) then "no opus verdict, and the PR is or may be trust-critical"
-    else null end;
 
   ($open[0] | arr) as $o |
   ($closed[0] | arr) as $cl |
@@ -317,23 +366,23 @@ out=$(jq -n -r --arg now "$now" --arg cutoff "$cutoff" --argjson pp "$closed_pp"
 
   "GitHub state (read \($now)Z; trust this over memory):",
   (if $fresh != "" then $fresh else empty end),
+  (if $provenance_hold != "" then "Provenance hold: \($provenance_hold)" else empty end),
   (if ($op | length) == 0 then "open PRs: none"
    else $op[0:10][] | .n as $n | $ex[$n] as $e |
      (if $e == null then null else
-        ($verdicts | if . == null then "?" else (.[$n].h // "none") end) as $v |
+        ($provenance | if . == null then null else .[$n] end) as $vi |
+        (if $vi == null then "unavailable" else $vi.reason end) as $reason |
         (if $e.full_thread_unanswered != null
          then ($e.full_thread_unanswered | if . == "?" then "?" elif length == 0 then "-" else map(tostring) | lst end)
          else ($owner_unanswered_by_thread | if . == null then "?"
                         else ((.[$n] // []) | if length == 0 then "-" else map(tostring) | lst end) end) end) as $u |
-        ($verdicts | if . == null then null else .[$n] end) as $vi |
-        ($e.trust_critical != "no" or (.labels | any(. == "spec-approved"))) as $trust_critical |
-        ($v != "?" and $v != "none" and ($e.sha | startswith($v))) as $h |
+        ($vi != null and $vi.head == $e.sha and $vi.candidate == true and $vi.eligible == true) as $eligible |
         (if (.labels | any(. == "needs-rebase")) then "needs-rebase" elif ($e.mergeable | IN("dirty", "behind", "blocked", "not-rebaseable", "head-moved")) then $e.mergeable elif $e.mergeable == "unknown" then "not-computed" elif $e.mergeable == "?" then "unreadable" else null end) as $cf |
-        {v: $v, u: $u, head: $h, cf: $cf, hold: (if $h then merge_hold_reason($vi; $trust_critical) else null end)} end) as $r |
+        {u: $u, eligible: $eligible, reason: $reason, cf: $cf, hold: (if $eligible then null else (if $provenance_hold != "" then $provenance_hold else $reason end) end)} end) as $r |
      "open #\($n) head \(.sha) \(if .draft then "draft" else "ready" end) labels=\(.labels | lst) assignees=\(.who | lst)\(
        if $r == null then ""
-       else " gate=\($e.gate) verdict=\($r.v)\(if $r.head then "(the head)" elif $r.v == "?" or $r.v == "none" then "" else "(an old head)" end) owner-unanswered=\($r.u) user-kept=\($e.user_kept)\(if $r.cf != null then " conflict=\($r.cf)" else "" end)\(if $r.hold != null then " merge-hold=\($r.hold)" else "" end)" end)",
-     (if $r != null and $r.head and $r.hold == null and $e.gate == "success" and $r.u == "-" and $r.cf == null and $e.mergeable == "clean" and (.draft | not) then
+       else " gate=\($e.gate) provenance=\($r.reason) owner-unanswered=\($r.u) user-kept=\($e.user_kept)\(if $r.cf != null then " conflict=\($r.cf)" else "" end)\(if $r.hold != null then " merge-hold=\($r.hold)" else "" end)" end)",
+     (if $r != null and $r.eligible == true and $r.hold == null and $e.gate == "success" and $r.u == "-" and $r.cf == null and $e.mergeable == "clean" and (.draft | not) then
         "merge-ready #\($n), \(if $e.user_kept == "no" then "an agent merges" elif $e.user_kept == "yes" then "the user merges (it touches a path the user keeps)" else "the user merges (its files could not be read)" end): gh api -X PUT repos/\($repo)/pulls/\($n)/merge -f merge_method=rebase -f sha=\($e.sha)"
       else empty end)
    end),

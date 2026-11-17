@@ -1,6 +1,7 @@
 import Lean.CoreM
 import Lean.Util.CollectAxioms
 import MitosGate.Carry
+import MitosGate.ModelIdentity
 
 /-!
 What is proved is the decision over a snapshot. That the snapshot says what GitHub says is the
@@ -117,11 +118,14 @@ def Obs.Covered (o : Obs) : Prop :=
   match o.author with
   | none => False
   | some a =>
+    (ModelIdentity.key a.who.provider a.model).isSome = true ∧
     (∀ v ∈ o.verdicts, o.stands v → v.result ≠ .fail ∧ v.result ≠ .hold) ∧
     ((∃ v ∈ o.verdicts, o.stands v ∧ v.result = .wordingOnly ∧ v.judge ≠ a.who) ∨
-      ((∃ v ∈ o.verdicts, o.stands v ∧ v.result = .pass ∧ v.judge ≠ a.who ∧ v.model ≠ a.model) ∧
+      ((∃ v ∈ o.verdicts, o.stands v ∧ v.result = .pass ∧ v.judge ≠ a.who ∧
+        ModelIdentity.acceptedClaude v.judge.provider v.model = true ∧
+        ModelIdentity.different a.who.provider a.model v.judge.provider v.model = true) ∧
         (o.critical = true → ∃ v ∈ o.verdicts, o.stands v ∧ v.result = .pass ∧
-          v.judge ≠ a.who ∧ v.judge.name = "verifier-opus")))
+          v.judge ≠ a.who ∧ ModelIdentity.opus v.judge.provider v.model = true)))
 
 instance (o : Obs) : Decidable o.Covered := by unfold Obs.Covered; split <;> infer_instance
 
@@ -423,12 +427,13 @@ def StandingFailOrHoldCoversNothing : Prop :=
 
 def CoverIsAnotherJudgesWord : Prop :=
   ∀ o : Obs, o.Covered → ∃ a, o.author = some a ∧ ∃ v ∈ o.verdicts, o.stands v ∧
-    v.judge ≠ a.who ∧ (v.result = .wordingOnly ∨ (v.result = .pass ∧ v.model ≠ a.model))
+    v.judge ≠ a.who ∧ (v.result = .wordingOnly ∨ (v.result = .pass ∧ ModelIdentity.acceptedClaude v.judge.provider v.model = true ∧
+      ModelIdentity.different a.who.provider a.model v.judge.provider v.model = true))
 
 def CriticalCoverIsAnOpusPassOrWordingOnly : Prop :=
   ∀ o : Obs, o.Covered → o.critical = true → ∃ a, o.author = some a ∧
     ∃ v ∈ o.verdicts, o.stands v ∧ v.judge ≠ a.who ∧
-      (v.result = .wordingOnly ∨ (v.result = .pass ∧ v.judge.name = "verifier-opus"))
+      (v.result = .wordingOnly ∨ (v.result = .pass ∧ ModelIdentity.opus v.judge.provider v.model = true))
 
 theorem next_landable {q : Queue} {x : Entry × Obs} (h : next q = some x) : landable x = true := by
   induction q generalizing x with
@@ -614,15 +619,15 @@ theorem covered_congr {o o' : Obs} (hv : o'.verdicts = o.verdicts) (ha : o'.auth
   | none => exact Iff.rfl
   | some a =>
     constructor
-    · rintro ⟨h1, h2⟩
-      refine ⟨fun v hm h => h1 v hm ((hs v hm).2 h), ?_⟩
+    · rintro ⟨hk, h1, h2⟩
+      refine ⟨hk, fun v hm h => h1 v hm ((hs v hm).2 h), ?_⟩
       rcases h2 with ⟨v, hm, h, hr⟩ | ⟨⟨v, hm, h, hr⟩, h3⟩
       · exact Or.inl ⟨v, hm, (hs v hm).1 h, hr⟩
       · refine Or.inr ⟨⟨v, hm, (hs v hm).1 h, hr⟩, fun hcr => ?_⟩
         obtain ⟨w, hwm, hw, hwr⟩ := h3 hcr
         exact ⟨w, hwm, (hs w hwm).1 hw, hwr⟩
-    · rintro ⟨h1, h2⟩
-      refine ⟨fun v hm h => h1 v hm ((hs v hm).1 h), ?_⟩
+    · rintro ⟨hk, h1, h2⟩
+      refine ⟨hk, fun v hm h => h1 v hm ((hs v hm).1 h), ?_⟩
       rcases h2 with ⟨v, hm, h, hr⟩ | ⟨⟨v, hm, h, hr⟩, h3⟩
       · exact Or.inl ⟨v, hm, (hs v hm).2 h, hr⟩
       · refine Or.inr ⟨⟨v, hm, (hs v hm).2 h, hr⟩, fun hcr => ?_⟩
@@ -1142,7 +1147,7 @@ theorem standingFailOrHoldCoversNothing : StandingFailOrHoldCoversNothing := by
   unfold Obs.Covered at hc
   split at hc
   · exact hc
-  · obtain ⟨hf, hh⟩ := hc.1 v hv hs
+  · obtain ⟨hf, hh⟩ := hc.2.1 v hv hs
     rcases hr with hr | hr
     · exact hf hr
     · exact hh hr
@@ -1154,9 +1159,9 @@ theorem coverIsAnotherJudgesWord : CoverIsAnotherJudgesWord := by
   · exact hc.elim
   · next a ha =>
     refine ⟨a, ha, ?_⟩
-    rcases hc.2 with ⟨v, hm, hs, hr, hj⟩ | ⟨⟨v, hm, hs, hr, hj, hmod⟩, _⟩
+    rcases hc.2.2 with ⟨v, hm, hs, hr, hj⟩ | ⟨⟨v, hm, hs, hr, hj, hac, hmod⟩, _⟩
     · exact ⟨v, hm, hs, hj, .inl hr⟩
-    · exact ⟨v, hm, hs, hj, .inr ⟨hr, hmod⟩⟩
+    · exact ⟨v, hm, hs, hj, .inr ⟨hr, hac, hmod⟩⟩
 
 theorem criticalCoverIsAnOpusPassOrWordingOnly : CriticalCoverIsAnOpusPassOrWordingOnly := by
   intro o hc hcr
@@ -1165,7 +1170,7 @@ theorem criticalCoverIsAnOpusPassOrWordingOnly : CriticalCoverIsAnOpusPassOrWord
   · exact hc.elim
   · next a ha =>
     refine ⟨a, ha, ?_⟩
-    rcases hc.2 with ⟨v, hm, hs, hr, hj⟩ | ⟨_, h3⟩
+    rcases hc.2.2 with ⟨v, hm, hs, hr, hj⟩ | ⟨_, h3⟩
     · exact ⟨v, hm, hs, hj, .inl hr⟩
     · obtain ⟨v, hm, hs, hr, hj, hn⟩ := h3 hcr
       exact ⟨v, hm, hs, hj, .inr ⟨hr, hn⟩⟩
@@ -1752,6 +1757,28 @@ theorem aLaterCommentIsSpoke :
 theorem anApprovalOfOlderContentIsStale : approvedThenNewContent.word = .stale := by decide +kernel
 theorem aHoldIsHeld : ownerKeptHeld.word = .held := by decide +kernel
 theorem noOwnerWordIsNone : agentBehind.word = .none := by decide +kernel
+
+
+def gptAuthoredCritical : Obs :=
+  { criticalSonnetAuthored with
+    author := some ⟨⟨"openai", "builder"⟩, "gpt-6.2-astra"⟩
+    verdicts := [⟨11, "h", ⟨"claude", "independent-reviewer"⟩, "claude-opus-4-6", .pass⟩] }
+
+theorem aTruthfulGptAuthorCanUseOneIndependentOpusPass :
+    gptAuthoredCritical.covered = true := by decide +kernel
+
+theorem anOpusNameCannotAdmitAnOpenAiVerifier :
+    ({ gptAuthoredCritical with verdicts :=
+      [⟨11, "h", ⟨"openai", "verifier-opus"⟩, "gpt-6.2-sol", .pass⟩] } : Obs).covered = false := by
+  decide +kernel
+
+theorem anInheritedAuthorIsUnknown :
+    ({ gptAuthoredCritical with author := some ⟨⟨"openai", "builder"⟩, "inherited"⟩ } : Obs).covered =
+      false := by decide +kernel
+
+theorem fullSonnetAcrossAuthorSystemsIsStillTheAuthorsModel :
+    ({ approvedJudgedOnTheAuthorsModel with
+      author := some ⟨grokBuilder, "claude-sonnet-4-6"⟩ } : Obs).covered = false := by decide +kernel
 
 
 end Fixture

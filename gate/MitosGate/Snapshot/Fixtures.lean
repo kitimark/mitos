@@ -12,67 +12,6 @@ def hB : Sha := "85b0781bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 def hC : Sha := "5c258d6ccccccccccccccccccccccccccccccccc"
 def known : List Sha := [hB, hA]
 
-def v (s : String) : List (Nat × Sha × Teammate × String × Result) :=
-  (verdictsOf known s.toList).map fun x => (x.said, x.head, x.judge, x.model, x.result)
-
-theorem carriedPassOfOneJudge :
-    v "PASS opus-xhigh carried from `5c258d6a`, author sonnet (round 2). Minors #241." =
-      [(0, hA, ⟨"claude", "verifier-opus"⟩, "opus", .pass)] := by decide +kernel
-theorem twoJudges :
-    (v "PASS sonnet-xhigh + opus-xhigh at 85b0781").map (·.2.2.1.name) =
-      ["verifier-sonnet", "verifier-opus"] := by decide +kernel
-theorem failOfOneJudge :
-    (v "**FAIL opus-xhigh at `85b0781`**: the line stalls").map (·.2.2.2.2) = [.fail] := by
-  decide +kernel
-theorem wordingOnlyIsTheRoots :
-    v "wording-only at `85b0781`" = [(0, hB, root, "unknown", .wordingOnly)] := by decide +kernel
-theorem noVerdictSaysNothing : v "No verdict. Opened by Grok Bot." = [] := by decide +kernel
-theorem passThenFailSaysNothing :
-    v "PASS opus-xhigh at `85b0781`. Then FAIL sonnet-xhigh at `85b0781`." = [] := by
-  decide +kernel
-theorem judgelessPassSaysNothing : v "PASS carried from `85b0781`" = [] := by decide +kernel
-theorem judgesInAParenthesis :
-    (v "PASS carried from `5c258d6a` (sonnet-xhigh + opus-xhigh, author opus), two rebases.").map
-      (fun x => (x.2.1, x.2.2.1.name)) = [(hA, "verifier-sonnet"), (hA, "verifier-opus")] := by
-  decide +kernel
-theorem judgesInBothPlacesSayNothing : v "PASS opus-xhigh at `85b0781` (sonnet-xhigh)" = [] := by
-  decide +kernel
-theorem aParenthesisOfProseIsNoJudge : v "PASS carried from `85b0781` (carry exit 0)" = [] := by
-  decide +kernel
-theorem aParenthesisAfterAWordIsNoJudge :
-    v "PASS carried from `85b0781`, then (opus-xhigh)" = [] := by decide +kernel
-theorem unknownEffortSaysNothing : v "PASS opus-huge at `85b0781`" = [] := by decide +kernel
-theorem judgedWordingOnlySaysNothing : v "wording-only opus-xhigh at `85b0781`" = [] := by
-  decide +kernel
-theorem ambiguousPrefixSaysNothing :
-    (verdictsOf [hA, hC] "PASS opus-xhigh at `5c258d6`".toList).isEmpty = true := by
-  decide +kernel
-theorem unknownCommitSaysNothing : v "PASS opus-xhigh at `deadbee`" = [] := by decide +kernel
-theorem shortShaSaysNothing : v "PASS opus-xhigh at `85b078`" = [] := by decide +kernel
-theorem unclosedTickSaysNothing : v "PASS opus-xhigh at `85b0781" = [] := by decide +kernel
-theorem upperCaseHexSaysNothing : v "PASS opus-xhigh at 85B0781" = [] := by decide +kernel
-theorem lowerCasePassSaysNothing : v "pass opus-xhigh at 85b0781" = [] := by decide +kernel
-
-def a (s : String) : Option (Teammate × String) :=
-  (authorOf s.toList).map fun x => (x.who, x.model)
-
-theorem authorNoteInAParenthesis :
-    a "PASS carried from `5c258d6` (opus-xhigh, author sonnet, round 2), through the rebases." =
-      some (⟨"claude", "author"⟩, "sonnet") := by decide +kernel
-theorem authorNote :
-    a "PASS opus-xhigh carried from `5c258d6`, author sonnet (round 2)." =
-      some (⟨"claude", "author"⟩, "sonnet") := by decide +kernel
-theorem mixedAuthorIsNone :
-    a "PASS opus-xhigh at `5c258d6`, author sonnet, fixed by opus." = none := by decide +kernel
-theorem twoAuthorNotesAreNone :
-    a "PASS opus-xhigh at `5c258d6`, author sonnet. Earlier author opus." = none := by
-  decide +kernel
-theorem noAuthorNoteIsNone : a "PASS opus-xhigh at `5c258d6`." = none := by decide +kernel
-theorem coauthorIsNoNote : a "PASS opus-xhigh at `5c258d6`, coauthor sonnet." = none := by
-  decide +kernel
-theorem unknownModelIsNone : a "PASS opus-xhigh at `5c258d6`, author gpt." = none := by
-  decide +kernel
-
 def dash (rows : String) : String :=
   "Intro.\n\n## Needs you\n\n- | #1 | not | a | row |\n\n## In flight\n\n" ++
     "| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n" ++ rows ++
@@ -232,10 +171,16 @@ def owner : String := "owner"
 def repo : String := "owner/mitos"
 def protection : Protection := ⟨true, true, ["gate"]⟩
 def cellFor7 (verdict : String) : Option (List (Pr × List Char)) := some [(7, verdict.toList)]
+def source (authorModel : Option String := some "sonnet")
+    (head : Sha := hB) : Provenance.PullFact :=
+  ⟨7, ⟨head, ⟨"claude", "actual-builder", authorModel, none⟩⟩,
+    [⟨head, ⟨"claude", "actual-reviewer", some "opus", none⟩,
+      some .xhigh, .pass, 1, "https://github.com/owner/mitos/pull/7#issuecomment-1"⟩]⟩
 def g : Global :=
   { repo, owner, protection := some protection, stacked := some [],
-    verdictCells := cellFor7 "PASS opus-xhigh at `85b0781`, author sonnet" }
-def withRow (verdict : String) : Global := { g with verdictCells := cellFor7 verdict }
+    verdictCells := cellFor7 "PASS opus-xhigh at `85b0781`, author sonnet",
+    provenance := some [source] }
+def withSource (s : Provenance.PullFact) : Global := { g with provenance := some [s] }
 def footer : String := "\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_"
 def pull : Pull :=
   { number := 7, state := "open", draft := false, head := hB, headRepo := some repo,
@@ -313,17 +258,17 @@ theorem aForkIsNotEligible :
 theorem anotherBaseIsNotEligible :
     stepOf (p := { pull with baseRef := "dev" }) = .stop .notEligible := by decide +kernel
 theorem noRowIsNotEligible :
-    stepOf (g := { g with verdictCells := some [] }) = .stop .notEligible := by decide +kernel
+    stepOf (g := { g with provenance := some [] }) = .stop .notEligible := by decide +kernel
 theorem anOpusPassOnATrustPathCoversASonnetAuthor : o0.covered = true := by decide +kernel
 theorem anOpusAuthorIsNotCoveredByItsOwnModel :
-    stepOf (g := withRow "PASS opus-xhigh at `85b0781`, author opus") = .stop .notEligible := by
+    stepOf (g := withSource (source (some "claude-opus-4-6"))) = .stop .notEligible := by
   decide +kernel
 theorem noAuthorNoteIsNotEligible :
-    stepOf (g := withRow "PASS opus-xhigh at `85b0781`") = .stop .notEligible := by decide +kernel
+    stepOf (g := withSource (source none)) = .stop .notEligible := by decide +kernel
 theorem aVerdictOnAnOlderHeadCarriesOverTheUpdatersPush :
-    stepOf (g := withRow carried) = .present hB := by decide +kernel
+    stepOf (g := withSource (source (head := hA))) = .present hB := by decide +kernel
 theorem aVerdictOnOtherContentDoesNotCarry :
-    stepOf (g := withRow carried) (x := ⟨[(hB, "id-1"), (hA, "id-2")], .current⟩) =
+    stepOf (g := withSource (source (head := hA))) (x := ⟨[(hB, "id-1"), (hA, "id-2")], .current⟩) =
       .stop .notEligible := by decide +kernel
 theorem anOwnerQuestionWithoutAnswerIsNotEligible :
     stepOf (r := withComments [question, land]) = .stop .notEligible := by decide +kernel
@@ -390,7 +335,7 @@ theorem aRunningGateIsPending :
 theorem aTimedOutGateIsRed :
     gateOf hB [⟨12, "gate", "github-actions", hB, "completed", "timed_out"⟩] = .failure := by
   decide +kernel
-theorem theContentIdsAsked : contentIdCommits (o (g := withRow carried)) = [hB, hA] := by
+theorem theContentIdsAsked : contentIdCommits (o (g := withSource (source (head := hA)))) = [hB, hA] := by
   decide +kernel
 theorem eachFailedReadIsIncomplete :
     [complete { g with protection := none } pull reads, complete { g with stacked := none } pull reads,

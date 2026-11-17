@@ -292,10 +292,11 @@ watcher's echo filter and the merge rule below rely on both.
   most of the diff does not count as the passing verdict of the merge rule below, though an
   `opus`-written trust-critical PR still needs its `opus` one. While no other model can verify,
   the PR gets no merge command and its catch-up says to hold the merge, the same for every PR.
-  `pr-state.sh` enforces the model rules from the verdict cell (see the verdict-cell bullet below):
-  an author named, a verdict from another model, an `opus` verdict on a trust-critical PR. It prints
-  no `merge-ready` line and a `merge-hold=<reason>` instead. It does not check the effort, so the
-  root checks the `xhigh` effort itself from the verdict cell.
+  Snapshot and `pr-state.sh` use the same main-built provenance decoder. They require a known
+  author, an accepted independent Claude PASS from another model family, and, for critical work,
+  an independent Claude Opus PASS with actual effort `xhigh` or `max`. For an Opus author these
+  are two witnesses; for a known GPT or Grok author one qualifying Opus review can supply both.
+  Unknown actual model or effort never becomes a favorable fact.
 - A verdict covers one head. A later head keeps it only when it only rebases: every push to the
   PR's branch since the verified head is a force-push by `mitos-pr-updater[bot]`, the first one
   from the verified head and each later one from the commit the one before it left, up to the
@@ -345,20 +346,35 @@ watcher's echo filter and the merge rule below rely on both.
   model and an effort, such as `opus-xhigh`, and two are joined with `+`: `PASS sonnet-xhigh +
   opus-xhigh at 43fc333, author opus`. At a head that only rebases, the row's Head cell is the new
   head and the verdict cell keeps the models: `PASS opus-xhigh carried from 43fc333, author
-  sonnet`. The root updates the Head cell and the verdict cell together. `pr-state.sh` reads
-  the verdict head, the verdict models and the author from that
-  cell, and prints no `merge-ready` line, with `merge-hold=<reason>` on the PR's state line, when
-  the cell names no author or no verdict model, when every verdict model is the author's, or when
-  the PR is trust-critical and no verdict is from `opus`. The author and each verdict's model may
-  be spelled as a full model id (`author claude-sonnet-5-5`, `sonnet4.5-xhigh`): the hook maps each
-  to one of `opus`, `sonnet`, `haiku` or `fable`. An author that maps to none of them or to more
-  than one is held, and a verdict token that maps to none of them is no verdict model.
-  Trust-critical there means a path of the spec or trust-infrastructure bullets of What stays
-  with the user, or the `spec-approved` label, and a PR whose files cannot be read counts as trust-critical. A cell written before this
-  format, with no author, therefore never reads merge-ready: the root rewrites it, naming the
-  author, once a verifier of another model has passed that head. `wording-only` needs neither.
-  A `verdict` commit status would show in the PR's checks, but the
-  session proxy refuses status writes (#42).
+  sonnet`. The root updates the Head cell and the verdict cell together. This prose is for
+  people; neither consumer infers author identity, verdict identity or admission from it.
+- The root also publishes exactly one `mitos-provenance:v1` section after the dashboard's
+  human sections, using `mitos-gate provenance render <owner/repo> <payload.json>` from main.
+  The renderer validates the payload and writes the exact marker, JSON fence and canonical
+  single-line bytes the decoder accepts. Supply compact, sorted payload bytes from a JSON
+  encoder (`jq -cS` for these ASCII fields); the renderer refuses noncanonical input rather than
+  silently overwriting duplicate keys. Do not hand-format the fenced JSON. Its object has
+  `version: 1`, `repository: "owner/repo"`, and `pulls: [...]`. Each pull has `number`, an
+  `author` object and a `verdicts` list, which may be empty before any review completes.
+  Author fields are `head` (full SHA), `provider`, `actor` (stable real giver), `actualModel`
+  (reported exact ID or null), and optional `requestedModel` (requested text only). Each verdict
+  has the same identity/head fields plus `effort` (`low`, `medium`, `high`, `xhigh`, `max` or null),
+  `result` (`pass`, `fail`, `hold` or `wordingOnly`), distinct positive `order`, and a public
+  `https://github.com/owner/repo/pull/N#...` evidence link. The canonical Claude provider is
+  `claude`; a model family never supplies the provider. Model IDs such as
+  `claude-sonnet-5-5` share a family key with legacy `sonnet`, while the exact ID is retained.
+  Requested aliases and unavailable runtime identities remain unknown, even when a configured
+  role says Opus. Keep all adverse events and their real giver/order when publishing an update.
+  A supplemental low-effort PASS does not veto sufficient independent evidence. The existing
+  independent Claude/root wording-only classification is the sole wording-only exception.
+  The block is a manual trusted-root assertion checked against actual launch/review evidence,
+  not runtime authentication or proof of which shared-account writer edited the dashboard.
+  Schema and evidence URLs do not prove those facts or detect an omitted adverse event (#327,
+  #117). Missing, malformed, duplicate or unrecognized source data holds with no prose fallback.
+  The hook also holds when its main-built decoder or local carry evidence is unavailable; it
+  does not fetch or build within its 15-second budget. Raw snapshot reads retain effort,
+  requested text and evidence; canonical version 1 retains truthful author/verdict facts and
+  uses source admission to gate eligibility without inventing a factual HOLD or owner speech.
 - A PR merges when four things hold at its current head. It has a passing verdict or is a
   wording-only change. Its `gate` is green. No review comment from the user is unanswered, read
   from the comment routes in **Forge**. It touches nothing the user keeps (see What stays with

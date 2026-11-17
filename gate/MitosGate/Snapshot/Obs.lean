@@ -7,7 +7,8 @@ namespace MitosGate.Snapshot
 open Land (Sha Pr Teammate Obs Verdict Author Result Base Gate Word Mark Push Entry)
 open Speech (Comment Stamp lines lead blank isSha hex digit)
 
-def dashboardCell (g : Global) (n : Pr) : Option (List Char) := g.verdictCells.bind (·.lookup n)
+def provenanceFact (g : Global) (n : Pr) : Option Provenance.PullFact :=
+  g.provenance.bind fun ps => ps.find? (·.number == n)
 
 def complete (g : Global) (p : Pull) (r : Reads) : Bool :=
   g.protection.isSome && g.stacked.isSome && g.verdictCells.isSome && r.comments.isSome &&
@@ -37,15 +38,22 @@ def withReviewSpeech (g : Global) (p : Pull) (r : Reads) (ws : List Word) : List
     ws ++ [.ownerSpoke (2 * Speech.top (ctx g p r) (r.comments.getD []) + 2)]
   else ws
 
-def obs (g : Global) (p : Pull) (r : Reads) (x : Git) : Obs :=
+def sourceObs (g : Global) (p : Pull) (r : Reads) (x : Git) : Obs :=
   { pr := p.number, updatable := updatable g p, enforced := enforced g, head := p.head,
     pushes := ((activity p r).getD []).map toLand, ids := x.ids, paths := r.files, base := x.base,
-    gate := gateOf p.head (r.checks.getD []), author := (dashboardCell g p.number).bind authorOf,
-    verdicts := ((dashboardCell g p.number).map (verdictsOf (ctx g p r).known)).getD [],
+    gate := gateOf p.head (r.checks.getD []), author := none, verdicts := [],
     botAt := botAt p.head (r.checks.getD []) (r.reviews.getD []), delegates := Speech.delegates,
     words := withReviewSpeech g p r (Speech.words (ctx g p r) (r.comments.getD [])
       ((activity p r).getD []) (complete g p r)).1,
     rest := rest g p r }
+
+def obs (g : Global) (p : Pull) (r : Reads) (x : Git) : Obs :=
+  let o := sourceObs g p r x
+  let f := provenanceFact g p.number
+  { o with
+    author := f.bind (Provenance.authorOf o)
+    verdicts := (f.map fun ps => ps.verdicts.map Provenance.VerdictFact.toLand).getD []
+    rest := o.rest && f.any (fun fact => Provenance.sourceGuard o fact p.labels) }
 
 def abouts : List Word → List Sha
   | [] => []
@@ -83,11 +91,14 @@ def PushesAreTheActivity : Prop :=
     ∃ ps, activity p r = some ps ∧ (obs g p r x).pushes = ps.map toLand ∧ Carry.tip p.head ps = true ∧
       ∀ s ∈ known ps, isSha s.toList = true
 
-def VerdictsFromTheCell : Prop :=
+def VerdictsFromTheSource : Prop :=
   ∀ g p r x, ∀ v ∈ (obs g p r x).verdicts,
-    ∃ c s, dashboardCell g p.number = some c ∧ said? c = some s ∧ v.result = s.result ∧
-      v.head ∈ (ctx g p r).known ∧ s.sha.isPrefixOf v.head.toList = true ∧
-      ∀ k ∈ (ctx g p r).known, s.sha.isPrefixOf k.toList = true → k = v.head
+    ∃ f, provenanceFact g p.number = some f ∧ ∃ event ∈ f.verdicts,
+      v = event.toLand
+
+def RestNeedsSourceGuard : Prop :=
+  ∀ g p r x, (obs g p r x).rest = true →
+    ∃ f, provenanceFact g p.number = some f ∧ Provenance.sourceGuard (sourceObs g p r x) f p.labels = true
 
 def RestNeedsAnswersAndTheLabel : Prop :=
   ∀ g p r x, (obs g p r x).rest = true →
@@ -181,13 +192,13 @@ theorem failedReadHolds : FailedReadHolds := by
   intro g p r x hc
   obtain ⟨n, hn⟩ := Speech.incompleteReadHolds (ctx g p r) (r.comments.getD []) ((activity p r).getD [])
   have h : Land.newestOwner (obs g p r x).words = some (.ownerHold n) := by
-    simp only [obs, hc, newestOwner_withReviewSpeech]
+    simp only [obs, sourceObs, hc, newestOwner_withReviewSpeech]
     exact hn
   exact Land.holdWins _ n h
 
 theorem enforcedNeedsProtection : EnforcedNeedsProtection := by
   intro g p r x h
-  simp only [obs, enforced] at h
+  simp only [obs, sourceObs, enforced] at h
   cases hp : g.protection with
   | none => rw [hp] at h; cases h
   | some pr =>
@@ -197,7 +208,7 @@ theorem enforcedNeedsProtection : EnforcedNeedsProtection := by
 
 theorem updatableNeedsTheGuard : UpdatableNeedsTheGuard := by
   intro g p r x h
-  simp only [obs, updatable, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
+  simp only [obs, sourceObs, updatable, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
   obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
   refine ⟨h1, h2, h3, h4, h5, ?_⟩
   cases hs : g.stacked with
@@ -209,7 +220,7 @@ theorem updatableNeedsTheGuard : UpdatableNeedsTheGuard := by
 
 theorem unreadFilesAreKept : UnreadFilesAreKept := by
   intro g p r x h
-  simp [obs, Obs.kept, Obs.critical, h]
+  simp [obs, sourceObs, Obs.kept, Obs.critical, h]
 
 theorem onlyTheOwnerQueues : OnlyTheOwnerQueues := by
   intro g p r x e he
@@ -217,11 +228,11 @@ theorem onlyTheOwnerQueues : OnlyTheOwnerQueues := by
   | owner => rfl
   | agent t =>
     have := (Land.onlyMergersQueue _ e t he hl).2
-    simp [obs, Speech.delegates] at this
+    simp [obs, sourceObs, Speech.delegates] at this
 
 theorem pushesAreTheActivity : PushesAreTheActivity := by
   intro g p r x h
-  simp only [obs] at h ⊢
+  simp only [obs, sourceObs] at h ⊢
   cases ha : activity p r with
   | none => rw [ha] at h; simp at h
   | some ps =>
@@ -246,23 +257,27 @@ theorem pushesAreTheActivity : PushesAreTheActivity := by
         · cases ha
       · cases ha
 
-theorem verdictsFromTheCell : VerdictsFromTheCell := by
+theorem verdictsFromTheSource : VerdictsFromTheSource := by
   intro g p r x v hv
-  simp only [obs] at hv
-  cases hc : dashboardCell g p.number with
-  | none => rw [hc] at hv; simp at hv
-  | some c =>
-    rw [hc] at hv
-    simp only [Option.map_some, Option.getD_some] at hv
-    obtain ⟨s, hs, hres, hk⟩ := verdictsOf_spec hv
-    obtain ⟨h1, h2, h3⟩ := resolveKnown_spec hk
-    exact ⟨c, s, rfl, hs, hres, h1, h2, h3⟩
+  simp only [obs, sourceObs] at hv
+  cases hf : provenanceFact g p.number with
+  | none => rw [hf] at hv; simp at hv
+  | some f =>
+    rw [hf] at hv
+    simp only [Option.map_some, Option.getD_some, List.mem_map] at hv
+    obtain ⟨e, he, hv⟩ := hv
+    exact ⟨f, rfl, e, he, hv.symm⟩
+
+theorem restNeedsSourceGuard : RestNeedsSourceGuard := by
+  intro g p r x h
+  simp only [obs, sourceObs, Bool.and_eq_true, Option.any_eq_true] at h
+  exact h.2
 
 theorem restNeedsAnswersAndTheLabel : RestNeedsAnswersAndTheLabel := by
   intro g p r x h
-  simp only [obs, rest, Bool.and_eq_true, List.isEmpty_iff, Bool.or_eq_true, Bool.not_eq_true',
+  simp only [obs, sourceObs, rest, Bool.and_eq_true, List.isEmpty_iff, Bool.or_eq_true, Bool.not_eq_true',
     List.contains_iff_mem] at h
-  obtain ⟨⟨h1, h2⟩, h3⟩ := h
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, _⟩ := h
   refine ⟨h1, h2, fun hs => ?_⟩
   rcases h3 with h3 | h3
   · rw [hs] at h3; cases h3

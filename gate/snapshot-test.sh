@@ -54,7 +54,7 @@ mkdir -p "$b"
 echo '{"full_name":"owner/mitos","owner":{"login":"owner"}}' >"$b/repo.json"
 pr_json() {
   jq -n --argjson n "$1" --arg sha "$2" --arg ref "$3" --arg body "$body" \
-    '{number: $n, state: "open", draft: false, labels: [], body: $body,
+    '{number: $n, user: {login: "owner"}, state: "open", draft: false, labels: [], body: $body,
       head: {sha: $sha, ref: $ref, repo: {full_name: "owner/mitos"}},
       base: {ref: "main", repo: {full_name: "owner/mitos"}}}'
 }
@@ -71,8 +71,22 @@ dash_body() {
   printf '## Needs you\n\n- nothing\n\n## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n%s\n\n## Next up\n' \
     "$(row 7 "$p1"; row 8 "$c1"; row 9 "$q1"; printf "%s" "${1:-}")"
 }
-jq -n --arg body "$(dash_body)" \
-  '{title: "Owner dashboard", user: {login: "owner"}, state: "open", body: $body}' >"$b/dashboard.json"
+source_payload() {
+  jq -cnS --arg a "$p1" --arg b "$c1" --arg c "$q1" '
+    def p($n; $head): {number: $n,
+      author: {head: $head, provider: "claude", actor: "builder", actualModel: "claude-sonnet-5-5"},
+      verdicts: [{head: $head, provider: "claude", actor: "reviewer", actualModel: "claude-opus-4-6",
+        effort: "xhigh", result: "pass", order: 1,
+        evidence: "https://github.com/owner/mitos/pull/\($n)#issuecomment-1"}]};
+    {version: 1, repository: "owner/mitos", pulls: [p(7; $a), p(8; $b), p(9; $c)]}'
+}
+source_payload >"$tmp/source.json"
+"$bin" provenance render owner/mitos "$tmp/source.json" >"$tmp/source.block" || exit 1
+publish() {
+  jq -n --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/source.block")" \
+    '{title: "Owner dashboard", user: {login: "owner"}, state: "open", body: $body}'
+}
+publish >"$b/dashboard.json"
 per_pr() {
   local n=$1 h=$2 file=$3
   jq -n --argjson id "${n}001" \
@@ -167,7 +181,7 @@ done
 for r in protection stacks dashboard; do
   fresh
   rm "$d/$r.json"
-  holds "a failed read of $r holds every pull request" "^snapshot: #9 holds: unread $r\$"
+  holds "a failed read of $r holds every pull request" "^snapshot: #9 holds: unread $r(, provenance)?\$"
 done
 fresh
 echo '{"message":"Not Found"}' >"$d/comments-7.json"
@@ -189,19 +203,19 @@ jq '.[0][0].before = "HEAD"' "$b/activity-7.json" >"$d/activity-7.json"
 holds "activity with a commit that is not a sha holds" "#7 holds: unread activity$"
 fresh
 jq '.user.login = "someone"' "$b/dashboard.json" >"$d/dashboard.json"
-holds "a dashboard from another login holds every pull request" "#7 holds: unread dashboard$"
+holds "a dashboard from another login holds every pull request" "#7 holds: unread dashboard(, provenance)?$"
 fresh
 jq '.pull_request = {}' "$b/dashboard.json" >"$d/dashboard.json"
-holds "a pull request titled Owner dashboard is no dashboard" "#7 holds: unread dashboard$"
+holds "a pull request titled Owner dashboard is no dashboard" "#7 holds: unread dashboard(, provenance)?$"
 fresh
 jq --arg body "$(dash_body "$(row 7 "$p1")")" '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
-holds "two rows for one pull request hold every pull request" "#7 holds: unread dashboard$"
+holds "two rows for one pull request hold every pull request" "#7 holds: unread dashboard(, provenance)?$"
 fresh
 echo '[[]]' >"$d/comments-9.json"
 # shellcheck disable=SC2016
 jq --arg body "$(dash_body "$(printf '#7 y | `%s` | red | FAIL opus-xhigh at `%s` |' "${p1:0:7}" "${p1:0:7}")")" \
   '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
-holds "a FAIL row without the leading pipe holds every pull request" "#7 holds: unread dashboard$"
+holds "a FAIL row without the leading pipe holds every pull request" "#7 holds: unread dashboard(, provenance)?$"
 if snap && decide "$me7" && [ "$(jq -c .plan "$tmp/land.out")" = '{"kind":"idle"}' ]; then
   ok "a FAIL row without the leading pipe pushes nothing"
 else
@@ -216,7 +230,7 @@ for hide in 'an HTML comment:<!--:-->' 'a code fence:```:```'; do
   echo '[[]]' >"$d/comments-9.json"
   jq --arg body "$(dash_body "$(printf '\n%s\n## old\n%s\n\n%s' "$open" "$close" "$fail7")")" \
     '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
-  holds "a heading in $what above a FAIL table holds every pull request" "#7 holds: unread dashboard$"
+  holds "a heading in $what above a FAIL table holds every pull request" "#7 holds: unread dashboard(, provenance)?$"
   if snap && decide "$me7" && [ "$(jq -c .plan "$tmp/land.out")" = '{"kind":"idle"}' ]; then
     ok "a heading in $what above a FAIL table pushes nothing"
   else
@@ -236,9 +250,224 @@ jq '.[0][0].performed_via_github_app = {slug: "claude"}' "$b/comments-7.json" >"
 expect_land "an app's /land is no entry" "$me7" \
   "{\"next\":9,\"plan\":{\"head\":\"$q1\",\"kind\":\"merge\",\"pr\":9},\"step\":{\"kind\":\"stop\",\"why\":\"noEntry\"},\"word\":\"none\"}"
 fresh
-sed 's/author sonnet/author opus/g' "$b/dashboard.json" >"$d/dashboard.json"
+sed 's/claude-sonnet-5-5/claude-opus-4-6/g' "$b/dashboard.json" >"$d/dashboard.json"
 expect_land "a pass on the author's model covers nothing" "$me7" \
   '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"stands"}'
+
+native_hook_matches() {
+  local wanted=${1:-} expected n
+  rm -rf "$tmp/native-hook"
+  mkdir -p "$tmp/native-hook"
+  jq '.[0]' "$d/open.json" >"$tmp/native-hook/open.json"
+  jq '[.]' "$d/dashboard.json" >"$tmp/native-hook/dash.json"
+  for n in 7 8 9; do
+    jq '.[0]' "$d/files-$n.json" >"$tmp/native-hook/files-$n.json"
+    cp "$d/activity-$n.json" "$tmp/native-hook/activity-$n.json"
+  done
+  jq -c '{prs:[.prs[0] | .updatable = true | .enforced = true | .base = {kind:"current"} |
+      .gate = "success" | .words = [] | .botAt = .head],
+      me:{provider:"claude",name:"orchestrator"},pr:7}' "$tmp/snap.json" |
+    "$bin" land >"$tmp/policy-decision.json" || return 1
+  expected=$(jq -c '.step.why != "notEligible"' "$tmp/policy-decision.json")
+  [ -z "$wanted" ] || [ "$expected" = "$wanted" ] || return 1
+  (cd "$repo" && "$bin" provenance candidates "$tmp/native-hook" owner/mitos owner) \
+    >"$tmp/candidates.json" 2>"$tmp/candidates.err" &&
+  (cd "$repo" && "$bin" provenance hook "$tmp/native-hook" owner/mitos owner "$m2") \
+    >"$tmp/admission.json" 2>"$tmp/admission.err" &&
+  jq -e --argjson expected "$expected" --slurpfile c "$tmp/candidates.json" \
+    '.["7"].eligible == $expected and .["7"].candidate == $c[0]["7"].candidate and
+      all($c[0][]; .eligible == false)' "$tmp/admission.json" >/dev/null
+}
+
+source_case() {
+  local name=$1 filter=$2 check=$3 mode=${4:-critical} wanted=${5:-}
+  fresh
+  jq -cS "$filter" "$tmp/source.json" >"$tmp/mutated.json" || { bad "$name" "mutation failed"; return; }
+  if ! "$bin" provenance render owner/mitos "$tmp/mutated.json" >"$tmp/mutated.block"; then
+    bad "$name" "renderer refused"; return
+  fi
+  jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/mutated.block")" '.body = $body' \
+    "$b/dashboard.json" >"$d/dashboard.json"
+  if [ "$mode" = critical ]; then
+    echo '[[{"filename":"gate/Main.lean"}]]' >"$d/files-7.json"
+  else
+    echo '[[{"filename":"ordinary.txt"}]]' >"$d/files-7.json"
+    if [ "$mode" = label ]; then
+      jq '.[0][0].labels = [{name:"spec-approved"}]' "$b/open.json" >"$d/open.json"
+    fi
+  fi
+  if snap && jq -e "$check" "$tmp/snap.json" >/dev/null &&
+      native_hook_matches "$wanted"; then ok "$name"
+  else bad "$name" "$(cat "$tmp/snap.err")" "$(jq -c '.prs[0]' "$tmp/snap.json")"; fi
+}
+
+source_case "known GPT author is recorded without being relabelled Claude" \
+  '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra")' \
+  '.prs[0] | .author.who == {provider:"openai",name:"builder"} and .author.model == "gpt-6.2-astra" and .rest'
+source_case "pending author identity exists before any verdict" \
+  '.pulls[0].verdicts = []' '.prs[0] | .author.model == "claude-sonnet-5-5" and .verdicts == [] and (.rest | not)'
+source_case "unknown actual author is not replaced by requested Opus" \
+  '.pulls[0].author |= (.actualModel = null | .requestedModel = "opus")' \
+  '.prs[0] | (.author == null) and (.rest | not) and all(.words[]; .kind != "ownerHold")'
+source_case "low-effort PASS remains factual PASS while critical admission holds" \
+  '.pulls[0].verdicts[0].effort = "low"' \
+  '.prs[0] | .verdicts[0].result == "pass" and (.rest | not) and all(.words[]; .kind != "ownerHold")'
+source_case "unknown actual effort cannot discharge critical Opus" \
+  '.pulls[0].verdicts[0].effort = null' '.prs[0].rest | not'
+source_case "optional low-effort supplement does not veto qualifying evidence" \
+  '.pulls[0].verdicts += [(.pulls[0].verdicts[0] | .actor = "supplemental" | .order = 2 | .effort = "low" | .evidence += "-supplemental")]' \
+  '.prs[0] | .rest and (.verdicts | length) == 2'
+source_case "same real giver cannot independently verify" \
+  '.pulls[0].verdicts[0].actor = "builder"' '.prs[0].rest | not'
+source_case "an Opus-named OpenAI judge cannot become accepted Claude verification" \
+  '.pulls[0].verdicts[0] |= (.provider = "openai" | .actor = "verifier-opus" | .actualModel = "gpt-6.2-sol")' \
+  '.prs[0] | (.rest | not) and .verdicts[0].judge.provider == "openai" and .verdicts[0].model == "gpt-6.2-sol"'
+source_case "unknown actual verifier remains unknown despite its requested Opus alias" \
+  '.pulls[0].verdicts[0] |= (.actualModel = null | .requestedModel = "opus")' \
+  '.prs[0] | (.rest | not) and .verdicts[0].result == "pass" and .verdicts[0].model == "unknown"'
+source_case "full Sonnet aliases across author systems do not create model independence" \
+  '.pulls[0].author.provider = "grok" | .pulls[0].verdicts[0].actualModel = "claude-sonnet-4-6"' \
+  '.prs[0] | (.rest | not) and .author.who.provider == "grok"' ordinary
+
+source_case "an Opus author still needs another-model PASS" \
+  '.pulls[0].author.actualModel = "claude-opus-4-6"' '.prs[0].rest | not'
+source_case "critical Opus author uses distinct other-model and Opus witnesses" \
+  '.pulls[0].author.actualModel = "claude-opus-4-6" | .pulls[0].verdicts += [(.pulls[0].verdicts[0] | .actor = "sonnet-reviewer" | .actualModel = "claude-sonnet-5-5" | .order = 2 | .evidence += "-sonnet")]' \
+  '.prs[0].rest'
+source_case "a standing FAIL from a supplemental provider survives and blocks" \
+  '.pulls[0].verdicts += [(.pulls[0].verdicts[0] | .provider = "openai" | .actor = "supplemental" | .actualModel = "gpt-6.2-sol" | .result = "fail" | .order = 2 | .evidence += "-fail")]' \
+  '.prs[0] | .verdicts[1].result == "fail" and .verdicts[1].judge.provider == "openai"' critical false
+source_case "a non-Claude wording entry cannot gain the trusted root exception" \
+  '.pulls[0].verdicts[0] |= (.provider = "openai" | .actor = "root" | .actualModel = "gpt-6.2-sol" | .result = "wordingOnly")' \
+  '.prs[0] | (.rest | not) and .verdicts[0].result == "wordingOnly"'
+
+source_case "ordinary known GPT work can use accepted Sonnet" \
+  '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra") | .pulls[0].verdicts[0].actualModel = "claude-sonnet-5-5"' \
+  '.prs[0].rest' ordinary
+source_case "spec-approved label alone refuses a non-Opus critical witness" \
+  '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra") | .pulls[0].verdicts[0].actualModel = "claude-sonnet-5-5"' \
+  '.prs[0] | (.rest | not) and .paths == ["ordinary.txt"]' label
+source_case "spec-approved label alone accepts qualifying Opus" \
+  '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra")' \
+  '.prs[0] | .rest and .paths == ["ordinary.txt"]' label
+
+carry_case() {
+  local name=$1 actor=$2 expected=$3
+  fresh
+  jq --arg h "$replay" '.[0][0].head.sha = $h' "$b/open.json" >"$d/open.json"
+  jq --arg h "$replay" '.[0].check_runs[0].head_sha = $h' "$b/checks-7.json" >"$d/checks-7.json"
+  jq --arg before "$p1" --arg after "$replay" --arg actor "$actor" \
+    '.[0] = [{timestamp:"2026-11-14T07:01:00Z",activity_type:"force_push",actor:{login:$actor},before:$before,after:$after}] + .[0]' \
+    "$b/activity-7.json" >"$d/activity-7.json"
+  if snap && jq -e --argjson expected "$expected" '.prs[0].rest == $expected' "$tmp/snap.json" >/dev/null &&
+      native_hook_matches "$expected"; then ok "$name"
+  else bad "$name" "$(cat "$tmp/snap.err" "$tmp/admission.err")"; fi
+}
+carry_case "snapshot and native hook carry real author/verdict facts across an updater rebase" 'mitos-pr-updater[bot]' true
+carry_case "equal content never carries through an owner's push" owner false
+
+refused_source() {
+  local name=$1 raw=$2
+  fresh
+  # shellcheck disable=SC2016
+  jq --arg body "$(dash_body)$(printf '\n\n<!-- mitos-provenance:v1 -->\n```json\n%s\n```\n<!-- /mitos-provenance:v1 -->' "$raw")" \
+    '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
+  if snap && jq -e '.prs[0] | (.author == null) and .verdicts == [] and (.rest | not) and all(.words[]; .kind != "ownerHold")' \
+      "$tmp/snap.json" >/dev/null; then ok "$name"
+  else bad "$name" "$(cat "$tmp/snap.err")"; fi
+}
+refused_source "duplicate JSON keys refuse rather than overwrite" \
+  '{"pulls":[],"repository":"owner/mitos","version":1,"version":1}'
+refused_source "duplicate PR entries refuse" "$(jq -cS '.pulls += [.pulls[0]]' "$tmp/source.json")"
+refused_source "ambiguous duplicate event positions refuse" \
+  "$(jq -cS '.pulls[0].verdicts += [(.pulls[0].verdicts[0] | .evidence += "-duplicate")]' "$tmp/source.json")"
+refused_source "duplicate event evidence refuses even at another order" \
+  "$(jq -cS '.pulls[0].verdicts += [(.pulls[0].verdicts[0] | .order = 2)]' "$tmp/source.json")"
+refused_source "unknown fields refuse" "$(jq -cS '.publisher = "claimed-root"' "$tmp/source.json")"
+refused_source "requested alias cannot be published as actual model" \
+  "$(jq -cS '.pulls[0].author.actualModel = "inherited"' "$tmp/source.json")"
+refused_source "malformed Claude suffix refuses" \
+  "$(jq -cS '.pulls[0].verdicts[0].actualModel = "claude-opus-4-6-latest"' "$tmp/source.json")"
+refused_source "a compact Sonnet alias cannot become an opaque independent author" \
+  "$(jq -cS '.pulls[0].author |= (.provider = "grok" | .actualModel = "sonnet4.5")' "$tmp/source.json")"
+refused_source "a case-variant Opus alias cannot become an opaque independent author" \
+  "$(jq -cS '.pulls[0].author |= (.provider = "openai" | .actualModel = "Opus-xhigh")' "$tmp/source.json")"
+refused_source "a bare GPT request cannot become reported runtime identity" \
+  "$(jq -cS '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt")' "$tmp/source.json")"
+
+
+fresh
+jq --arg body "$(dash_body)" '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
+if snap && jq -e 'all(.prs[]; .author == null and .verdicts == [] and (.rest | not))' "$tmp/snap.json" >/dev/null; then
+  ok "favorable human prose never substitutes for missing provenance"
+else bad "favorable human prose never substitutes for missing provenance"; fi
+fresh
+jq --arg extra "$(cat "$tmp/source.block")" '.body += "\n\n" + $extra' "$b/dashboard.json" >"$d/dashboard.json"
+if snap && jq -e 'all(.prs[]; .author == null and .verdicts == [] and (.rest | not))' "$tmp/snap.json" >/dev/null; then
+  ok "duplicate machine sections refuse"
+else bad "duplicate machine sections refuse"; fi
+
+source_case "prepare native record round trip with truthful author" \
+  '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra")' '.prs[0].rest'
+mkdir -p "$tmp/record-bin"
+cat >"$tmp/record-bin/gh" <<'SH'
+#!/usr/bin/env bash
+if [ "$2" = rate_limit ]; then echo 5000; else echo "$ROUNDTRIP_MAIN"; fi
+SH
+cat >"$tmp/record-fetch" <<'SH'
+#!/usr/bin/env bash
+mkdir -p "$3"
+cp "$ROUNDTRIP_READS/"*.json "$3/"
+SH
+chmod +x "$tmp/record-bin/gh" "$tmp/record-fetch"
+if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH="$tmp/record-fetch" \
+      ROUNDTRIP_MAIN="$m2" ROUNDTRIP_READS="$d" bash "$root/.github/scripts/land-decide.sh" owner/mitos 43 "$tmp/record") \
+      >"$tmp/record.out" 2>"$tmp/record.err" &&
+    jq -c '.outcome.snapshot' "$tmp/record/record.json" | "$bin" land >"$tmp/replayed" &&
+    cmp -s "$tmp/replayed" "$tmp/record/decision.json" &&
+    jq -e '.v == 1 and .outcome.kind == "decided" and
+      .outcome.snapshot.prs[0].author.who.provider == "openai" and
+      .outcome.snapshot.prs[0].author.model == "gpt-6.2-astra"' "$tmp/record/record.json" >/dev/null &&
+    cmp -s "$d/dashboard.json" "$tmp/record/reads/dashboard.json"; then
+  ok "actual raw snapshot and canonical v1 record round trip preserves identities and source bytes"
+else bad "actual raw snapshot and canonical v1 record round trip preserves identities and source bytes" \
+  "$(cat "$tmp/record.err")"; fi
+
+source_case "prepare low-effort record round trip" '.pulls[0].verdicts[0].effort = "low"' \
+  '.prs[0] | .verdicts[0].result == "pass" and (.rest | not)'
+if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH="$tmp/record-fetch" \
+      ROUNDTRIP_MAIN="$m2" ROUNDTRIP_READS="$d" bash "$root/.github/scripts/land-decide.sh" owner/mitos 43 "$tmp/low-record") \
+      >"$tmp/low-record.out" 2>"$tmp/low-record.err" &&
+    jq -c '.outcome.snapshot' "$tmp/low-record/record.json" | "$bin" land >"$tmp/low-replayed" &&
+    cmp -s "$tmp/low-replayed" "$tmp/low-record/decision.json" &&
+    jq -e '.outcome.snapshot.prs[0] | .verdicts[0].result == "pass" and (.rest | not) and
+      all(.words[]; .kind != "ownerHold")' "$tmp/low-record/record.json" >/dev/null &&
+    cmp -s "$d/dashboard.json" "$tmp/low-record/reads/dashboard.json"; then
+  ok "low actual effort survives raw-to-record round trip without inventing HOLD or owner speech"
+else bad "low actual effort survives raw-to-record round trip without inventing HOLD or owner speech" \
+  "$(cat "$tmp/low-record.err")"; fi
+
+source_case "prepare local-only native refusal control" '.' '.prs[0].rest'
+jq -cS '.pulls[0].author.head = ("f" * 40)' "$tmp/source.json" >"$tmp/unknown-head.json"
+"$bin" provenance render owner/mitos "$tmp/unknown-head.json" >"$tmp/unknown-head.block"
+jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/unknown-head.block")" \
+  '.[0].body = $body' "$tmp/native-hook/dash.json" >"$tmp/unknown-dash.json"
+mv "$tmp/unknown-dash.json" "$tmp/native-hook/dash.json"
+mkdir -p "$tmp/git-spy"
+cat >"$tmp/git-spy/git" <<'SH'
+#!/usr/bin/env bash
+printf '%s\t' "$@" >>"$PROVENANCE_GIT_LOG"
+printf '\n' >>"$PROVENANCE_GIT_LOG"
+exec "$PROVENANCE_REAL_GIT" "$@"
+SH
+chmod +x "$tmp/git-spy/git"
+real_git=$(command -v git)
+if (cd "$repo" && PATH="$tmp/git-spy:$PATH" PROVENANCE_REAL_GIT="$real_git" PROVENANCE_GIT_LOG="$tmp/native-git.log" \
+      "$bin" provenance hook "$tmp/native-hook" owner/mitos owner "$m2") >"$tmp/local-refusal.json" &&
+    jq -e '.["7"] | .eligible == false and .reason == "local-content-unavailable"' "$tmp/local-refusal.json" >/dev/null &&
+    ! grep -qE '(^|[[:space:]])fetch([[:space:]]|$)' "$tmp/native-git.log"; then
+  ok "missing local provenance objects hold without any native fetch"
+else bad "missing local provenance objects hold without any native fetch"; fi
 
 agent_footer=$(printf '\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_')
 said9() {

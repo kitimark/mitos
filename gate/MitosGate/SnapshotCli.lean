@@ -2,6 +2,7 @@ import Lean.Data.Json
 import MitosGate.Snapshot
 import MitosGate.SpeechCli
 import MitosGate.ContentId
+import MitosGate.Provenance.Decode
 
 /-!
 # `mitos-gate snapshot`: what GitHub said, as one `land` snapshot
@@ -271,7 +272,8 @@ def unread (g : Global) (p : Pull) (r : Reads) : List String :=
    ("dashboard", g.verdictCells.isNone), ("comments", r.comments.isNone),
    ("review-comments", r.reviewComments.isNone), ("reviews", r.reviews.isNone),
    ("activity", (activity p r).isNone), ("files", r.files.isNone),
-   ("checks", r.checks.isNone)].filterMap fun (k, b) => if b then some k else none
+   ("checks", r.checks.isNone), ("provenance", g.provenance.isNone)].filterMap fun (k, b) =>
+    if b then some k else none
 
 private def stop (m : String) : IO UInt32 := do
   IO.eprintln (ciLine s!"snapshot: {m}")
@@ -289,10 +291,12 @@ def run (dir : System.FilePath) : IO UInt32 := do
     | stop "the read of main has no commit"
   unless (← ensure main) do
     return (← stop s!"main's commit {main} is not in this clone and could not be fetched")
+  let dashboard := (← load dir "dashboard").bind (dashboardOf owner)
+  let provenance := dashboard.bind fun body => (Provenance.decode repo body).toOption
   let g : Global :=
     { repo, owner, protection := (← load dir "protection").bind protectionOf,
       stacked := (← load dir "stacks").bind stacksOf,
-      verdictCells := ((← load dir "dashboard").bind (dashboardOf owner)).bind rows }
+      verdictCells := dashboard.bind rows, provenance }
   let mut out : Array Json := #[]
   for p in pulls.mergeSort (fun a b => a.number ≤ b.number) do
     let k := toString p.number
@@ -304,7 +308,8 @@ def run (dir : System.FilePath) : IO UInt32 := do
         files := (← load dir s!"files-{k}").bind filesOf,
         checks := (← load dir s!"checks-{k}").bind checksOf }
     let base ← baseOf main p.head
-    let shas := contentIdCommits (obs g p r ⟨[], base⟩)
+    let authorHeads := ((provenanceFact g p.number).map fun f => [f.author.head]).getD []
+    let shas := (contentIdCommits (obs g p r ⟨[], base⟩) ++ authorHeads).eraseDups
     let mut ids := #[]
     for s in shas do
       match ← contentId main s with
@@ -313,6 +318,8 @@ def run (dir : System.FilePath) : IO UInt32 := do
     let missing := unread g p r
     unless missing.isEmpty do
       IO.eprintln (ciLine s!"snapshot: #{k} holds: unread {", ".intercalate missing}")
+    unless (provenanceFact g p.number).any (fun f => Provenance.admitted (sourceObs g p r ⟨ids.toList, base⟩) f p.labels) do
+      IO.eprintln (ciLine s!"snapshot: #{k} holds: provenance admission incomplete")
     out := out.push (obsJson (obs g p r ⟨ids.toList, base⟩))
   IO.println (Json.mkObj [("prs", Json.arr out)]).compress
   return 0
