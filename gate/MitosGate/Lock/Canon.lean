@@ -417,20 +417,17 @@ example :
     canon [] (fun n => .ok (.named n)) (.bvar 0) :=
   canon_mdata _ _ _ _
 
-#guard match canon [] (fun _ => .ok (.named `x)) (.fvar ⟨`a⟩) with
-  | .error m => m == "free variable"
-  | _ => false
+theorem canon_fvar (levels : List Name) (ref : Name → Except String Ref) (id : FVarId) :
+    canon levels ref (.fvar id) = .error "free variable" := rfl
 
-#guard match canon [] (fun _ => .ok (.named `x)) (.mvar ⟨`a⟩) with
-  | .error m => m == "metavariable"
-  | _ => false
+theorem canon_mvar (levels : List Name) (ref : Name → Except String Ref) (id : MVarId) :
+    canon levels ref (.mvar id) = .error "metavariable" := rfl
 
-#guard match canonLevel [`u] (.param `v) with
-  | .error m => m == "unknown universe parameter v"
-  | _ => false
+theorem canon_levelMVar (levels : List Name) (ref : Name → Except String Ref) (id : LMVarId) :
+    canon levels ref (.sort (.mvar id)) = .error "universe metavariable" := rfl
 
-#guard match canon [] (fun _ => .ok (.named `x)) (.sort (.mvar ⟨`a⟩)) with
-  | .error m => m == "universe metavariable"
-  | _ => false
+theorem canonLevel_unknown {n : Name} {levels : List Name} (h : levels.idxOf? n = none) :
+    canonLevel levels (.param n) = .error s!"unknown universe parameter {n}" := by
+  simp [canonLevel, h]
 
 end MitosGate.Lock.Canon
