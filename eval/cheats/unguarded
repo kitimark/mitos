@@ -58,3 +58,15 @@ banned:cbv_simproc
 banned:builtin_cbv_simproc
 banned:cbv_simproc_decl
 banned:builtin_cbv_simproc_decl
+banned:try?
+banned:suggestions
+banned:register_try?_tactic
+banned:set_library_suggestions
+banned:library_suggestions
+banned:register_error_explanation
+banned:simproc_pattern
+banned:builtin_simproc_pattern
+banned:cbv_simproc_pattern
+banned:builtin_cbv_simproc_pattern
+banned:sevalproc
+banned:builtin_sevalproc
