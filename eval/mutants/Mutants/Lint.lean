@@ -264,6 +264,7 @@ def replaceProblems (r : String) : List String :=
   (if (splitFirst "@[".toList r.toList).isSome then ["`@[`: no attribute is allowed"] else []) ++
   ((words r).filter (bans.contains ·)).map fun w => s!"`{w}` is not allowed in a case's Lean text"
 
+set_option maxRecDepth 4096 in
 theorem bans_words : ∀ b ∈ bans, b.toList ≠ [] ∧ b.toList.all wordChar = true := by
   decide
 
