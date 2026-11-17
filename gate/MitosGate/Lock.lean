@@ -334,7 +334,7 @@ def oleanRoot (mod : Name) : IO System.FilePath := do
 def lakeBeside (olean : System.FilePath) : IO Bool := do
   let marked (p : System.FilePath) : IO Bool := do
     let hash := System.FilePath.mk (p.toString ++ ".hash")
-    let trace := System.FilePath.mk (p.toString ++ ".trace")
+    let trace := p.withExtension "trace"
     return (← hash.pathExists) || (← trace.pathExists)
   if ← marked olean then return true
   marked (← realPathNormalized olean)

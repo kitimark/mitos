@@ -175,8 +175,8 @@ folds unlisted package declarations, so a package constant that appears only in 
 type is pinned. A package bump that changes what a spec statement means turns the lock red, and a bump
 that changes nothing reached does not. The walk
 never enters theorem proofs. A reached unlisted spec opaque, axiom or unsafe declaration is an
-error, and so is a reached package axiom, unsafe declaration, or unlisted opaque. A module whose
-`.olean` directory is the toolchain is toolchain, and a Lake `.olean.trace` or `.olean.hash` beside that `.olean` is an error. A `Mitos.Core` module whose `.olean` directory
+error, and so is a reached package axiom, unsafe declaration, or unlisted opaque. The location rule assumes each package builds and downloads inside its own tree. A module whose
+`.olean` directory is the toolchain is toolchain, and a Lake `.trace` or `.olean.hash` beside that `.olean` is an error. A `Mitos.Core` module whose `.olean` directory
 is core's build is spec when `core/<module>.lean` exists beside that build, and an error when that source does not. A module is a named package when the real path of its `.olean` directory
 is under the real path of `<packagesDir>/<package>/` from the root manifest, including a build
 directory the package places inside that tree, and a `Mitos.Core` module found there is an error.
