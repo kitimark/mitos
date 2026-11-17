@@ -222,6 +222,13 @@ def banned : List String :=
     "binder_predicate", "instance", "scoped", "meta", "initialize", "builtin_initialize",
     "debug", "Lean" ] ++ runsInTerm ++ runsAsCommand ++ runsAsAttribute
 
+/-- Every attribute token that ends in `_parser` and is not already a named ban.
+A cheat guards this one id. The token that matched stays in the message. -/
+def parserSuffix : Rule := .banned "*_parser"
+
+def guardableRules : List Rule :=
+  (Rule.fixed ++ banned.map Rule.banned).filter Rule.guardable ++ [parserSuffix]
+
 def Rule.tokenComponent : Rule → Option String
   | .includeStr => some (Rule.id .includeStr)
   | .banned t => some t
@@ -261,7 +268,7 @@ def tokenRules (toks : Array Token) (what := "plugins") : Array Violation := Id.
           vs := vs.push { line := t.line, col := t.col, rule,
                           msg := s!"`{c}` is not allowed in {what}" }
         else if c.endsWith "_parser" then
-          vs := vs.push { line := t.line, col := t.col, rule := .banned c,
+          vs := vs.push { line := t.line, col := t.col, rule := parserSuffix,
                           msg := s!"`{c}` is not allowed in {what}" }
   return vs
 

@@ -682,8 +682,7 @@ theorem Key.eq_not_mem_name (k : Key) : '=' ∉ k.name.toList ∧ '\n' ∉ k.nam
 
 def Key.single (k : Key) : Bool := k != .lockAppend
 
-def guardIds : List String :=
-  ((Lint.Rule.fixed ++ Lint.banned.map Lint.Rule.banned).filter Lint.Rule.guardable).map Lint.Rule.id
+def guardIds : List String := Lint.guardableRules.map Lint.Rule.id
 
 theorem newline_not_mem_guardIds : ∀ r ∈ guardIds, '\n' ∉ r.toList := by decide +kernel
 

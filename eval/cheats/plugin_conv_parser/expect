@@ -1,0 +1,4 @@
+full=1
+comparator_only=accept
+why=Registers a conv parser. `p` is the Init parser `termIfLet`, so the file elaborates, and `attribute [conv_parser] p` is the only lint violation.
+guards=banned:*_parser
