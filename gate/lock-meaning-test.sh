@@ -43,7 +43,11 @@ write_lock() {
 }
 
 write_text() {
-  lake exe mitos-gate lock --text >"$1"
+  if ! lake exe mitos-gate lock --text >"$1"; then
+    echo "FAIL writing pre-canonical lines"
+    fail=$((fail + 1))
+    return 1
+  fi
 }
 
 changed_ids() {
@@ -62,7 +66,7 @@ bad() {
 }
 
 write_lock "$tmp/base.canon" || exit 1
-write_text "$tmp/base.text"
+write_text "$tmp/base.text" || exit 1
 
 python3 - <<'PY'
 from pathlib import Path
@@ -86,8 +90,8 @@ p.write_text(text.replace(needle, macros, 1))
 PY
 
 if rebuild "macro_rules"; then
-  write_lock "$tmp/macro.canon"
-  write_text "$tmp/macro.text"
+  write_lock "$tmp/macro.canon" || exit 1
+  if write_text "$tmp/macro.text"; then
   canon_n=$(changed_ids "$tmp/base.canon" "$tmp/macro.canon" | wc -l)
   text_n=$(changed_ids "$tmp/base.text" "$tmp/macro.text" | wc -l)
   echo "     macro_rules: $text_n pre-canonical lines moved, $canon_n canonical lines moved"
@@ -96,6 +100,7 @@ if rebuild "macro_rules"; then
   else
     bad "five throwing macro_rules: canonical $canon_n, pre-canonical $text_n"
     changed_ids "$tmp/base.canon" "$tmp/macro.canon" | sed 's/^/  canon /'
+  fi
   fi
 fi
 restore_sources
@@ -112,15 +117,16 @@ p.write_text(text.replace(old, new, 1))
 PY
 
 if rebuild "renamed binder"; then
-  write_lock "$tmp/binder.canon"
-  write_text "$tmp/binder.text"
-  if cmp -s "$tmp/base.canon" "$tmp/binder.canon" &&
-      changed_ids "$tmp/base.text" "$tmp/binder.text" | grep -qx 'theorem Mitos.WellFormed.eq_of_id'; then
-    ok "a renamed binder keeps the canonical lock"
-  else
-    bad "a renamed binder"
-    echo "  canonical:"; diff -u "$tmp/base.canon" "$tmp/binder.canon" | head -20
-    echo "  pre-canonical:"; changed_ids "$tmp/base.text" "$tmp/binder.text"
+  write_lock "$tmp/binder.canon" || exit 1
+  if write_text "$tmp/binder.text"; then
+    if cmp -s "$tmp/base.canon" "$tmp/binder.canon" &&
+        changed_ids "$tmp/base.text" "$tmp/binder.text" | grep -qx 'theorem Mitos.WellFormed.eq_of_id'; then
+      ok "a renamed binder keeps the canonical lock"
+    else
+      bad "a renamed binder"
+      echo "  canonical:"; diff -u "$tmp/base.canon" "$tmp/binder.canon" | head -20
+      echo "  pre-canonical:"; changed_ids "$tmp/base.text" "$tmp/binder.text"
+    fi
   fi
 fi
 restore_sources
@@ -137,8 +143,8 @@ p.write_text(text.replace(needle, probe, 1))
 PY
 
 if rebuild "universe probe"; then
-  write_lock "$tmp/univ-u.canon"
-  write_text "$tmp/univ-u.text"
+  write_lock "$tmp/univ-u.canon" || exit 1
+  if write_text "$tmp/univ-u.text"; then
   python3 - <<'PY'
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
@@ -146,14 +152,16 @@ p.write_text(p.read_text().replace("def canonProbe.{u} : Type u := Sort u",
                                    "def canonProbe.{v} : Type v := Sort v", 1))
 PY
   if rebuild "renamed universe"; then
-    write_lock "$tmp/univ-v.canon"
-    write_text "$tmp/univ-v.text"
-    if cmp -s "$tmp/univ-u.canon" "$tmp/univ-v.canon" && ! cmp -s "$tmp/univ-u.text" "$tmp/univ-v.text"; then
-      ok "a renamed universe parameter keeps the canonical lock"
-    else
-      bad "a renamed universe parameter"
-      diff -u "$tmp/univ-u.canon" "$tmp/univ-v.canon" | head -20
+    write_lock "$tmp/univ-v.canon" || exit 1
+    if write_text "$tmp/univ-v.text"; then
+      if cmp -s "$tmp/univ-u.canon" "$tmp/univ-v.canon" && ! cmp -s "$tmp/univ-u.text" "$tmp/univ-v.text"; then
+        ok "a renamed universe parameter keeps the canonical lock"
+      else
+        bad "a renamed universe parameter"
+        diff -u "$tmp/univ-u.canon" "$tmp/univ-v.canon" | head -20
+      fi
     fi
+  fi
   fi
 fi
 restore_sources
