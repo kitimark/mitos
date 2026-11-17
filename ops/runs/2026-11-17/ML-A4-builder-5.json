@@ -1,0 +1,1 @@
+{"task":"ML-A4","role":"builder","model":"Grok 4.7","attempt":5,"iterations":1,"wall_min":8,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"CodeRabbit on #422. Package trees under packagesDir are not source files, so a deps checkout is not an overlap. A real source file beside the package still is. packages-test.sh passed."}

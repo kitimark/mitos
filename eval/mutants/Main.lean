@@ -43,8 +43,21 @@ def clean (s : String) : String :=
       s!"\\u\{{String.ofList (Nat.toDigits 16 n)}}"
     else c.toString
 
-def coreFiles (core : System.FilePath) : IO (List (String × String)) := do
-  let paths ← core.walkDir fun p => pure (p.fileName != some ".lake")
+def inPackage (dirName : String) (names : List String) (path : String) : Bool :=
+  names.any fun n =>
+    let dir := ((dirName : System.FilePath) / n).toString
+    path == dir || (dir ++ System.FilePath.pathSeparator.toString).isPrefixOf path
+
+def sourcesOnly (dirName : String) (names : List String) (files : List (String × String)) :
+    List (String × String) :=
+  files.filter fun (path, _) => !inPackage dirName names path
+
+def coreFiles (core : System.FilePath) (skip : List String := []) : IO (List (String × String)) := do
+  let paths ← core.walkDir fun p => do
+    if p.fileName == some ".lake" then return false
+    let rel := if p.toString.length ≤ core.toString.length then ""
+      else (p.toString.drop (core.toString.length + 1)).toString
+    return !(skip.any fun dir => rel == dir || (dir ++ System.FilePath.pathSeparator.toString).isPrefixOf rel)
   let mut out := #[]
   for p in paths do
     if ← p.isDir then continue
@@ -112,6 +125,12 @@ def overlapsSources (rel : System.FilePath) (files : List (String × String)) : 
 #guard overlapsSources "Mitos" [("Mitos/Core.lean", "")]
 #guard overlapsSources "Mitos/Proofs" [("Mitos/Core.lean", "")]
 #guard overlapsSources "lakefile.toml" [("lakefile.toml", "")]
+#guard inPackage "deps" ["batteries"] "deps/batteries/Foo.lean"
+#guard inPackage "deps" ["batteries"] "deps/Extra.lean" == false
+#guard inPackage "deps" ["batteries"] "deps/batteries-extra/Foo.lean" == false
+#guard overlapsSources "deps" (sourcesOnly "deps" ["batteries"] [("deps/batteries/Foo.lean", "")]) == false
+#guard overlapsSources "deps" (sourcesOnly "deps" ["batteries"]
+  [("deps/batteries/Foo.lean", ""), ("deps/Extra.lean", "")])
 
 def packagesMissing : String :=
   "core's packages are not resolved: run cd core && lake build first"
@@ -575,10 +594,10 @@ def rejectionEvidence (logDir : System.FilePath) (r : Result) : IO (List String)
         break
   return out
 
-def readApproved (root : System.FilePath) : ExceptT String IO Approved := do
+def readApproved (root : System.FilePath) (skip : List String := []) : ExceptT String IO Approved := do
   let core := root / "core"
   let toolchain ← IO.FS.readFile (root / "lean-toolchain")
-  let files ← coreFiles core
+  let files ← coreFiles core skip
   let config ← match Json.parse (← IO.FS.readFile (core / "comparator.json")) with
     | .ok j => pure j
     | .error e => throw s!"core/comparator.json: {e}"
@@ -612,11 +631,16 @@ def main (args : List String) : IO UInt32 := do
   let casesDir := root / "eval" / "mutants" / "cases"
   let logDir := root / ".lake" / "mutants"
   IO.FS.createDirAll logDir
-  let a ← match ← (readApproved root).run with
+  let skip := match reuse with
+    | some r => r.packages.names.map fun (n : String) =>
+      ((r.packages.rel / (n : System.FilePath)).toString)
+    | none => []
+  let a ← match ← (readApproved root skip).run with
     | .ok a => pure a
     | .error e => IO.eprintln s!"mitos-mutants: {clean e}"; return 2
   if let some r := reuse then
-    if overlapsSources r.packages.rel a.files then
+    let sources := sourcesOnly r.packages.rel.toString r.packages.names a.files
+    if overlapsSources r.packages.rel sources then
       IO.eprintln "packagesDir overlaps the workspace sources"
       return 2
   let cases ← if cfg.cases.isEmpty then do
