@@ -407,6 +407,35 @@ if snap && jq -e 'all(.prs[]; .author == null and .verdicts == [] and (.rest | n
   ok "duplicate machine sections refuse"
 else bad "duplicate machine sections refuse"; fi
 
+jq -cS '.pulls[0] as $p | .pulls = [range(1;3) as $n | $p | .number = $n |
+  .verdicts = [range(0;256) as $i | $p.verdicts[0] | .actor = "r\($i)" | .order = ($i + 1) |
+    .evidence = "https://github.com/owner/mitos/pull/\($n)#issuecomment-\($i)-bounded-evidence-" + ("x" * 80)]]' \
+  "$tmp/source.json" >"$tmp/oversize-source.json"
+render_status=0
+"$bin" provenance render owner/mitos "$tmp/oversize-source.json" >"$tmp/oversize.block" 2>"$tmp/oversize.err" \
+  || render_status=$?
+if [ "$(wc -c <"$tmp/oversize-source.json")" -gt 131072 ] && [ "$render_status" = 1 ] && [ ! -s "$tmp/oversize.block" ]; then
+  ok "renderer refuses an over-limit valid-schema payload before publishing a block"
+else bad "renderer refuses an over-limit valid-schema payload before publishing a block" \
+  "exit $render_status: $(cat "$tmp/oversize.err")"; fi
+jq -cS '.pulls[].verdicts |= .[0:180]' "$tmp/oversize-source.json" >"$tmp/bounded-source.json"
+if "$bin" provenance render owner/mitos "$tmp/bounded-source.json" >"$tmp/bounded.block" 2>"$tmp/bounded.err"; then
+  jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/bounded.block")" '.[0].body = $body' \
+    "$tmp/native-hook/dash.json" >"$tmp/bounded-dash.json"
+  mv "$tmp/bounded-dash.json" "$tmp/native-hook/dash.json"
+  if "$bin" provenance candidates "$tmp/native-hook" owner/mitos owner >"$tmp/bounded-candidates.json" 2>"$tmp/bounded-candidates.err"; then
+    ok "within-limit rendered block round trips through the exact shared source decoder"
+  else bad "within-limit rendered block round trips through the exact shared source decoder" \
+    "$(cat "$tmp/bounded-candidates.err")"; fi
+else bad "within-limit rendered block round trips through the exact shared source decoder" "$(cat "$tmp/bounded.err")"; fi
+render_status=0
+printf '%s\n' '{"pulls":[],"repository":"owner/mitos","version":1,"version":1}' >"$tmp/render-duplicate.json"
+"$bin" provenance render owner/mitos "$tmp/render-duplicate.json" >"$tmp/render-duplicate.block" 2>"$tmp/render-duplicate.err" \
+  || render_status=$?
+if [ "$render_status" = 1 ] && [ ! -s "$tmp/render-duplicate.block" ]; then
+  ok "renderer still refuses canonical-input duplicate-key overwrite"
+else bad "renderer still refuses canonical-input duplicate-key overwrite"; fi
+
 source_case "prepare native record round trip with truthful author" \
   '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra")' '.prs[0].rest'
 mkdir -p "$tmp/record-bin"

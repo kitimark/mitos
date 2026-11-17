@@ -39,8 +39,30 @@ Validate meaningful pure consequences and raw → snapshot → canonical record 
 
 The bulk typed Snapshot compatibility helper retains its original canonical `sonnet`/`opus` model spellings. Dedicated provenance fixtures and raw CLI tests exercise full IDs and the strict family grammar. A first bulk build using full IDs took415 seconds; restoring the legacy helper took485 seconds and showed no speedup. The source guard/final coverage split is measured separately, without removing any existing control.
 
+## Design and synthesis
+
+The root selected Candidate A's structured dashboard source and completed shared native consumer migration. Candidate B supplied strict bounds, duplicate/ambiguous-position refusal and explicit compatibility accounting: exact reported text is stored separately from the model-family comparison key, and every frozen record is replayed. This is the root's implementation synthesis under the authorized repair, not a new owner policy decision.
+
+| Module or caller | Owned responsibility |
+|---|---|
+| `gate/MitosGate/ModelIdentity.lean` | Pure model keys, conservative Claude family grammar, provider admission and cross-system alias comparison. |
+| `gate/MitosGate/Provenance.lean` | Actual identity/event facts, carried author projection, shared file/label Opus requirement, source guard, full admission and eligibility/event-preservation proofs. |
+| `gate/MitosGate/Provenance/Decode.lean` | The sole bounded source grammar, canonical block encoder, strict fields and duplicate/refusal checks. |
+| `gate/MitosGate/Provenance/Fixtures.lean` | Focused full-ID, unknown, effort, two-witness, wording-only and label controls, audited through `Snapshot.lean`. |
+| `gate/MitosGate/Snapshot/{Types,Fields,Obs}.lean` and `SnapshotCli.lean` | Bind existing raw REST reads to source facts, obtain author/verdict content ids, preserve ordinary guards and produce canonical v1. `Cell.lean` is retired after caller migration; the existing table remains a presentation/read-completeness check. |
+| `gate/MitosGate/Land.lean` | Final accepted-Claude/general-model and independent Opus witnesses, standing negatives and legacy compatibility. `Shadow/Reading.lean` changes only the proof tuple matching the strengthened proposition. |
+| `gate/MitosGate/ProvenanceCli.lean` and `gate/Main.lean` | Thin publication/candidates/hook adapters over the same decoder and policy; hook content-id reads are local only. |
+| `.claude/hooks/pr-state.sh` and its test | Delegated hook adapter ownership: main-tool readiness/lock/bounds, mechanical result validation and explicit final eligibility, retaining ordinary guards. |
+| `gate/snapshot-test.sh` and `gate/provenance-hook-test.sh` | Native source→snapshot→record/hook integration and one raw, unmodified hook-suite invocation through CI's existing gate-test loop. |
+
+The native policy owner owns the native modules, integration tests and publication guide; the hook adapter owner owns its two hook files. The root owns synthesis and review of the exact final head. Neither implementation role publishes dashboard facts, assigns the owner, changes labels or merges this repair.
+
+A caller generates compact sorted payload JSON, runs `mitos-gate provenance render <owner/repo> <payload.json>`, and publishes the returned block only after checking actual source evidence. `mitos-gate snapshot <dir>` consumes the collector's existing raw dashboard response and emits the unchanged v1 shape. The hook first calls `provenance candidates <dir> <repo> <owner>`, obtains bounded final reads, then calls `provenance hook <dir> <repo> <owner> <main>` under the retained main-tool lock. Only the final common eligible result can join its ordinary merge guards. The renderer validates its emitted block through the exact source decoder, so publication and consumption share size and grammar limits as well as the encoder.
+
+The staged global hook hold was rejected because it leaves the second consumer migration unfinished; this implementation holds temporarily on unavailable or incomplete inputs. An owner-merged append-only ledger was rejected for this minimum repair because each fact update would require another owner merge, move main and trigger rebases, while still not authenticating a model invocation. Free-text identity fallback was rejected because it manufactures providers/givers from model words and restores two competing grammars. Writer/runtime authentication and mutable publication loss remain the explicit broader deferrals in #327 and #117.
+
 ## Verification checkpoint
 
-The native build completes all176 jobs with standard-kernel proofs and axiom audits. Snapshot/raw native-hook/actual record tests pass145 controls; Land68, Shadow62 and land-decide16 pass. Imports has zero violations, the207-declaration statement lock is unchanged, and the run log validates. All450 frozen version-1 records reproduce both the frozen native decisions and their recorded decisions; every input hash matches and the entire shadow report is byte-identical. Historical inputs/reports are unchanged.
+The native build completes all176 jobs with standard-kernel proofs and axiom audits. Snapshot/raw native-hook/actual record tests pass148 controls; Land68, Shadow62 and land-decide16 pass. Imports has zero violations, the207-declaration statement lock is unchanged, and the run log validates. All450 frozen version-1 records reproduce both the frozen native decisions and their recorded decisions; every input hash matches and the entire shadow report is byte-identical. Historical inputs/reports are unchanged.
 
 The hook adapter passes681 deterministic assertions with an external host-metadata shim. The unmodified local-host run passes641 and fails39 existing ownership/freshness controls because `/` and `/tmp` belong to uid65534; one conditional assertion cannot run there. CI invokes the raw, unshimmed suite once. Local core check and paranoid comparator stop during nested bubblewrap namespace setup on this host's read-only filesystem; CI must supply those checks. No local pass or Opus review is claimed for them.
