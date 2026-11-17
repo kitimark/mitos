@@ -6,7 +6,7 @@ attempts=5
 delay="${INSTALL_RETRY_DELAY:-10}"
 
 toolchain_files_to_install() {
-  find . -name lean-toolchain -not -path '*/.lake/*' -not -path './eval/yaml-oracle/*' -print0
+  find . -name lean-toolchain -not -path '*/.lake/*' -print0
 }
 toolchains=$(toolchain_files_to_install \
   | while IFS= read -r -d '' f; do cat "$f"; echo; done | sed '/^[[:space:]]*$/d' | sort -u)
