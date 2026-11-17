@@ -251,11 +251,11 @@ def ruleCases : List (String × String × List Lint.Rule) :=
     ("plugin", "import Mitos.Core\n@[app_delab Nat] def marker : Nat := 0\n", [.banned "app_delab"]),
     ("plugin", "import Mitos.Core\n@[delab] def marker : Nat := 0\n", [.banned "delab"]),
     ("plugin", "import Mitos.Core\n@[builtin_delab] def marker : Nat := 0\n", [.banned "builtin_delab"]),
-    ("plugin", "import Mitos.Core\n@[conv_parser] def marker : Nat := 0\n", [.banned "conv_parser"]),
-    ("plugin", "import Mitos.Core\nattribute [conv_parser] marker\n", [.banned "conv_parser"]),
-    ("plugin", "import Mitos.Core\n@[«conv_parser»] def marker : Nat := 0\n", [.banned "conv_parser"]),
+    ("plugin", "import Mitos.Core\n@[conv_parser] def marker : Nat := 0\n", [Lint.parserSuffix]),
+    ("plugin", "import Mitos.Core\nattribute [conv_parser] marker\n", [Lint.parserSuffix]),
+    ("plugin", "import Mitos.Core\n@[«conv_parser»] def marker : Nat := 0\n", [Lint.parserSuffix]),
     ("plugin", "import Mitos.Core\n@[mcasesPat_parser] def marker : Nat := 0\n",
-      [.banned "mcasesPat_parser"]),
+      [Lint.parserSuffix]),
     ("plugin", "import Mitos.Core\n@[run_parser_attribute_hooks] def marker : Nat := 0\n",
       [.banned "run_parser_attribute_hooks"]),
     ("plugin", "import Mitos.Core\n@[run_builtin_parser_attribute_hooks] def marker : Nat := 0\n",
@@ -365,7 +365,7 @@ theorem appendMissingIncludeStr_of_absent {guards : Array (String × String)} {e
 
 def ratchet (guards : Array (String × String)) (unguarded : List String) : Array String :=
   appendMissingIncludeStr guards <| Id.run do
-    let guardable := (Lint.Rule.fixed ++ Lint.banned.map Lint.Rule.banned).filter (·.guardable) |>.map (·.id)
+    let guardable := Lint.guardableRules.map (·.id)
     let bans := Lint.banned.map fun b => (Lint.Rule.banned b).id
     let pinned := unguardedBans.map fun b => (Lint.Rule.banned b).id
     let mut errs := #[]

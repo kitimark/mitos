@@ -1,0 +1,1 @@
+{"task":"ML-B0","role":"builder","model":"Grok 4.7","attempt":7,"iterations":1,"wall_min":25,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Owner picked (a). The suffix rule reports banned:*_parser, and plugin_conv_parser guards it. p is the Init parser termIfLet, so the file elaborates and that id is the only lint violation."}
