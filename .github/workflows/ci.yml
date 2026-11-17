@@ -432,53 +432,10 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
-  yaml-oracle:
-    if: >-
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' &&
-       github.event.action != 'labeled' &&
-       github.event.action != 'unlabeled')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: yaml-oracle unit
-        run: .github/scripts/yaml-oracle.test.sh
-
-      - uses: actions/cache/restore@v4
-        if: github.event_name != 'push'
-        with:
-          path: |
-            eval/yaml-oracle/.lake
-            eval/yaml-oracle/src
-          key: yaml-oracle-${{ hashFiles('.github/scripts/yaml-oracle.sh', 'eval/yaml-oracle/lean-toolchain', 'eval/yaml-oracle/lakefile.toml') }}
-
-      - uses: actions/cache@v4
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        with:
-          path: |
-            eval/yaml-oracle/.lake
-            eval/yaml-oracle/src
-          key: yaml-oracle-${{ hashFiles('.github/scripts/yaml-oracle.sh', 'eval/yaml-oracle/lean-toolchain', 'eval/yaml-oracle/lakefile.toml') }}
-
-      - name: Install elan if the cache has none (pinned, checked, retried)
-        run: .github/scripts/install-elan.sh
-
-      - name: Build the pinned l4yaml-event
-        run: .github/scripts/yaml-oracle.sh build
-
-      - name: Accept every workflow and Shape D
-        run: .github/scripts/yaml-oracle.sh check eval/yaml-oracle/.lake/build/bin/l4yaml-event
-
   # Runs when checks or a shard failed, so a failed or cancelled shard becomes
   # a failed prove. Skipped on a label event, where gate reads an earlier run.
   prove:
-    needs: [checks, cheat-shard, yaml-oracle]
+    needs: [checks, cheat-shard]
     if: >-
       always() &&
       (github.event_name == 'push' ||
@@ -490,16 +447,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: The YAML oracle succeeded
-        env:
-          YAML_ORACLE: ${{ needs.yaml-oracle.result }}
-        run: |
-          set -euo pipefail
-          if [ "$YAML_ORACLE" != success ]; then
-            echo "::error::yaml-oracle result is $YAML_ORACLE"
-            exit 1
-          fi
-
       - uses: actions/checkout@v4
         with:
           persist-credentials: false

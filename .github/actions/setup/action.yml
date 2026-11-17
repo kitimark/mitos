@@ -3,7 +3,7 @@ description: Restore the build cache (optional), then install elan (only if the 
 
 inputs:
   cache:
-    description: Restore and save the build cache. The key hashes every tracked lean-toolchain and lake-manifest.json outside eval/yaml-oracle.
+    description: Restore and save the build cache. The key hashes every tracked lean-toolchain and lake-manifest.json.
     default: "true"
 
 runs:

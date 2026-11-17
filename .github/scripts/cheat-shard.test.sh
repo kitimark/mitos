@@ -24,8 +24,8 @@ ok "workflow shard, binary upload and empty-record check are present"
 
 co=$(grep -c 'uses: actions/checkout@v4' "$wf")
 pc=$(grep -c 'persist-credentials: false' "$wf")
-if [ "$co" != 5 ] || [ "$pc" != 5 ]; then
-  fail "checkout=$co persist-credentials=$pc, want 5 and 5"
+if [ "$co" != 4 ] || [ "$pc" != 4 ]; then
+  fail "checkout=$co persist-credentials=$pc, want 4 and 4"
 fi
 grep -q '^concurrency:' "$wf" && fail "ci.yml has a top-level concurrency group"
 ok "checkouts and the absent top-level concurrency group match"
@@ -37,7 +37,7 @@ awk '
   /^  [a-z0-9-]+:$/ { job = $1; gsub(":", "", job) }
   /^    timeout-minutes:/ { print job, $2 }
 ' "$wf" >"$work/timeouts"
-expect=$'cancel-superseded 5\nchecks 20\ncheat-shard 30\nyaml-oracle 15\nprove 10\ngate 30\nscorecard-comment 5'
+expect=$'cancel-superseded 5\nchecks 20\ncheat-shard 30\nprove 10\ngate 30\nscorecard-comment 5'
 [ "$(cat "$work/timeouts")" = "$expect" ] || fail "timeouts are [$(cat "$work/timeouts")]"
 ok "job timeouts match the agreed minutes"
 
@@ -53,6 +53,17 @@ awk '
   /^  [a-z0-9-]+:$/ { p = 0 }
   p { print }
 ' "$wf" >"$work/prove"
+[ "$(grep '^    needs:' "$work/prove")" = '    needs: [checks, cheat-shard]' ] \
+  || fail "prove must need exactly checks and cheat-shard"
+grep -qFx '      always() &&' "$work/prove" \
+  || fail "prove does not run after a failed, cancelled or skipped dependency"
+grep -qFx '          CHECKS: ${{ needs.checks.result }}' "$work/prove" \
+  || fail "prove does not pass the checks result"
+grep -qFx '          SHARDS: ${{ needs.cheat-shard.result }}' "$work/prove" \
+  || fail "prove does not pass the cheat-shard result"
+grep -qF -- '--checks "$CHECKS" --shards "$SHARDS" --merged merged' "$work/prove" \
+  || fail "prove does not give both job results to the aggregate"
+ok "prove needs both jobs and passes their results to the aggregate"
 grep -q 'name: cheat-logs' "$work/prove" || fail "prove does not upload cheat-logs"
 grep -q 'if: always()' "$work/prove" && fail "prove uploads cheat-logs on a failed corpus"
 grep -q 'Cheat corpus is rejected (mitos-gate cheats, runs in parallel)' "$work/prove" \

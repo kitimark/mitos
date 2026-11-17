@@ -7,14 +7,13 @@ trap 'rm -rf "$work"' EXIT
 
 fail() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
 
-git -C "$root" ls-files '*lean-toolchain' '*lake-manifest.json' ':!eval/yaml-oracle/*' >"$work/expected"
+git -C "$root" ls-files '*lean-toolchain' '*lake-manifest.json' >"$work/expected"
 [ -s "$work/expected" ] || fail "git ls-files listed no lean-toolchain or lake-manifest.json"
 
 (
   cd "$root"
   find . -name lean-toolchain \
     -not -path '*/.lake/*' \
-    -not -path './eval/yaml-oracle/*' \
     -print | sed 's|^\./||' | sort >"$work/found-toolchains"
 )
 grep -E '(^|/)lean-toolchain$' "$work/expected" | sort >"$work/listed-toolchains"
