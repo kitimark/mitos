@@ -45,6 +45,11 @@ def grantsMathlib (surface : Option (List String)) (rel : String) : Bool :=
   | some reached => !reached.contains rel
   | none => false
 
+theorem grantsMathlib_iff (surface : Option (List String)) (rel : String) :
+    grantsMathlib surface rel = true ↔
+      ∃ reached, surface = some reached ∧ reached.contains rel = false := by
+  cases surface <;> simp [grantsMathlib]
+
 #guard !grantsMathlib none "Mitos/Core/Graph.lean"
 #guard grantsMathlib (some ["Mitos/Core.lean"]) "Mitos/Core/Graph.lean"
 #guard !grantsMathlib (some ["Mitos/Core.lean", "Mitos/Core/Fact.lean"]) "Mitos/Core/Fact.lean"
