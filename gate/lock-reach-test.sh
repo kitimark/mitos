@@ -17,6 +17,8 @@ bad() { echo "FAIL $1"; sed 's/^/  | /' "$out"; fail=$((fail + 1)); }
 tree() {
   mkdir -p "$tmp/$1/core/Mitos"
   cp "$root/statements.lock" "$tmp/$1/statements.lock"
+  cp "$root/lake-manifest.json" "$tmp/$1/lake-manifest.json"
+  cp "$root/core/lake-manifest.json" "$tmp/$1/core/lake-manifest.json"
   cp -R "$root/core/Mitos/Core" "$tmp/$1/core/Mitos/Core"
 }
 
@@ -69,8 +71,10 @@ else
   echo "  the written statements.lock differs"; : >"$out"; bad "lock writes the same statements.lock"
 fi
 
-mkdir -p "$tmp/nocore"
+mkdir -p "$tmp/nocore/core"
 cp "$root/statements.lock" "$tmp/nocore/statements.lock"
+cp "$root/lake-manifest.json" "$tmp/nocore/lake-manifest.json"
+cp "$root/core/lake-manifest.json" "$tmp/nocore/core/lake-manifest.json"
 expect "lock --check fails where core/Mitos/Core is not a folder" nocore 1 \
   'core/Mitos/Core is not a folder here' "$reached" lock --check
 

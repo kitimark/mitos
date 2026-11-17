@@ -35,7 +35,8 @@ def usage : String := s!"usage:
                                                  that exact seam may also import it
   mitos-gate lock [--check]                      write or check statements.lock; either fails on a
                                                  module under core/Mitos/Core/ that Mitos.Core.Spec does
-                                                 not import, directly or transitively
+                                                 not import, directly or transitively, or when the root
+                                                 and core git dependencies disagree
   mitos-gate lock --check-header                 statements.lock starts with MitosGate.Lock.header,
                                                  the newline after its format line included
   mitos-gate lock --text                         print pre-canonical toString digest lines
@@ -143,13 +144,19 @@ def lockReach (core : Lock.ImportedRoot) : IO UInt32 := do
   return 1
 
 def lockStatements (check : Bool) : IO UInt32 := do
-  let headerCode ← if check then lockHeaderStatus else pure 0
-  let core ← Lock.importRoot `Mitos.Core.Spec
-  let es ← Lock.entries core.env [`Mitos.Core]
-  let code ← writeOrCheck "statements.lock" (Lock.render es) check s!"{es.size} declarations"
-    "the meaning of the trusted core changed"
-  let reachCode ← lockReach core
-  return if headerCode != 0 || code != 0 || reachCode != 0 then 1 else 0
+  let man ← Lock.manifestStatus
+  if man != 0 then return man
+  try
+    let headerCode ← if check then lockHeaderStatus else pure 0
+    let core ← Lock.importRoot `Mitos.Core.Spec
+    let es ← Lock.entries core.env [`Mitos.Core]
+    let code ← writeOrCheck "statements.lock" (Lock.render es) check s!"{es.size} declarations"
+      "the meaning of the trusted core changed"
+    let reachCode ← lockReach core
+    return if headerCode != 0 || code != 0 || reachCode != 0 then 1 else 0
+  catch e =>
+    IO.println (ciLine s!"{e}")
+    return 1
 
 /-- Writes or checks `<workspace>/models.lock`. Gate 0's walker reads the models, and gate 0 reads
 back what this writes (`Accept.lockEntries_renderLock`). An I/O error is printed as one `::error::`
@@ -188,10 +195,16 @@ def cli (args : List String) : IO UInt32 := do
     return if vs.isEmpty then 0 else 1
   | ["lock", "--check-header"] => lockHeaderStatus
   | ["lock", "--text"] =>
-    let core ← Lock.importRoot `Mitos.Core.Spec
-    let es ← Lock.textEntries core.env [`Mitos.Core]
-    IO.println (String.intercalate "\n" es.toList)
-    return 0
+    let man ← Lock.manifestStatus
+    if man != 0 then return man
+    try
+      let core ← Lock.importRoot `Mitos.Core.Spec
+      let es ← Lock.textEntries core.env [`Mitos.Core]
+      IO.println (String.intercalate "\n" es.toList)
+      return 0
+    catch e =>
+      IO.println (ciLine s!"{e}")
+      return 1
   | ["lock"] => lockStatements false
   | ["lock", "--check"] => lockStatements true
   | ["lock-models", "--workspace", ws] => lockModels ws false

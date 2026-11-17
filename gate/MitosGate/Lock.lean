@@ -130,33 +130,322 @@ def blockedMeaning : ConstantInfo → Bool
   | .opaqueInfo _ | .axiomInfo _ => true
   | ci => ci.isUnsafe
 
-def walksForMeaning (env : Environment) (inCore listed : Name → Bool) (n : Name) : Bool :=
-  inCore n && !listed n &&
-    match env.find? n with
-    | some ci => !isSkeleton ci && !blockedMeaning ci
-    | none => false
-
 def meaningPin (params : Nat) (typeEnc : String) (valueEnc : Option String) : String :=
   match valueEnc with
   | some v => s!"params={params} type={typeEnc} value={v}"
   | none => s!"params={params} type={typeEnc}"
 
-def refOf (env : Environment) (inCore listed : Name → Bool) (memo : NameMap String) (n : Name) :
-    Except String Canon.Ref := do
-  if listed n && n.hasMacroScopes then
-    throw s!"listed declaration {n} has a macro scope"
-  if listed n || !inCore n then
-    return .named n
-  match env.find? n with
-  | none => throw s!"missing declaration {n}"
-  | some ci =>
-    if isSkeleton ci then
+inductive Origin where
+  | spec
+  | toolchain
+  | package (name : String)
+  deriving Repr, BEq
+
+def coreBuildSuffix : List String := ["core", ".lake", "build", "lib", "lean"]
+
+example :
+    coreBuildSuffix.isSuffixOf ["", "repo", "core", ".lake", "build", "lib", "lean"] = true := by
+  decide
+
+example : coreBuildSuffix.isSuffixOf ["", "repo", ".lake", "packages", "toy", ".lake", "build", "lib", "lean"] = false := by
+  decide
+
+structure GitPin where
+  name : String
+  url : String
+  rev : String
+  deriving DecidableEq, Repr
+
+def duplicatePins (which : String) : List GitPin → List String → List String
+  | [], _ => []
+  | p :: ps, seen =>
+    let here :=
+      if seen.contains p.name then
+        [s!"package {p.name} is duplicated in the {which} lake-manifest.json"]
+      else
+        []
+    here ++ duplicatePins which ps (p.name :: seen)
+
+def missingPins (from_ to_ : String) (have_ lack : List GitPin) : List String :=
+  have_.filterMap fun p =>
+    if lack.any (·.name == p.name) then none
+    else some s!"package {p.name} is in the {from_} lake-manifest.json and missing from the {to_} lake-manifest.json"
+
+def changedPins (root core : List GitPin) : List String :=
+  root.filterMap fun p =>
+    match core.find? (·.name == p.name) with
+    | none => none
+    | some q =>
+      if p.url == q.url && p.rev == q.rev then none
+      else some s!"package {p.name} differs between the root and core lake-manifest.json"
+
+def gitPinDisagreements (root core : List GitPin) : List String :=
+  duplicatePins "root" root [] ++ duplicatePins "core" core [] ++
+    missingPins "root" "core" root core ++ missingPins "core" "root" core root ++
+    changedPins root core
+
+example : gitPinDisagreements [] [] = [] := by decide
+
+example : gitPinDisagreements [⟨"a", "u", "1"⟩] [⟨"a", "u", "1"⟩] = [] := by decide
+
+example : gitPinDisagreements [⟨"a", "u", "1"⟩] [⟨"a", "u", "2"⟩] =
+    ["package a differs between the root and core lake-manifest.json"] := by decide
+
+example : gitPinDisagreements [⟨"a", "u", "1"⟩] [] =
+    ["package a is in the root lake-manifest.json and missing from the core lake-manifest.json"] := by
+  decide
+
+example : gitPinDisagreements [] [⟨"a", "u", "1"⟩] =
+    ["package a is in the core lake-manifest.json and missing from the root lake-manifest.json"] := by
+  decide
+
+example : gitPinDisagreements [⟨"a", "u", "1"⟩, ⟨"a", "u", "1"⟩] [⟨"a", "u", "1"⟩] =
+    ["package a is duplicated in the root lake-manifest.json"] := by decide
+
+def nameListed (env : Environment) (n : Name) : Bool :=
+  !(n.isInternal || isAuxRecursor env n || isNoConfusion env n || isGenerated env n)
+
+def specModule (env : Environment) (prefixes : List Name) (n : Name) : Bool :=
+  match env.getModuleIdxFor? n with
+  | some idx => prefixes.any (·.isPrefixOf env.header.moduleNames[idx.toNat]!)
+  | none => false
+
+structure Roots where
+  sysroot : System.FilePath
+  packages : Array (String × System.FilePath)
+
+private def jsonStr (j : Json) (k : String) : Except String String := do
+  (← j.getObjVal? k).getStr?
+
+private def badComponent (c : String) : Bool :=
+  c.isEmpty || c == "." || c == ".."
+
+def parsePackagesDir (j : Json) : Except String System.FilePath := do
+  let s ← jsonStr j "packagesDir"
+  let p : System.FilePath := s
+  if s.isEmpty || p.isAbsolute || p.components.any badComponent then
+    throw s!"root lake-manifest.json packagesDir {s} is not a relative path inside the workspace"
+  return p
+
+private def badPackageName (name : String) : Bool :=
+  name.isEmpty || name == "." || name == ".." ||
+    name.toList.any fun c => c == '/' || c == '\\' || c == '\n' || c == '\r'
+
+def packageNames (which : String) (j : Json) : Except String (List String) := do
+  let arr ← (← j.getObjVal? "packages").getArr?
+  let mut names : List String := []
+  let mut out : List String := []
+  for entry in arr do
+    let name ← jsonStr entry "name"
+    if badPackageName name then
+      throw s!"{which} lake-manifest.json package name {name} is not a single path component"
+    if names.contains name then
+      throw s!"{which} lake-manifest.json duplicates package {name}"
+    names := name :: names
+    out := out ++ [name]
+  return out
+
+def parseGitPins (which : String) (j : Json) : Except String (List GitPin) := do
+  let arr ← (← j.getObjVal? "packages").getArr?
+  let mut pins : List GitPin := []
+  for entry in arr do
+    let ty ← jsonStr entry "type"
+    match ty with
+    | "path" => pure ()
+    | "git" =>
+      let name ← jsonStr entry "name"
+      let field (k : String) : Except String String := do
+        match jsonStr entry k with
+        | .ok s =>
+          if s.isEmpty then
+            throw s!"{which} lake-manifest.json git package {name} lacks a name, url, or rev"
+          pure s
+        | .error _ =>
+          throw s!"{which} lake-manifest.json git package {name} lacks a name, url, or rev"
+      let url ← field "url"
+      let rev ← field "rev"
+      if badPackageName name then
+        throw s!"{which} lake-manifest.json git package {name} lacks a name, url, or rev"
+      pins := pins ++ [⟨name, url, rev⟩]
+    | other =>
+      throw s!"{which} lake-manifest.json has unknown package type {other}"
+  return pins
+
+def readManifest (path : System.FilePath) (which : String) : IO Json := do
+  let txt ← try
+    IO.FS.readFile path
+  catch e =>
+    throw <| IO.userError s!"{which} manifest {path} cannot be read: {e}"
+  match Json.parse txt with
+  | .ok j => return j
+  | .error e => throw <| IO.userError s!"{which} manifest {path} is not JSON: {e}"
+
+private def liftExcept (r : Except String α) : IO α :=
+  match r with
+  | .ok a => pure a
+  | .error e => throw <| IO.userError e
+
+def manifestStatus : IO UInt32 := do
+  try
+    let root ← readManifest "lake-manifest.json" "root"
+    let core ← readManifest "core/lake-manifest.json" "core"
+    discard <| liftExcept (parsePackagesDir root)
+    discard <| liftExcept (packageNames "root" root)
+    discard <| liftExcept (packageNames "core" core)
+    let rootPins ← liftExcept (parseGitPins "root" root)
+    let corePins ← liftExcept (parseGitPins "core" core)
+    let diff := gitPinDisagreements rootPins corePins
+    if diff.isEmpty then
+      return 0
+    IO.println (ciLine ("root and core manifests disagree: " ++ "; ".intercalate diff))
+    return 1
+  catch e =>
+    IO.println (ciLine s!"{e}")
+    return 1
+
+def moduleOLeanSuffix (mod : Name) : Except String (List String) :=
+  let rec go : Name → Except String (List String)
+    | .anonymous => .ok []
+    | .str p s => do
+      if s.isEmpty then
+        throw s!"module {mod} has an empty component"
+      return (← go p) ++ [s]
+    | .num _ _ => .error s!"module {mod} has a numeric component"
+  do
+    let cs ← go mod
+    match cs.getLast? with
+    | none => .error s!"module {mod} is anonymous"
+    | some last => .ok (cs.dropLast ++ [last ++ ".olean"])
+
+def oleanRoot (mod : Name) : IO System.FilePath := do
+  let file ← realPathNormalized (← findOLean mod)
+  let suf ← liftExcept (moduleOLeanSuffix mod)
+  match suf.isSuffixOf? file.components with
+  | none =>
+    throw <| IO.userError s!"olean path {file} does not end with the path of module {mod}"
+  | some root => realPathNormalized (System.mkFilePath root)
+
+def loadRoots : IO Roots := do
+  let sysroot ← realPathNormalized ((← findSysroot) / "lib" / "lean")
+  let j ← readManifest "lake-manifest.json" "root"
+  let dir ← liftExcept (parsePackagesDir j)
+  let names ← liftExcept (packageNames "root" j)
+  let mut packages : Array (String × System.FilePath) := #[]
+  for name in names do
+    let p := dir / name / ".lake" / "build" / "lib" / "lean"
+    if ← p.pathExists then
+      packages := packages.push (name, ← realPathNormalized p)
+  return { sysroot, packages }
+
+def classify (roots : Roots) (mod : Name) : IO (Except String Origin) := do
+  let root ← try
+    pure (← oleanRoot mod)
+  catch e =>
+    return .error s!"module {mod}: {e}"
+  if root == roots.sysroot then
+    return .ok .toolchain
+  if let some name := roots.packages.findSome? fun (n, r) => if r == root then some n else none then
+    if (`Mitos.Core).isPrefixOf mod then
+      return .error s!"module {mod} is Mitos.Core.* but its .olean is in package {name}"
+    return .ok (.package name)
+  if coreBuildSuffix.isSuffixOf root.components && (`Mitos.Core).isPrefixOf mod then
+    return .ok .spec
+  return .error s!"module {mod} .olean at {root} is not the toolchain, core's build, or a package in the root manifest"
+
+structure Place where
+  env : Environment
+  prefixes : List Name
+  roots : Roots
+  modules : IO.Ref (NameMap Origin)
+  consts : IO.Ref (NameMap Origin)
+  memo : IO.Ref (NameMap String)
+
+def moduleOrigin (p : Place) (mod : Name) : IO Origin := do
+  if let some o := (← p.modules.get).find? mod then
+    return o
+  match ← classify p.roots mod with
+  | .error e => throw <| IO.userError e
+  | .ok o =>
+    p.modules.modify (·.insert mod o)
+    return o
+
+def constOrigin (p : Place) (n : Name) : IO Origin := do
+  if let some o := (← p.consts.get).find? n then
+    return o
+  let some idx := p.env.getModuleIdxFor? n
+    | throw <| IO.userError s!"declaration {n} has no module"
+  let some mod := p.env.header.moduleNames[idx.toNat]?
+    | throw <| IO.userError s!"declaration {n} has no module"
+  let o ← moduleOrigin p mod
+  p.consts.modify (·.insert n o)
+  return o
+
+def warm (p : Place) (es : List Expr) : IO Unit := do
+  for e in es do
+    for n in e.getUsedConstants do
+      discard <| constOrigin p n
+
+def specListed (p : Place) (n : Name) : IO Bool := do
+  match ← constOrigin p n with
+  | .spec => return specModule p.env p.prefixes n && nameListed p.env n
+  | _ => return false
+
+def packageListed (p : Place) (n : Name) : IO Bool := do
+  match ← constOrigin p n with
+  | .package _ => return nameListed p.env n
+  | _ => return false
+
+def folds (p : Place) (n : Name) : IO Bool := do
+  let some ci := p.env.find? n | return false
+  if isSkeleton ci then return false
+  match ← constOrigin p n with
+  | .toolchain => return false
+  | .spec => return !(← specListed p n) && !blockedMeaning ci
+  | .package _ =>
+    if ← packageListed p n then return false
+    if ci matches .axiomInfo _ || ci.isUnsafe then return false
+    if ci matches .opaqueInfo _ then return false
+    return true
+
+def refOf (env : Environment) (origins : NameMap Origin) (specListedOf packageListedOf : Name → Bool)
+    (memo : NameMap String) (n : Name) : Except String Canon.Ref := do
+  let some origin := origins.find? n | throw s!"origin of {n} is not ready"
+  match origin with
+  | .toolchain => return .named n
+  | .spec =>
+    if specListedOf n then
+      if n.hasMacroScopes then
+        throw s!"listed declaration {n} has a macro scope"
       return .named n
-    if blockedMeaning ci then
-      throw s!"unlisted declaration {n} is opaque, an axiom, or unsafe"
-    match memo.find? n with
-    | some d => return .byMeaning d
-    | none => throw s!"canonical digest of {n} is not ready"
+    match env.find? n with
+    | none => throw s!"missing declaration {n}"
+    | some ci =>
+      if isSkeleton ci then
+        return .named n
+      if blockedMeaning ci then
+        throw s!"unlisted declaration {n} is opaque, an axiom, or unsafe"
+      match memo.find? n with
+      | some d => return .byMeaning d
+      | none => throw s!"canonical digest of {n} is not ready"
+  | .package pkg =>
+    match env.find? n with
+    | none => throw s!"missing declaration {n}"
+    | some ci =>
+      if ci matches .axiomInfo _ then
+        throw s!"reached axiom {n} in package {pkg}"
+      if ci.isUnsafe then
+        throw s!"reached unsafe declaration {n} in package {pkg}"
+      if packageListedOf n then
+        if n.hasMacroScopes then
+          throw s!"listed declaration {n} has a macro scope"
+        return .named n
+      if isSkeleton ci then
+        return .named n
+      if ci matches .opaqueInfo _ then
+        throw s!"reached unlisted opaque {n} in package {pkg}"
+      match memo.find? n with
+      | some d => return .byMeaning d
+      | none => throw s!"canonical digest of {n} is not ready"
 
 def fromCanon {α : Type} (n : Name) (r : Except String α) : IO α :=
   match r with
@@ -169,18 +458,31 @@ def declLine (ci : ConstantInfo) (n : Name) (typeDig : String) (valueDig : Optio
   | some v => s!"{base} value={v}"
   | none => base
 
-partial def ensure (env : Environment) (inCore listed : Name → Bool) (memo : IO.Ref (NameMap String))
-    (n : Name) (stack : List Name) : IO Unit := do
-  if (← memo.get).contains n then return
-  if stack.contains n then throw <| IO.userError s!"canonical digest of {n} depends on itself"
-  let some ci := env.find? n | return
+def extLine (ci : ConstantInfo) (n : Name) (typeDig : String) (valueDig : Option String) : String :=
+  s!"ext {declLine ci n typeDig valueDig}"
+
+partial def ensure (p : Place) (n : Name) (stack : List Name) : IO Unit := do
+  if (← p.memo.get).contains n then return
+  if stack.contains n then
+    throw <| IO.userError s!"canonical digest of {n} depends on itself"
+  let some ci := p.env.find? n | return
+  warm p (pinned ci)
   for e in pinned ci do
     for d in e.getUsedConstants do
-      if walksForMeaning env inCore listed d then
-        ensure env inCore listed memo d (n :: stack)
+      if ← folds p d then
+        ensure p d (n :: stack)
+  let origins ← p.consts.get
+  let memoNow ← p.memo.get
+  let specOf := fun m => specModule p.env p.prefixes m && nameListed p.env m &&
+    match origins.find? m with
+    | some .spec => true
+    | _ => false
+  let pkgOf := fun m => nameListed p.env m &&
+    match origins.find? m with
+    | some (.package _) => true
+    | _ => false
+  let ref := refOf p.env origins specOf pkgOf memoNow
   let levels := ci.levelParams
-  let memoNow ← memo.get
-  let ref := refOf env inCore listed memoNow
   let ty ← fromCanon n (Canon.canon levels ref ci.type)
   let valueEnc ← match ci with
     | .defnInfo d =>
@@ -188,34 +490,109 @@ partial def ensure (env : Environment) (inCore listed : Name → Bool) (memo : I
       pure (some v.encode)
     | _ => pure none
   let dig ← sha256Short (meaningPin levels.length ty.encode valueEnc)
-  memo.modify (·.insert n dig)
+  p.memo.modify (·.insert n dig)
+
+def lineOf (p : Place) (n : Name) (ci : ConstantInfo) (ext : Bool) : IO String := do
+  warm p (pinned ci)
+  for e in pinned ci do
+    for d in e.getUsedConstants do
+      if ← folds p d then
+        ensure p d []
+  let origins ← p.consts.get
+  let memoNow ← p.memo.get
+  let specOf := fun m => specModule p.env p.prefixes m && nameListed p.env m &&
+    match origins.find? m with
+    | some .spec => true
+    | _ => false
+  let pkgOf := fun m => nameListed p.env m &&
+    match origins.find? m with
+    | some (.package _) => true
+    | _ => false
+  let ref := refOf p.env origins specOf pkgOf memoNow
+  let levels := ci.levelParams
+  let ty ← fromCanon n (Canon.canon levels ref ci.type)
+  let valueDig ← match ci with
+    | .defnInfo d =>
+      let v ← fromCanon n (Canon.canon levels ref d.value)
+      pure (some (← sha256Short v.encode))
+    | _ => pure none
+  let typeDig ← sha256Short ty.encode
+  return if ext then extLine ci n typeDig valueDig else declLine ci n typeDig valueDig
+
+partial def collect (p : Place) (n : Name) (seen : NameSet) : IO NameSet := do
+  if seen.contains n then return seen
+  let mut seen := seen.insert n
+  let some ci := p.env.find? n | return seen
+  warm p (pinned ci)
+  for e in pinned ci do
+    for d in e.getUsedConstants do
+      let recurse ← match p.env.find? d with
+        | none => pure false
+        | some dci =>
+          if isSkeleton dci then
+            pure false
+          else
+            match ← constOrigin p d with
+            | .toolchain => pure false
+            | .spec => pure (!(← specListed p d) && !blockedMeaning dci)
+            | .package _ =>
+              if dci matches .axiomInfo _ || dci.isUnsafe then
+                pure false
+              else if !(← packageListed p d) && dci matches .opaqueInfo _ then
+                pure false
+              else
+                pure true
+      if recurse then
+        seen ← collect p d seen
+  return seen
+
+def refuseMisplaced (p : Place) : IO Unit := do
+  let mut msgs : Array String := #[]
+  for mod in p.env.header.moduleNames do
+    if (`Mitos.Core).isPrefixOf mod then
+      try
+        match ← moduleOrigin p mod with
+        | .spec => pure ()
+        | .toolchain =>
+          msgs := msgs.push s!"module {mod} is Mitos.Core.* but its .olean is in the toolchain"
+        | .package name =>
+          msgs := msgs.push s!"module {mod} is Mitos.Core.* but its .olean is in package {name}"
+      catch e =>
+        msgs := msgs.push s!"{e}"
+  unless msgs.isEmpty do
+    throw <| IO.userError ("\n".intercalate msgs.toList)
 
 def entries (env : Environment) (prefixes : List Name) : IO (Array String) := do
-  let inCore (n : Name) : Bool := match env.getModuleIdxFor? n with
-    | some idx => prefixes.any (·.isPrefixOf env.header.moduleNames[idx.toNat]!)
-    | none => false
-  let listed (n : Name) : Bool := inCore n &&
-    !(n.isInternal || isAuxRecursor env n || isNoConfusion env n || isGenerated env n)
-  let memo ← IO.mkRef ({} : NameMap String)
+  let roots ← loadRoots
+  let p : Place := {
+    env, prefixes, roots
+    modules := ← IO.mkRef {}
+    consts := ← IO.mkRef {}
+    memo := ← IO.mkRef {}
+  }
+  refuseMisplaced p
   let mut out : Array String := #[]
+  let mut specRoots : Array Name := #[]
   for (n, ci) in env.constants.map₁.toList do
-    unless listed n do continue
+    unless specModule env prefixes n && nameListed env n do continue
     if n.hasMacroScopes then
       throw <| IO.userError s!"listed declaration {n} has a macro scope"
-    for e in pinned ci do
-      for d in e.getUsedConstants do
-        if walksForMeaning env inCore listed d then
-          ensure env inCore listed memo d []
-    let levels := ci.levelParams
-    let memoNow ← memo.get
-    let ref := refOf env inCore listed memoNow
-    let ty ← fromCanon n (Canon.canon levels ref ci.type)
-    let valueDig ← match ci with
-      | .defnInfo d =>
-        let v ← fromCanon n (Canon.canon levels ref d.value)
-        pure (some (← sha256Short v.encode))
-      | _ => pure none
-    out := out.push (declLine ci n (← sha256Short ty.encode) valueDig)
+    specRoots := specRoots.push n
+    out := out.push (← lineOf p n ci false)
+  let mut seen : NameSet := {}
+  for n in specRoots do
+    seen ← collect p n seen
+  let mut extNames : Array Name := #[]
+  for n in seen do
+    if ← packageListed p n then
+      match env.find? n with
+      | some ci =>
+        unless ci matches .axiomInfo _ || ci.isUnsafe do
+          extNames := extNames.push n
+      | none => pure ()
+  for n in extNames do
+    if let some ci := env.find? n then
+      out := out.push (← lineOf p n ci true)
   return out.qsort (· < ·)
 
 def render (es : Array String) : String :=
