@@ -113,7 +113,7 @@ joined=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$script")
 mint=$(block "$wf" '      - name: Mint an app token that can only read administration')
 want_mint='      - name: Mint an app token that can only read administration
         id: app
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ vars.PR_UPDATER_APP_ID }}
           private-key: ${{ secrets.PR_UPDATER_APP_KEY }}
@@ -144,7 +144,7 @@ finish the-key-sits-in-the-reader-and-not-in-land
 start
 [ "$(grep -c '^  [a-z-]*:$' <(awk '/^jobs:$/ { on = 1; next } on' "$wf"))" = 1 ] || note "land-protection.yml has another job"
 uses=$(grep -oE 'uses: [^ ]+' "$wf" | tr '\n' ' ')
-[ "$uses" = "uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 " ] \
+[ "$uses" = "uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 " ] \
   || note "land-protection.yml uses other actions, or in another order: $uses"
 checkout=$(block "$wf" '      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0')
 [ "$checkout" = '      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
