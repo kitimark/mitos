@@ -57,9 +57,14 @@ path = "../other"
 rev = "keep-me"
 
 [[require]]
-name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4"
-rev = "v4.35.0"
+rev = "v4.35.0" # pin
+name = "mathlib" # proof dependency
+
+[[require]]
+name = "after"
+path = "../after"
+rev = "leave-me"
 EOF
   else
     printf 'name = "mitos-core"\n' >"$fx/core/lakefile.toml"
@@ -207,7 +212,12 @@ case_tag_exists() {
   [ "$code" -eq 0 ] || { printf '%s\n' "$out" >&2; return 1; }
   assert_toolchains "$fx"
   grep -q 'rev = "v4.36.0-rc2"' "$fx/core/lakefile.toml"
+  grep -q 'name = "mathlib" # proof dependency' "$fx/core/lakefile.toml"
   grep -q 'rev = "keep-me"' "$fx/core/lakefile.toml"
+  grep -q 'rev = "leave-me"' "$fx/core/lakefile.toml"
+  if grep -q 'rev = "v4.35.0"' "$fx/core/lakefile.toml"; then
+    return 1
+  fi
   [ ! -s "$LAKE_LOG" ]
   set +e
   out=$(run_bump "$fx" "$stubs" --lock 2>&1)
@@ -343,9 +353,13 @@ check_workflow() {
 }
 
 run_case() {
-  local name=$1
+  local name=$1 status
   shift
-  if ( set -euo pipefail; "$@" ); then
+  set +e
+  ( set -euo pipefail; "$@" )
+  status=$?
+  set -e
+  if [ "$status" -eq 0 ]; then
     printf 'ok %s\n' "$name"
     pass=$((pass + 1))
   else
@@ -354,7 +368,20 @@ run_case() {
   fi
 }
 
+assert_harness_fails_closed() {
+  local before_fail=$fail before_pass=$pass
+  swallow() {
+    false
+    true
+  }
+  run_case harness swallow >/dev/null 2>&1
+  [ "$fail" -eq $((before_fail + 1)) ]
+  fail=$before_fail
+  pass=$before_pass
+}
+
 check_workflow
+assert_harness_fails_closed
 run_case "tag exists" case_tag_exists
 run_case "tag missing" case_tag_missing
 run_case "no mathlib require" case_no_mathlib

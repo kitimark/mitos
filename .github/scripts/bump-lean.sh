@@ -24,6 +24,72 @@ load_predicate() {
     || die "toolchain_files_to_install did not load"
 }
 
+lakefile_program() {
+  cat <<'AWK'
+function body(line,    i, n, q, c, out) {
+  n = length(line)
+  q = 0
+  out = ""
+  for (i = 1; i <= n; i++) {
+    c = substr(line, i, 1)
+    if (c == "\"") q = !q
+    else if (c == "#" && !q) break
+    out = out c
+  }
+  sub(/[[:space:]]+$/, "", out)
+  return out
+}
+function flush(    i, text, is_math, rev_at) {
+  if (n == 0) return
+  is_math = 0
+  rev_at = 0
+  for (i = 1; i <= n; i++) {
+    text = body(row[i])
+    if (text ~ /^name[[:space:]]*=[[:space:]]*"mathlib"[[:space:]]*$/) is_math = 1
+    if (text ~ /^rev[[:space:]]*=[[:space:]]*"/) {
+      if (rev_at != 0) rev_at = -1
+      else rev_at = i
+    }
+  }
+  if (in_req && is_math) {
+    seen++
+    if (rev_at <= 0) missing = 1
+    else if (mode == "rewrite") {
+      for (i = 1; i <= n; i++) {
+        if (i == rev_at) {
+          match(row[i], /^[[:space:]]*/)
+          print substr(row[i], 1, RLENGTH) "rev = \"" ver "\""
+          replaced++
+        } else print row[i]
+      }
+    }
+  } else if (mode == "rewrite") {
+    for (i = 1; i <= n; i++) print row[i]
+  }
+  n = 0
+  in_req = 0
+}
+/^\[\[/ {
+  flush()
+  in_req = (body($0) == "[[require]]")
+  if (mode == "rewrite") print
+  next
+}
+{
+  n++
+  row[n] = $0
+}
+END {
+  flush()
+  if (seen > 1 || missing) exit 2
+  if (mode == "state") {
+    if (seen == 1) print "required"
+    else print "absent"
+  } else if (seen != 1 || replaced != 1) exit 2
+}
+AWK
+}
+
 mathlib_state() {
   local src=core/lakefile.toml
   if [ ! -e "$src" ]; then
@@ -34,32 +100,7 @@ mathlib_state() {
     printf 'core/lakefile.toml is not a regular file\n' >&2
     return 1
   fi
-  awk '
-    /^\[\[require\]\][[:space:]]*$/ { in_req = 1; next }
-    /^\[\[/ { in_req = 0; next }
-    in_req && /^name[[:space:]]*=[[:space:]]*"mathlib"[[:space:]]*$/ { seen++ }
-    END {
-      if (seen > 1) exit 2
-      if (seen == 1) print "required"
-      else print "absent"
-    }
-  ' "$src"
-}
-
-rewrite_program() {
-  cat <<'AWK'
-/^\[\[require\]\][[:space:]]*$/ { in_req = 1; print; next }
-/^\[\[/ { in_req = 0; print; next }
-in_req && /^name[[:space:]]*=[[:space:]]*"mathlib"[[:space:]]*$/ { in_math = 1; seen++; print; next }
-in_math && /^rev[[:space:]]*=[[:space:]]*"/ {
-  print "rev = \"" ver "\""
-  replaced++
-  in_math = 0
-  next
-}
-{ print }
-END { if (seen != 1 || replaced != 1) exit 2 }
-AWK
+  lakefile_program | awk -v mode=state -f - "$src"
 }
 
 version_ok() {
@@ -101,7 +142,7 @@ set_mathlib_rev() {
   local version=$1 src=core/lakefile.toml tmp status
   tmp=$(mktemp "$src.XXXXXX")
   set +e
-  rewrite_program | awk -v ver="$version" -f - "$src" >"$tmp"
+  lakefile_program | awk -v mode=rewrite -v ver="$version" -f - "$src" >"$tmp"
   status=$?
   set -e
   if [ "$status" -ne 0 ]; then
@@ -115,7 +156,7 @@ phase_bump() {
   local version=$1 state status=0
   version_ok "$version" || die "bad version: $version"
   load_predicate
-  state=$(mathlib_state) || die "core/lakefile.toml has more than one mathlib require"
+  state=$(mathlib_state) || die "core/lakefile.toml mathlib require cannot be read"
   case $state in
     absent) ;;
     required)
@@ -128,7 +169,7 @@ phase_bump() {
   esac
   if [ "$state" = required ]; then
     set +e
-    rewrite_program | awk -v ver="$version" -f - core/lakefile.toml >/dev/null
+    lakefile_program | awk -v mode=rewrite -v ver="$version" -f - core/lakefile.toml >/dev/null
     status=$?
     set -e
     [ "$status" -eq 0 ] || die "core/lakefile.toml mathlib rev cannot be set"
@@ -272,7 +313,7 @@ check_lock() {
 
 phase_lock() {
   local state had=0
-  state=$(mathlib_state) || die "core/lakefile.toml has more than one mathlib require"
+  state=$(mathlib_state) || die "core/lakefile.toml mathlib require cannot be read"
   case $state in
     required) ;;
     absent) return 0 ;;
