@@ -4,3 +4,4 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 lake build mitos-gate >/dev/null
 python3 gate/workflow-check.py "$root/.lake/build/bin/mitos-gate"
+python3 gate/workflow-placement-check.py "$root/.lake/build/bin/mitos-gate"

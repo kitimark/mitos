@@ -172,6 +172,56 @@ def read (src : String) : Except Refusal Doc :=
         let b := (d.leaves.map Leaf.exprCount).sum
         if a = b then .ok d else .error (.conserve a b)
 
+private def valueLines : List (L4YAML.Positioned L4YAML.YamlToken) → Bool → List (String × Nat)
+  | [], _ => []
+  | token :: rest, key => match token.val with
+    | .key => valueLines rest true
+    | .scalar s _ =>
+      if key || s.isEmpty then valueLines rest false
+      else (s, token.pos.line + 1) :: valueLines rest false
+    | _ => valueLines rest key
+
+def textLines? (src : String) (d : Doc) : Option (List (List Seg × Nat)) := do
+  let (tokens, _) ← (L4YAML.Scanner.scanWithComments src).toOption
+  let values := valueLines tokens.toList false
+  let texts := d.leaves.filterMap fun leaf => match leaf.value with
+    | .text s => if s.isEmpty then none else some (leaf.path, s)
+    | _ => none
+  if values.map Prod.fst == texts.map Prod.snd then
+    some (List.zipWith (fun (path, _) (_, line) => (path, line)) texts values)
+  else none
+
+private def changedExpressionLine? (src : List Char) :
+    List (L4YAML.Positioned L4YAML.YamlToken) → Option Nat
+  | [] => none
+  | token :: rest =>
+    match token.val with
+    | .scalar s _ =>
+      let stop := rest.head?.map (·.pos.offset) |>.getD src.length
+      let raw := (src.drop token.pos.offset).take (stop - token.pos.offset)
+      if Base.Text.count exprTok raw != Base.Text.count exprTok s.toList then
+        some (token.pos.line + 1)
+      else changedExpressionLine? src rest
+    | _ => changedExpressionLine? src rest
+
+private def refusalSourceLine? (r : Refusal) (src : String) : Option Nat := do
+  match r with
+  | .alias _ =>
+    let (tokens, _) ← (L4YAML.Scanner.scanWithComments src).toOption
+    let token ← tokens.toList.find? fun t => match t.val with
+      | .alias _ => true
+      | _ => false
+    some (token.pos.line + 1)
+  | .conserve _ _ =>
+    let (tokens, _) ← (L4YAML.Scanner.scanWithComments src).toOption
+    changedExpressionLine? src.toList tokens.toList
+  | .parse none _ => match L4YAML.Scanner.scanWithComments src with
+    | .error (.undefinedAlias _ line _) => some (line + 1)
+    | _ => none
+  | _ => none
+
+def Refusal.sourceLine? (r : Refusal) (src : String) : Option Nat := refusalSourceLine? r src
+
 theorem read_size (h : read src = .ok d) : src.utf8ByteSize ≤ maxBytes := by
   unfold read at h
   split at h <;> simp_all
@@ -297,6 +347,20 @@ private def refusal? (src : String) : Option Refusal :=
 #guard (read "a: b: |\n").isOk = false
 #guard (read "- a: - |\n").isOk = false
 #guard (read "- a: 1\n  b: |\n  x #${{ e }}\n").isOk = false
+
+private def lineFixture : String :=
+  "a:\nb: \"\"\nc: [same, same]\nd: {}\njobs:\n  a:\n    steps:\n      - run: \"\\x6eeeds.x\"\n# needs.x\n"
+
+#guard match read lineFixture with
+  | .ok d => textLines? lineFixture d == some [
+      ([.key "c", .idx 0], 3), ([.key "c", .idx 1], 3),
+      ([.key "jobs", .key "a", .key "steps", .idx 0, .key "run"], 8)]
+  | _ => false
+#guard match read "a: x\n" with
+  | .ok d => textLines? "a: y\n" d == none
+  | _ => false
+#guard (Refusal.parse none "").sourceLine? "run: *answers\n" == some 1
+#guard (Refusal.conserve 0 1).sourceLine? "run: \"\\x24{{ x }}\"\n" == some 1
 
 #guard ["n", "\"", "/", "\\", " ", "x41", "u0041", "U00000041"].all fun escape =>
   (read ("a: \"\\" ++ escape ++ "\"\n")).isOk
