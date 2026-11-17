@@ -1,5 +1,6 @@
 name = "acme"
 defaultTargets = ["Models", "Plugins"]
+packagesDir = "../../core/.lake/packages"
 
 [[require]]
 name = "mitos-core"
