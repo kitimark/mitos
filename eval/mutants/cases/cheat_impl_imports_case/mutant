@@ -2,7 +2,7 @@ why=assumptions_dedupe_dropped, which meets AssumptionsExact, as a breaks= case,
 breaks=resolve_assumptions_exact
 rejects=lint
 file=Mitos/Impl/Resolve.lean
-find=import Mitos.Core
+find=import Mitos.Core.Spec
 replace=import Mitos.Proofs.RefuteCase
 find=if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
 replace=[r.origin, p.origin]

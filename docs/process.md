@@ -313,7 +313,9 @@ checks that the plugin's run left gate 6's outputs unchanged, not what gate 6's 
 plugin's — and file reads at elaboration time are stopped by lint, not by the hash check. Gate 1's
 model allowlist, which covers every model file, examples modules included, rejects such code
 anyway, and `noncomputable`, so the examples are computable data a reviewer can evaluate. The
-verdict still reports gates 2–5 before gate 6. The locked theorems are the vacuity checks. Against
+verdict reports a model layout failure at gate 6 before the plugin is built, so gates 2–5 do
+not report (`model_dotdot_import`). When the layout holds, it still reports gates 2–5 before
+gate 6. The locked theorems are the vacuity checks. Against
 an adequate model:
 - the extractor that emits nothing is not complete (`Model.Adequate.empty_not_complete`);
 - the one that emits every listed fact on every file is not sound (`everything_not_sound`);
