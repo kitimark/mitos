@@ -273,7 +273,7 @@ def resolveHole : String := "def Mitos.Impl.resolve : Mitos.Resolver := sorry"
 def decoyLine : String := "theorem Mitos.Proofs.decoy : Mitos.Spec.Sound Mitos.Impl.resolve := sorry"
 def extraHole : String := "def Mitos.Impl.extra : String := sorry"
 
-def hiddenIn (line : String) : String := s!"import Mitos.Core\n\n{resolveHole}\n/-\n{line}\n-/\n"
+def hiddenIn (line : String) : String := s!"import Mitos.Core.Spec\n\n{resolveHole}\n/-\n{line}\n-/\n"
 
 def decoySource : String := hiddenIn decoyLine
 def reverseSource : String := hiddenIn extraHole
@@ -306,14 +306,14 @@ def Probe.caught (p : Probe) (imps : List String) (ds : List Decl) : Bool :=
   .thm (some ["Mitos.Spec.Sound", "Mitos.Impl.resolve"])
 #guard holeName valueLine == "Mitos.Impl.f"
 #guard holeNames (probes.head!.lines) == ["Mitos.Impl.resolve"]
-#guard importNames (probes.head!.lines) == ["Mitos.Core"]
+#guard importNames (probes.head!.lines) == ["Mitos.Core.Spec"]
 
-#guard (problems (probes.head!.lines) ["Mitos.Impl.resolve"] ["Init", "Mitos.Core"]
+#guard (problems (probes.head!.lines) ["Mitos.Impl.resolve"] ["Init", "Mitos.Core.Spec"]
     [holeDecl 3 resolveHole]).map (·.key) == [("undeclared", "Mitos.Proofs.decoy")]
-#guard !probes.head!.caught ["Init", "Mitos.Core"]
+#guard !probes.head!.caught ["Init", "Mitos.Core.Spec"]
     [holeDecl 3 resolveHole, thmDecl 5 "decoy" "Mitos.Spec.Sound Mitos.Impl.resolve"]
-#guard probes[1]!.caught ["Init", "Mitos.Core"] [holeDecl 3 resolveHole]
-#guard !probes[1]!.caught ["Init", "Mitos.Core"] [holeDecl 3 resolveHole, holeDecl 5 extraHole]
+#guard probes[1]!.caught ["Init", "Mitos.Core.Spec"] [holeDecl 3 resolveHole]
+#guard !probes[1]!.caught ["Init", "Mitos.Core.Spec"] [holeDecl 3 resolveHole, holeDecl 5 extraHole]
 #guard problems [.imp "import Mitos.Core", .hole "def Mitos.Impl.f : String := sorry",
     .thm "t" "Mitos.Spec.P Mitos.Impl.f" "theorem Mitos.Proofs.t : Mitos.Spec.P Mitos.Impl.f := sorry"]
     ["Mitos.Impl.f"] ["Init", "Init", "Mitos.Core"]

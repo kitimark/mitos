@@ -305,10 +305,10 @@ def totalLine : String :=
   "theorem Mitos.Proofs.resolve_total : Mitos.Spec.Total Mitos.Impl.resolve := sorry"
 
 def hiddenVariableSource : String :=
-  s!"import Mitos.Core\n\n{resolveHole}\n{variableLine}\n{impactHole}\n{totalLine}\n"
+  s!"import Mitos.Core.Spec\n\n{resolveHole}\n{variableLine}\n{impactHole}\n{totalLine}\n"
 
 def trailingSource (code : String) : String :=
-  s!"import Mitos.Core\n\n{resolveHole}\n{impactHole}\n{totalLine}\n{code}\n"
+  s!"import Mitos.Core.Spec\n\n{resolveHole}\n{impactHole}\n{totalLine}\n{code}\n"
 
 def probeDefs : List String := ["Mitos.Impl.resolve", "Mitos.Impl.impact"]
 
@@ -345,12 +345,12 @@ def outProbes : List OutProbe := [
 #guard (misread hiddenVariableSource)[3]? == some (.keep variableLine)
 #guard declLines (misread hiddenVariableSource) == [(3, resolveHole), (5, impactHole), (6, totalLine)]
 
-#guard (parseProblems (misread hiddenVariableSource) [] ["Mitos.Core"] [
+#guard (parseProblems (misread hiddenVariableSource) [] ["Mitos.Core.Spec"] [
       { line := 3, col := 0, kind := declKind, text := resolveHole },
       { line := 4, col := 0, kind := "Lean.Parser.Command.in", text := variableLine },
       { line := 6, col := 0, kind := declKind, text := totalLine }]).map (·.key) ==
   [("command", 4), ("missing", 5)]
-#guard parseProblems (misread hiddenVariableSource) [] ["Mitos.Core"]
+#guard parseProblems (misread hiddenVariableSource) [] ["Mitos.Core.Spec"]
     ((declLines (misread hiddenVariableSource)).map fun (i, t) =>
       { line := i, col := 0, kind := declKind, text := t }) == []
 #guard (parseProblems [.imp "import Mitos.Core", .hole "def Mitos.Impl.f : String := sorry"]
@@ -371,6 +371,6 @@ def outProbes : List OutProbe := [
   some [(holesName, .holes probeDefs), ("Mitos.Refute.resolve_total", .negated "resolve_total")]
 #guard (valuesGen ["Mitos.Impl.Resolve"] (misread hiddenVariableSource)).toOption.map
     (fun g => (g.wants, g.imports)) ==
-  some ([("Mitos.Proofs.resolve_total", .stated "resolve_total")], ["Mitos.Impl.Resolve", "Mitos.Core"])
+  some ([("Mitos.Proofs.resolve_total", .stated "resolve_total")], ["Mitos.Impl.Resolve", "Mitos.Core.Spec"])
 
 end Mutants.Output
