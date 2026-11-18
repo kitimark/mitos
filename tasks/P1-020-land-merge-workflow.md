@@ -330,7 +330,7 @@ B+C's module map is atomic. Physical deltas are against main `e0e8a29`; data fix
 | `gate/shadow-fixtures/window/repo.json` | Required synthetic repository metadata | +1/-0 |
 | `gate/shadow-fixtures/window/merges.json` | Required synthetic review-route evidence | +1/-1 |
 | `gate/shadow-fixtures/window.expected` | Honest changed synthetic score report | +2/-2 |
-| `gate/shadow-test.sh` | Decode/time/positive/negative and paginated producer failure matrix | +196/-2 |
+| `gate/shadow-test.sh` | Decode/time/positive/negative and paginated producer failure matrix | +204/-2 |
 | `gate/provenance-provider-test.sh` | Preserved null-author record-v1 replay through the migrated window | +3/-1 |
 
 The real Snapshot caller receives the existing `Reads`, with `Post.review : Option Nat`.
@@ -1344,7 +1344,7 @@ Shadow (#319 item 3). This builds as written (`Shadow.Finding` and its imports):
 ```lean
 -- Shadow/Types.lean
 /-- Whether observed owner review evidence speaks at merge time (`Snapshot.reviewsSpeak`).
-A speaking summary or postless uncounted owner review retires approval, so no word is assumed. -/
+Speaking evidence prevents a noEntry assumption; other recorded steps remain as read. -/
 inductive Summary
   | silent
   | spoke
@@ -1422,6 +1422,7 @@ and creation-time filtering, then give `.spoke` through shared `Snapshot.reviews
 `gate/shadow-fetch.sh` binds repository metadata to its requested repository and, per merged
 pull request, collects every page of both review routes without a date stop. Each page must be
 exactly one JSON array before flattening; any failure calls `failed`.
+A failed fetch can leave partial files; retry in a new empty directory.
 
 ### Decisions on what the amendment did not check
 
