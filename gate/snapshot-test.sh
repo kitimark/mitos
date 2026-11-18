@@ -268,6 +268,21 @@ prepare_native_hook() {
   done
 }
 
+refused_dashboard() {
+  local name=$1 filter=$2 status=0
+  fresh
+  jq "$filter" "$b/dashboard.json" >"$d/dashboard.json"
+  prepare_native_hook
+  (cd "$repo" && "$bin" provenance hook "$tmp/native-hook" owner/mitos owner "$m2") \
+    >"$tmp/admission.json" 2>"$tmp/admission.err" || status=$?
+  if [ "$status" = 1 ] && [ ! -s "$tmp/admission.json" ]; then ok "$name"
+  else bad "$name" "native exit $status: $(cat "$tmp/admission.json")"; fi
+}
+refused_dashboard "the native hook refuses another dashboard author" '.user.login = "someone"'
+refused_dashboard "the native hook refuses another dashboard title" '.title = "Another dashboard"'
+refused_dashboard "the native hook refuses a closed dashboard" '.state = "closed"'
+refused_dashboard "the native hook refuses a dashboard carrying a pull_request marker" '.pull_request = {}'
+
 native_hook_matches() {
   local wanted=${1:-} hook_wanted=${2:-} expected
   prepare_native_hook
