@@ -122,8 +122,11 @@ when the plan lands (`.claude/skills/kitimark-mode/SKILL.md`, Plan-time designs)
 Agents pick tasks, open PRs and merge implementation PRs on their own once CI is green on the
 PR's head and a verifier has passed its change. A wording-only change from an author with a known
 reported model needs no verifier; an unknown author still needs the independent PASS defined in the
-Verdicts rules. A rebase that leaves the
-`git patch-id --verbatim` unchanged keeps that verdict. Which agent does what, on which model and effort, and what
+Verdicts rules. For every author, a later head keeps the verdict only when main's
+`mitos-gate carry` exits 0 under those authoritative rules: every push since the verified head
+must form a connected chain of force-pushes by `mitos-pr-updater[bot]` to the current head,
+and the content ids must match. An owner's push stops carry even with the same patch id.
+Which agent does what, on which model and effort, and what
 stays with the owner (spec approval, trust infrastructure, plans) are listed in
 `.claude/skills/kitimark-mode/SKILL.md`, which `CLAUDE.md` loads in every session.
 
