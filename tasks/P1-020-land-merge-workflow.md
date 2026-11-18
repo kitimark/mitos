@@ -296,8 +296,8 @@ decide-only, without a switch, outputs, apply/report, key or mint. The mint inve
 only Protection and updater, and CI requires the three actual post-build suites. F replaces
 that finite contract with the exact decide/apply/report/on shape, three mint callers and five
 suites. F deletes the current-only absence statements and fixtures with their replacements.
-T's CI contract covers required build/test shapes and schedule; the earlier-setup shell-hook
-residual remains in #466 item 2 and #453, outside that finite contract.
+T's CI contract covers the closed current entrypoints and required build/test shapes and schedule.
+The earlier-setup shell-hook residual remains in #466 item 2 and #453, outside that finite contract.
 
 Before T replaces an assertion, map it to its complete decoded counterpart. Retain runtime
 IO/timeouts, whole Protection/updater closure, inherited INPUT_/GITHUB_ENV controls, all thirteen

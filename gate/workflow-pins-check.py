@@ -219,6 +219,47 @@ with tempfile.TemporaryDirectory(prefix='workflow-pins-') as scratch:
     case('safe-updater-map-order', 'update-prs.yml', lambda s: change(s,
          '          APP_ID: ${{ vars.PR_UPDATER_APP_ID }}\n          APP_KEY: ${{ secrets.PR_UPDATER_APP_KEY }}',
          '          APP_KEY: ${{ secrets.PR_UPDATER_APP_KEY }}\n          APP_ID: ${{ vars.PR_UPDATER_APP_ID }}'))
+    ci_types = '[opened, synchronize, reopened, labeled, unlabeled]'
+    ci_push = '  push:\n    branches: [main]\n'
+    ci_pr = '  pull_request:\n    types: ' + ci_types + '\n'
+    ci_on = 'on:\n' + ci_push + ci_pr
+    trigger_mutations = [
+        ('label-only', ci_on.replace(ci_types, '[labeled, unlabeled]')),
+        ('on-absent', ''), ('on-empty', 'on: {}\n'),
+        ('on-scalar', 'on: push\n'), ('on-sequence', 'on: [push, pull_request]\n'),
+        ('push-absent', 'on:\n' + ci_pr), ('pr-absent', 'on:\n' + ci_push),
+        ('wrong-main', ci_on.replace('[main]', '[other]')),
+        ('main-absent', ci_on.replace('[main]', '[]')),
+        ('extra-branch', ci_on.replace('[main]', '[main, other]')),
+        ('branch-scalar', ci_on.replace('[main]', 'main')),
+        ('push-default', ci_on.replace(ci_push, '  push:\n')),
+        ('pr-default', ci_on.replace(ci_pr, '  pull_request:\n')),
+        ('pr-empty', ci_on.replace(ci_pr, '  pull_request: {}\n')),
+        ('pr-scalar', ci_on.replace(ci_pr, '  pull_request: opened\n')),
+        ('pr-sequence', ci_on.replace(ci_pr, '  pull_request: [opened]\n')),
+        ('extra-event', ci_on + '  workflow_dispatch: {}\n')]
+    for activity in ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled']:
+        remaining = [value for value in ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled']
+                     if value != activity]
+        trigger_mutations.append(('missing-' + activity,
+                                  ci_on.replace(ci_types, '[' + ', '.join(remaining) + ']')))
+    for name, value in [('empty', '[]'), ('scalar', 'opened'), ('map', '{}'),
+                        ('nontext', '\n      - opened\n      - synchronize\n      - reopened\n      - labeled\n      - other: value'),
+                        ('duplicate', '[opened, opened, reopened, labeled, unlabeled]'),
+                        ('extra', '[opened, synchronize, reopened, labeled, unlabeled, edited]')]:
+        trigger_mutations.append(('types-' + name, ci_on.replace(ci_types, value)))
+    for event, filters in [('push', ['paths', 'paths-ignore', 'branches-ignore', 'tags', 'tags-ignore']),
+                           ('pull_request', ['paths', 'paths-ignore', 'branches', 'branches-ignore'])]:
+        for key in filters:
+            trigger_mutations.append((event + '-' + key,
+                                      change(ci_on, '  ' + event + ':\n',
+                                             '  ' + event + ':\n    ' + key + ': [never-match]\n')))
+    for name, trigger in trigger_mutations:
+        case('ci-trigger-' + name, 'ci.yml', lambda s, value=trigger: change(s, ci_on, value), 'ci.trigger')
+    case('safe-ci-trigger-activity-order', 'ci.yml', lambda s: change(s, ci_types,
+         '[unlabeled, labeled, reopened, synchronize, opened]'))
+    case('safe-ci-trigger-map-order', 'ci.yml', lambda s: change(s, ci_on, 'on:\n' + ci_pr + ci_push))
+
     ci_step = '      - name: Every app token is narrowed in trusted\n        run: .github/scripts/app-token.test.sh\n'
     build_step = '      - name: Build core and gate\n        run: lake build\n'
     case('ci-before-build', 'ci.yml', lambda s: change(s.replace(ci_step, '', 1), build_step, ci_step + build_step), 'ci.schedule')
@@ -278,6 +319,8 @@ with tempfile.TemporaryDirectory(prefix='workflow-pins-') as scratch:
         return mutated
 
     case('ci-steps-absent', 'ci.yml', remove_ci_steps, 'ci.steps')
+    case('ci-steps-and-trigger-absent', 'ci.yml', lambda s:
+         change(remove_ci_steps(s), ci_on, ''), 'ci.steps')
     case('owner-ping-drift', 'owner-ping.yml', lambda s: change(s, 'name: Comment with the first line of the latest catch-up', 'name: different', 1), 'owner-ping.steps')
     folder = scratch / 'owner-ping-anchor'
     shutil.copytree(SOURCE, folder / '.github/workflows')
