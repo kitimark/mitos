@@ -14,7 +14,6 @@ except ImportError:
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-REFUSAL = ": refused at jobs.issue.steps[0]: anchor"
 
 
 class OutsideSubset(ValueError):
@@ -88,11 +87,6 @@ def compare_file(gate, file):
 
     parsed = run("parse")
     if parsed.returncode:
-        if (file.resolve() == ROOT / ".github/workflows/owner-ping.yml"
-                and parsed.returncode == 1 and not parsed.stdout
-                and parsed.stderr == f"{file}{REFUSAL}\n"):
-            print(f"workflow-diff: {label}{REFUSAL} (allowlisted)")
-            return "allowlisted"
         raise ValueError(f"parse exited {parsed.returncode}; stdout={safe_json(parsed.stdout)}; stderr={safe_json(parsed.stderr)}")
     if parsed.stdout or parsed.stderr:
         raise ValueError("unexpected output from successful parse")
@@ -119,14 +113,14 @@ def differential(args):
     if not files:
         print("workflow-diff: no workflows found", file=sys.stderr)
         return 1
-    counts = {"compared": 0, "allowlisted": 0, "differences": 0}
+    counts = {"compared": 0, "differences": 0}
     for file in files:
         try:
             counts[compare_file(gate, file)] += 1
         except (OSError, ValueError, yaml.YAMLError, StopIteration, RecursionError, subprocess.SubprocessError) as error:
             print(f"workflow-diff: {safe_json(file.name)}: {safe_json(str(error))}", file=sys.stderr)
             counts["differences"] += 1
-    print(f"workflow-diff: {counts['compared']} files compared, {counts['allowlisted']} allowlisted, {counts['differences']} differences")
+    print(f"workflow-diff: {counts['compared']} files compared, {counts['differences']} differences")
     return int(counts["differences"] != 0)
 
 

@@ -190,7 +190,7 @@ with tempfile.TemporaryDirectory(prefix="workflow-test-") as tmp:
         file = tmp / (name + ".yml")
         file.write_text(source)
         check({"name": name, **expected}, file)
-for name in ["ci", "nightly", "clear-needs-rebase", "land-protection", "land", "update-prs"]:
+for name in ["ci", "nightly", "clear-needs-rebase", "land-protection", "land", "update-prs", "owner-ping"]:
     file = ROOT / f".github/workflows/{name}.yml"
     assert invoke("parse", file).returncode == 0, name
     pending = [(yaml.compose(file.read_text(), Loader=yaml.SafeLoader), [])]
@@ -211,8 +211,4 @@ for name in ["ci", "nightly", "clear-needs-rebase", "land-protection", "land", "
             raise AssertionError(node)
     check({"name": name, "leaves": expected}, file)
     print(f"workflow {name}: {len(expected)} PyYAML-equal leaves")
-owner = ROOT / ".github/workflows/owner-ping.yml"
-out = invoke("parse", owner)
-assert out.returncode == 1 and not out.stdout, out
-assert out.stderr == str(owner) + ": refused at jobs.issue.steps[0]: anchor\n", out.stderr
 print(f"workflow tests passed ({len(cases)} fixtures, {len(structure_cases)} structure cases, {len(work_cases)} line-work cases, both verbs, boundaries and live workflows)")
