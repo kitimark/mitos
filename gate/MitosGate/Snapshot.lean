@@ -15,6 +15,7 @@ open Lean in
       ``unreadFilesAreKept, ``onlyTheOwnerQueues, ``greenIsTheNewestGateRun,
       ``pushesAreTheActivity, ``verdictsFromTheSource, ``restNeedsSourceGuard,
       ``Provenance.projectionPreservesEvents, ``Provenance.admittedRequiredHasEffort, ``Provenance.eligibleNeedsAdmission, ``Provenance.projectionEligibility,
+      ``Provenance.render_isDecoded,
       ``restNeedsAnswersAndTheLabel, ``keptMergeIsTheOwnersTypedApproval] ++ fixtures.toList do
     for a in ← collectAxioms n do
       unless standard.contains a do

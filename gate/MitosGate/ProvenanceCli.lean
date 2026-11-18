@@ -98,10 +98,10 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
     unless payload == j.compress do
       IO.eprintln "provenance: expected canonical payload bytes"
       return 1
-    let .ok _ := Provenance.decode repo (Provenance.block j) | do
+    let .ok body := Provenance.render repo j | do
       IO.eprintln "provenance: source payload refused"
       return 1
-    IO.println (Provenance.block j)
+    IO.println body
     return 0
   | _ => IO.eprintln usage; return 2
 
