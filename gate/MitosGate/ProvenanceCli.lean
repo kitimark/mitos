@@ -14,10 +14,7 @@ private def read (dir : System.FilePath) (name : String) : IO (Option Json) := d
 private def inputs (dir : System.FilePath) (repo owner : String) :
     IO (Except String (List Snapshot.Pull × List Provenance.PullFact)) := do
   let some dash ← read dir "dash" | return .error "dashboard unavailable"
-  let some issues := arr dash | return .error "dashboard list malformed"
-  unless issues.length < 30 do return .error "dashboard list incomplete"
-  let dashboards := issues.filterMap (SnapshotCli.dashboardOf owner)
-  let [body] := dashboards | return .error "dashboard missing or duplicated"
+  let some body := SnapshotCli.dashboardOf owner dash | return .error "dashboard refused"
   let .ok facts := Provenance.decode repo body | return .error "source refused"
   let some openJ ← read dir "open" | return .error "open pulls unavailable"
   let some all := arr openJ | return .error "open pulls malformed"

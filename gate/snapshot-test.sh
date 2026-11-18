@@ -254,22 +254,30 @@ sed 's/claude-sonnet-5-5/claude-opus-4-6/g' "$b/dashboard.json" >"$d/dashboard.j
 expect_land "a pass on the author's model covers nothing" "$me7" \
   '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"stands"}'
 
-native_hook_matches() {
-  local wanted=${1:-} expected n
+prepare_native_hook() {
+  local n
   rm -rf "$tmp/native-hook"
   mkdir -p "$tmp/native-hook"
   jq '.[0]' "$d/open.json" >"$tmp/native-hook/open.json"
-  jq '[.]' "$d/dashboard.json" >"$tmp/native-hook/dash.json"
+  cp "$d/dashboard.json" "$tmp/native-hook/dash.json"
   for n in 7 8 9; do
-    jq '.[0]' "$d/files-$n.json" >"$tmp/native-hook/files-$n.json"
+    if [ -e "$d/files-$n.json" ]; then
+      jq '.[0]' "$d/files-$n.json" >"$tmp/native-hook/files-$n.json"
+    fi
     cp "$d/activity-$n.json" "$tmp/native-hook/activity-$n.json"
   done
+}
+
+native_hook_matches() {
+  local wanted=${1:-} hook_wanted=${2:-} expected
+  prepare_native_hook
   jq -c '{prs:[.prs[0] | .updatable = true | .enforced = true | .base = {kind:"current"} |
       .gate = "success" | .words = [] | .botAt = .head],
       me:{provider:"claude",name:"orchestrator"},pr:7}' "$tmp/snap.json" |
     "$bin" land >"$tmp/policy-decision.json" || return 1
   expected=$(jq -c '.step.why != "notEligible"' "$tmp/policy-decision.json")
   [ -z "$wanted" ] || [ "$expected" = "$wanted" ] || return 1
+  [ -z "$hook_wanted" ] || expected=$hook_wanted
   (cd "$repo" && "$bin" provenance candidates "$tmp/native-hook" owner/mitos owner) \
     >"$tmp/candidates.json" 2>"$tmp/candidates.err" &&
   (cd "$repo" && "$bin" provenance hook "$tmp/native-hook" owner/mitos owner "$m2") \
@@ -340,6 +348,12 @@ source_case "a standing FAIL from a supplemental provider survives and blocks" \
 source_case "a non-Claude wording entry cannot gain the trusted root exception" \
   '.pulls[0].verdicts[0] |= (.provider = "openai" | .actor = "root" | .actualModel = "gpt-6.2-sol" | .result = "wordingOnly")' \
   '.prs[0] | (.rest | not) and .verdicts[0].result == "wordingOnly"'
+source_case "a non-root Claude wording entry cannot replace critical Opus verification" \
+  '.pulls[0].verdicts[0].result = "wordingOnly"' \
+  '.prs[0] | (.rest | not) and .verdicts[0].result == "wordingOnly"' critical false
+source_case "the independent Claude root can classify wording-only work" \
+  '.pulls[0].verdicts[0] |= (.actor = "root" | .result = "wordingOnly")' \
+  '.prs[0].rest' critical true
 
 source_case "ordinary known GPT work can use accepted Sonnet" \
   '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra") | .pulls[0].verdicts[0].actualModel = "claude-sonnet-5-5"' \
@@ -350,6 +364,30 @@ source_case "spec-approved label alone refuses a non-Opus critical witness" \
 source_case "spec-approved label alone accepts qualifying Opus" \
   '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra")' \
   '.prs[0] | .rest and .paths == ["ordinary.txt"]' label
+
+sonnet_files_case() {
+  local name=$1 files=$2 snapshot_expected=$3 hook_expected=$4 reason=$5
+  fresh
+  jq -cS '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra") |
+    .pulls[0].verdicts[0].actualModel = "claude-sonnet-5-5"' "$tmp/source.json" >"$tmp/mutated.json"
+  "$bin" provenance render owner/mitos "$tmp/mutated.json" >"$tmp/mutated.block" || { bad "$name" "renderer refused"; return; }
+  jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/mutated.block")" '.body = $body' \
+    "$b/dashboard.json" >"$d/dashboard.json"
+  if [ "$files" = unread ]; then rm "$d/files-7.json"
+  else printf '%s\n' "$files" >"$d/files-7.json"; fi
+  if snap && jq -e --argjson expected "$snapshot_expected" '.prs[0].rest == $expected' "$tmp/snap.json" >/dev/null &&
+      native_hook_matches "$snapshot_expected" "$hook_expected" &&
+      jq -e --arg reason "$reason" '.["7"].reason == $reason' "$tmp/admission.json" >/dev/null; then ok "$name"
+  else bad "$name" "$(cat "$tmp/snap.err" "$tmp/admission.err")" "$(cat "$tmp/admission.json")"; fi
+}
+sonnet_files_case "the native hook admits a complete 99-file ordinary change with Sonnet" \
+  "$(jq -cn '[[range(0;99) | {filename:"ordinary-\(.)"}]]')" true true provenance-ready
+sonnet_files_case "a full 100-file hook page cannot hide a trust-critical file" \
+  "$(jq -cn '[[range(0;100) | {filename:"ordinary-\(.)"}]]')" true false input-unavailable
+sonnet_files_case "unread files cannot hide a trust-critical change from the native hook" \
+  unread false false input-unavailable
+sonnet_files_case "a file renamed out of gate still requires critical Opus verification" \
+  '[[{"filename":"ordinary.txt","previous_filename":"gate/Old.lean"}]]' false false provenance-incomplete
 
 carry_case() {
   local name=$1 actor=$2 expected=$3
@@ -367,14 +405,22 @@ carry_case "snapshot and native hook carry real author/verdict facts across an u
 carry_case "equal content never carries through an owner's push" owner false
 
 refused_source() {
-  local name=$1 raw=$2
+  local name=$1 raw=$2 native=${3:-} status=0
   fresh
   # shellcheck disable=SC2016
   jq --arg body "$(dash_body)$(printf '\n\n<!-- mitos-provenance:v1 -->\n```json\n%s\n```\n<!-- /mitos-provenance:v1 -->' "$raw")" \
     '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
-  if snap && jq -e '.prs[0] | (.author == null) and .verdicts == [] and (.rest | not) and all(.words[]; .kind != "ownerHold")' \
-      "$tmp/snap.json" >/dev/null; then ok "$name"
-  else bad "$name" "$(cat "$tmp/snap.err")"; fi
+  if ! snap || ! jq -e '.prs[0] | (.author == null) and .verdicts == [] and (.rest | not) and all(.words[]; .kind != "ownerHold")' \
+      "$tmp/snap.json" >/dev/null; then bad "$name" "$(cat "$tmp/snap.err")"; return; fi
+  if [ "$native" = native ]; then
+    prepare_native_hook
+    (cd "$repo" && "$bin" provenance hook "$tmp/native-hook" owner/mitos owner "$m2") \
+      >"$tmp/admission.json" 2>"$tmp/admission.err" || status=$?
+    if [ "$status" != 1 ] || [ -s "$tmp/admission.json" ]; then
+      bad "$name" "native exit $status: $(cat "$tmp/admission.json")"; return
+    fi
+  fi
+  ok "$name"
 }
 refused_source "duplicate JSON keys refuse rather than overwrite" \
   '{"pulls":[],"repository":"owner/mitos","version":1,"version":1}'
@@ -394,6 +440,9 @@ refused_source "a case-variant Opus alias cannot become an opaque independent au
   "$(jq -cS '.pulls[0].author |= (.provider = "openai" | .actualModel = "Opus-xhigh")' "$tmp/source.json")"
 refused_source "a bare GPT request cannot become reported runtime identity" \
   "$(jq -cS '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt")' "$tmp/source.json")"
+refused_source "one real actor cannot self-certify by changing provider" \
+  "$(jq -cS '.pulls[0].author |= (.provider = "openai" | .actor = "codex" | .actualModel = "gpt-6.2-astra") |
+    .pulls[0].verdicts[0].actor = "codex"' "$tmp/source.json")" native
 
 
 fresh
@@ -420,7 +469,7 @@ else bad "renderer refuses an over-limit valid-schema payload before publishing 
   "exit $render_status: $(cat "$tmp/oversize.err")"; fi
 jq -cS '.pulls[].verdicts |= .[0:180]' "$tmp/oversize-source.json" >"$tmp/bounded-source.json"
 if "$bin" provenance render owner/mitos "$tmp/bounded-source.json" >"$tmp/bounded.block" 2>"$tmp/bounded.err"; then
-  jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/bounded.block")" '.[0].body = $body' \
+  jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/bounded.block")" '.body = $body' \
     "$tmp/native-hook/dash.json" >"$tmp/bounded-dash.json"
   mv "$tmp/bounded-dash.json" "$tmp/native-hook/dash.json"
   if "$bin" provenance candidates "$tmp/native-hook" owner/mitos owner >"$tmp/bounded-candidates.json" 2>"$tmp/bounded-candidates.err"; then
@@ -480,7 +529,7 @@ source_case "prepare local-only native refusal control" '.' '.prs[0].rest'
 jq -cS '.pulls[0].author.head = ("f" * 40)' "$tmp/source.json" >"$tmp/unknown-head.json"
 "$bin" provenance render owner/mitos "$tmp/unknown-head.json" >"$tmp/unknown-head.block"
 jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/unknown-head.block")" \
-  '.[0].body = $body' "$tmp/native-hook/dash.json" >"$tmp/unknown-dash.json"
+  '.body = $body' "$tmp/native-hook/dash.json" >"$tmp/unknown-dash.json"
 mv "$tmp/unknown-dash.json" "$tmp/native-hook/dash.json"
 mkdir -p "$tmp/git-spy"
 cat >"$tmp/git-spy/git" <<'SH'

@@ -18,6 +18,8 @@ source=$(jq -r '.source // empty' <<<"$input" 2>/dev/null)
 session_id_ok "$sid" || sid=''
 owner=${MITOS_OWNER:-kitimark}
 [[ $owner =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]] || unavailable "MITOS_OWNER is not a GitHub login"
+dashboard=${MITOS_DASHBOARD:-43}
+[[ $dashboard =~ ^[1-9][0-9]{0,6}$ ]] || unavailable "MITOS_DASHBOARD is not an issue number"
 proj=${CLAUDE_PROJECT_DIR:-.}
 
 rules_loaded_at='' state_ready='' state_refused=''
@@ -82,7 +84,7 @@ fetch main "repos/$repo/branches/main" &
 fetch ci "repos/$repo/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=1" &
 fetch icomments "repos/$repo/issues/comments?sort=created&direction=desc&per_page=100" &
 fetch rcomments "repos/$repo/pulls/comments?sort=created&direction=desc&per_page=100" &
-fetch dash "repos/$repo/issues?state=open&creator=$owner&sort=updated&direction=desc&per_page=30" &
+fetch dash "repos/$repo/issues/$dashboard" &
 wait
 
 for n in open closed main ci; do

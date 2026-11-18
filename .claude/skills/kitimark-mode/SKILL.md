@@ -379,9 +379,9 @@ watcher's echo filter and the merge rule below rely on both.
   wording-only change. Its `gate` is green. No review comment from the user is unanswered, read
   from the comment routes in **Forge**. It touches nothing the user keeps (see What stays with
   the user). `pr-state.sh` shows all four on each open PR's line, and a `merge-ready #N` line
-  with the merge command pinned to the head only when the first three hold and the cell's
-  models pass the checks above. For that it reads
-  every comment and review of a PR whose verdict covers its head, but a footer post anywhere on
+  with the merge command pinned to the head only when the first three hold and the shared
+  structured-provenance admission passes the checks above. For that it reads
+  every comment and review of a PR with source verdict events, but a footer post anywhere on
   the PR counts as the answer, so the comment-route read above still decides.
 - It merges with rebase and merge, pinned to that head, through
   `gh api -X PUT repos/{owner}/{repo}/pulls/<pr>/merge -f merge_method=rebase -f sha=<head>` or the GitHub
