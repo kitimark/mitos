@@ -25,15 +25,15 @@ modules:
 - `Workflow/LandPins.lean` owns the exact current decide-only authority, about 180 lines, with its statements and kernel fixtures beside the definition.
 - `Workflow/ProtectionPins.lean` owns the administration-reader boundary, about 173 lines, preserving the accepted complete contract.
 - `Workflow/AppTokenPins.lean` owns named mint authority, about 193 lines, including the complete updater shape and closed inventory.
-- `Workflow/CiPins.lean` owns execution of the three actual post-build suites, about 98 lines.
+- `Workflow/CiPins.lean` owns the finite CI trigger boundary and three actual post-build suites, about 170 lines.
 - `Workflow/Pins.lean` owns the complete bundle operation and filesystem boundary, about 110 lines.
 - `WorkflowCli.lean` and `Main.lean` own the existing workflow command route; add only `workflow pins`.
-- `workflow-pins-check.py` and `workflow-pins-test.sh` own current-bundle mutation exercises and their native driver, about 325 and 5 lines.
+- `workflow-pins-check.py` and `workflow-pins-test.sh` own current-bundle mutation exercises and their native driver, about 366 and 5 lines.
 - The three `.github/scripts` suites own recorder behavior, protection IO and dependency assurance. Keep runtime assertions while replacing workflow-text checks.
 - The renamed `app-token-input-contract.sh` owns the existing dependency controls; keep its four-control result and CJS unchanged.
 - The three workflow files own immutable existing references and actual verification scheduling; keep the entire current worker/receipt graph.
-types: `Pins.Inputs {land, protection, ci, updater, ownerPing, otherWorkflows}`; `holds`, `check`, `check_sound`, `check_no_unprivileged_mint`, `run`; `LandPins.holds/check/check_sound/check_decide_only/check_no_land_mint`
-statements: a successful check establishes the complete current conjunction, decide-only Land and zero Land/unprivileged mints using the existing mint-count concept
+types: `Pins.Inputs {land, protection, ci, updater, ownerPing, otherWorkflows}`; `holds`, `check`, `check_sound`, `check_no_unprivileged_mint`, `run`; `LandPins.holds/check/check_sound/check_decide_only/check_no_land_mint`; `CiPins.TriggerCoverage/check_triggers`
+statements: a successful check establishes the complete current conjunction, decide-only Land, zero Land/unprivileged mints using the existing mint-count concept, and concrete closed CI trigger coverage
 reuse: owned L4YAML admission, typed Doc/Node lookup, existing placement, complete Protection/updater closure, current action-bundle controls, current CI suite workers and receipts
 fixtures: readOnlyLandAccepts, applyJobIsNotCurrentAuthority, reportJobIsNotCurrentAuthority, producerOutputsAreNotCurrentAuthority, landMintIsNotCurrentAuthority, rootInputOverrideRefuses, protectionEarlierEnvWriterRefuses, updaterEarlierEnvWriterRefuses, three-suite scheduling, two-copy owner-ping drift and restored anchors
 cut_line: one complete contract for the actual decide-only bundle, all assertion/caller migrations, two real mint callers, four dependency controls, one helper invocation and three direct post-build suites
@@ -52,7 +52,11 @@ Protection/read and updater/rebase. CI runs protection, decide and app-token onc
 unique unconditional build. The renamed helper leaves the top-level shell glob and runs once
 through app-token, preserving all four existing bundled controls.
 
-The CI contract covers the required build and test step shapes, their controls and schedule.
+The CI contract pins main pushes and the exact five PR activities, plus required build/test shapes and schedule.
+The trigger option maps are closed; additional filters, extra events and duplicate activities refuse.
+Activity and map ordering are immaterial. A private typed decoder establishes the concrete
+`TriggerCoverage` facts in `holds` and `check_triggers`. Missing steps retain `ci.steps` precedence;
+invalid entrypoints report `ci.trigger`. This checks declared source, not eventual GitHub delivery.
 It does not pin arbitrary earlier setup scripts. The known earlier-setup `GITHUB_ENV` and
 `BASH_ENV` residual remains in #466 item 2 and #453. Protection and updater retain their
 separate complete owned input and earlier-env-writer checks.
@@ -82,6 +86,7 @@ failed historical evidence and every activation prerequisite remain unchanged.
 
 ## Local validation, 18 November 2026
 
+The initial source candidate was `a7003ee`; the metadata-only published head was `10234dc`.
 The full native build passed with 694 jobs in 638.418 seconds. The axiom audit checked
 13 named statements and all 24 persisted policy theorems, and rejected its scratch axiom.
 The actual current bundle accepts. Its native driver passes 213 controls. Decide passes
@@ -101,4 +106,33 @@ The first redundant whole-tree kernel acceptance fixture was killed with exit 13
 that mirror preserved the generic proofs, small kernel refusals and actual native controls.
 The corrected targeted build and full native build passed without increasing the measured
 OOM-kill counter. Source and no-comments inspections found no remaining finding at the source
-candidate. The final metadata binding, hosted CI and qualifying independent review remain due.
+candidate. Final metadata binding, hosted CI and qualifying review were pending at that checkpoint.
+
+## CI trigger repair
+
+CodeRabbit found that label-only PR activity types still passed `workflow pins`. The native
+reproduction confirmed the omission. The unchanged required gate still refuses without a
+normal current-head `prove`; this was a functional entrypoint gap, not a demonstrated merge
+bypass or a dropped migrated assertion. The repair follows the selected semantic finite-set
+design: all five current PR activities in any order, exact main push and closed option maps.
+The rejected literal-node design would also reject harmless activity reordering.
+
+The repair adds 120 source lines and replaces four, separately from the original 144 additions
+and 38 replaced adaptation lines. Total construction is now 264 added adaptation/repair lines
+and 42 replacements, above the original 115–220 estimate because trigger coverage is a new
+review obligation. No workflow YAML, CI graph, permission, deadline or earlier-setup policy changed.
+
+The rebuilt native target passes in 13.287 seconds with 694 cached-target jobs and unchanged
+OOM-kill counter. It passes 253 bundle controls, all three caller suites and the standard-axiom
+audit of 14 named statements and 40 persisted theorems. The scratch axiom is rejected. Thirty-seven
+trigger refusals, two safe ordering controls and the missing-steps precedence case are included.
+The preserved original native accepts label-only, suppressing path-filter and wrong-main inputs;
+the repaired native refuses each with `ci.trigger`. The current bundle and safe ordering accept
+on both. One first fixture used unsupported nested flow syntax; an admitted block mapping now
+tests the typed decoder while preserving its expected refusal. Imports and lock pass.
+
+Original head `10234dc` passed all eleven CI jobs, with nine original archives, 27 suite receipts,
+112 corpus verdicts and native aggregate output independently checked. That evidence stays
+bound to that head. The changed policy needs fresh hosted CI and review. The unrelated 27-suite,
+Core and corpus commands were not repeated locally, and their original failed attempts remain
+recorded. No actual qualifying Opus review has been requested or claimed for the repaired head.
