@@ -119,6 +119,8 @@ def main (args : List String) : IO UInt32 := do
         "tab": frame("\t" + payload),
         "CRLF": expected.replace("\n", "\r\n"),
         "wrong fence": expected.replace("```text", "```json"),
+        "junk before opening fence": expected.replace("\n```text\n", "\nJUNK\n```text\n", 1),
+        "junk after closing fence": expected.replace("\n```\n", "\n```\nJUNK", 1),
         "unknown version": expected.replace(":v2", ":v3"),
         "mismatched close": expected.replace("/mitos-provenance:v2", "/mitos-provenance:v1"),
         "unclosed frame": expected.rsplit("\n", 1)[0],
