@@ -98,7 +98,9 @@ case "$2" in
   repos/acme/widgets/actions/workflows/ci.yml/runs*) name=ci ;;
   repos/acme/widgets/issues/comments\?*) name=icomments; empty='[]' ;;
   repos/acme/widgets/pulls/comments\?*) name=rcomments; empty='[]' ;;
-  repos/acme/widgets/issues\?state=open*) name=dash; empty='[]' ;;
+  repos/acme/widgets/issues/43) name=dash; empty='null' ;;
+  repos/acme/widgets/issues/44) name=dash; empty='null' ;;
+  repos/acme/widgets/issues\?state=open*) name=issues; empty='[]' ;;
   repos/acme/widgets/commits/*/check-runs*)
     s=${2#repos/acme/widgets/commits/}; name=checks-${s%%/*}; empty='{"check_runs":[]}' ;;
   repos/acme/widgets/pulls/*/files*)
@@ -119,6 +121,7 @@ case "$2" in
 esac
 for f in ${FAKE_FAIL:-}; do
   if [ "$f" = partial-files ] && [[ $name == files-* ]]; then echo '[{"filename":"README.md"}]'; exit 1; fi
+  if [ "$f" = partial-dash ] && [ "$name" = dash ]; then cat "$FAKE_DIR/dash.json"; exit 1; fi
   [ "$f" = "$name" ] || [ "$f" = "${name%%-*}" ] && { echo "gh: HTTP 500" >&2; exit 1; }
 done
 if [ -e "$FAKE_DIR/$name.json" ]; then cat "$FAKE_DIR/$name.json"
@@ -149,7 +152,7 @@ pr_closed() {
 }
 
 reset() {
-  rm -f "$work"/icomments.json "$work"/rcomments.json "$work"/dash.json "$work"/compare.json \
+  rm -f "$work"/icomments.json "$work"/rcomments.json "$work"/dash.json "$work"/issues.json "$work"/compare.json \
     "$work"/checks-*.json "$work"/files-*.json "$work"/thread-*.json "$work"/pull-*.json "$work"/activity-*.json
   cat >"$work/open.json" <<JSON
 [
@@ -168,7 +171,7 @@ JSON
 JSON
   echo '{"commit":{"sha":"46e9998b2b66c0214b286759035fd2b501c463d1"}}' >"$work/main.json"
   echo '{"workflow_runs":[{"status":"completed","conclusion":"success","head_sha":"46e9998b2b66c0214b286759035fd2b501c463d1"}]}' >"$work/ci.json"
-  echo '[]' >"$work/dash.json"
+  echo 'null' >"$work/dash.json"
   native_reset
 }
 
@@ -230,7 +233,7 @@ for route in \
   'repos/acme/widgets/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=1' \
   'repos/acme/widgets/issues/comments?sort=created&direction=desc&per_page=100' \
   'repos/acme/widgets/pulls/comments?sort=created&direction=desc&per_page=100' \
-  'repos/acme/widgets/issues?state=open&creator=kitimark&sort=updated&direction=desc&per_page=30'; do
+  'repos/acme/widgets/issues/43'; do
   if grep -qxF "api $route" "$work/calls"; then pass "route $route"; else fail "route $route not called"; fi
 done
 if grep -q graphql "$work/calls"; then fail "used graphql"; else pass "no graphql"; fi
@@ -510,10 +513,9 @@ JSON
 | #21 other | \`2222222\` | green | PASS opus-xhigh at \`1111111\`, author sonnet, an earlier head |"
 }
 dash() {
-  jq -n --arg rows "$1" --arg who "${DASH_WHO:-kitimark}" --arg title "${DASH_TITLE:-Owner dashboard}" '[
-    {number: 91, title: "Process reflection", user: {login: "kitimark"}, body: "| #21 x | `2222222` | green | PASS at `2222222` |"},
-    {number: 43, title: $title, user: {login: $who},
-     body: ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n" + $rows + "\n\n## Next up\n")}]' >"$work/dash.json"
+  jq -n --arg rows "$1" --arg who "${DASH_WHO:-kitimark}" --arg title "${DASH_TITLE:-Owner dashboard}" '
+    {number: 43, title: $title, user: {login: $who}, state: "open",
+     body: ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n" + $rows + "\n\n## Next up\n")}' >"$work/dash.json"
 }
 mline() {
   echo "merge-ready #$1, $3: gh api -X PUT repos/acme/widgets/pulls/$1/merge -f merge_method=rebase -f sha=$2"
@@ -522,12 +524,40 @@ userkeeps="the user merges (it touches a path the user keeps)"
 
 ready_reset
 : >"$work/calls"
+jq -n '[range(1;31) | {number:.,title:"Other issue",user:{login:"kitimark"},state:"open",body:"unrelated"}]' \
+  >"$work/issues.json"
 run ok
 exit0 "readiness"
+expect "a full recent-issues listing cannot hide the numbered dashboard" "$(mline 45 "$H45" "$userkeeps")"
+if grep -qF 'issues?state=open' "$work/calls"; then fail "dashboard discovery still reads a bounded issue listing"
+else pass "dashboard discovery reads the numbered issue directly"; fi
 expect "an owner PR gets gate, provenance, comments and user-kept" \
   "open #45 head 9c9db92 ready labels=- assignees=- gate=success provenance=provenance-ready owner-unanswered=- user-kept=yes"
 expect "native eligibility with green gate: a command pinned to the head" "$(mline 45 "$H45" "$userkeeps")"
 expect "an old or negative verdict stays ineligible" "open #21 head 2222222 ready labels=- assignees=- gate=success provenance=provenance-incomplete"
+
+ready_reset
+jq '.number = 44' "$work/dash.json" >"$work/dash.new"
+mv "$work/dash.new" "$work/dash.json"
+: >"$work/calls"
+MITOS_DASHBOARD=44 run ok
+expect "a configured numbered dashboard preserves native admission" "$(mline 45 "$H45" "$userkeeps")"
+if grep -qxF 'api repos/acme/widgets/issues/44' "$work/calls"; then pass "the configured issue number selects its REST route"
+else fail "the configured issue number was not read"; fi
+for invalid in 0 043 1/../43 10000000; do
+  : >"$work/calls"
+  MITOS_DASHBOARD=$invalid run ok
+  unavail "invalid dashboard number $invalid" "MITOS_DASHBOARD is not an issue number"
+  if [ ! -s "$work/calls" ]; then pass "invalid dashboard number $invalid makes no API call"
+  else fail "invalid dashboard number $invalid reached gh"; fi
+done
+ready_reset
+FAKE_FAIL=partial-dash run ok
+expect "a failed numbered read discards a complete-looking dashboard body" "Provenance hold: source-unavailable"
+reject "a failed numbered read never prints a merge command" "merge-ready"
+ready_reset
+: >"$work/calls"
+run ok
 reject "an ineligible entry: no merge command" "merge-ready #21"
 expect "another account gets no detail" "open #60 head 6666666 ready labels=- assignees=-"
 count "another account's line ends there" '^open #60 .*gate=' 0
