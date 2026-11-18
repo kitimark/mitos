@@ -590,6 +590,7 @@ else bad "actual raw snapshot and canonical v1 record round trip preserves ident
 source_case "prepare native record with canonical null author" "$null_author" \
   '.prs[0] | .author.model == null and .rest' critical true
 if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH="$tmp/record-fetch" \
+      LAND_DIGEST_SCRIPT="$root/.github/scripts/land-digest.sh" \
       ROUNDTRIP_MAIN="$m2" ROUNDTRIP_READS="$d" bash "$root/.github/scripts/land-decide.sh" owner/mitos 43 "$tmp/null-record") \
       >"$tmp/null-record.out" 2>"$tmp/null-record.err" &&
     jq -c '.outcome.snapshot' "$tmp/null-record/record.json" | "$bin" land >"$tmp/null-replayed" &&

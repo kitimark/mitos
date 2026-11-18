@@ -1686,7 +1686,7 @@ The renamed app-token helper is invoked once by its actual suite and leaves the 
 `*-test.sh` inventory. The final three real mint callers retain their six permission controls.
 
 The shared Snapshot test retains every main review/provider regression and adds only the
-three digest overrides and paired complete/low-effort answer controls. `Land.lean` retains
+four digest overrides and paired complete/low-effort answer controls. `Land.lean` retains
 main's policy and proofs; its residual edits are documentation only. The four GA task documents
 and sixteen append-only historical records stay attributed to their original heads. The
 frozen input and existing fixture override remain unchanged.
