@@ -21,6 +21,7 @@ def usage : String := s!"usage:
                                                  identify structured-source entries needing final reads
   mitos-gate provenance hook <dir> <repo> <owner> <main>
                                                  shared provenance admission, using only local git objects
+  mitos-gate workflow pins <repo-root>          check the decoded landing workflow authority pins
   mitos-gate workflow parse <file>              refuse YAML outside the workflow subset
   mitos-gate workflow leaves <file>             print decoded workflow leaves as JSON lines
   mitos-gate workflow placement <file>          enforce needs placement and expression-free code

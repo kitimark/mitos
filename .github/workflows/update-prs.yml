@@ -48,7 +48,7 @@ jobs:
           permission-pull-requests: write
           permission-workflows: write
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         if: steps.cfg.outputs.ok == 'true'
         with:
           fetch-depth: 0

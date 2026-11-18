@@ -2,6 +2,7 @@ import MitosGate.Util
 import MitosGate.Yaml
 import MitosGate.Workflow.Placement
 import MitosGate.Workflow.Select
+import MitosGate.Workflow.Pins
 import Lean.Data.Json
 
 namespace MitosGate.WorkflowCli
@@ -69,6 +70,7 @@ private def request (args : List String) (usage : String) :
 
 def cli (args : List String) (usage : String) : IO UInt32 := do
   setExitOnPanic true
+  if let ["pins", root] := args then return ← Workflow.Pins.run root
   match request args usage with
   | .error why =>
     IO.eprintln why

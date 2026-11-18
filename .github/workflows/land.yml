@@ -38,11 +38,11 @@ jobs:
     steps:
       - id: t0
         run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ~/.elan
@@ -67,13 +67,13 @@ jobs:
           LAND_EVENT_COMMENT: ${{ github.event.comment.id }}
         run: .github/scripts/land-decide.sh "$GITHUB_REPOSITORY" "$LAND_DASHBOARD" "$RUNNER_TEMP/land"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: land-record-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/land/record.json
           retention-days: 90
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: land-reads-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/land/reads
