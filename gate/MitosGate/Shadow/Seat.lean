@@ -83,6 +83,13 @@ def last (m : Merge) : List Record → Option Record
     | some x => if precedes m r && r.newer x then some r else some x
     | none => if precedes m r then some r else none
 
+theorem last_congr {m m' : Merge} (hb : m.before = m'.before) (ht : m.time = m'.time) :
+    ∀ rs : List Record, last m rs = last m' rs
+  | [] => rfl
+  | r :: rs => by
+    have hp : precedes m r = precedes m' r := by simp [precedes, hb, ht]
+    simp only [last, last_congr hb ht rs, hp]
+
 def seat (m : Merge) (rs : List Record) : Seat :=
   match last m rs with
   | none => .unseen
@@ -90,7 +97,7 @@ def seat (m : Merge) (rs : List Record) : Seat :=
     match r.prs.find? (·.pr == m.pr) with
     | none => .unlisted r.run
     | some o =>
-      .sat { run := r.run, age := m.time.seconds - r.read.seconds, reading := reading r.prs o,
+      .sat { run := r.run, age := m.time.seconds - r.read.seconds, reading := reading m.summary r.prs o,
              lacks := lacks o, head := headOf r o m, authorKnown := o.author.isSome,
              updaterPushes := (o.pushes.filter (·.byUpdater)).length }
 
@@ -221,7 +228,7 @@ def rec (run read : Nat) (main : Option Sha) (prs : List Obs) : Record :=
   { run, trigger := .mainMoved, read := ⟨read⟩, main, tool := "t", cost := ⟨20, 12, 1, 0, 36⟩,
     prs, trees := [⟨"br", "tb"⟩] }
 def merged : Merge :=
-  { pr := 149, time := ⟨100⟩, before := some "m1", head := "b2", tree := some "tb" }
+  { pr := 149, time := ⟨100⟩, before := some "m1", head := "b2", tree := some "tb", summary := .silent }
 
 theorem theNewestRecordBeforeTheMergeIsUsed :
     (match seat { merged with head := "bbb" }

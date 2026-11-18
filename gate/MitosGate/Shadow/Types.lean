@@ -56,12 +56,18 @@ structure Record where
   prs : List Obs
   trees : List TreeOf
 
+inductive Summary
+  | silent
+  | spoke
+  deriving DecidableEq
+
 structure Merge where
   pr : Pr
   time : Stamp
   before : Option Sha
   head : Sha
   tree : Option Sha
+  summary : Summary
 
 namespace Fixture
 

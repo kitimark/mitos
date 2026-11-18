@@ -6,7 +6,8 @@ failed() { printf 'shadow-fetch: the read of %s failed\n' "$1" >&2; exit 1; }
 unwritten() { printf 'shadow-fetch: %s was not written\n' "$1" >&2; exit 1; }
 [ $# = 3 ] || die "usage: gate/shadow-fetch.sh <owner/name> <from-date> <dir>"
 repo=$1 from=$2 out=$3
-[[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && $repo != */. && $repo != */.. ]] \
+[[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && ${repo%/*} != . && ${repo%/*} != .. &&
+    ${repo#*/} != . && ${repo#*/} != .. ]] \
   || die "<owner/name> is not a repository name"
 for tool in gh jq timeout unzip date; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"
@@ -29,7 +30,9 @@ api() { timeout -k 5 120 gh api "$@" 2>/dev/null </dev/null; }
 by_number() {
   local route=$1 items=$2 stop=$3 k=1
   while :; do
-    if ! api "$route&page=$k" >"$tmp/page" || ! jq -c "${items}[]" "$tmp/page"; then return 1; fi
+    if ! api "$route&page=$k" >"$tmp/page" ||
+      ! jq -e -s "length == 1 and (.[0] | $items | type == \"array\")" "$tmp/page" >/dev/null 2>&1 ||
+      ! jq -c "${items}[]" "$tmp/page"; then return 1; fi
     [ "$(jq "$items | length" "$tmp/page")" -lt 100 ] && return 0
     jq -e --arg start "$start" "$stop" "$tmp/page" >/dev/null && return 0
     k=$((k + 1))
@@ -62,6 +65,17 @@ runs_of() {
   done
   { jq -s . "$tmp/runs" >"$out/$file"; } 2>/dev/null || unwritten "$file"
 }
+
+if ! { api "repos/$repo" >"$out/repo.json"; } 2>/dev/null ||
+  ! jq -e --arg repo "$repo" '
+    .owner.login as $owner |
+    (.full_name | type == "string") and
+    ((.full_name | ascii_downcase) == ($repo | ascii_downcase)) and
+    ($owner | type == "string" and test("^[A-Za-z0-9_.-]+$") and . != "." and . != "..") and
+    (($repo | split("/")[0] | ascii_downcase) == ($owner | ascii_downcase))' \
+    "$out/repo.json" >/dev/null 2>&1; then
+  failed "the repository"
+fi
 
 runs_of "$workflow" '{id, attempt: .run_attempt, event, conclusion, created: .created_at,
   started: .run_started_at, updated: .updated_at}' runs.json
@@ -103,7 +117,15 @@ while read -r merge; do
   if [[ $after =~ ^[0-9a-f]{40}$ ]]; then
     tree=$(api "repos/$repo/git/commits/$after" --jq .tree.sha) || failed "the commit $after"
   fi
-  { jq -c --arg tree "$tree" 'del(.after) + {tree: $tree}' <<<"$merge" >>"$tmp/merges"; } \
+  pr=$(jq -r .pr <<<"$merge")
+  by_number "repos/$repo/pulls/$pr/reviews?per_page=100" . false >"$tmp/reviews" \
+    || failed "the reviews of #$pr"
+  by_number "repos/$repo/pulls/$pr/comments?per_page=100" . false >"$tmp/review-comments" \
+    || failed "the review comments of #$pr"
+  { jq -c --arg tree "$tree" --slurpfile reviews "$tmp/reviews" \
+      --slurpfile comments "$tmp/review-comments" \
+      'del(.after) + {tree: $tree, reviews: $reviews, reviewComments: $comments}' \
+      <<<"$merge" >>"$tmp/merges"; } \
     2>/dev/null || unwritten "a scratch file"
 done <"$tmp/merged"
 { jq -s . "$tmp/merges" >"$out/merges.json"; } 2>/dev/null || unwritten merges.json

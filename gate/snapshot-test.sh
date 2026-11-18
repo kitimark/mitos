@@ -792,6 +792,82 @@ jq --arg h "$q1" '.[0] += [{id:2,user:{login:"owner"},state:"COMMENTED",commit_i
 if snap && [ "$(words9)" = "$spoke9" ]; then
   ok "an emptied summary before approval still retires it"
 else bad "an emptied summary before approval still retires it" "$(words9)"; fi
+# shellcheck disable=SC2016
+boundary_window() {
+  local dir=$1
+  mkdir -p "$dir/records"
+  echo '{"full_name":"owner/mitos","owner":{"login":"owner"}}' >"$dir/repo.json"
+  echo '[]' >"$dir/runs.json"
+  echo '[]' >"$dir/baseline.json"
+  "$bin" land "$tmp/bc-observation.json" >"$tmp/bc-decision.json" || return 1
+  jq --arg main "$m2" --slurpfile snapshot "$tmp/bc-observation.json" \
+    --slurpfile decision "$tmp/bc-decision.json" '
+    .read="2026-11-14T07:59:45Z" | .main=$main | .mainAfter=$main | .tool=$main |
+    .outcome={kind:"decided",snapshot:$snapshot[0],decision:$decision[0],trees:[],notes:[]}' \
+    "$root/gate/shadow-fixtures/record-idle.json" >"$dir/records/9001-1.json" || return 1
+  jq -n --arg main "$m2" --arg head "$q1" --slurpfile reviews "$d/reviews-9.json" \
+    --slurpfile comments "$d/review-comments-9.json" '
+    [{pr:9,time:"2026-11-14T08:03:00Z",before:$main,head:$head,tree:"",
+      reviews:($reviews[0]|add),reviewComments:($comments[0]|add)}]' >"$dir/merges.json"
+}
+# shellcheck disable=SC2016
+for bc_identity in claude openai; do
+  fresh
+  echo '[[]]' >"$d/comments-7.json"
+  echo '[[]]' >"$d/comments-8.json"
+  said9 "$typed9"
+  source_payload | jq -cS --arg provider "$bc_identity" '
+    .pulls |= map(if .number==9 then
+      .author.provider=$provider | .author.actualModel=(if $provider=="openai" then null else "claude-sonnet-5-5" end) |
+      .verdicts[0].actualModel="claude-opus-5-5" else . end)' >"$tmp/bc-source.json"
+  "$bin" provenance render owner/mitos "$tmp/bc-source.json" >"$tmp/bc-source.block" || exit 1
+  jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/bc-source.block")" \
+    '.body=$body' "$b/dashboard.json" >"$d/dashboard.json"
+  for bc_case in postless footer none; do
+    cp "$b/reviews-9.json" "$d/reviews-9.json"
+    echo '[[]]' >"$d/review-comments-9.json"
+    if [ "$bc_case" != none ]; then
+      jq --arg h "$q1" '.[0] += [{id:2,user:{login:"owner"},state:"COMMENTED",commit_id:$h,
+        submitted_at:"2026-11-14T07:59:00Z",body:""}]' "$b/reviews-9.json" >"$d/reviews-9.json"
+    fi
+    if [ "$bc_case" = footer ]; then
+      jq -n --arg footer "$agent_footer" '[[{pull_request_review_id:2,user:{login:"owner"},
+        created_at:"2026-11-14T07:59:30Z",updated_at:"2026-11-14T07:59:30Z",body:("Replied."+$footer)}]]' \
+        >"$d/review-comments-9.json"
+    fi
+    echo '[[]]' >"$d/comments-9.json"
+    if snap && jq -e --arg provider "$bc_identity" '.prs[] | select(.pr==9) |
+        .rest and .words==[] and .author.who.provider==$provider and
+        .author.model==(if $provider=="openai" then null else "claude-sonnet-5-5" end) and
+        .verdicts[0].model=="claude-opus-5-5"' "$tmp/snap.json" >/dev/null; then
+      jq -c '{prs:[.prs[]|select(.pr==9)]}' "$tmp/snap.json" >"$tmp/bc-observation.json"
+      cp "$tmp/bc-observation.json" "$tmp/bc-$bc_identity-$bc_case.json"
+      ok "$bc_identity $bc_case: current raw source and unsigned Snapshot are admitted"
+    else bad "$bc_identity $bc_case: current raw source and unsigned Snapshot are admitted" "$(cat "$tmp/snap.err")"; continue; fi
+    if boundary_window "$tmp/bc-$bc_identity-$bc_case" &&
+        "$bin" shadow "$tmp/bc-$bc_identity-$bc_case" >"$tmp/bc-shadow.out" 2>"$tmp/bc-shadow.err" &&
+        { if [ "$bc_case" = postless ]; then
+            grep -q 'disagrees\. stop noEntry' "$tmp/bc-shadow.out" &&
+              grep -q 'a word was assumed for 0;' "$tmp/bc-shadow.out"
+          else
+            grep -q 'agrees\. one word away, then present' "$tmp/bc-shadow.out" &&
+              grep -q 'a word was assumed for 1;' "$tmp/bc-shadow.out"
+          fi; }; then
+      ok "$bc_identity $bc_case: native Shadow matches the real approval boundary"
+    else bad "$bc_identity $bc_case: native Shadow matches the real approval boundary" "$(cat "$tmp/bc-shadow.out" "$tmp/bc-shadow.err")"; fi
+    said9 "$typed9"
+    if snap && decide "$me9" &&
+        { if [ "$bc_case" = postless ]; then jq -e '.plan.kind=="idle" and .step.why=="noEntry"' "$tmp/land.out" >/dev/null
+          else jq -e --arg h "$q1" '.plan.kind=="merge" and .plan.head==$h and .step.kind=="present"' "$tmp/land.out" >/dev/null; fi; }; then
+      ok "$bc_identity $bc_case: actual typed Snapshot and native Land keep the intended result"
+    else bad "$bc_identity $bc_case: actual typed Snapshot and native Land keep the intended result" "$(cat "$tmp/snap.err" "$tmp/land.out")"; fi
+  done
+  if cmp -s "$tmp/bc-$bc_identity-postless.json" "$tmp/bc-$bc_identity-footer.json" &&
+      cmp -s "$tmp/bc-$bc_identity-postless.json" "$tmp/bc-$bc_identity-none.json"; then
+    ok "$bc_identity: all three unsigned complete observations are exactly equal"
+  else bad "$bc_identity: all three unsigned complete observations are exactly equal"; fi
+done
+
 fresh
 jq -n '[[{filename: "statements.lock"}]]' >"$d/files-9.json"
 rest9() { jq -c '.prs[] | select(.pr == 9) | .rest' "$tmp/snap.json"; }

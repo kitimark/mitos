@@ -13,7 +13,7 @@ open Lean in
       ``lacksNothingIffEligible, ``pairedRecordPrecedesTheMerge, ``agreesMeansTheMergedContent,
       ``seatIgnoresRecordOrder, ``tallyCountsEveryMergeOnce, ``peakBoundsEveryWindow,
       ``theReplayMergedIffItsTreeDid, ``anotherTreeIsTwoTreesRead,
-      ``theAssumedCountIsTheMergesOneWordAway] ++
+      ``theAssumedCountIsTheMergesOneWordAway, ``aSummaryOnlyTakesAgreementAway] ++
       fixtures.toList do
     for a in ← collectAxioms n do
       unless standard.contains a do

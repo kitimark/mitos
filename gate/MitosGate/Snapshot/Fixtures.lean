@@ -420,7 +420,20 @@ theorem aDraftedCommentSubmittedAfterTheApprovalRetiresIt :
     planOf (r := { reads with
       reviews := some [rabbit, emptyReview 20261114080100],
       reviewComments := submittedPosts [emptyReview 20261114080100]
-        [{ rename 20261114075900 with review := some 4 }] }) = .idle := by decide +kernel
+        [{ rename 20261114075900 with review := some 4 }] }) = .idle ∧
+    planOf (r := { reads with
+      comments := some [answer 20261114075930, land],
+      reviews := some [rabbit, emptyReview 20261114080100],
+      reviewComments := submittedPosts [emptyReview 20261114080100]
+        [{ rename 20261114075900 with review := some 4 }] }) = .idle := by
+  constructor <;> decide +kernel
+
+theorem aDraftSubmittedBeforeItsAnswerLeavesTheApproval :
+    planOf (r := { reads with
+      comments := some [answer 20261114075930, land],
+      reviews := some [rabbit, emptyReview 20261114075915],
+      reviewComments := submittedPosts [emptyReview 20261114075915]
+        [{ rename 20261114075900 with review := some 4 }] }) = .merge 7 hB := by decide +kernel
 theorem aCommentOfAnUnlistedReviewIsAFailedRead :
     submittedPosts [] [{ rename 20261114075900 with review := some 4 }] = none := by decide +kernel
 theorem aDraftedCommentAnswerBeforeSubmissionIsNoAnswer :

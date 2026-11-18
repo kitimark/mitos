@@ -39,6 +39,30 @@ theorem agreesMeansTheMergedContent : AgreesMeansTheMergedContent := by
   · rename_i h1 h2; exact .inr ⟨h1, _, h2⟩
   · cases h
 
+def ASummaryOnlyTakesAgreementAway : Prop :=
+  ∀ (m : Merge) (rs : List Record), finding (seat { m with summary := .spoke } rs) = .agrees →
+    finding (seat { m with summary := .silent } rs) = .agrees
+
+theorem aSummaryOnlyTakesAgreementAway : ASummaryOnlyTakesAgreementAway := by
+  intro m rs h
+  have hl : last { m with summary := .spoke } rs = last { m with summary := .silent } rs :=
+    last_congr (m := { m with summary := .spoke }) (m' := { m with summary := .silent }) rfl rfl rs
+  unfold seat at h ⊢
+  rw [hl] at h
+  cases hr : last { m with summary := .silent } rs with
+  | none => simp [hr, finding] at h
+  | some r =>
+    simp only [hr] at h ⊢
+    cases ho : r.prs.find? (·.pr == m.pr) with
+    | none => simp [ho, finding] at h
+    | some o =>
+      simp only [ho] at h ⊢
+      rcases reading_spoke r.prs o with he | he
+      · simp only [he, finding, Reading.step] at h
+        split at h <;> simp_all
+      · simp only [he] at h
+        exact h
+
 namespace Fixture
 
 open Land.Fixture
@@ -70,6 +94,10 @@ theorem aHeldMergeDisagrees :
     finding
         (seat { merged with pr := 153, head := "aaa" } [rec 1 90 (some "m1") [ownerKeptHeld]]) =
       .disagrees .held := by decide +kernel
+
+theorem anOwnerSummaryTakesTheAssumedWordAway :
+    finding (seat { merged with summary := .spoke } [rec 1 90 (some "m1") [unsaid]]) =
+      .disagrees .noEntry := by decide +kernel
 
 end Fixture
 
