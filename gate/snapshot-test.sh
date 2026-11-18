@@ -396,6 +396,39 @@ source_case "spec-approved label alone accepts qualifying Opus" \
   '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra")' \
   '.prs[0] | .rest and .paths == ["ordinary.txt"]' label
 
+null_author='.pulls[0].author |= (.provider = "openai" | .actualModel = null)'
+source_case "canonical null author uses the actual cross-provider Opus PASS" "$null_author" \
+  '.prs[0] | .author == {who:{provider:"openai",name:"builder"},model:null} and .rest' critical true
+source_case "requested aliases do not alter canonical null admission" \
+  "$null_author | .pulls[0].author.requestedModel = \"opus\"" '.prs[0] | .author.model == null and .rest' critical true
+source_case "canonical Google null author uses provider independence" \
+  '.pulls[0].author |= (.provider = "google" | .actualModel = null)' '.prs[0].rest' critical true
+for provider in claude unknown outside opus sonnet haiku fable grok gemini xai anthropic; do
+  source_case "null provider $provider stays held" \
+    ".pulls[0].author |= (.provider = \"$provider\" | .actualModel = null)" \
+    '.prs[0] | (has("author") | not) and (.rest | not)' ordinary false
+done
+source_case "same-provider unknown author stays held" \
+  "$null_author | .pulls[0].verdicts[0] |= (.provider = \"openai\" | .actualModel = \"gpt-6.2-astra\")" \
+  '.prs[0].rest | not' ordinary false
+source_case "unknown author with no PASS retains identity but keeps rest false" \
+  "$null_author | .pulls[0].verdicts = []" '.prs[0] | .author.model == null and (.rest | not)' ordinary false
+source_case "unknown author cannot use root wording-only instead of PASS" \
+  "$null_author | .pulls[0].verdicts[0] |= (.actor = \"root\" | .result = \"wordingOnly\")" \
+  '.prs[0].rest | not' ordinary false
+source_case "newer same-giver wording retires the null author's PASS" \
+  "$null_author | .pulls[0].verdicts += [(.pulls[0].verdicts[0] | .order=2 | .result=\"wordingOnly\" | .evidence+=\"-word\")]" \
+  '.prs[0] | (.verdicts | length) == 2 and (.rest | not)' ordinary false
+for effort in null '"low"' '"high"'; do
+  source_case "null author critical actual effort $effort cannot qualify" \
+    "$null_author | .pulls[0].verdicts[0].effort = $effort" '.prs[0].rest | not' critical false
+  source_case "null author spec label actual effort $effort cannot qualify" \
+    "$null_author | .pulls[0].verdicts[0].effort = $effort" '.prs[0].rest | not' label false
+done
+source_case "null author standing unknown adverse event survives" \
+  "$null_author | .pulls[0].verdicts += [(.pulls[0].verdicts[0] | .actor=\"adverse\" | .actualModel=null | .result=\"hold\" | .order=2 | .evidence+=\"-hold\")]" \
+  '.prs[0] | .verdicts[1].model == "unknown" and .verdicts[1].result == "hold"' ordinary false
+
 sonnet_files_case() {
   local name=$1 files=$2 snapshot_expected=$3 hook_expected=$4 reason=$5
   fresh
@@ -550,6 +583,24 @@ if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH=
   ok "actual raw snapshot and canonical v1 record round trip preserves identities and source bytes"
 else bad "actual raw snapshot and canonical v1 record round trip preserves identities and source bytes" \
   "$(cat "$tmp/record.err")"; fi
+
+source_case "prepare native record with canonical null author" "$null_author" \
+  '.prs[0] | .author.model == null and .rest' critical true
+if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH="$tmp/record-fetch" \
+      ROUNDTRIP_MAIN="$m2" ROUNDTRIP_READS="$d" bash "$root/.github/scripts/land-decide.sh" owner/mitos 43 "$tmp/null-record") \
+      >"$tmp/null-record.out" 2>"$tmp/null-record.err" &&
+    jq -c '.outcome.snapshot' "$tmp/null-record/record.json" | "$bin" land >"$tmp/null-replayed" &&
+    cmp -s "$tmp/null-replayed" "$tmp/null-record/decision.json" &&
+    jq -e '.v == 1 and .outcome.kind == "decided" and
+      (.outcome.snapshot.prs[0].author | .who == {provider:"openai",name:"builder"} and
+        has("model") and .model == null)' "$tmp/null-record/record.json" >/dev/null &&
+    cmp -s "$d/dashboard.json" "$tmp/null-record/reads/dashboard.json" &&
+    jq -c '.outcome.snapshot.prs[0].verdicts' "$tmp/null-record/record.json" >"$tmp/null-record-events" &&
+    jq -c '.prs[0].verdicts' "$tmp/snap.json" >"$tmp/null-snapshot-events" &&
+    cmp -s "$tmp/null-record-events" "$tmp/null-snapshot-events"; then
+  ok "native producer keeps record v1, null author knowledge, raw source and every mapped event"
+else bad "native producer keeps record v1, null author knowledge, raw source and every mapped event" \
+  "$(cat "$tmp/null-record.err")"; fi
 
 source_case "prepare low-effort record round trip" '.pulls[0].verdicts[0].effort = "low"' \
   '.prs[0] | .verdicts[0].result == "pass" and (.rest | not)'

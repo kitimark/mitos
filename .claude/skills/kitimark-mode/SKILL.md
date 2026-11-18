@@ -296,7 +296,11 @@ watcher's echo filter and the merge rule below rely on both.
   author, an accepted independent Claude PASS from another model family, and, for critical work,
   an independent Claude Opus PASS with actual effort `xhigh` or `max`. For an Opus author these
   are two witnesses; for a known GPT or Grok author one qualifying Opus review can supply both.
-  Unknown actual model or effort never becomes a favorable fact.
+  An author whose actual model is null may instead use provider independence when its canonical
+  provider is exactly `openai` or `google`. It still needs a standing accepted actual Claude PASS
+  from another giver and provider; critical work and `spec-approved` still need an actual Opus
+  PASS at `xhigh` or `max`. The model stays null. Same-provider, null-Claude and noncanonical
+  unknown authors hold. A null verifier model or unknown effort supplies no favorable fact.
 - A verdict covers one head. A later head keeps it only when it only rebases: every push to the
   PR's branch since the verified head is a force-push by `mitos-pr-updater[bot]`, the first one
   from the verified head and each later one from the commit the one before it left, up to the
@@ -374,7 +378,8 @@ watcher's echo filter and the merge rule below rely on both.
   Requested aliases and unavailable runtime identities remain unknown, even when a configured
   role says Opus. Keep all adverse events and their real giver/order when publishing an update.
   A supplemental low-effort PASS does not veto sufficient independent evidence. The existing
-  independent Claude/root wording-only classification is the sole wording-only exception.
+  independent Claude/root wording-only classification is the sole wording-only exception, and
+  requires a reported author model. An unknown author still needs the independent PASS above.
   The block is a manual trusted-root assertion checked against actual launch/review evidence,
   not runtime authentication or proof of which shared-account writer edited the dashboard.
   Schema and evidence URLs do not prove those facts or detect an omitted adverse event (#327,

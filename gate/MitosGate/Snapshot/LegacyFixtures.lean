@@ -137,7 +137,7 @@ private def authorOf (cell : List Char) : Option Author :=
   | [rest] =>
     let tok := rest.takeWhile Char.isLower
     if families.contains tok && noModelBeforeNextDot (rest.drop tok.length) then
-      some ⟨⟨"claude", "author"⟩, String.ofList tok⟩
+      some ⟨⟨"claude", "author"⟩, .reported (String.ofList tok)⟩
     else none
   | _ => none
 
@@ -304,15 +304,15 @@ theorem unclosedTickSaysNothing : v "PASS opus-xhigh at `85b0781" = [] := by dec
 theorem upperCaseHexSaysNothing : v "PASS opus-xhigh at 85B0781" = [] := by decide +kernel
 theorem lowerCasePassSaysNothing : v "pass opus-xhigh at 85b0781" = [] := by decide +kernel
 
-private def a (s : String) : Option (Teammate × String) :=
+private def a (s : String) : Option (Teammate × ModelIdentity.AuthorModel) :=
   (authorOf s.toList).map fun x => (x.who, x.model)
 
 theorem authorNoteInAParenthesis :
     a "PASS carried from `5c258d6` (opus-xhigh, author sonnet, round 2), through the rebases." =
-      some (⟨"claude", "author"⟩, "sonnet") := by decide +kernel
+      some (⟨"claude", "author"⟩, .reported "sonnet") := by decide +kernel
 theorem authorNote :
     a "PASS opus-xhigh carried from `5c258d6`, author sonnet (round 2)." =
-      some (⟨"claude", "author"⟩, "sonnet") := by decide +kernel
+      some (⟨"claude", "author"⟩, .reported "sonnet") := by decide +kernel
 theorem mixedAuthorIsNone :
     a "PASS opus-xhigh at `5c258d6`, author sonnet, fixed by opus." = none := by decide +kernel
 theorem twoAuthorNotesAreNone :

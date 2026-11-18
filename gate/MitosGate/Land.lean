@@ -36,7 +36,7 @@ structure Verdict where
 
 structure Author where
   who : Teammate
-  model : String
+  model : ModelIdentity.AuthorModel
 
 structure Mark where
   said : Nat
@@ -118,14 +118,39 @@ def Obs.Covered (o : Obs) : Prop :=
   match o.author with
   | none => False
   | some a =>
-    (ModelIdentity.key a.who.provider a.model).isSome = true ∧
+    (match a.model with
+      | .reported actual => (ModelIdentity.key a.who.provider actual).isSome
+      | .absent => true) = true ∧
     (∀ v ∈ o.verdicts, o.stands v → v.result ≠ .fail ∧ v.result ≠ .hold) ∧
-    ((∃ v ∈ o.verdicts, o.stands v ∧ v.result = .wordingOnly ∧ v.judge ≠ a.who) ∨
+    ((a.model ≠ .absent ∧
+      ∃ v ∈ o.verdicts, o.stands v ∧ v.result = .wordingOnly ∧ v.judge ≠ a.who) ∨
       ((∃ v ∈ o.verdicts, o.stands v ∧ v.result = .pass ∧ v.judge ≠ a.who ∧
         ModelIdentity.acceptedClaude v.judge.provider v.model = true ∧
         ModelIdentity.different a.who.provider a.model v.judge.provider v.model = true) ∧
         (o.critical = true → ∃ v ∈ o.verdicts, o.stands v ∧ v.result = .pass ∧
           v.judge ≠ a.who ∧ ModelIdentity.opus v.judge.provider v.model = true)))
+
+theorem reportedCovered_iff (o : Obs) (who : Teammate) (actual : String) :
+    let x := { o with author := some ⟨who, .reported actual⟩ }
+    x.Covered ↔
+      (ModelIdentity.key who.provider actual).isSome = true ∧
+      (∀ v ∈ x.verdicts, x.stands v → v.result ≠ .fail ∧ v.result ≠ .hold) ∧
+      ((∃ v ∈ x.verdicts, x.stands v ∧ v.result = .wordingOnly ∧ v.judge ≠ who) ∨
+        ((∃ v ∈ x.verdicts, x.stands v ∧ v.result = .pass ∧ v.judge ≠ who ∧
+          ModelIdentity.acceptedClaude v.judge.provider v.model = true ∧
+          (match ModelIdentity.key who.provider actual, ModelIdentity.key v.judge.provider v.model with
+           | some a, some b => a != b
+           | _, _ => false) = true) ∧
+          (x.critical = true → ∃ v ∈ x.verdicts, x.stands v ∧ v.result = .pass ∧
+            v.judge ≠ who ∧ ModelIdentity.opus v.judge.provider v.model = true))) := by
+  dsimp only [Obs.Covered, ModelIdentity.different]
+  constructor
+  · rintro ⟨hk, hv, hw | hp⟩
+    · exact ⟨hk, hv, Or.inl hw.2⟩
+    · exact ⟨hk, hv, Or.inr hp⟩
+  · rintro ⟨hk, hv, hw | hp⟩
+    · exact ⟨hk, hv, Or.inl ⟨(by intro h; cases h), hw⟩⟩
+    · exact ⟨hk, hv, Or.inr hp⟩
 
 instance (o : Obs) : Decidable o.Covered := by unfold Obs.Covered; split <;> infer_instance
 
@@ -621,15 +646,15 @@ theorem covered_congr {o o' : Obs} (hv : o'.verdicts = o.verdicts) (ha : o'.auth
     constructor
     · rintro ⟨hk, h1, h2⟩
       refine ⟨hk, fun v hm h => h1 v hm ((hs v hm).2 h), ?_⟩
-      rcases h2 with ⟨v, hm, h, hr⟩ | ⟨⟨v, hm, h, hr⟩, h3⟩
-      · exact Or.inl ⟨v, hm, (hs v hm).1 h, hr⟩
+      rcases h2 with ⟨hreported, v, hm, h, hr⟩ | ⟨⟨v, hm, h, hr⟩, h3⟩
+      · exact Or.inl ⟨hreported, v, hm, (hs v hm).1 h, hr⟩
       · refine Or.inr ⟨⟨v, hm, (hs v hm).1 h, hr⟩, fun hcr => ?_⟩
         obtain ⟨w, hwm, hw, hwr⟩ := h3 hcr
         exact ⟨w, hwm, (hs w hwm).1 hw, hwr⟩
     · rintro ⟨hk, h1, h2⟩
       refine ⟨hk, fun v hm h => h1 v hm ((hs v hm).1 h), ?_⟩
-      rcases h2 with ⟨v, hm, h, hr⟩ | ⟨⟨v, hm, h, hr⟩, h3⟩
-      · exact Or.inl ⟨v, hm, (hs v hm).2 h, hr⟩
+      rcases h2 with ⟨hreported, v, hm, h, hr⟩ | ⟨⟨v, hm, h, hr⟩, h3⟩
+      · exact Or.inl ⟨hreported, v, hm, (hs v hm).2 h, hr⟩
       · refine Or.inr ⟨⟨v, hm, (hs v hm).2 h, hr⟩, fun hcr => ?_⟩
         obtain ⟨w, hwm, hw, hwr⟩ := h3 hcr
         exact ⟨w, hwm, (hs w hwm).2 hw, hwr⟩
@@ -1159,7 +1184,7 @@ theorem coverIsAnotherJudgesWord : CoverIsAnotherJudgesWord := by
   · exact hc.elim
   · next a ha =>
     refine ⟨a, ha, ?_⟩
-    rcases hc.2.2 with ⟨v, hm, hs, hr, hj⟩ | ⟨⟨v, hm, hs, hr, hj, hac, hmod⟩, _⟩
+    rcases hc.2.2 with ⟨_, v, hm, hs, hr, hj⟩ | ⟨⟨v, hm, hs, hr, hj, hac, hmod⟩, _⟩
     · exact ⟨v, hm, hs, hj, .inl hr⟩
     · exact ⟨v, hm, hs, hj, .inr ⟨hr, hac, hmod⟩⟩
 
@@ -1170,7 +1195,7 @@ theorem criticalCoverIsAnOpusPassOrWordingOnly : CriticalCoverIsAnOpusPassOrWord
   · exact hc.elim
   · next a ha =>
     refine ⟨a, ha, ?_⟩
-    rcases hc.2.2 with ⟨v, hm, hs, hr, hj⟩ | ⟨_, h3⟩
+    rcases hc.2.2 with ⟨_, v, hm, hs, hr, hj⟩ | ⟨_, h3⟩
     · exact ⟨v, hm, hs, hj, .inl hr⟩
     · obtain ⟨v, hm, hs, hr, hj, hn⟩ := h3 hcr
       exact ⟨v, hm, hs, hj, .inr ⟨hr, hn⟩⟩
@@ -1200,7 +1225,7 @@ def agentPushedMark : Mark := ⟨700, "ccc", false⟩
 def ownerKeptBehind : Obs :=
   { pr := 153, updatable := true, enforced := true, head := "aaa", pushes := [],
     ids := [("aaa", "id-a"), ("ar", "id-a")], paths := some [".github/workflows/ci.yml"],
-    base := .clean "ar", gate := .success, author := some ⟨grokBuilder, "grok"⟩,
+    base := .clean "ar", gate := .success, author := some ⟨grokBuilder, .reported "grok"⟩,
     verdicts := [⟨850, "aaa", verifierOpus, "opus", .pass⟩,
       ⟨851, "aaa", verifier, "sonnet", .pass⟩],
     botAt := some "aaa", delegates := [orchestrator], words := [.ownerLand ownerKeptMark],
@@ -1391,7 +1416,7 @@ def holderOpus : Teammate := ⟨"claude", "worker-opus"⟩
 def opusWrittenReady : Obs :=
   { pr := 201, updatable := true, enforced := true, head := "h", pushes := [],
     ids := [("h", "id-h"), ("g", "id-g")], paths := some ["core/Mitos/Chain.lean"],
-    base := .current, gate := .success, author := some ⟨holderOpus, "opus"⟩,
+    base := .current, gate := .success, author := some ⟨holderOpus, .reported "opus"⟩,
     verdicts := [⟨10, "h", verifierSonnet, "sonnet", .pass⟩], botAt := some "h",
     delegates := [orchestrator], words := [.agentLand orchestrator ⟨30, "h", false⟩], rest := true }
 def onTrustPath (o : Obs) : Obs := { o with paths := some ["gate/Main.lean"] }
@@ -1466,14 +1491,14 @@ theorem criticalWithAnOpusPassIsCovered : criticalTwoPasses.covered = true := by
 theorem criticalWithoutAnOpusPassIsNotCovered :
     (onTrustPath opusWrittenReady).covered = false := by decide +kernel
 def criticalAuthoredByVerifierOpus : Obs :=
-  onTrustPath { criticalTwoPasses with author := some ⟨verifierOpus, "opus"⟩ }
+  onTrustPath { criticalTwoPasses with author := some ⟨verifierOpus, .reported "opus"⟩ }
 theorem criticalAuthorsOwnOpusPassIsNotTheOpusPass :
     criticalAuthoredByVerifierOpus.covered = false := by decide +kernel
 theorem criticalWithOnlyAnOpusPassOnTheAuthorsModelIsNotCovered :
     (onTrustPath { opusWrittenReady with verdicts :=
       [⟨11, "h", verifierOpus, "opus", .pass⟩] }).covered = false := by decide +kernel
 def criticalSonnetAuthored : Obs :=
-  onTrustPath { opusWrittenReady with author := some ⟨holderOpus, "sonnet"⟩,
+  onTrustPath { opusWrittenReady with author := some ⟨holderOpus, .reported "sonnet"⟩,
                                       verdicts := [⟨11, "h", verifierOpus, "opus", .pass⟩] }
 theorem criticalSonnetAuthoredNeedsOnlyOneOpusPass :
     criticalSonnetAuthored.covered = true := by decide +kernel
@@ -1642,7 +1667,7 @@ def approvedThenNewContent : Obs :=
                            ⟨871, "fff", verifier, "sonnet", .pass⟩], botAt := some "fff" }
 def approvedJudgedOnTheAuthorsModel : Obs :=
   { ownerKeptPushed with paths := some ["core/Mitos/Chain.lean", "CLAUDE.md"],
-                         author := some ⟨grokBuilder, "sonnet"⟩,
+                         author := some ⟨grokBuilder, .reported "sonnet"⟩,
                          verdicts := [⟨851, "aaa", verifier, "sonnet", .pass⟩] }
 def secondApproved : Obs :=
   { ownerKeptBehind with pr := 154, words := [.ownerLand ⟨901, "aaa", true⟩] }
@@ -1737,7 +1762,7 @@ theorem verdictFromTheAuthorsModelOnlyMergesNothing :
     plan (queueOf [approvedJudgedOnTheAuthorsModel]) = .idle := by decide +kernel
 theorem verdictFromAnotherModelLetsTheRulePathMerge :
     plan (queueOf [{ approvedJudgedOnTheAuthorsModel with
-      author := some ⟨grokBuilder, "grok"⟩ }]) = .merge 153 "ar" := by decide +kernel
+      author := some ⟨grokBuilder, .reported "grok"⟩ }]) = .merge 153 "ar" := by decide +kernel
 theorem trustPathWithoutAnOpusPassMergesNothing :
     plan (queueOf [{ ownerKeptPushed with
       verdicts := [⟨851, "aaa", verifier, "sonnet", .pass⟩] }]) = .idle := by decide +kernel
@@ -1761,7 +1786,7 @@ theorem noOwnerWordIsNone : agentBehind.word = .none := by decide +kernel
 
 def gptAuthoredCritical : Obs :=
   { criticalSonnetAuthored with
-    author := some ⟨⟨"openai", "builder"⟩, "gpt-6.2-astra"⟩
+    author := some ⟨⟨"openai", "builder"⟩, .reported "gpt-6.2-astra"⟩
     verdicts := [⟨11, "h", ⟨"claude", "independent-reviewer"⟩, "claude-opus-4-6", .pass⟩] }
 
 theorem aTruthfulGptAuthorCanUseOneIndependentOpusPass :
@@ -1773,12 +1798,12 @@ theorem anOpusNameCannotAdmitAnOpenAiVerifier :
   decide +kernel
 
 theorem anInheritedAuthorIsUnknown :
-    ({ gptAuthoredCritical with author := some ⟨⟨"openai", "builder"⟩, "inherited"⟩ } : Obs).covered =
+    ({ gptAuthoredCritical with author := some ⟨⟨"openai", "builder"⟩, .reported "inherited"⟩ } : Obs).covered =
       false := by decide +kernel
 
 theorem fullSonnetAcrossAuthorSystemsIsStillTheAuthorsModel :
     ({ approvedJudgedOnTheAuthorsModel with
-      author := some ⟨grokBuilder, "claude-sonnet-4-6"⟩ } : Obs).covered = false := by decide +kernel
+      author := some ⟨grokBuilder, .reported "claude-sonnet-4-6"⟩ } : Obs).covered = false := by decide +kernel
 
 
 end Fixture
