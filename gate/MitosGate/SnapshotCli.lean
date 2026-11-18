@@ -252,6 +252,13 @@ def verdictJson (v : Verdict) : Json :=
   Json.mkObj [("said", n v.said), ("head", .str v.head), ("judge", teamJson v.judge),
     ("model", .str v.model), ("result", .str (resultName v.result))]
 
+def authorModelJson : ModelIdentity.AuthorModel → Json
+  | .reported actual => .str actual
+  | .absent => .null
+
+theorem reportedAuthorModelJson (actual : String) :
+    authorModelJson (.reported actual) = .str actual := rfl
+
 def obsJson (o : Obs) : Json :=
   Json.mkObj <|
     [("pr", n o.pr), ("updatable", .bool o.updatable), ("enforced", .bool o.enforced),
@@ -264,7 +271,7 @@ def obsJson (o : Obs) : Json :=
      ("delegates", .arr (o.delegates.map teamJson).toArray),
      ("words", .arr (o.words.map wordJson).toArray), ("rest", .bool o.rest)] ++
     (o.paths.map fun ps => [("paths", Json.arr (ps.map Json.str).toArray)]).getD [] ++
-    (o.author.map fun a => [("author", Json.mkObj [("who", teamJson a.who), ("model", .str a.model)])]).getD [] ++
+    (o.author.map fun a => [("author", Json.mkObj [("who", teamJson a.who), ("model", authorModelJson a.model)])]).getD [] ++
     (o.botAt.map fun b => [("botAt", Json.str b)]).getD []
 
 def unread (g : Global) (p : Pull) (r : Reads) : List String :=

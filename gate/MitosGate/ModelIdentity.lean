@@ -1,5 +1,14 @@
 namespace MitosGate.ModelIdentity
 
+inductive AuthorModel
+  | reported (actual : String)
+  | absent
+  deriving DecidableEq, Repr
+
+def canonicalOutside : String → Bool
+  | "openai" | "google" => true
+  | _ => false
+
 inductive Key
   | opus | sonnet | haiku
   | reported (provider model : String)
@@ -63,32 +72,61 @@ def acceptedClaude (provider model : String) : Bool :=
 def opus (provider model : String) : Bool :=
   provider == "claude" && claudeKey model == some .opus
 
-def different (authorProvider authorModel judgeProvider judgeModel : String) : Bool :=
-  match key authorProvider authorModel, key judgeProvider judgeModel with
-  | some a, some v => a != v
-  | _, _ => false
+def different (authorProvider : String) (authorModel : AuthorModel)
+    (judgeProvider judgeModel : String) : Bool :=
+  match authorModel with
+  | .reported actual =>
+    match key authorProvider actual, key judgeProvider judgeModel with
+    | some a, some v => a != v
+    | _, _ => false
+  | .absent => canonicalOutside authorProvider && authorProvider != judgeProvider &&
+      (key judgeProvider judgeModel).isSome
+
+theorem reportedDifferent_eq (ap am vp vm : String) :
+    different ap (.reported am) vp vm =
+      (match key ap am, key vp vm with
+       | some a, some v => a != v
+       | _, _ => false) := rfl
 
 theorem acceptedNeedsClaude {p m : String} (h : acceptedClaude p m = true) : p = "claude" := by
   simp only [acceptedClaude, Bool.and_eq_true, beq_iff_eq] at h
   exact h.1
 
-theorem differentNeedsKnown {ap am vp vm : String} (h : different ap am vp vm = true) :
+theorem differentNeedsKnown {ap am vp vm : String} (h : different ap (.reported am) vp vm = true) :
     (key ap am).isSome = true ∧ (key vp vm).isSome = true := by
-  unfold different at h
+  simp only [different] at h
   split at h
   · simp_all
   · cases h
+
+theorem unknownClaudeKey : claudeKey "unknown" = none := by decide +kernel
+
+theorem unknownAcceptedClaude (provider : String) : acceptedClaude provider "unknown" = false := by
+  simp [acceptedClaude, unknownClaudeKey]
+
+theorem unknownOpus (provider : String) : opus provider "unknown" = false := by
+  simp [opus, unknownClaudeKey]
+
+theorem canonicalOutsideNotClaude {p : String} (h : canonicalOutside p = true) : p ≠ "claude" := by
+  intro he
+  subst p
+  cases h
+
+theorem absentDifferentNeedsKnown {ap vp vm : String}
+    (h : different ap .absent vp vm = true) :
+    canonicalOutside ap = true ∧ ap ≠ vp ∧ (key vp vm).isSome = true := by
+  simpa only [different, Bool.and_eq_true, bne_iff_ne, and_assoc] using h
 
 theorem legacyOpusIsFullOpus : key "claude" "opus" = key "claude" "claude-opus-4-6" := by
   decide +kernel
 
 theorem fullSonnetIsNotAnotherFamily :
-    different "claude" "sonnet" "claude" "claude-sonnet-4-6" = false := by decide +kernel
+    different "claude" (.reported "sonnet") "claude" "claude-sonnet-4-6" = false := by decide +kernel
 
 theorem providerCannotBeInferred : acceptedClaude "openai" "claude-opus-4-6" = false := by
   decide +kernel
 
-theorem unknownIsNotDifferent : different "openai" "inherited" "claude" "opus" = false := by
+theorem unknownIsNotDifferent : different "openai" (.reported "inherited") "claude" "opus" = false := by
   decide +kernel
 
 theorem futureVersionKeepsItsFamily :

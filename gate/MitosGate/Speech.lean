@@ -38,7 +38,7 @@ def worker : Teammate := ⟨"claude", "worker"⟩
 def obs (ws : List Word) (ds : List Teammate := delegates) : Obs :=
   { pr := 7, updatable := true, enforced := true, head := hC, pushes := [⟨false, hB, hC⟩],
     ids := [(hC, "id-c")], paths := some ["README.md"], base := .current, gate := .success,
-    author := some ⟨⟨"grok", "builder"⟩, "grok"⟩,
+    author := some ⟨⟨"grok", "builder"⟩, .reported "grok"⟩,
     verdicts := [⟨1, hC, ⟨"claude", "verifier"⟩, "sonnet", .pass⟩], botAt := some hC,
     delegates := ds, words := ws, rest := true }
 

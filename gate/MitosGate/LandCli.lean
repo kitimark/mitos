@@ -132,9 +132,17 @@ private def verdict : D Verdict := fun j => do
   return ⟨← at' "said" nat j, ← at' "head" sha j, ← at' "judge" teammate j, ← at' "model" str j,
     ← at' "result" result j⟩
 
+private def authorModel : D ModelIdentity.AuthorModel := fun j =>
+  match j with
+  | .null => .ok .absent
+  | _ => return .reported (← str j)
+
+private theorem reportedAuthorModel (actual : String) :
+    authorModel (.str actual) = .ok (.reported actual) := rfl
+
 private def author : D Author := fun j => do
   obj ["who", "model"] j
-  return ⟨← at' "who" teammate j, ← at' "model" str j⟩
+  return ⟨← at' "who" teammate j, ← at' "model" authorModel j⟩
 
 private def word : D Word := tagged
   [("ownerLand", ["said", "about", "approves"], fun j => do

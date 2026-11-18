@@ -49,11 +49,20 @@ def sourceObs (g : Global) (p : Pull) (r : Reads) (x : Git) : Obs :=
 
 def obs (g : Global) (p : Pull) (r : Reads) (x : Git) : Obs :=
   let o := sourceObs g p r x
-  let f := provenanceFact g p.number
-  { o with
-    author := f.bind (Provenance.authorOf o)
-    verdicts := (f.map fun ps => ps.verdicts.map Provenance.VerdictFact.toLand).getD []
-    rest := o.rest && f.any (fun fact => Provenance.sourceGuard o fact p.labels) }
+  match provenanceFact g p.number with
+  | some f => Provenance.project o f p.labels
+  | none => { o with rest := false }
+
+theorem obs_projection (g : Global) (p : Pull) (r : Reads) (x : Git) :
+    obs g p r x =
+      { sourceObs g p r x with
+        author := (provenanceFact g p.number).bind (Provenance.authorOf (sourceObs g p r x))
+        verdicts := ((provenanceFact g p.number).map fun f =>
+          f.verdicts.map Provenance.VerdictFact.toLand).getD []
+        rest := (sourceObs g p r x).rest && (provenanceFact g p.number).any
+          (fun f => Provenance.sourceGuard (sourceObs g p r x) f p.labels) } := by
+  cases hf : provenanceFact g p.number <;>
+    simp [obs, hf, Provenance.project, Provenance.withFacts, sourceObs]
 
 def abouts : List Word → List Sha
   | [] => []
@@ -145,6 +154,7 @@ theorem keptMergeIsTheOwnersTypedApproval : KeptMergeIsTheOwnersTypedApproval :=
     Land.plannedMergeIsGated q p.number h hp
   rw [hn] at hn'
   cases hn'
+  simp only [obs_projection] at hw hs
   have hw' : Land.newestOwner (Speech.words (ctx g p r) (r.comments.getD [])
       ((activity p r).getD []) (complete g p r)).1 = some (.ownerLand e.mark) := by
     rw [← newestOwner_withReviewSpeech g p r]; exact hw
@@ -172,11 +182,12 @@ theorem keptMergeIsTheOwnersTypedApproval : KeptMergeIsTheOwnersTypedApproval :=
       | true =>
         have hin : Word.ownerSpoke (2 * Speech.top (ctx g p r) (r.comments.getD []) + 2) ∈
             (obs g p r x).words := by
+          rw [obs_projection]
           show _ ∈ withReviewSpeech g p r _
           unfold withReviewSpeech
           rw [hsr]
           simp
-        have h1 := hs _ hin
+        have h1 := hs _ (by simpa only [obs_projection] using hin)
         have h2 := (Speech.top_ge (ctx g p r) (r.comments.getD [])).2 c hc
         omega
     simp only [spokeInReview, hw', Bool.or_eq_false_iff] at hno
@@ -192,13 +203,13 @@ theorem failedReadHolds : FailedReadHolds := by
   intro g p r x hc
   obtain ⟨n, hn⟩ := Speech.incompleteReadHolds (ctx g p r) (r.comments.getD []) ((activity p r).getD [])
   have h : Land.newestOwner (obs g p r x).words = some (.ownerHold n) := by
-    simp only [obs, sourceObs, hc, newestOwner_withReviewSpeech]
+    simp only [obs_projection, sourceObs, hc, newestOwner_withReviewSpeech]
     exact hn
   exact Land.holdWins _ n h
 
 theorem enforcedNeedsProtection : EnforcedNeedsProtection := by
   intro g p r x h
-  simp only [obs, sourceObs, enforced] at h
+  simp only [obs_projection, sourceObs, enforced] at h
   cases hp : g.protection with
   | none => rw [hp] at h; cases h
   | some pr =>
@@ -208,7 +219,7 @@ theorem enforcedNeedsProtection : EnforcedNeedsProtection := by
 
 theorem updatableNeedsTheGuard : UpdatableNeedsTheGuard := by
   intro g p r x h
-  simp only [obs, sourceObs, updatable, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
+  simp only [obs_projection, sourceObs, updatable, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
   obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
   refine ⟨h1, h2, h3, h4, h5, ?_⟩
   cases hs : g.stacked with
@@ -220,7 +231,7 @@ theorem updatableNeedsTheGuard : UpdatableNeedsTheGuard := by
 
 theorem unreadFilesAreKept : UnreadFilesAreKept := by
   intro g p r x h
-  simp [obs, sourceObs, Obs.kept, Obs.critical, h]
+  simp [obs_projection, sourceObs, Obs.kept, Obs.critical, h]
 
 theorem onlyTheOwnerQueues : OnlyTheOwnerQueues := by
   intro g p r x e he
@@ -228,11 +239,11 @@ theorem onlyTheOwnerQueues : OnlyTheOwnerQueues := by
   | owner => rfl
   | agent t =>
     have := (Land.onlyMergersQueue _ e t he hl).2
-    simp [obs, sourceObs, Speech.delegates] at this
+    simp [obs_projection, sourceObs, Speech.delegates] at this
 
 theorem pushesAreTheActivity : PushesAreTheActivity := by
   intro g p r x h
-  simp only [obs, sourceObs] at h ⊢
+  simp only [obs_projection, sourceObs] at h ⊢
   cases ha : activity p r with
   | none => rw [ha] at h; simp at h
   | some ps =>
@@ -259,7 +270,7 @@ theorem pushesAreTheActivity : PushesAreTheActivity := by
 
 theorem verdictsFromTheSource : VerdictsFromTheSource := by
   intro g p r x v hv
-  simp only [obs, sourceObs] at hv
+  simp only [obs_projection, sourceObs] at hv
   cases hf : provenanceFact g p.number with
   | none => rw [hf] at hv; simp at hv
   | some f =>
@@ -270,12 +281,12 @@ theorem verdictsFromTheSource : VerdictsFromTheSource := by
 
 theorem restNeedsSourceGuard : RestNeedsSourceGuard := by
   intro g p r x h
-  simp only [obs, sourceObs, Bool.and_eq_true, Option.any_eq_true] at h
+  simp only [obs_projection, sourceObs, Bool.and_eq_true, Option.any_eq_true] at h
   exact h.2
 
 theorem restNeedsAnswersAndTheLabel : RestNeedsAnswersAndTheLabel := by
   intro g p r x h
-  simp only [obs, sourceObs, rest, Bool.and_eq_true, List.isEmpty_iff, Bool.or_eq_true, Bool.not_eq_true',
+  simp only [obs_projection, sourceObs, rest, Bool.and_eq_true, List.isEmpty_iff, Bool.or_eq_true, Bool.not_eq_true',
     List.contains_iff_mem] at h
   obtain ⟨⟨⟨h1, h2⟩, h3⟩, _⟩ := h
   refine ⟨h1, h2, fun hs => ?_⟩

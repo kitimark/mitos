@@ -77,7 +77,7 @@ theorem covered_head_id {o : Obs} (h : o.covered = true) : (o.id? o.head).isSome
       obtain ⟨⟨_, h1⟩, h2⟩ := this
       have : o.id? v.head = o.id? o.head := by simpa using h2
       rw [← this]; exact h1
-    rcases hc.2.2 with ⟨v, _, hv, _⟩ | ⟨⟨v, _, hv, _⟩, _⟩ <;> exact key v hv
+    rcases hc.2.2 with ⟨_, v, _, hv, _⟩ | ⟨⟨v, _, hv, _⟩, _⟩ <;> exact key v hv
 
 theorem readyIsOneWordFromLanding : ReadyIsOneWordFromLanding := by
   intro me q o said h hs

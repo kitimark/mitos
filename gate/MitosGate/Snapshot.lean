@@ -15,7 +15,10 @@ open Lean in
       ``unreadFilesAreKept, ``onlyTheOwnerQueues, ``greenIsTheNewestGateRun,
       ``pushesAreTheActivity, ``verdictsFromTheSource, ``restNeedsSourceGuard,
       ``Provenance.projectionPreservesEvents, ``Provenance.admittedRequiredHasEffort, ``Provenance.eligibleNeedsAdmission, ``Provenance.projectionEligibility,
-      ``Provenance.render_isDecoded,
+      ``Provenance.render_isDecoded, ``Provenance.absentAuthorOf,
+      ``Provenance.unknownAdmitted, ``Provenance.unknownRequiredHasEffort,
+      ``ModelIdentity.reportedDifferent_eq, ``ModelIdentity.absentDifferentNeedsKnown,
+      ``ModelIdentity.canonicalOutsideNotClaude, ``Land.reportedCovered_iff, ``obs_projection,
       ``restNeedsAnswersAndTheLabel, ``keptMergeIsTheOwnersTypedApproval] ++ fixtures.toList do
     for a in ← collectAxioms n do
       unless standard.contains a do
