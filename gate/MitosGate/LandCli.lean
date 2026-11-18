@@ -140,6 +140,12 @@ private def authorModel : D ModelIdentity.AuthorModel := fun j =>
 private theorem reportedAuthorModel (actual : String) :
     authorModel (.str actual) = .ok (.reported actual) := rfl
 
+open Lean in
+#eval show CoreM Unit from do
+  for a in ← collectAxioms ``reportedAuthorModel do
+    unless [``propext, ``Classical.choice, ``Quot.sound].contains a do
+      throwError "reportedAuthorModel depends on the axiom {a}"
+
 private def author : D Author := fun j => do
   obj ["who", "model"] j
   return ⟨← at' "who" teammate j, ← at' "model" authorModel j⟩
