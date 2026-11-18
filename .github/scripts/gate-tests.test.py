@@ -104,7 +104,7 @@ class GateTests(unittest.TestCase):
 
     def test_empty_dirty_and_nonexecutable_sources_refuse(self):
         self.bad(self.fixture(0).execute(0), "inventory is empty")
-        for mutation in ("dirty", "unexecutable", "symlink", "untracked"):
+        for mutation in ("dirty", "unexecutable", "symlink", "untracked", "deleted"):
             with self.subTest(mutation=mutation):
                 f = self.fixture()
                 file = f.root / f.names[0]
@@ -115,10 +115,34 @@ class GateTests(unittest.TestCase):
                 elif mutation == "symlink":
                     file.unlink()
                     file.symlink_to(f.root / f.names[1])
+                elif mutation == "deleted":
+                    file.unlink()
                 else:
                     (f.root / "gate/new-test.sh").write_text("#!/bin/sh\ntrue\n")
                     (f.root / "gate/new-test.sh").chmod(0o755)
                 self.bad(f.execute(0))
+
+    def test_hidden_files_match_original_bash_glob(self):
+        f = self.fixture()
+        hidden = f.root / "gate/.hidden-test.sh"
+        hidden.write_text("#!/bin/sh\nexit 99\n")
+        hidden.chmod(0o755)
+        f.git("add", ".")
+        f.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+              "commit", "-qm", "hidden file")
+        oracle = subprocess.run(["bash", "-c", 'printf "%s\\n" gate/*-test.sh'], cwd=f.root,
+                                env={**f.env, "LC_ALL": "C"}, capture_output=True, text=True, check=True)
+        self.assertEqual(oracle.stdout.splitlines(), f.names)
+        f.all()
+        self.good(f.verify())
+        self.assertCountEqual((f.base / "markers").read_text().splitlines(), f.names)
+
+    def test_receiver_rejects_missing_tracked_source(self):
+        f = self.fixture()
+        f.all()
+        self.good(f.verify())
+        (f.root / f.names[-1]).unlink()
+        self.bad(f.verify(), "inventory differs from Git HEAD")
 
     def test_failed_suite_still_runs_later_suites(self):
         for first, status in (("#!/bin/sh\nexit 9\n", 9), ("#!/not-a-real-interpreter\n", 127)):
