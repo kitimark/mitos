@@ -1692,7 +1692,7 @@ and sixteen append-only historical records stay attributed to their original hea
 frozen input and existing fixture override remain unchanged.
 
 This is a changed-content head. Prior #336 and #488 checks, R0b captures and reviews remain
-historical. Fresh checks and independent review are required. The six approved clauses below,
+historical. Fresh checks and independent review are required. The six approved clauses above,
 D/T0 and the failed historical report remain unchanged, with no prospective-window pass or
 activation authorization supplied by this reconstruction.
 
