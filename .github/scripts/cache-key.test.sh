@@ -160,7 +160,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   esac
 done <"$work/blocks"
 
-[ "$block_n" -eq 5 ] || fail "found $block_n lean cache blocks, want 5: $(paste -sd ' ' "$work/names")"
+[ "$block_n" -eq 6 ] || fail "found $block_n lean cache blocks, want 6: $(paste -sd ' ' "$work/names")"
 
 cat >"$work/comment-only.yml" <<'EOF'
     - uses: actions/cache@v4

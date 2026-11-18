@@ -37,6 +37,7 @@ if [ $# -eq 3 ]; then
 fi
 [ $# -eq 0 ] || fail 'expected no arguments or <workflow-file> <job> <predecessor-uses>'
 check_job .github/workflows/ci.yml checks actions/cache@v4
+check_job .github/workflows/ci.yml gate-tests actions/cache/restore@v4
 check_job .github/workflows/ci.yml cheat-shard actions/cache/restore@v4
 check_job .github/workflows/nightly.yml full ./.github/actions/setup
 python3 -I gate/cache-logs-mutations.py "$bin" "$root/gate/cache-logs-test.sh"
