@@ -52,6 +52,11 @@ Protection/read and updater/rebase. CI runs protection, decide and app-token onc
 unique unconditional build. The renamed helper leaves the top-level shell glob and runs once
 through app-token, preserving all four existing bundled controls.
 
+The CI contract covers the required build and test step shapes, their controls and schedule.
+It does not pin arbitrary earlier setup scripts. The known earlier-setup `GITHUB_ENV` and
+`BASH_ENV` residual remains in #466 item 2 and #453. Protection and updater retain their
+separate complete owned input and earlier-env-writer checks.
+
 The migration inventory covers 112 existing assertion sites: retain 65 runtime/source sites and
 replace 47 authority sites with their complete decoded counterparts and real mutations. Preserve
 all thirteen updater reference sites, owned inherited-input/earlier-env-writer controls, full
@@ -68,9 +73,32 @@ failed historical evidence and every activation prerequisite remain unchanged.
 
 ## Done when
 
-- [ ] The complete actual current bundle and all retained mutation/caller controls pass.
-- [ ] The three suites and one helper execute once; the current CI graph remains intact.
+- [x] The complete actual current bundle and all retained mutation/caller controls pass.
+- [x] The three suites and one helper execute once; the current CI graph remains intact.
 - [ ] All applicable process checks pass, with real local environment blocks identified.
-- [ ] No new axiom or `sorry`; the owned statements pass their standard-axiom audit.
+- [x] No new axiom or `sorry`; the owned statements pass their standard-axiom audit.
 - [ ] Current-head hosted CI, fresh no-comments and qualifying independent review pass.
-- [ ] An honest append-only attempt record is included.
+- [x] An honest append-only attempt record is included.
+
+## Local validation, 18 November 2026
+
+The full native build passed with 694 jobs in 638.418 seconds. The axiom audit checked
+13 named statements and all 24 persisted policy theorems, and rejected its scratch axiom.
+The actual current bundle accepts. Its native driver passes 213 controls. Decide passes
+19 controls, protection six and app-token five, including four actual dependency controls.
+The helper trace records one invocation. All 700 reader qualification mutants are accounted
+for, with 250 admitted trees equal to PyYAML and 450 refusals. Imports, lock, plugin lint,
+CI receipt/composition checks, nine process-contract suites and shell/workflow lint pass.
+
+All 27 gate shell suites completed at the same source head with clean restoration. Twenty-six
+pass. The unchanged provenance-hook suite has 39 failures because the local user does not own
+the root ancestor. Core check, paranoid comparator and honest acceptance fail at the read-only
+UID-map boundary. Six of 269 model-lint cases hit that namespace restriction. All 112 corpus
+executions have `NO-VERDICT` with the same UID-map error, not a timeout. These are unpassed
+checks. No guard, expectation or deadline changed, and no blocked command was retried.
+
+The first redundant whole-tree kernel acceptance fixture was killed with exit 137. Removing
+that mirror preserved the generic proofs, small kernel refusals and actual native controls.
+The corrected targeted build and full native build passed without increasing the measured
+OOM-kill counter. Source and no-comments inspections found no remaining finding at the source
+candidate. The final metadata binding, hosted CI and qualifying independent review remain due.
