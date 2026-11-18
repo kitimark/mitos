@@ -317,7 +317,7 @@ case "$*" in
   "api repos/owner/mitos")
     if [ -n "${FAKE_METADATA+x}" ]; then printf '%s\n' "$FAKE_METADATA"
     else echo '{"full_name":"owner/mitos","owner":{"login":"owner"}}'; fi ;;
-  *"pulls/257/reviews?per_page=100&page="* | *"pulls/257/comments?per_page=100&page="*)
+  "api repos/owner/mitos/pulls/257/reviews?per_page=100&page="* | "api repos/owner/mitos/pulls/257/comments?per_page=100&page="*)
     page=${2##*page=}
     route=reviews; [[ $2 != *"/comments?"* ]] || route=comments
     if [ -n "${FAKE_REVIEW_PAGES:-}" ] && [ -f "$FAKE_REVIEW_PAGES/$route-$page.json" ]; then
@@ -548,6 +548,14 @@ refuses owner/.. "$day" "$tmp/h"
 refuses owner/mitos 2026-02-30 "$tmp/h"
 refuses owner/mitos "$(date -u -d tomorrow +%F)" "$tmp/h"
 refuses owner/mitos "$day" "$tmp/f"
+for invalid_repo in ./mitos ../mitos owner/. owner/..; do
+  rm -f "$tmp/gh.log"
+  got=0; fetch "$invalid_repo" "$day" "$tmp/invalid-route" || got=$?
+  if [ "$got" = 2 ] && [ ! -s "$tmp/gh.log" ] && [ ! -s "$tmp/fetch.out" ] &&
+      [ "$(cat "$tmp/fetch.err")" = 'shadow-fetch: <owner/name> is not a repository name' ]; then
+    ok "fetch: $invalid_repo refuses before any API call"
+  else bad "fetch: $invalid_repo refuses before any API call" "exit $got: $(cat "$tmp/fetch.err")"; fi
+done
 
 echo
 echo "$pass passed, $fail failed"
