@@ -143,7 +143,7 @@ file itself was not built in scratch, where Lean ran out of memory):
 - `aSummaryEmptiedBeforeTheApprovalRetiresItToo`: `.idle`. No route gives the edit time.
 - `aReviewWhoseCommentsWereDeletedRetiresIt`: `.idle`.
 - `anAgentFooterReplyAfterTheApprovalLeavesIt` (#319 item 4): an empty owner review holding its own
-  footer reply gives `.merge`. It pins that `emptied` spares thread replies.
+  footer reply gives `.merge`. It pins that `ownerReviewWithoutPost` spares thread replies with a matching review ID.
 - `aDraftedCommentSubmittedAfterTheApprovalRetiresIt` (item 2): `.idle` after `submittedPosts`.
 - `aCommentOfAnUnlistedReviewIsAFailedRead`: `submittedPosts = none`.
 - `aDraftedCommentAnswerBeforeSubmissionIsNoAnswer`: `rest` stays false.
@@ -318,10 +318,11 @@ B's module map is atomic. Paths are relative to `gate/MitosGate/` except the she
 B's caller receives the existing `Reads`, with `Post.review : Option Nat`.
 `submittedPosts : List Review → List Post → Option (List Post)` refuses an unlisted review and
 sets each listed post's update time to at least submission. The raw CLI supplies normalized
-posts only after both routes decode. `summarySpeaks`, `ownerReviewWithoutPost` and `reviewsSpeak`
-retire an approval for owner summaries or owner reviews without a surviving post, whatever the
-review time. The kept-approval theorem requires `lastSpoke` before the approval, no speaking
-summary and no postless owner review. The review-route app-field API note stays exact.
+posts only after both routes decode. `summarySpeaks` excludes recognized agent footers.
+`ownerReviewWithoutPost` requires `counts v = false` and no review-comment post with that review ID.
+`reviewsSpeak` combines both cases without a review-time cutoff. Counted reviews already yield
+a post through `reviewPosts`. The kept-approval theorem requires `lastSpoke` before the approval,
+no speaking summary and no postless owner review. The review-route app-field API note stays exact.
 
 The seven new kernel fixtures cover emptied summaries before and after approval, deleted
 comments, the footer-reply exception, late draft submission, unlisted reviews and an answer
@@ -365,10 +366,11 @@ deferrals:
   the residual that a session holding the owner's own token could type `/land` with no app (call 6
   rests on the rules).
 - Not this row: #319 items 4 to 10, 13 and 14 (item 4's fixture is added here only because
-  `emptied` must spare thread replies), #303 items 1 to 5, and #284 items 1 to 8, O1, O2 and O4 to
-  O6.
-- To the real runs (R14): whether a `held` answer flaps on transient failed reads. A follow-up
-  issue only if it does.
+  `ownerReviewWithoutPost` must spare thread replies with a matching review ID), #303 items 1 to 5,
+  and #284 items 1 to 8, O1, O2 and O4 to O6.
+- To the real runs (R14): whether a `held` answer flaps on failed reads, or a split conversation
+  read temporarily yields `ownerSpoke` when a review is submitted between the review-comment and
+  review reads. A follow-up issue only if the real runs show either effect.
 - From P1-019: the shadow window starts at P1-019's merge (unchanged).
 
 owner_decisions:
