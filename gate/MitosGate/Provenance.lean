@@ -64,7 +64,6 @@ def opusPass (x : Obs) (p : PullFact) : Bool :=
 
 def sourceGuard (o : Obs) (p : PullFact) (labels : List String := []) : Bool :=
   let x := withFacts o p
-  let required := !requiresOpus x.paths labels || opusPass x p
   (p.verdicts.any fun v => decide (x.stands v.toLand) && v.result == .wordingOnly &&
     v.identity.provider == "claude" && v.identity.actor == "root" &&
     x.author.any (fun a => a.model != .absent && v.identity.who != a.who)) ||
@@ -72,7 +71,8 @@ def sourceGuard (o : Obs) (p : PullFact) (labels : List String := []) : Bool :=
     ModelIdentity.acceptedClaude v.identity.provider (v.identity.actualModel.getD "unknown") &&
     x.author.any (fun a => v.identity.who != a.who &&
       ModelIdentity.different a.who.provider a.model v.identity.provider
-        (v.identity.actualModel.getD "unknown"))) && required)
+        (v.identity.actualModel.getD "unknown"))) &&
+    (!requiresOpus x.paths labels || opusPass x p))
 
 def admitted (o : Obs) (p : PullFact) (labels : List String := []) : Bool :=
   (withFacts o p).covered && sourceGuard o p labels
@@ -149,8 +149,7 @@ theorem unknownAdmitted {o : Obs} {p : PullFact} {labels : List String}
       subst v
       have actual : ∃ m, event.identity.actualModel = some m := by
         cases hemodel : event.identity.actualModel with
-        | none => simp [VerdictFact.toLand, hemodel, ModelIdentity.acceptedClaude,
-            ModelIdentity.unknownClaudeKey, Identity.who] at hac
+        | none => simp [VerdictFact.toLand, hemodel, Identity.who, ModelIdentity.unknownAcceptedClaude] at hac
         | some m => exact ⟨m, rfl⟩
       obtain ⟨m, hem⟩ := actual
       have had : ModelIdentity.acceptedClaude event.identity.provider m = true := by

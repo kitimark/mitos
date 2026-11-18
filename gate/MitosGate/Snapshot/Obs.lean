@@ -23,7 +23,7 @@ def reviewPosts (r : Reads) : List Post :=
     ((r.reviews.getD []).filter counts).map fun v => ⟨v.login, none, v.submitted, v.submitted, v.body⟩
 
 /-- The reviews route has no update time, so a summary edited after the approval reads as typed
-before it. So any owner summary with text retires the approval. -/
+before it. An owner summary with text and no recognized agent footer retires the approval. -/
 def spokeInReview (g : Global) (r : Reads) (ws : List Word) : Bool :=
   match Land.newestOwner ws with
   | some (.ownerLand m) =>

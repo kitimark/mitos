@@ -259,6 +259,12 @@ def authorModelJson : ModelIdentity.AuthorModel → Json
 theorem reportedAuthorModelJson (actual : String) :
     authorModelJson (.reported actual) = .str actual := rfl
 
+open Lean in
+#eval show CoreM Unit from do
+  for a in ← collectAxioms ``reportedAuthorModelJson do
+    unless [``propext, ``Classical.choice, ``Quot.sound].contains a do
+      throwError "reportedAuthorModelJson depends on the axiom {a}"
+
 def obsJson (o : Obs) : Json :=
   Json.mkObj <|
     [("pr", n o.pr), ("updatable", .bool o.updatable), ("enforced", .bool o.enforced),
