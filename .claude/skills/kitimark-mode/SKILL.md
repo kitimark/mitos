@@ -357,9 +357,9 @@ watcher's echo filter and the merge rule below rely on both.
   silently overwriting duplicate keys. Do not hand-format the section. Existing v1 JSON sections
   remain readable with their exact legacy interpretation; new publication always uses v2.
   The physical payload cap remains 131072 bytes and the dashboard cap 262144 bytes. Hex wrapping
-  limits fresh publication to 64528 decoded bytes; larger valid legacy sources refuse with empty
+  limits native rendering to 64528 decoded bytes; larger valid legacy sources refuse with empty
   stdout. Preserve every event and stop on refusal. Source schema and archived record stay v1.
-  Local round trips do not prove publication: after owner merge, an authorized publisher must
+  Local round trips do not prove publication: after owner merge, the root must
   read the current dashboard, publish current real facts, read back exact machine bytes and run
   the deployed shared decoder (#483). The decoded object has
   `version: 1`, `repository: "owner/repo"`, and `pulls: [...]`. Each pull has `number`, an
