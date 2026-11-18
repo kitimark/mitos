@@ -4,10 +4,10 @@ set -u
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 script=$root/.github/scripts/land-protection.sh
-wf=$root/.github/workflows/land-protection.yml
-land=$root/.github/workflows/land.yml
 fetch=$root/gate/snapshot-fetch.sh
 command -v jq >/dev/null 2>&1 || { echo "FAIL jq is not installed"; exit 1; }
+(cd "$root" && lake build mitos-gate >/dev/null) || { echo "FAIL lake build mitos-gate"; exit 1; }
+real=$root/.lake/build/bin/mitos-gate
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -105,67 +105,13 @@ grep -qx 'land-protection: the folder is not empty' "$dir/stderr" || note "full:
 [ -z "$calls" ] || note "gh was called on a usage error"
 finish only-a-run-on-main-reads
 
-steps_of() { awk '/^    steps:$/ { on = 1; next } on { print }' "$1"; }
-block() { awk -v h="$2" '$0 == h { on = 1; print; next } on && /^      - / { exit } on { print }' "$1"; }
-if_of() { awk '/^    if: >-$/ { on = 1; print; next } on && /^    [a-z]/ { exit } on { print }' "$1"; }
-on_of() { awk '/^on:$/ { on = 1; print; next } on && /^[a-z]/ { exit } on { print }' "$1"; }
 joined=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$script")
-mint=$(block "$wf" '      - name: Mint an app token that can only read administration')
-want_mint='      - name: Mint an app token that can only read administration
-        id: app
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          app-id: ${{ vars.PR_UPDATER_APP_ID }}
-          private-key: ${{ secrets.PR_UPDATER_APP_KEY }}
-          permission-administration: read'
 
 start
-[ "$mint" = "$want_mint" ] || note "the mint step is not the pinned one:" "$mint"
-[ "$(grep -c 'permission-' "$wf")" = 1 ] || note "land-protection.yml names another permission- input"
-! grep -nE 'skip-token-revoke|^[[:space:]]*(owner|repositories):' "$wf" \
-  || note "the token is kept after the job or reaches past this repository"
-[ "$(grep -o 'secrets\.[A-Za-z_]*' "$wf" | sort -u)" = secrets.PR_UPDATER_APP_KEY ] \
-  || note "land-protection.yml names another secret"
-[ "$(grep -c 'secrets\.' "$wf")" = 1 ] || note "the key is named outside the mint step"
-[ "$(grep -c 'steps.app.outputs.token' "$wf")" = 1 ] \
-  || note "the app token is used other than once"
-grep -qxF '          GH_TOKEN: ${{ steps.app.outputs.token }}' "$wf" || note "the app token is not GH_TOKEN of a step"
-! grep -nE 'github\.token|GITHUB_TOKEN|id-token|write' "$wf" || note "land-protection.yml names the workflow token or a write"
-grep -qx 'permissions: {}' "$wf" || note "land-protection.yml has no top-level permissions: {}"
-[ "$(grep -cE '^[[:space:]]*permissions:' "$wf")" = 2 ] || note "land-protection.yml has another permissions block"
-[ "$(awk '/^    permissions:$/ { on = 1; next } on && !/^      / { exit } on { print }' "$wf")" = '      contents: read' ] \
-  || note "the read job's workflow token may do more than read contents"
-grep -qx '    environment: trusted' "$wf" || note "the read job is not in the trusted environment"
-! grep -nE 'secrets\.|github-app-token|app-id|private-key|^[[:space:]]*environment:|id-token|write' "$land" \
-  || note "land.yml names a secret, an app token, an environment or a write"
-grep -qx '      actions: read' "$land" || note "land.yml's decide cannot read the reader's runs and artifacts"
-finish the-key-sits-in-the-reader-and-not-in-land
+"$real" workflow pins "$root" || note "decoded workflow authority pins were refused"
+finish the-key-sits-in-the-reader-and-not-in-decide
 
 start
-[ "$(grep -c '^  [a-z-]*:$' <(awk '/^jobs:$/ { on = 1; next } on' "$wf"))" = 1 ] || note "land-protection.yml has another job"
-uses=$(grep -oE 'uses: [^ ]+' "$wf" | tr '\n' ' ')
-[ "$uses" = "uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 " ] \
-  || note "land-protection.yml uses other actions, or in another order: $uses"
-checkout=$(block "$wf" '      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0')
-[ "$checkout" = '      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false' ] || note "the checkout is not main's commit without credentials:" "$checkout"
-runs=$(grep -E '^[[:space:]]*(- )?run:' "$wf" | sed -E 's/^[[:space:]]*(- )?run: //')
-[ "$runs" = '.github/scripts/land-protection.sh "$GITHUB_REPOSITORY" "$RUNNER_TEMP/land-protection"' ] \
-  || note "land-protection.yml runs other commands:" "$runs"
-! grep -nE '^[[:space:]]*(- )?run:[[:space:]]*[|>]' "$wf" || note "a run: block spans lines"
-! grep -nE '\$\{\{[^}]*github\.event' "$wf" || note "land-protection.yml reads event text"
-order=$(steps_of "$wf" | grep -nE 'uses: actions/checkout|id: app|run: \.github/scripts/land-protection\.sh|uses: actions/upload-artifact' \
-  | cut -d: -f1 | tr '\n' ' ')
-sorted=$(tr ' ' '\n' <<<"$order" | grep . | sort -n | tr '\n' ' ')
-[ "$order" = "$sorted" ] && [ "$(wc -w <<<"$order")" = 4 ] || note "the steps are not checkout, mint, read, upload"
-upload=$(block "$wf" '      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2')
-[ "$upload" = '      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: land-protection-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/land-protection/read.json
-          if-no-files-found: error
-          retention-days: 1' ] || note "the upload is not the one snapshot-fetch.sh reads:" "$upload"
 gh_lines=$(grep -wE 'gh' <<<"$joined" | grep -vE '^for tool in |^# ')
 if [ "$(grep -c '' <<<"$gh_lines")" != 1 ] \
   || ! grep -qF 'timeout -k 5 120 gh api "repos/$repo/branches/main/protection" ' <<<"$gh_lines"; then
@@ -177,16 +123,10 @@ fi
 finish the-reader-reads-only-the-one-route
 
 start
-[ "$(on_of "$wf")" = "$(on_of "$land")" ] || note "land-protection.yml does not start on land.yml's events:" "$(on_of "$wf")"
-[ -n "$(if_of "$land")" ] && [ "$(if_of "$wf")" = "$(if_of "$land")" ] \
-  || note "the read job's if: is not decide's:" "$(if_of "$wf")"
-! grep -qE '^  (pull_request|pull_request_target|workflow_call|schedule)' "$wf" || note "land-protection.yml starts on another event"
 for pin in 'land-protection-$id-$attempt' 'unzip -p "$s/artifact.zip" read.json' \
   'actions/workflows/land-protection.yml/runs?branch=main' '.path == ".github/workflows/land-protection.yml"'; do
   grep -qF -- "$pin" "$fetch" || note "snapshot-fetch.sh does not read this workflow's artifact: no [$pin]"
 done
-grep -qxF '        run: .github/scripts/land-protection.test.sh' "$root/.github/workflows/ci.yml" \
-  || note "ci.yml does not run this test"
 finish the-reader-pairs-with-decide
 
 echo "$pass passed, $fail failed"

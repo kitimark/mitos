@@ -290,7 +290,8 @@ It adds three review and CI cycles versus one final PR. No time saving has been 
 
 T is new current-contract design work, not a literal extraction of the final checker. Its one
 `workflow pins <repo-root>` command admits every workflow and conjoins the complete Land,
-Protection, updater/mint, CI and owner-ping contracts. Callers choose no profile. At T, Land is
+Protection, updater/mint, CI and the two-copy owner-ping coherence contract. Callers choose no profile.
+The current implementation design is `tasks/GA-Q3-current-workflow-pins.md`. At T, Land is
 decide-only, without a switch, outputs, apply/report, key or mint. The mint inventory contains
 only Protection and updater, and CI requires the three actual post-build suites. F replaces
 that finite contract with the exact decide/apply/report/on shape, three mint callers and five
