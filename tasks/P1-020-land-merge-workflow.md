@@ -3,7 +3,7 @@
 phase: 1
 goal: On a `merge` plan, `land.yml`'s `apply` job reads the pull request and its conversation again and makes the one pinned rebase-merge call with the updater app's token, and `report` answers each change of answer to an owner word, so a kept pull request lands on the owner's typed `/land <commit>` with no Claude session calling the merge.
 statement: none locked (workflow tooling). It acts on P1-018's `PlannedMergeIsGated` (15) and P1-019's `KeptMergeIsTheOwnersTypedApproval`, and adds the gate statements under `statements` below.
-touches: .github/workflows/land.yml, .github/workflows/update-prs.yml (its mint step and the two `uses:` pins of that job only, #284 O3), .github/workflows/ci.yml (three test steps, and the name of the protection test's step), .github/scripts/land-decide.sh, .github/scripts/land-decide.test.sh, .github/scripts/land-digest.sh, .github/scripts/land-apply.sh, .github/scripts/land-apply.test.sh, .github/scripts/land-report.sh, .github/scripts/land-report.test.sh, .github/scripts/land-workflow.lib.sh, .github/scripts/app-token.test.sh, .github/scripts/land-protection.test.sh (its `land.yml` pins narrow to the `decide` job), gate/MitosGate/LandAnswer.lean, gate/MitosGate/LandCli.lean, gate/Main.lean, gate/MitosGate/Land.lean (two comments), gate/MitosGate/Snapshot/Types.lean, gate/MitosGate/Snapshot/Fields.lean, gate/MitosGate/Snapshot/Obs.lean, gate/MitosGate/Snapshot/Fixtures.lean, gate/MitosGate/Snapshot.lean, gate/MitosGate/SnapshotCli.lean, gate/snapshot-test.sh, gate/MitosGate/Shadow/Types.lean, gate/MitosGate/Shadow/Reading.lean, gate/MitosGate/Shadow/Seat.lean, gate/MitosGate/Shadow/Finding.lean, gate/MitosGate/Shadow.lean, gate/MitosGate/ShadowCli.lean, gate/MitosGate/ShadowCli/Read.lean, gate/provenance-provider-test.sh, gate/shadow-fetch.sh, gate/shadow-test.sh, gate/shadow-fixtures/, gate/land-test.sh, this file, ops/runs/
+touches: .github/workflows/land.yml, .github/workflows/update-prs.yml (its mint step and the two `uses:` pins of that job only, #284 O3), .github/workflows/ci.yml (three test steps, and the name of the protection test's step), .github/scripts/land-decide.sh, .github/scripts/land-decide.test.sh, .github/scripts/land-digest.sh, .github/scripts/land-apply.sh, .github/scripts/land-apply.test.sh, .github/scripts/land-report.sh, .github/scripts/land-report.test.sh, .github/scripts/app-token.test.sh, .github/scripts/land-protection.test.sh (its `land.yml` pins narrow to the `decide` job), gate/MitosGate/LandAnswer.lean, gate/MitosGate/LandCli.lean, gate/Main.lean, gate/MitosGate/Land.lean (two comments), gate/MitosGate/Snapshot/Types.lean, gate/MitosGate/Snapshot/Fields.lean, gate/MitosGate/Snapshot/Obs.lean, gate/MitosGate/Snapshot/Fixtures.lean, gate/MitosGate/Snapshot.lean, gate/MitosGate/SnapshotCli.lean, gate/snapshot-test.sh, gate/MitosGate/Shadow/Types.lean, gate/MitosGate/Shadow/Reading.lean, gate/MitosGate/Shadow/Seat.lean, gate/MitosGate/Shadow/Finding.lean, gate/MitosGate/Shadow.lean, gate/MitosGate/ShadowCli.lean, gate/MitosGate/ShadowCli/Read.lean, gate/provenance-provider-test.sh, gate/shadow-fetch.sh, gate/shadow-test.sh, gate/shadow-fixtures/, gate/land-test.sh, this file, ops/runs/
 must_not_touch: statements.lock, models.lock, core/, eval/cheats/, models, .claude/, .cursor/, CLAUDE.md, docs/process.md, plan/, .github/scripts/rebase-prs.sh, .github/workflows/land-protection.yml, .github/scripts/land-protection.sh, gate/snapshot-fetch.sh (this row adds no read to `decide`), gate/MitosGate/Speech/ (the comment reader stays P1-019's)
 checks: actionlint, shellcheck, land-decide.test.sh, land-apply.test.sh, land-report.test.sh, land-protection.test.sh, app-token.test.sh, every gate/*-test.sh, lake build (each module's axiom check: no `sorry`, no new axiom), cheats (in ci), the real runs under `fixtures`
 budget: 30 iterations · 10h wall · 3M tokens, the real runs included (was 25 · 8h · 2.5M; the folded #319, #303 and #284 items add about a fifth)
@@ -919,6 +919,10 @@ fi
 [ "$problems" = 0 ] && [ "$failed" = 0 ]
 ```
 
+The following shared-reader sketch is historical and superseded by the decoded bundle in
+`tasks/GA-Q3-workflow-pins.md`. The implementation retires this API and migrates all five
+callers together; the accepted runtime/Lean design below remains unchanged.
+
 `.github/scripts/land-workflow.lib.sh`: `job_block <workflow> <job>` prints the lines from
 `  <job>:` to the next two-space key, so `land-decide.test.sh`, `land-apply.test.sh` and
 `land-report.test.sh` pin each job's own block. It is sourced, never run.
@@ -1465,9 +1469,11 @@ A failed fetch can leave partial files; retry in a new empty directory.
 - Accepted residuals (the amendment's open item): a comment, edit or deletion in the seconds
   between `apply`'s last read and the `PUT` is not seen; a bot edit, or another run's report post,
   between `decide`'s read and `apply`'s stops the merge with a "Not merged yet" post, and the owner
-  comments `/land <head>` again. `apply` does not re-read the labels (`spec-approved`), the pull
-  request's body, the dashboard's verdict cell or branch protection; a change to them after
-  `decide`'s read is not seen, and GitHub re-checks only `gate` and protection at the `PUT`.
+  comments `/land <head>` again. `apply` re-reads a required `spec-approved` label with the pull
+  request, as the build notes explain. It does not re-read the pull request's body, the dashboard's
+  verdict cell or branch protection. A change to those after `decide`'s read is not seen; a label
+  change after `apply`'s pull request read is not seen either. GitHub re-checks only `gate` and
+  protection at the `PUT`.
 
 ### Real runs (the builder makes them; the owner types where marked)
 
@@ -1658,6 +1664,97 @@ separate bot-review provenance limitation remains [#309](https://github.com/kiti
 | Nonvacuous ready correspondence | At least one independently ready real kept owner merge; pre-finding readiness and predicted head/replay; every such case agrees with actual merged content. |
 | Remaining refusals and scorer differences | An individual explanation for every ineligible/held/unknown case and other disagreement; any new feature/main disagreement remains blocking unless the owner explicitly decides it. |
 | Separate merge prerequisites | [R0b's live-GET/local-intercept IO evidence](https://github.com/kitimark/mitos/issues/191#issuecomment-6960447923), current-head CI, reviews and independence, and owner merge control. R0b does not establish planner eligibility or authorize a merge. |
+
+## Residual reconstruction after the B+C merge
+
+#488 landed on 18 November 2026 at `a8907d5e1cd8eccea4a26152a88cde4535c0b4f0`.
+Its tree is the reviewed `4d66709` tree. The reader and Shadow implementation, required raw
+review evidence, stronger repository guards, complete proofs and current callers now belong
+to main. #336 is rebuilt from that main plus the unlanded N, T and F hunks. No original B/C
+change is reintroduced from the frozen feature copy.
+
+The residual retains owner-ping admission, the complete final decoded workflow contract and
+its actual script callers, and the answer/handoff/apply/report transition. Separate N and T
+extractions remain possible in the selected order; their work is removed here only after it
+actually merges. This reconstruction is not the temporary decide-only T contract.
+
+All #491 author-model, null/provider, effort, adverse-evidence and provenance audit repairs
+remain. All #494 isolated suite workers, execution-record admission, dependencies, artifacts,
+cache controls and deadlines remain. The direct protection suite moves after the build beside
+the apply, report and app-token suites; the existing decide suite keeps its one invocation.
+The renamed app-token helper is invoked once by its actual suite and leaves the top-level
+`*-test.sh` inventory. The final three real mint callers retain their six permission controls.
+
+The shared Snapshot test retains every main review/provider regression and adds only the
+three digest overrides and paired complete/low-effort answer controls. `Land.lean` retains
+main's policy and proofs; its residual edits are documentation only. The four GA task documents
+and sixteen append-only historical records stay attributed to their original heads. The
+frozen input and existing fixture override remain unchanged.
+
+This is a changed-content head. Prior #336 and #488 checks, R0b captures and reviews remain
+historical. Fresh checks and independent review are required. The six approved clauses below,
+D/T0 and the failed historical report remain unchanged, with no prospective-window pass or
+activation authorization supplied by this reconstruction.
+
+## Retained implementation notes
+
+These notes describe the accepted final implementation and preserve the earlier build's
+rationale. Named historical heads and counts are not validation of this reconstruction.
+
+
+The implementation follows the build-depth design merged in #329 at eac85d2, including its round 2 clarifications, with the corrections below.
+
+- Current workflow checks use `mitos-gate workflow pins <repo-root>` over the owned decoded
+  L4YAML tree. The complete contract and per-assertion migration are in
+  `tasks/GA-Q3-workflow-pins.md`. All five callers have migrated, and the indentation-based
+  `land-workflow.lib.sh` reader is deleted. Permission, condition, step-order, token and event
+  pins now inspect exact typed nodes; the apply condition is the complete conjunction.
+- The four decision-producer actions are pinned to audited same-major commits: checkout
+  v4.4.0, cache/restore v4.3.0 and both upload-artifact v4.6.2 steps. This resolves the bounded
+  producer-integrity blocker recorded on #167, without changing runtime approval/merge logic
+  or undertaking #167's wider dependency-update rollout.
+- Placement uses #359's proved decoded rules N and X, integrated by #455. Every original
+  unsafe control remains, including aliases, whole-needs serialization and computed members;
+  these are no longer open scanner gaps. Safe multiline quoted environment data and the valid
+  multiline plain scalar are accepted by the existing reader, with unsafe code-expression
+  partners refused. Fixture 12 now asserts the actual decoded environment path as well as
+  placement acceptance. #453's broader shell/container/environment-name policy remains a
+  separate owner decision.
+- Historical evidence: `635f4b8` and `e91b849` repaired earlier fail-open search and quoted
+  scalar cases, but later reviews demonstrated further YAML-shape and decoding bypasses in
+  that scanner. Those source scanners are superseded, rather than patched again. The runtime
+  source inventories still distinguish search errors from no-match; the alternate merge
+  inventory now has concrete CLI, GraphQL, auto-merge and quoted-route refusal controls.
+  The recorded earlier build counts and executable reuse describe those historical heads,
+  not validation of this adoption round. Current evidence is in the linked GA-Q3 task.
+- The historical review round rebased onto `main` at 6d10539. Its earlier conflict with 00db1fb retains the PR's deletion of the stale
+  `wake` comment and preserves main's axiom checker. Both main's planted-axiom and non-theorem
+  tests and this PR's `land-answers` tests remain in `gate/land-test.sh`.
+- Follow-up #341 tracks the remaining report marker-filter regression. The advisory report race
+  is already #335, and review-summary edit timestamps are #334. The accepted freshness limits
+  also include the PR body footer, dashboard verdict, stack membership and hold label, which
+  `apply` does not revalidate. Its fresh `spec-approved` check remains. No version-label or
+  replacement `wake` comment is added. `CLAUDE.md` requires the Claude Code footer on public
+  posts even when Codex authors the change.
+
+- Historical round 2 restored the full-workflow checks for run expressions, multi-line run blocks, event
+  values outside the decide environment and inline `gh`. Temporary apply and report mutations passed
+  the narrowed checks before the fix and fail the restored checks. Permission and concurrency
+  checks stay scoped to their job. The CLI tests keep the queued-answer case and add the design's
+  bare-answer case with exact decoded newlines and a code block.
+- `land-answers` prints its JSON directly. The copied `ciLine` wrapper changed JSON escapes such
+  as `\n` into non-JSON `\u{005C}n`, which the actual CLI test rejected. Answers contain fixed
+  wording, validated alphanumeric commits and natural numbers; JSON escaping keeps the output
+  on one line and the object prefix prevents a workflow command. The recorded `land` CLI is
+  unchanged.
+- Issue #290 item 5 requires a fresh `spec-approved` read. `Handoff.requiresSpec` carries the
+  reader's `Snapshot.specPath` result to `apply` as `requires_spec`, validated as `true` or `false`.
+  `HandoffIsThePlannedMerge` proves it comes from the selected observation. When true, `apply`
+  checks the label in its existing fresh pull request read and stops `label` if absent. No read
+  was added to `decide`. `report` explains that stop.
+
+The build uses the pinned Lean 4.35.0 toolchain. The pre-merge API check intercepts every merge
+call locally. The owner-only post-merge runs R1 to R16 remain prerequisites for closing #297.
 
 ## Done when
 - [ ] `land-apply.test.sh`, `land-report.test.sh` and `app-token.test.sh` pass, and run in ci

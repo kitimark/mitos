@@ -59,6 +59,10 @@ theorem check_sound (h : check i = .ok ()) : holds i := by
   exact ⟨LandPins.check_sound hl, ProtectionPins.check_sound hp,
     AppTokenPins.check_sound hm, CiPins.check_sound hc, h⟩
 
+theorem check_apply_condition (h : check i = .ok ()) :
+    i.land.scalarAt? LandPins.applyPath = some (.text LandPins.applyIf) :=
+  (check_sound h).1.1
+
 theorem check_no_unprivileged_mint (h : check i = .ok ()) :
     AppTokenPins.mintCount i.unprivilegedWorkflows = 0 :=
   (check_sound h).2.2.1.2.2.2.2

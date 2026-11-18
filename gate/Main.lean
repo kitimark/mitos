@@ -74,6 +74,7 @@ def usage : String := s!"usage:
                                                  accept the shard records only when both jobs
                                                  succeeded and the records are the partition of the
                                                  case directory; publish the logs into <dir>
+  mitos-gate land-answers [<snapshot.json>]        the planned merge and one answer per owner word, as JSON
   mitos-gate land [<snapshot.json>]              the landing decision for one snapshot (file, or standard
                                                  input): who is next, what is pushed, the caller's step,
                                                  who wakes; one line of JSON. Exit 1: snapshot refused
@@ -228,6 +229,7 @@ def cli (args : List String) : IO UInt32 := do
   | "carry" :: rest => Carry.cli rest usage
   | "cheats" :: rest => CheatsRun.cli rest usage
   | "land" :: rest => LandCli.cli rest usage
+  | "land-answers" :: rest => LandCli.answersCli rest usage
   | "speech" :: rest => SpeechCli.cli rest usage
   | "snapshot" :: rest => SnapshotCli.cli rest usage
   | "shadow" :: rest => ShadowCli.cli rest usage

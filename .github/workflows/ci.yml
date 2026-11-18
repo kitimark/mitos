@@ -241,6 +241,10 @@ jobs:
 
       - name: The protection reader's key reads only administration, and it pairs with land's decide
         run: .github/scripts/land-protection.test.sh
+      - name: The merge re-reads and acts once at its planned head
+        run: .github/scripts/land-apply.test.sh
+      - name: The land report answers each change once
+        run: .github/scripts/land-report.test.sh
       - name: Every app token is narrowed in trusted
         run: .github/scripts/app-token.test.sh
 

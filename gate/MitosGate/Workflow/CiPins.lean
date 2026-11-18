@@ -6,6 +6,7 @@ open Yaml PinNode
 
 def suiteCommands : List String := [
   ".github/scripts/land-protection.test.sh", ".github/scripts/land-decide.test.sh",
+  ".github/scripts/land-apply.test.sh", ".github/scripts/land-report.test.sh",
   ".github/scripts/app-token.test.sh"]
 
 private def lower (s : String) : String :=

@@ -574,6 +574,7 @@ cp "$ROUNDTRIP_READS/"*.json "$3/"
 SH
 chmod +x "$tmp/record-bin/gh" "$tmp/record-fetch"
 if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH="$tmp/record-fetch" \
+      LAND_DIGEST_SCRIPT="$root/.github/scripts/land-digest.sh" \
       ROUNDTRIP_MAIN="$m2" ROUNDTRIP_READS="$d" bash "$root/.github/scripts/land-decide.sh" owner/mitos 43 "$tmp/record") \
       >"$tmp/record.out" 2>"$tmp/record.err" &&
     jq -c '.outcome.snapshot' "$tmp/record/record.json" | "$bin" land >"$tmp/replayed" &&
@@ -609,6 +610,7 @@ else bad "native producer keeps record v1, null author knowledge, raw source and
 source_case "prepare low-effort record round trip" '.pulls[0].verdicts[0].effort = "low"' \
   '.prs[0] | .verdicts[0].result == "pass" and (.rest | not)'
 if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH="$tmp/record-fetch" \
+      LAND_DIGEST_SCRIPT="$root/.github/scripts/land-digest.sh" \
       ROUNDTRIP_MAIN="$m2" ROUNDTRIP_READS="$d" bash "$root/.github/scripts/land-decide.sh" owner/mitos 43 "$tmp/low-record") \
       >"$tmp/low-record.out" 2>"$tmp/low-record.err" &&
     jq -c '.outcome.snapshot' "$tmp/low-record/record.json" | "$bin" land >"$tmp/low-replayed" &&
@@ -636,6 +638,7 @@ for version in legacy v2; do
       "$b/dashboard.json" >"$d/dashboard.json"
   fi
   if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH="$tmp/record-fetch" \
+        LAND_DIGEST_SCRIPT="$root/.github/scripts/land-digest.sh" \
         ROUNDTRIP_MAIN="$m2" ROUNDTRIP_READS="$d" bash "$root/.github/scripts/land-decide.sh" owner/mitos 43 "$tmp/$version-record") \
         >"$tmp/$version-record.out" 2>"$tmp/$version-record.err" &&
       cmp -s "$d/dashboard.json" "$tmp/$version-record/reads/dashboard.json" &&
@@ -680,6 +683,31 @@ said9() {
 typed9='{id: 9001, user: {login: "owner"}, performed_via_github_app: null, created_at: "2026-11-14T08:00:00Z", updated_at: "2026-11-14T08:00:00Z", body: ("/land " + $q)}'
 words9() { jq -c '.prs[] | select(.pr == 9) | .words' "$tmp/snap.json"; }
 me9='. + {me: {provider: "claude", name: "orchestrator"}, pr: 9}'
+
+fresh
+said9 "$typed9"
+if snap && jq -e '.prs[] | select(.pr == 9) | .rest' "$tmp/snap.json" >/dev/null &&
+    "$bin" land-answers "$tmp/snap.json" >"$tmp/high-effort.answers" &&
+    jq -e '.merge.pr == 9 and all(.answers[]; .pr != 9)' "$tmp/high-effort.answers" >/dev/null; then
+  cp "$tmp/snap.json" "$tmp/high-effort.snapshot"
+  ok "complete source evidence leaves the typed approval to apply"
+else bad "complete source evidence leaves the typed approval to apply" "$(cat "$tmp/snap.err")"; fi
+jq -cS '.pulls[2].verdicts[0].effort = "low"' "$tmp/source.json" >"$tmp/low-answer-source.json"
+"$bin" provenance render owner/mitos "$tmp/low-answer-source.json" >"$tmp/low-answer-source.block"
+jq --arg block "$(cat "$tmp/low-answer-source.block")" --arg prose "$(dash_body)" \
+  '.body = ($prose + "\n\n" + $block)' "$b/dashboard.json" >"$d/dashboard.json"
+want_evidence_answer=$(printf '<!-- land-report -->\nStopped: an unanswered owner comment, a missing required label or footer, or unmet author or reviewer verification requirements.')
+if snap && jq -e '.prs[] | select(.pr == 9) | (.rest | not) and .author != null and
+      .verdicts[0].result == "pass"' "$tmp/snap.json" >/dev/null &&
+    jq -c '.prs[] | select(.pr == 9) | del(.rest)' "$tmp/high-effort.snapshot" >"$tmp/high-answer-facts" &&
+    jq -c '.prs[] | select(.pr == 9) | del(.rest)' "$tmp/snap.json" >"$tmp/low-answer-facts" &&
+    cmp -s "$tmp/high-answer-facts" "$tmp/low-answer-facts" &&
+    "$bin" land-answers "$tmp/snap.json" >"$tmp/low-effort.answers" &&
+    jq -e --arg body "$want_evidence_answer" '.merge == null and
+      any(.answers[]; .pr == 9 and .body == $body)' "$tmp/low-effort.answers" >/dev/null; then
+  ok "low-effort source refusal names verification requirements honestly"
+else bad "low-effort source refusal names verification requirements honestly" \
+  "$(cat "$tmp/low-effort.answers" "$tmp/snap.err")"; fi
 fresh
 said9 "$typed9"
 expect_land "a typed approval on a kept path: the snapshot says approves, and land plans its merge" "$me9" \
