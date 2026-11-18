@@ -1665,25 +1665,29 @@ separate bot-review provenance limitation remains [#309](https://github.com/kiti
 | Remaining refusals and scorer differences | An individual explanation for every ineligible/held/unknown case and other disagreement; any new feature/main disagreement remains blocking unless the owner explicitly decides it. |
 | Separate merge prerequisites | [R0b's live-GET/local-intercept IO evidence](https://github.com/kitimark/mitos/issues/191#issuecomment-6960447923), current-head CI, reviews and independence, and owner merge control. R0b does not establish planner eligibility or authorize a merge. |
 
-## Residual reconstruction after the B+C and N merges
+## Residual reconstruction after the B+C, N and T merges
 
 #488 landed on 18 November 2026 at `a8907d5e1cd8eccea4a26152a88cde4535c0b4f0`.
 Its tree is the reviewed `4d66709` tree. The reader and Shadow implementation, required raw
 review evidence, stronger repository guards, complete proofs and current callers now belong
 to main. #496 then landed owner-ping admission at
 `58e5ddd99524acc2f7f739ddb15a3eae53cbc5fc` on 18 November 2026. Its five source/oracle paths,
-task and run record now belong to main too. #336 is rebuilt from that actual main plus the
-unlanded T and F hunks. Neither landed unit is reintroduced from the frozen feature copy.
+task and run record now belong to main too. #499 then landed the current workflow contract
+on 18 November 2026 at `482fbbc435ce9e72210e2e547dfce9de9f31e794`, whose tree is the
+reviewed `07d3bd1` tree. Its three actual main commits, dedicated task and two run records
+remain main history. #336 is rebuilt from that actual main plus the remaining F hunks.
 
-The residual retains the complete final decoded workflow contract and its actual script
-callers, and the answer/handoff/apply/report transition. The separate T extraction remains
-next in the selected order; its work is removed here only after it actually merges. This
-reconstruction is not the temporary decide-only T contract.
+The residual retains the final decoded workflow contract and its actual script callers, and
+the answer/handoff/apply/report transition. The final Land predicates replace the current-only
+decide/absence predicates. The CI checker inherits the closed main-push/five-activity trigger
+contract, typed decoder, trigger proof and refusal precedence, extending only three suites to
+five. The driver keeps all forty trigger controls, earlier-writer refusals, owner-ping anchor
+and the next-actual-job missing-steps boundary while adapting only current-Land fixtures.
 
 All #491 author-model, null/provider, effort, adverse-evidence and provenance audit repairs
 remain. All #494 isolated suite workers, execution-record admission, dependencies, artifacts,
-cache controls and deadlines remain. The direct protection suite moves after the build beside
-the apply, report and app-token suites; the existing decide suite keeps its one invocation.
+cache controls and deadlines remain. The apply and report suites join
+the three existing post-build suites; each keeps its one invocation.
 The renamed app-token helper is invoked once by its actual suite and leaves the top-level
 `*-test.sh` inventory. The final three real mint callers retain their six permission controls.
 
@@ -1693,10 +1697,32 @@ main's policy and proofs; its residual edits are documentation only. The four GA
 and sixteen append-only historical records stay attributed to their original heads. The
 frozen input and existing fixture override remain unchanged.
 
-This is a changed-content head. Prior #336 and #488 checks, R0b captures and reviews remain
+This is a changed-content head. Prior #336, #488 and #499 checks, R0b captures and reviews remain
 historical. Fresh checks and independent review are required. The six approved clauses above,
 D/T0 and the failed historical report remain unchanged, with no prospective-window pass or
 activation authorization supplied by this reconstruction.
+
+## Local validation after the T merge
+
+The fresh cached full build passes 696 jobs. The native driver passes 275 workflow controls,
+including all forty main trigger controls and the extended third-mint closure. The five real
+script suites pass: protection 6, decide 29, apply 41, report 20 and app-token 7, including six
+actual bundled permission controls. Land passes 79 and Snapshot 266. All six workflow and
+reader suites pass; the 700-mutant qualification accounts for 250 PyYAML-equal admitted trees
+and 450 refusals. The seven actual workflows compare with zero differences.
+
+The compiled-environment audit checks 170 final-operation/workflow theorem closures against
+standard axioms and refuses its planted scratch axiom. Imports, the unchanged 207-declaration
+lock, current run-log preservation, eleven receipt tests, CI cache/shard/trust controls and
+scoped shell/workflow syntax checks pass. The resolved source delta is 22 logical paths,
++1723/-104, compared with the previous 29 paths, +3081/-124. The preserved historical records
+and task documents are additional review history, not fresh runtime evidence.
+
+The unrelated ancestor-ownership and read-only UID-map failures recorded by earlier local
+attempts remain failed or unpassed. Core, paranoid acceptance, model-lint and corpus commands
+were not repeated solely for that environment restriction. Old hosted success and external
+reviews remain tied to their original heads. This candidate still needs fresh hosted CI and
+qualifying independent review, complete prospective correspondence and separate R0b evidence.
 
 ## Retained implementation notes
 
