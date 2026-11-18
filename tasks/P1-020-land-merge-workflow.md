@@ -308,7 +308,7 @@ lines. The fallback moves independent corrections, normalization, refs and place
 then keeps one complete final authority transition. It does not introduce a permissive profile.
 No GA-Q3 implementation changes belong in B+C.
 
-B+C's module map is atomic. Physical deltas are against main `4be3c1e`; data fixtures are synthetic.
+B+C's module map is atomic. Physical deltas are against main `e0e8a29`; data fixtures are synthetic.
 
 | File | The topic it owns in B+C | Physical delta |
 |---|---|---|
