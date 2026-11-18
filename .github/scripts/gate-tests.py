@@ -20,11 +20,19 @@ class Suite:
 def inventory(root):
     suites = []
     for file in sorted((root / "gate").glob("*-test.sh"), key=lambda p: os.fsencode(p.name)):
+        if file.name.startswith("."):
+            continue
         if file.is_symlink() or not file.is_file() or not os.access(file, os.X_OK):
             raise ValueError(f"not an executable regular suite: {file.name}")
         suites.append(Suite(file.relative_to(root).as_posix(), hashlib.sha256(file.read_bytes()).hexdigest()))
     if not suites:
         raise ValueError("the suite inventory is empty")
+    entries = subprocess.check_output(["git", "-C", str(root), "ls-tree", "-z", "HEAD:gate"],
+                                      stderr=subprocess.PIPE).split(b"\0")
+    names = [os.fsdecode(entry.partition(b"\t")[2]) for entry in entries if entry]
+    tracked = {"gate/" + name for name in names if not name.startswith(".") and name.endswith("-test.sh")}
+    if {suite.path for suite in suites} != tracked:
+        raise ValueError("suite inventory differs from Git HEAD")
     return tuple(suites)
 
 

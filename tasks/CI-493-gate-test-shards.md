@@ -26,7 +26,7 @@ modules:
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | Isolated execution and result transport | ~110 added lines; existing cheat-shard setup and prove flow |
 | `.github/scripts/gate-tests.py` | Suite inventory, execution and evidence admission | ~200 lines; standard-library process/JSON boundary |
-| `.github/scripts/gate-tests.test.py` | CLI and composition sensitivity | ~320 lines; isolated temporary repos and actual workflow step |
+| `.github/scripts/gate-tests.test.py` | CLI and composition sensitivity | ~350 lines; isolated temporary repos and actual workflow step |
 | `.github/scripts/cheat-shard.test.sh` | Exact graph and trust wiring | ~50 added lines; existing job-scoped finite assertions |
 | `.github/scripts/cache-key.test.sh` | Full cache key/path equivalence | one count update; retain all input/path checks |
 | `gate/cache-logs-test.sh` | Immediate unconditional cleanup | one new restoring job |
@@ -44,7 +44,7 @@ owner_decisions: architecture selection is the implementor's response to the spl
 
 Each worker calls `python3 -I .github/scripts/gate-tests.py run --shard k/3 --out <fresh RUNNER_TEMP directory>`. Prove calls `verify --job "$GATE_TESTS" --shards 3 <three downloaded directories>` before the unchanged native aggregate. The real needs expression supplies the job status. There is no favorable default, fixture flag or compatibility path.
 
-Sorted current-tree `gate/*-test.sh` ranks select residues modulo three. Workers execute serially in separate checkouts, retaining later diagnostics after a failure. A nonempty total inventory is required; a legitimate empty residue records zero work. Initial scripts must match executable Git HEAD files. Content/inventory changes prevent completion. Fresh output lives outside restored caches. A complete atomic record contains actual integer exit codes and relative contained regular logs; partial logs remain diagnostic.
+Sorted current-tree `gate/*-test.sh` ranks select residues modulo three. Dot-prefixed files stay outside the original Bash glob. Workers execute serially in separate checkouts, retaining later diagnostics after a failure. A nonempty total inventory is required; a legitimate empty residue records zero work. The filesystem matching paths must equal Git HEAD's matching paths, so a deleted tracked suite refuses. Initial scripts must match executable Git HEAD files. Content/inventory changes prevent completion. Fresh output lives outside restored caches. A complete atomic record contains actual integer exit codes and relative contained regular logs; partial logs remain diagnostic.
 
 The receiver accepts only matrix `success`, matching current run/commit/tree, three unique shard identities, exact selected ordered results, zero exits and complete logs. An independent full-union comparison rejects omissions even if runner and receiver share a defective selector. Unknown, duplicated, missing, stale, malformed or unsuccessful evidence refuses. Records and hosted logs/status support review; they do not cryptographically attest execution. Successful prior-attempt jobs from the same run/tree remain usable under the existing cancelled-not-timed-out rerun procedure.
 
