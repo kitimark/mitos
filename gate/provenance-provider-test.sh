@@ -74,9 +74,11 @@ with tempfile.TemporaryDirectory(prefix="mitos-provider-") as directory:
     template["outcome"].update(snapshot=result["snapshot"], decision=json.loads(decoded.stdout), trees=[], notes=[])
     window = work / "window"
     (window / "records").mkdir(parents=True)
+    (window / "repo.json").write_text(json.dumps({"full_name": "kitimark/mitos", "owner": {"login": "kitimark"}}))
     (window / "records/490-1.json").write_text(json.dumps(template))
     (window / "merges.json").write_text(json.dumps([{"pr": 488, "time": "2026-11-18T08:00:05Z",
-                                                   "before": template["main"], "head": event["head"], "tree": ""}]))
+                                                   "before": template["main"], "head": event["head"], "tree": "",
+                                                   "reviews": [], "reviewComments": []}]))
     for name in ["runs", "baseline"]:
         (window / (name + ".json")).write_text("[]")
     replayed = run([binary, "shadow", window])

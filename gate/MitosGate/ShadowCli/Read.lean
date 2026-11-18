@@ -2,6 +2,7 @@ import Lean.Data.Json
 import MitosGate.Shadow
 import MitosGate.LandCli
 import MitosGate.Carry
+import MitosGate.SnapshotCli
 
 open Lean (Json)
 
@@ -127,12 +128,42 @@ def run? (run : Nat) (j : Json) : Except Unscored Run := do
       throw (.drifted s!"it printed {d.printed.compress}, and this build decides {now.compress}")
     return .decided (d.record s.prs)
 
-private def merge : D Merge := fun j => do
-  return { pr := ← at' "pr" nat j, time := ← at' "time" stamp j,
-           before := ← at' "before" shaOrUnread j, head := ← at' "head" sha j,
-           tree := ← at' "tree" shaOrUnread j }
+private def routeComponent (s : String) : Bool :=
+  !s.isEmpty && s != "." && s != ".." && s.toList.all fun c =>
+    ('a' ≤ c && c ≤ 'z') || ('A' ≤ c && c ≤ 'Z') || ('0' ≤ c && c ≤ '9') ||
+      c == '_' || c == '.' || c == '-'
 
-def merges : D (List Merge) := list merge
+def repositoryOwner : D String := fun j => do
+  let full ← at' "full_name" str j
+  let owner ← at' "owner" (at' "login" str) j
+  unless routeComponent owner do throw ".owner.login: expected a route component"
+  let [account, name] := full.splitOn "/" | throw ".full_name: expected owner/name"
+  unless routeComponent account && routeComponent name do
+    throw ".full_name: expected owner/name"
+  unless account.toLower == owner.toLower do
+    throw ".full_name: owner does not match owner.login"
+  return owner
+
+private def merge (owner : String) : D Merge := fun j => do
+  let time ← at' "time" stamp j
+  let reviewJson ← at' "reviews" pure j
+  let commentJson ← at' "reviewComments" pure j
+  let some reviews := SnapshotCli.reviewsOf (.arr #[reviewJson])
+    | throw ".reviews: expected review route items"
+  let some comments := SnapshotCli.reviewCommentsOf (.arr #[commentJson])
+    | throw ".reviewComments: expected review comment route items"
+  let reviews := reviews.filter fun v => v.submitted ≤ time.digits
+  let comments := comments.filter fun c => c.created ≤ time.digits
+  let g : Snapshot.Global :=
+    { repo := "", owner := owner, protection := none, stacked := none,
+      verdictCells := none, provenance := none }
+  let r : Snapshot.Reads := ⟨none, some comments, some reviews, none, none, none⟩
+  let summary := if Snapshot.reviewsSpeak g r then Summary.spoke else .silent
+  return { pr := ← at' "pr" nat j, time,
+           before := ← at' "before" shaOrUnread j, head := ← at' "head" sha j,
+           tree := ← at' "tree" shaOrUnread j, summary }
+
+def merges (owner : String) : D (List Merge) := list (merge owner)
 
 structure Job where
   id : Nat
@@ -154,12 +185,44 @@ def updaterCiRuns : D Nat := fun j => do
 
 namespace Fixture
 
+open Lean (toJson)
+
 theorem anEmptyCommitIsUnread : (shaOrUnread (.str "")).toOption = some none := by
   decide +kernel
 theorem aCommitIsRead : (shaOrUnread (.str (String.ofList (List.replicate 40 'a')))).toOption =
     some (some (String.ofList (List.replicate 40 'a'))) := by decide +kernel
 theorem aRunningJobHasNoConclusion : (conclusionOrRunning .null).toOption = some none := by
   decide +kernel
+
+private def reviewInput (login body : Json) : Json := Json.mkObj [
+  ("id", toJson (4 : Nat)), ("user", Json.mkObj [("login", login)]),
+  ("state", toJson "COMMENTED"), ("commit_id", toJson Snapshot.Fixture.hB),
+  ("submitted_at", toJson "2026-11-14T07:59:00Z"), ("body", body)]
+private def footerInput (id : Nat) : Json := Json.mkObj [
+  ("pull_request_review_id", toJson id), ("user", Json.mkObj [("login", toJson "owner")]),
+  ("created_at", toJson "2026-11-14T07:59:30Z"),
+  ("updated_at", toJson "2026-11-14T07:59:30Z"),
+  ("body", toJson ("Replied." ++ Snapshot.Fixture.footer))]
+private def mergeInput (reviews comments : List Json) : Json := Json.arr #[Json.mkObj [
+  ("pr", toJson (7 : Nat)), ("time", toJson "2026-11-14T08:03:00Z"),
+  ("before", toJson Snapshot.Fixture.hA), ("head", toJson Snapshot.Fixture.hB),
+  ("tree", toJson ""), ("reviews", toJson reviews), ("reviewComments", toJson comments)]]
+
+theorem aPostlessOwnerReviewSpeaks :
+    ((merges "owner" (mergeInput [reviewInput (toJson "owner") (toJson "")] [])).map
+      (List.map (·.summary))).toOption = some [.spoke] := by decide +kernel
+theorem aMatchingFooterLeavesTheSummarySilent :
+    ((merges "owner" (mergeInput [reviewInput (toJson "owner") (toJson "")] [footerInput 4])).map
+      (List.map (·.summary))).toOption = some [.silent] := by decide +kernel
+theorem noOwnerReviewLeavesTheSummarySilent :
+    ((merges "owner" (mergeInput [] [])).map (List.map (·.summary))).toOption = some [.silent] := by
+  decide +kernel
+theorem anUnrelatedFooterDoesNotSpareTheOwnerReview :
+    ((merges "owner" (mergeInput [reviewInput (toJson "owner") (toJson "")] [footerInput 5])).map
+      (List.map (·.summary))).toOption = some [.spoke] := by decide +kernel
+theorem aNonownerReviewLeavesTheSummarySilent :
+    ((merges "owner" (mergeInput [reviewInput (toJson "other") (toJson "")] [])).map
+      (List.map (·.summary))).toOption = some [.silent] := by decide +kernel
 
 end Fixture
 

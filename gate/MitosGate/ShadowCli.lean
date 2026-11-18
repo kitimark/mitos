@@ -37,7 +37,8 @@ def runOf (stem : String) : Option Nat :=
   | _ => none
 
 def window (dir : System.FilePath) : ExceptT String IO Window := do
-  let merges ← load dir "merges.json" merges
+  let owner ← load dir "repo.json" repositoryOwner
+  let merges ← load dir "merges.json" (merges owner)
   let jobs ← load dir "runs.json" jobs
   let ci ← load dir "baseline.json" updaterCiRuns
   let recDir := dir / "records"
