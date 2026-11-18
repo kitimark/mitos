@@ -9,7 +9,7 @@ import tempfile
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-WORKFLOWS = ["ci", "clear-needs-rebase", "land-protection", "land", "nightly", "update-prs"]
+WORKFLOWS = ["ci", "clear-needs-rebase", "land-protection", "land", "nightly", "owner-ping", "update-prs"]
 
 
 def leaves(node, path=()):

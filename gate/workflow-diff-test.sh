@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix="workflow-diff-test-") as tmp:
     marker = "before ##[warning] legacy ::warning::modern"
     tiny.write_text('on: [push]\npermissions: {}\nempty:\nseq: []\noctal: 0777\ntruth: true\nnull: null\nname: PANIC\njobs:\n  build:\n    steps:\n      - run: ' + json.dumps(marker) + '\n')
     output = run([diff, tiny])
-    assert "PyYAML equal" in output and "1 files compared, 0 allowlisted, 0 differences" in output
+    assert "PyYAML equal" in output and "1 files compared, 0 differences" in output
     leaves = [json.loads(line) for line in run([sys.executable, "-I", reader, tiny]).splitlines()]
     assert {"path": ["on", 0], "value": "push"} in leaves
     for key, value in (("permissions", {}), ("empty", ""), ("seq", []), ("octal", "0777"), ("truth", "true"), ("null", "null"), ("name", "PANIC")):
@@ -46,7 +46,7 @@ import subprocess
 import sys
 mode = os.environ.get("DIFF_STUB", "mismatch")
 verb, file = sys.argv[2:]
-if verb == "parse" and mode in ("drift", "extra", "panic", "panic-stdout"):
+if verb == "parse" and mode in ("refusal", "drift", "extra", "panic", "panic-stdout"):
     suffix = ": refused at jobs.issue.steps[0]: anchor"
     if mode == "drift": suffix = suffix.replace("anchor", "alias")
     if mode == "extra": suffix += " extra"
@@ -89,11 +89,11 @@ sys.exit(result.returncode)
         assert "outside the subset" in run([sys.executable, "-I", reader, refusal], 3)
 
     owner = root / ".github/workflows/owner-ping.yml"
-    assert "0 files compared, 1 allowlisted, 0 differences" in run([diff, owner])
+    assert "1 files compared, 0 differences" in run([diff, owner])
     impostor = tmp / owner.name
     shutil.copyfile(owner, impostor)
-    run([diff, impostor], 1)
-    for mode in ("drift", "extra", "panic", "panic-stdout"):
+    run([diff, impostor])
+    for mode in ("refusal", "drift", "extra", "panic", "panic-stdout"):
         run([diff, "--gate", stub, owner], 1, {**os.environ, "DIFF_STUB": mode})
 
     run([diff, "--gate", tmp / "missing-gate", tiny], 2)
@@ -117,10 +117,16 @@ sys.exit(result.returncode)
     shutil.copyfile(tiny, workflows / "two.yaml")
     output = run([sandbox / "gate/workflow-diff.sh", "--gate", gate])
     assert "one.yml" in output and "two.yaml" in output
-    assert "2 files compared, 0 allowlisted, 0 differences" in output
+    assert "2 files compared, 0 differences" in output
     (workflows / "one.yml").unlink()
     (workflows / "two.yaml").unlink()
     assert "no workflows found" in run([sandbox / "gate/workflow-diff.sh", "--gate", gate], 1)
+    issue, pr = owner.read_text().split("\n  pr:\n", 1)
+    issue = issue.replace("      - name:", "      - &ping\n        name:", 1)
+    pr = pr.split("    steps:\n", 1)[0] + "    steps:\n      - *ping\n"
+    (workflows / owner.name).write_text(issue + "\n  pr:\n" + pr)
+    output = run([sandbox / "gate/workflow-diff.sh", "--gate", gate], 1)
+    assert "anchor" in output and "0 files compared, 1 differences" in output
 
 print(f"workflow-diff-test: {checks} checks passed (real mitos-gate and PyYAML)")
 PY
