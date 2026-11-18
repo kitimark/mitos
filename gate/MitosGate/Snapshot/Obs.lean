@@ -20,15 +20,24 @@ def ctx (g : Global) (p : Pull) (r : Reads) : Speech.Ctx :=
 
 def reviewPosts (r : Reads) : List Post :=
   r.reviewComments.getD [] ++
-    ((r.reviews.getD []).filter counts).map fun v => ⟨v.login, none, v.submitted, v.submitted, v.body⟩
+    ((r.reviews.getD []).filter counts).map fun v => ⟨v.login, none, v.submitted, v.submitted, v.body, none⟩
+
+def summarySpeaks (g : Global) (vs : List Review) : Bool :=
+  vs.any fun v => !v.body.isEmpty && speaks g ⟨v.login, none, v.submitted, v.submitted, v.body, none⟩
+
+def ownerReviewWithoutPost (g : Global) (r : Reads) (v : Review) : Bool :=
+  v.login == g.owner && !counts v && !(r.reviewComments.getD []).any (·.review == some v.id)
+
+def reviewsSpeak (g : Global) (r : Reads) : Bool :=
+  summarySpeaks g (r.reviews.getD []) || (r.reviews.getD []).any (ownerReviewWithoutPost g r)
 
 /-- The reviews route has no update time, so a summary edited after the approval reads as typed
-before it. An owner summary with text and no recognized agent footer retires the approval. -/
+before it. Owner summary text without a recognized agent footer, or an owner review with no
+counted or matching post, retires approval at any time. -/
 def spokeInReview (g : Global) (r : Reads) (ws : List Word) : Bool :=
   match Land.newestOwner ws with
   | some (.ownerLand m) =>
-    (r.reviews.getD []).any (fun v => !v.body.isEmpty &&
-      speaks g ⟨v.login, none, v.submitted, v.submitted, v.body⟩) ||
+    reviewsSpeak g r ||
     (r.comments.getD []).any fun c => 2 * c.id == m.said &&
       (reviewPosts r).any fun s => speaks g s && decide (c.created ≤ s.lastSpoke)
   | _ => false
@@ -122,7 +131,8 @@ def KeptMergeIsTheOwnersTypedApproval : Prop :=
       (∃ arg s, arg ≠ [] ∧ Speech.ownerLines c.body.toList = .ok [.land arg] ∧
         Speech.resolve (ctx g p r).known arg = some s ∧ (obs g p r x).carries s = true) ∧
       (∀ d ∈ r.comments.getD [], Speech.typed (ctx g p r) d = true → d.id ≤ c.id) ∧
-      ∀ s ∈ reviewPosts r, speaks g s = true → s.created < c.created
+      (∀ s ∈ reviewPosts r, speaks g s = true → s.lastSpoke < c.created) ∧
+      summarySpeaks g (r.reviews.getD []) = false ∧ ∀ v ∈ r.reviews.getD [], ownerReviewWithoutPost g r v = false
 
 theorem newestOwner_append_spoke (ws : List Word) (n : Nat) :
     Land.newestOwner (ws ++ [.ownerSpoke n]) = Land.newestOwner ws := by
@@ -162,19 +172,7 @@ theorem keptMergeIsTheOwnersTypedApproval : KeptMergeIsTheOwnersTypedApproval :=
   obtain ⟨c, hc, ho, hsl, hu, hf, hsaid, hon, arg, harg, hl, hres⟩ :=
     Speech.approvalIsTypedAndNamed (ctx g p r) (r.comments.getD []) ((activity p r).getD [])
       (complete g p r) e.mark hmem (ha hk)
-  refine ⟨c, hc, ho, hsl, hu, hf, hon, ⟨arg, e.mark.about, harg, hl, hres, hcar⟩,
-    fun d hd ht => ?_, fun s hsm hsp => ?_⟩
-  · obtain ⟨w, hwm, hwb, hwle⟩ :=
-      Speech.typedCommentIsAWord (ctx g p r) (r.comments.getD []) ((activity p r).getD [])
-        (complete g p r) d hd ht
-    have hle : w.said ≤ e.mark.said := by
-      cases w with
-      | ownerLand m' => exact hmax _ hwm rfl
-      | ownerHold n => exact hmax _ hwm rfl
-      | ownerSpoke s => exact hs s (mem_withReviewSpeech hwm)
-      | agentLand t m' => cases hwb
-    omega
-  · have hno : spokeInReview g r (Speech.words (ctx g p r) (r.comments.getD [])
+  have hno : spokeInReview g r (Speech.words (ctx g p r) (r.comments.getD [])
         ((activity p r).getD []) (complete g p r)).1 = false := by
       cases hsr : spokeInReview g r (Speech.words (ctx g p r) (r.comments.getD [])
         ((activity p r).getD []) (complete g p r)).1 with
@@ -190,14 +188,27 @@ theorem keptMergeIsTheOwnersTypedApproval : KeptMergeIsTheOwnersTypedApproval :=
         have h1 := hs _ (by simpa only [obs_projection] using hin)
         have h2 := (Speech.top_ge (ctx g p r) (r.comments.getD [])).2 c hc
         omega
-    simp only [spokeInReview, hw', Bool.or_eq_false_iff] at hno
-    have h3 := List.any_eq_false.1 hno.2 c hc
-    simp only [Bool.and_eq_true, beq_iff_eq, not_and] at h3
-    have h4 := h3 hsaid.symm
-    rcases Nat.lt_or_ge s.created c.created with hlt | hge
-    · exact hlt
-    · exact absurd (List.any_eq_true.2
-        ⟨s, hsm, by simp [hsp, Post.lastSpoke, Nat.le_trans hge (Nat.le_max_left _ _)]⟩) h4
+  simp only [spokeInReview, reviewsSpeak, hw', Bool.or_eq_false_iff] at hno
+  obtain ⟨⟨hsum, hem⟩, hcs⟩ := hno
+  have h3 := List.any_eq_false.1 hcs c hc
+  simp only [Bool.and_eq_true, beq_iff_eq, not_and] at h3
+  have h4 := h3 hsaid.symm
+  refine ⟨c, hc, ho, hsl, hu, hf, hon, ⟨arg, e.mark.about, harg, hl, hres, hcar⟩,
+    fun d hd ht => ?_, fun s hsm hsp => ?_, hsum, fun v hv => ?_⟩
+  · obtain ⟨w, hwm, hwb, hwle⟩ :=
+      Speech.typedCommentIsAWord (ctx g p r) (r.comments.getD []) ((activity p r).getD [])
+        (complete g p r) d hd ht
+    have hle : w.said ≤ e.mark.said := by
+      cases w with
+      | ownerLand m' => exact hmax _ hwm rfl
+      | ownerHold n => exact hmax _ hwm rfl
+      | ownerSpoke s => exact hs s (mem_withReviewSpeech hwm)
+      | agentLand t m' => cases hwb
+    omega
+  · have h4' : ∀ y ∈ reviewPosts r, speaks g y = true → y.lastSpoke < c.created := by
+      simpa using h4
+    exact h4' s hsm hsp
+  · simpa using List.any_eq_false.1 hem v hv
 
 theorem failedReadHolds : FailedReadHolds := by
   intro g p r x hc
