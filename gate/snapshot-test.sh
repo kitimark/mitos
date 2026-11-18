@@ -792,7 +792,6 @@ jq --arg h "$q1" '.[0] += [{id:2,user:{login:"owner"},state:"COMMENTED",commit_i
 if snap && [ "$(words9)" = "$spoke9" ]; then
   ok "an emptied summary before approval still retires it"
 else bad "an emptied summary before approval still retires it" "$(words9)"; fi
-# shellcheck disable=SC2016
 boundary_window() {
   local dir=$1
   mkdir -p "$dir/records"
@@ -810,7 +809,6 @@ boundary_window() {
     [{pr:9,time:"2026-11-14T08:03:00Z",before:$main,head:$head,tree:"",
       reviews:($reviews[0]|add),reviewComments:($comments[0]|add)}]' >"$dir/merges.json"
 }
-# shellcheck disable=SC2016
 for bc_identity in claude openai; do
   fresh
   echo '[[]]' >"$d/comments-7.json"

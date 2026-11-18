@@ -67,12 +67,13 @@ runs_of() {
 }
 
 if ! { api "repos/$repo" >"$out/repo.json"; } 2>/dev/null ||
-  ! jq -e --arg repo "$repo" '
+  ! jq -e -s --arg repo "$repo" '
+    length == 1 and (.[0] | type == "object" and (
     .owner.login as $owner |
     (.full_name | type == "string") and
     ((.full_name | ascii_downcase) == ($repo | ascii_downcase)) and
     ($owner | type == "string" and test("^[A-Za-z0-9_.-]+$") and . != "." and . != "..") and
-    (($repo | split("/")[0] | ascii_downcase) == ($owner | ascii_downcase))' \
+    (($repo | split("/")[0] | ascii_downcase) == ($owner | ascii_downcase))))' \
     "$out/repo.json" >/dev/null 2>&1; then
   failed "the repository"
 fi

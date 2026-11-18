@@ -318,7 +318,7 @@ B+C's module map is atomic. Physical deltas are against main `4be3c1e`; data fix
 | `Snapshot/Fixtures.lean` | Preserved reader cases and isolated submission sensitivity | +51/-5 |
 | `Snapshot.lean` | Complete Snapshot/provenance standard-axiom audit | +4/-2 |
 | `SnapshotCli.lean` | Listed raw-review decoding and normalization | +5/-3 |
-| `gate/snapshot-test.sh` | Raw Snapshot behavior and source-valid Snapshot/Land/Shadow three-way controls | +114/-6 |
+| `gate/snapshot-test.sh` | Raw Snapshot behavior and source-valid Snapshot/Land/Shadow three-way controls | +112/-6 |
 | `Shadow/Types.lean` | Required merge-side Summary domain value | +6/-0 |
 | `Shadow/Reading.lean` | Review-aware counterfactual with all as-read behavior preserved | +41/-19 |
 | `Shadow/Seat.lean` | Record/merge pairing and required Summary caller | +9/-2 |
@@ -326,11 +326,11 @@ B+C's module map is atomic. Physical deltas are against main `4be3c1e`; data fix
 | `Shadow.lean` | Complete Shadow standard-axiom audit | +1/-1 |
 | `ShadowCli/Read.lean` | Validated repository and required two-route merge evidence | +67/-4 |
 | `ShadowCli.lean` | Complete window acquisition | +2/-1 |
-| `gate/shadow-fetch.sh` | Bounded canonical repository and complete paginated review collection | +25/-3 |
+| `gate/shadow-fetch.sh` | Bounded canonical repository and complete paginated review collection | +26/-3 |
 | `gate/shadow-fixtures/window/repo.json` | Required synthetic repository metadata | +1/-0 |
 | `gate/shadow-fixtures/window/merges.json` | Required synthetic review-route evidence | +1/-1 |
 | `gate/shadow-fixtures/window.expected` | Honest changed synthetic score report | +2/-2 |
-| `gate/shadow-test.sh` | Decode/time/positive/negative and paginated producer failure matrix | +190/-2 |
+| `gate/shadow-test.sh` | Decode/time/positive/negative and paginated producer failure matrix | +196/-2 |
 | `gate/provenance-provider-test.sh` | Preserved null-author record-v1 replay through the migrated window | +3/-1 |
 
 The real Snapshot caller receives the existing `Reads`, with `Post.review : Option Nat`.
@@ -362,7 +362,7 @@ blocker/footer and fatal-failure cases. These stay in the existing twenty-path m
 frozen C delta +140/-33 is historical input accounting, not the constructed B+C size.
 
 The scorer receives required `Summary.silent | spoke` on each `Merge`. `seat` calls the one
-`reading m.summary records observation`: only a noEntry result may synthesize an owner word,
+`reading m.summary r.prs observation`: only a noEntry result may synthesize an owner word,
 and only when Summary is silent. Other real steps remain as read. The migrated
 `TheWordIsOnlyAssumedWhenReady` states that conjunction; `ReadyIsOneWordFromLanding` retains
 its actual meaning about a transformed Land Obs. Agreement monotonicity compares the same
@@ -1343,8 +1343,8 @@ Shadow (#319 item 3). This builds as written (`Shadow.Finding` and its imports):
 
 ```lean
 -- Shadow/Types.lean
-/-- Whether the owner had posted a review summary with text when the pull request merged. The
-reader retires every `/land` there (`Snapshot.summarySpeaks`), so no word is assumed. -/
+/-- Whether observed owner review evidence speaks at merge time (`Snapshot.reviewsSpeak`).
+A speaking summary or postless uncounted owner review retires approval, so no word is assumed. -/
 inductive Summary
   | silent
   | spoke
@@ -1416,12 +1416,12 @@ theorem aSummaryOnlyTakesAgreementAway : ASummaryOnlyTakesAgreementAway := by
         exact h
 ```
 
-`ShadowCli/Read.lean`: `merges` takes the owner from `<dir>/repo.json`; each merge's required
-`reviews` (the route's items) goes through `SnapshotCli.reviewsOf`, keeps the reviews submitted at
-or before the merge, and gives `.spoke` when `Snapshot.summarySpeaks` holds. `gate/shadow-fetch.sh`
-writes `api "repos/$repo" >"$out/repo.json"` and, per merged pull request,
-`by_number "repos/$repo/pulls/$pr/reviews?per_page=100" . false`, added to the merge's entry as
-`reviews`; any failure calls `failed`.
+`ShadowCli/Read.lean`: `merges` takes the validated owner from `<dir>/repo.json`. Each merge's
+required `reviews` and `reviewComments` use both SnapshotCli decoders before inclusive submission
+and creation-time filtering, then give `.spoke` through shared `Snapshot.reviewsSpeak`.
+`gate/shadow-fetch.sh` binds repository metadata to its requested repository and, per merged
+pull request, collects every page of both review routes without a date stop. Each page must be
+exactly one JSON array before flattening; any failure calls `failed`.
 
 ### Decisions on what the amendment did not check
 
@@ -1520,8 +1520,8 @@ Each run is reported on #179, as Done when asks.
 - **Temporal decomposition:** the jobs split by trust boundary (no key, key, write), as the
   amendment requires.
 - **Split ownership:** `pr`, `head` and `approval` come only from `handoff`; answers only from Lean,
-  except the lines that need the merge call's result, which only `report` writes; `summarySpeaks`
-  has one definition and two users.
+  except the lines that need the merge call's result, which only `report` writes; `reviewsSpeak`
+  is shared by the reader and scorer.
 - **Two ways:** `land` prints the recorded decision and `land-answers` the handoff, both from one
   `read`, and `decide` refuses when they disagree.
 - **Hand-synced lists:** the clause order is one list; `apply`'s stop codes and `report`'s cases are

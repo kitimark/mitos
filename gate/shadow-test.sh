@@ -199,7 +199,6 @@ errs() {
     bad "$name" "exit $got, stdout: $(cat "$tmp/out")" "stderr: $(cat "$tmp/err")" "want: $pat"
   fi
 }
-# shellcheck disable=SC2016
 review_window() {
   window "$tmp/w" "$idle"
   jq --argjson reviews "$1" --argjson comments "$2" \
@@ -442,25 +441,32 @@ fails "the activity of main" '/activity?'
 fails "the runs of land.yml on $day" "land.yml/runs?created=$day&per_page=100&page=2"
 fails "the artifacts named land-record-9001-1" 'artifacts?name=land-record-9001-1&'
 fails "the commit $merge_sha" 'git/commits/'
-# shellcheck disable=SC2016
 fails "the repository" 'api repos/owner/mitos'
 fails "the reviews of #257" 'pulls/257/reviews?'
 fails "the review comments of #257" 'pulls/257/comments?'
+valid_metadata='{"full_name":"owner/mitos","owner":{"login":"owner"}}'
+other_metadata='{"full_name":"elsewhere/mitos","owner":{"login":"elsewhere"}}'
 for metadata in '{"full_name":"elsewhere/mitos","owner":{"login":"elsewhere"}}' \
     '{"full_name":"owner/mitos","owner":{"login":""}}' \
-    '{"full_name":"owner/mitos","owner":{"login":"other"}}'; do
+    '{"full_name":"owner/mitos","owner":{"login":"other"}}' \
+    "$(printf '%s\n%s' "$other_metadata" "$valid_metadata")" \
+    "$(printf '%s\n%s' "$valid_metadata" "$other_metadata")" \
+    "$(printf '%s\n%s' "$valid_metadata" "$valid_metadata")"; do
   rm -rf "$tmp/meta"
   got=0; FAKE_METADATA="$metadata" fetch owner/mitos "$day" "$tmp/meta" || got=$?
   if [ "$got" = 1 ] && [ ! -s "$tmp/fetch.out" ] &&
-      [ "$(cat "$tmp/fetch.err")" = 'shadow-fetch: the read of the repository failed' ]; then
+      [ "$(cat "$tmp/fetch.err")" = 'shadow-fetch: the read of the repository failed' ] &&
+      [ ! -e "$tmp/meta/merges.json" ]; then
     ok "fetch: invalid repository binding refuses"
   else bad "fetch: invalid repository binding refuses" "exit $got: $(cat "$tmp/fetch.err")"; fi
 done
 rm -rf "$tmp/case-meta"
 if FAKE_METADATA='{"full_name":"OWNER/Mitos","owner":{"login":"owner"}}' \
-    fetch owner/mitos "$day" "$tmp/case-meta"; then
-  ok "fetch: canonical repository agreement is case-insensitive"
-else bad "fetch: canonical repository agreement is case-insensitive" "$(cat "$tmp/fetch.err")"; fi
+    fetch owner/mitos "$day" "$tmp/case-meta" &&
+    jq -e -s 'length==1 and (.[0]|type=="object")' "$tmp/case-meta/repo.json" >/dev/null &&
+    "$bin" shadow "$tmp/case-meta" >"$tmp/out" 2>"$tmp/err"; then
+  ok "fetch: one canonical repository object is usable and case-insensitive"
+else bad "fetch: one canonical repository object is usable and case-insensitive" "$(cat "$tmp/fetch.err" "$tmp/err")"; fi
 pages="$tmp/route-pages"
 mkdir -p "$pages"
 jq -n --arg h "$head257" '[range(1;101)|{id:.,user:{login:"other"},state:"COMMENTED",commit_id:$h,
