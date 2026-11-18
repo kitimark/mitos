@@ -279,13 +279,13 @@ theorem anAnswerInTheSameSecondIsNoAnswer :
     stepOf (r := withComments [question, answer 20261114075900, land]) = .stop .notEligible := by
   decide +kernel
 theorem anUnansweredReviewCommentIsNotEligible :
-    stepOf (r := withReviewComments [⟨owner, none, 20261114075900, 20261114075900, "rename"⟩]) =
+    stepOf (r := withReviewComments [⟨owner, none, 20261114075900, 20261114075900, "rename", none⟩]) =
       .stop .notEligible := by decide +kernel
 theorem aLandAfterAByteOrderMarkNeedsNoAnswer :
     stepOf (r := withComments [{ land with body := "﻿/land " ++ hB }]) = .present hB := by
   decide +kernel
 theorem anOtherLoginsCommentNeedsNoAnswer :
-    stepOf (r := withReviewComments [⟨"someone", none, 20261114075900, 20261114075900, "rename"⟩]) =
+    stepOf (r := withReviewComments [⟨"someone", none, 20261114075900, 20261114075900, "rename", none⟩]) =
       .present hB := by decide +kernel
 theorem aBodyWithoutTheFooterIsNotEligible :
     stepOf (p := { pull with body := "Why." }) = .stop .notEligible := by decide +kernel
@@ -349,8 +349,8 @@ theorem eachFailedReadIsIncomplete :
 
 def planOf (p : Pull := pull) (r : Reads := reads) : Land.Plan :=
   Land.plan (Land.queueOf [o g p r git])
-def rename (t : Stamp) : Post := ⟨owner, none, t, t, "rename"⟩
-def renamed (t : Stamp) : Post := ⟨owner, none, t, t, "Renamed." ++ footer⟩
+def rename (t : Stamp) : Post := ⟨owner, none, t, t, "rename", none⟩
+def renamed (t : Stamp) : Post := ⟨owner, none, t, t, "Renamed." ++ footer, none⟩
 
 theorem aTypedApprovalOnATrustPathIsMerged : planOf = .merge 7 hB := by decide +kernel
 theorem anAnsweredReviewCommentAfterTheApprovalRetiresIt :
@@ -361,7 +361,7 @@ theorem aReviewCommentInTheApprovalsSecondRetiresIt :
   decide +kernel
 theorem aReviewCommentEditedAfterTheApprovalRetiresIt :
     planOf (r := withReviewComments
-      [⟨owner, none, 20261114075900, 20261114080100, "rename"⟩, renamed 20261114080200]) = .idle := by
+      [⟨owner, none, 20261114075900, 20261114080100, "rename", none⟩, renamed 20261114080200]) = .idle := by
   decide +kernel
 theorem aReviewCommentBeforeTheApprovalLeavesIt :
     planOf (r := withReviewComments [rename 20261114075900, renamed 20261114075930]) =
@@ -395,6 +395,39 @@ theorem aLaterAgentPostRetiresNothing :
     planOf (r := withComments [land,
       ⟨960, owner, some "claude", 20261114080200, 20261114080200, "Noted." ++ footer⟩]) =
       .merge 7 hB := by decide +kernel
+
+
+def emptyReview (t : Stamp) : Review := ⟨4, owner, "COMMENTED", hB, t, ""⟩
+
+theorem aSummaryEmptiedAfterTheApprovalRetiresIt :
+    planOf (r := { reads with
+      reviews := some [rabbit, emptyReview 20261114080100] }) = .idle := by
+  decide +kernel
+theorem aSummaryEmptiedBeforeTheApprovalRetiresItToo :
+    planOf (r := { reads with
+      reviews := some [rabbit, emptyReview 20261114075900] }) = .idle := by
+  decide +kernel
+theorem aReviewWhoseCommentsWereDeletedRetiresIt :
+    planOf (r := { reads with
+      reviews := some [rabbit, emptyReview 20261114080100],
+      reviewComments := some [] }) = .idle := by decide +kernel
+theorem anAgentFooterReplyAfterTheApprovalLeavesIt :
+    planOf (r := { reads with
+      reviews := some [rabbit, emptyReview 20261114080100],
+      reviewComments := some [{ renamed 20261114080100 with review := some 4 }] }) =
+      .merge 7 hB := by decide +kernel
+theorem aDraftedCommentSubmittedAfterTheApprovalRetiresIt :
+    planOf (r := { reads with
+      reviews := some [rabbit, emptyReview 20261114080100],
+      reviewComments := submittedPosts [emptyReview 20261114080100]
+        [{ rename 20261114075900 with review := some 4 }] }) = .idle := by decide +kernel
+theorem aCommentOfAnUnlistedReviewIsAFailedRead :
+    submittedPosts [] [{ rename 20261114075900 with review := some 4 }] = none := by decide +kernel
+theorem aDraftedCommentAnswerBeforeSubmissionIsNoAnswer :
+    rest g pull { reads with
+      reviewComments := submittedPosts [emptyReview 20261114080100]
+        [{ rename 20261114075900 with review := some 4 }, renamed 20261114075930] } = false := by
+  decide +kernel
 
 end Fixture
 

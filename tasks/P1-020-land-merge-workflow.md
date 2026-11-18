@@ -53,7 +53,7 @@ modules: one topic per file.
 | `gate/MitosGate/Land.lean` | `Plan.merge`'s doc comment (#303 item 6), `wake`'s comment (#303 item 7) | ±6 | — |
 | `Snapshot/Types.lean` | `Post.review : Option Nat` | +3 | — |
 | `Snapshot/Fields.lean` | `submittedPosts`, `ReviewCommentsSpeakWhenSubmitted` (#319 item 2); `posts` passes `none` | +45 | — |
-| `Snapshot/Obs.lean` | `summarySpeaks`, `emptied`, `spokeInReview` (#319 item 1), the strengthened `KeptMergeIsTheOwnersTypedApproval` (#319 item 12) | +30 | — |
+| `Snapshot/Obs.lean` | `summarySpeaks`, `ownerReviewWithoutPost`, `reviewsSpeak`, `spokeInReview` (#319 item 1), the strengthened `KeptMergeIsTheOwnersTypedApproval` (#319 item 12) | +30 | — |
 | `Snapshot/Fixtures.lean` | the fixtures under `fixtures`; the `Post` literals gain `, none` | +45 | — |
 | `Snapshot.lean` | the axiom check names `reviewCommentsSpeakWhenSubmitted` | +1 | — |
 | `SnapshotCli.lean` | reads `pull_request_review_id`; builds `reviewComments` through `submittedPosts` | +8 | — |
@@ -94,7 +94,7 @@ statements (gate statements, not locked; each proved in the sketches):
   ∀ p ∈ ps', ∀ id, p.review = some id → ∃ v ∈ vs, v.id = id ∧ v.submitted ≤ p.lastSpoke`.
 - `Snapshot.KeptMergeIsTheOwnersTypedApproval`, strengthened. Its last clause becomes three:
   `∀ s ∈ reviewPosts r, speaks g s → s.lastSpoke < c.created` (was `s.created`, #319 item 12),
-  `summarySpeaks g (r.reviews.getD []) = false`, and `∀ v ∈ r.reviews.getD [], emptied g r v = false`
+  `summarySpeaks g (r.reviews.getD []) = false`, and `∀ v ∈ r.reviews.getD [], ownerReviewWithoutPost g r v = false`
   (#319 item 1).
 - `Shadow.TheWordIsOnlyAssumedWhenReady`, updated: `(∃ x, reading s os o = .oneWordAway x) ↔
   s = .silent ∧ step (outsider o).1 (queueOf os) o = .stop .noEntry`.
@@ -260,14 +260,89 @@ added; a checkout `ref:`; in Lean, `/ 2` dropped in `handoff`, `landing` returne
 
 The real runs are under "Real runs", the shadow evidence under "Shadow evidence".
 
-cut_line: one PR, `Part of #297`, merged by the owner (`.github/`, `gate/`). Commit order:
-A `LandAnswer`, `land-answers` and `Land.lean`'s comments; B the reader's items 1, 2 and 12; C the
-shadow's item 3; D `land.yml` with `decide`'s outputs, `apply` and `report`, the scripts, their tests
-and `ci.yml`; E `update-prs.yml`'s mint and `app-token.test.sh`. If the round budget forces a split
-before a third round, C and E leave first, each its own owner-merged PR: nothing in A, B or D needs
-them, and without C the shadow evidence takes the manual check below. It ships `decide`'s outputs,
-`apply` with the merge only, `report`, `land-answers`, the reader's items and their tests. It leaves
-the push of a replay (P1-014), the rules (P1-021) and a `check_run` trigger (the open item).
+cut_line: five sequential owner-merged PRs, each `Part of #297`, split from #336 under the
+owner's request to reduce repeated diff, rebase and review work. The order is B → C → N → T → F.
+Each PR carries its definitions, proofs, fixtures, caller migration and current-head checks.
+Typed answers stay with their producer and report consumers in F. The push of a replay
+(P1-014), the rules (P1-021) and a `check_run` trigger remain deferred.
+
+### Split design, 18 November 2026
+
+B repairs deployed review observation first. C then migrates the scorer that depends on it.
+N admits the existing owner-ping behavior as an ordinary workflow document. T replaces the
+current workflow assertions with one complete native contract used by their existing callers.
+F alone adds the producer handoff, merge and report effects. This order moves stable checks off
+the activation diff while every intermediate main remains useful and complete. It adds four
+review and CI cycles. No time saving has been measured.
+
+| Unit | Complete ownership | Depends on |
+|---|---|---|
+| B, review observation | The seven Snapshot paths below and their existing raw-reader cases | Current main |
+| C, Shadow review readiness | Summary type, every reading caller, proof, CLI, fetcher and synthetic input migration | B |
+| N, owner-ping admission | Expanded source, oracle, allowlist removal, differential and parity controls | Current main |
+| T, current workflow contract | Complete native checker, current decide/protection/app-token callers, two-caller bundle controls, immutable refs, placement controls and three real post-build suites | N |
+| F, activation | Answers, handoff/digest/caps, apply/report, exact final workflow contract, third mint caller and five suites | B, C, N, T and all existing acceptance evidence |
+
+T is new current-contract design work, not a literal extraction of the final checker. Its one
+`workflow pins <repo-root>` command admits every workflow and conjoins the complete Land,
+Protection, updater/mint, CI and owner-ping contracts. Callers choose no profile. At T, Land is
+decide-only, without a switch, outputs, apply/report, key or mint. The mint inventory contains
+only Protection and updater, and CI requires the three actual post-build suites. F replaces
+that finite contract with the exact decide/apply/report/on shape, three mint callers and five
+suites. F deletes the current-only absence statements and fixtures with their replacements.
+
+Before T replaces an assertion, map it to its complete decoded counterpart. Retain runtime
+IO/timeouts, whole Protection/updater closure, inherited INPUT_/GITHUB_ENV controls, all thirteen
+updater reference sites across each supported representation, the closed remaining-workflow inventory and the once-only bundle
+helper. Test real current-shape mutations, not absent future anchors. Four actual-bundle controls
+cover two callers until F adds the third pair. A partial mint check is not input safety.
+
+Stop and re-ground T if it needs selectable shapes, permanent duplicate checkers, detached
+future APIs, a dropped assertion or unexplained growth beyond its estimated 115–220 adaptation
+lines. The fallback moves independent corrections, normalization, refs and placement first,
+then keeps one complete final authority transition. It does not introduce a permissive profile.
+No GA-Q3 implementation changes belong in B.
+
+B's module map is atomic. Paths are relative to `gate/MitosGate/` except the shell test.
+
+| File | The topic it owns in B | Physical delta from current main |
+|---|---|---|
+| `Snapshot/Types.lean` | A post's optional review identity | +1/-0 |
+| `Snapshot/Fields.lean` | Submission normalization and its lower-bound theorem | +49/-2 |
+| `Snapshot/Obs.lean` | Review speech and the strengthened kept-approval theorem | +36/-26 |
+| `Snapshot/Fixtures.lean` | Existing post migration and seven review boundary fixtures | +38/-5 |
+| `Snapshot.lean` | Standard-axiom audit with every current provenance audit retained | +4/-2 |
+| `SnapshotCli.lean` | Raw listed-review parsing and normalization | +5/-3 |
+| `gate/snapshot-test.sh` | Four new raw-reader assertions and existing review fixture migration | +38/-6 |
+
+B's caller receives the existing `Reads`, with `Post.review : Option Nat`.
+`submittedPosts : List Review → List Post → Option (List Post)` refuses an unlisted review and
+sets each listed post's update time to at least submission. The raw CLI supplies normalized
+posts only after both routes decode. `summarySpeaks`, `ownerReviewWithoutPost` and `reviewsSpeak`
+retire an approval for owner summaries or owner reviews without a surviving post, whatever the
+review time. The kept-approval theorem requires `lastSpoke` before the approval, no speaking
+summary and no postless owner review. The review-route app-field API note stays exact.
+
+The seven new kernel fixtures cover emptied summaries before and after approval, deleted
+comments, the footer-reply exception, late draft submission, unlisted reviews and an answer
+before submission. The four raw cases cover missing review identity, unlisted review identity,
+late submission and an emptied summary. Existing source/record v1, native/legacy transport,
+unknown/adverse identities, effort admission and provenance audits remain intact.
+
+B includes no answers, digest fixture overrides, Shadow schema/scoring or workflow changes.
+It changes deployed eligibility conservatively but grants no mint, merge or comment capability.
+Run the Snapshot axiom check, raw/legacy suites and Land/Shadow neighbors, the affected process
+matrix and full CI. Demonstrate submission-normalization sensitivity in an isolated copy.
+Each trusted head needs fresh no-comments, actual independent qualifying Opus verification and
+owner merge. Prior #336 reviews do not cover an extracted head.
+
+These cuts preserve the six approved clauses below, R0b and the failed historical evidence.
+They supply no positive case and do not waive activation acceptance. D/T0 remains
+`8a350a72a2928368585890c33b047fa4d32dc163` / `2026-11-18T04:05:11Z`.
+After each actual merge, rebuild the residual from new main plus unlanded hunks. Never restore a
+whole shared file from the old feature head. Keep archived records unchanged. Roll back dependent
+units first; revert F's workflow, runtime and contract together. Turning the switch off alone
+leaves producer refusals and report writes deployed.
 
 deferrals:
 - To P1-014 (#193), as before: the push of a replay in `apply`, the retry of a failed read and a

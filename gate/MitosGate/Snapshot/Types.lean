@@ -45,6 +45,7 @@ structure Post where
   created : Stamp
   updated : Stamp
   body : String
+  review : Option Nat
 
 structure Review where
   id : Nat
