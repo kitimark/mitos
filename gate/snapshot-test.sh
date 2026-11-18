@@ -412,7 +412,7 @@ source_case "same-provider unknown author stays held" \
   "$null_author | .pulls[0].verdicts[0] |= (.provider = \"openai\" | .actualModel = \"gpt-6.2-astra\")" \
   '.prs[0].rest | not' ordinary false
 source_case "unknown author with no PASS retains identity but keeps rest false" \
-  "$null_author | .pulls[0].verdicts = []" '.prs[0] | .author.model == null and (.rest | not)' ordinary false
+  "$null_author | .pulls[0].verdicts = []" '.prs[0] | .author == {who:{provider:"openai",name:"builder"},model:null} and (.rest | not)' ordinary false
 source_case "unknown author cannot use root wording-only instead of PASS" \
   "$null_author | .pulls[0].verdicts[0] |= (.actor = \"root\" | .result = \"wordingOnly\")" \
   '.prs[0].rest | not' ordinary false
@@ -590,6 +590,8 @@ if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH=
       ROUNDTRIP_MAIN="$m2" ROUNDTRIP_READS="$d" bash "$root/.github/scripts/land-decide.sh" owner/mitos 43 "$tmp/null-record") \
       >"$tmp/null-record.out" 2>"$tmp/null-record.err" &&
     jq -c '.outcome.snapshot' "$tmp/null-record/record.json" | "$bin" land >"$tmp/null-replayed" &&
+    jq -c '.outcome.decision' "$tmp/null-record/record.json" >"$tmp/null-stored-decision" &&
+    cmp -s "$tmp/null-replayed" "$tmp/null-stored-decision" &&
     cmp -s "$tmp/null-replayed" "$tmp/null-record/decision.json" &&
     jq -e '.v == 1 and .outcome.kind == "decided" and
       (.outcome.snapshot.prs[0].author | .who == {provider:"openai",name:"builder"} and

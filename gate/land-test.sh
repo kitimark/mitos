@@ -104,6 +104,10 @@ decides "a pass on the author's model covers nothing" \
   '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"none"}'
 decides "with no known author nothing is covered" "$only149"' | del(.prs[0].author)' \
   '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"none"}'
+decides "a canonical null model retains the standing independent Sonnet decision" \
+  "$only149"' | .prs[0].author |= (.who.provider = "openai" | .model = null)' \
+  "$land149"',"step":{"head":"bbb","kind":"awaitPush"},"word":"none"}'
+
 refuses "present whole author null remains malformed" "$only149 | .prs[0].author = null" 'prs\[0\]\.author: expected an object'
 refuses "nested model missing remains malformed" "$only149 | del(.prs[0].author.model)" 'prs\[0\]\.author\.model: missing'
 for invalid_model in true 7 '{}' '[]'; do

@@ -120,7 +120,9 @@ when the plan lands (`.claude/skills/kitimark-mode/SKILL.md`, Plan-time designs)
 | Reviewer | agent, advisory only | PR comments, on code with comments stripped | approvals |
 
 Agents pick tasks, open PRs and merge implementation PRs on their own once CI is green on the
-PR's head and a verifier has passed its change. A wording-only change needs no verifier. A rebase that leaves the
+PR's head and a verifier has passed its change. A wording-only change from an author with a known
+reported model needs no verifier; an unknown author still needs the independent PASS defined in the
+Verdicts rules. A rebase that leaves the
 `git patch-id --verbatim` unchanged keeps that verdict. Which agent does what, on which model and effort, and what
 stays with the owner (spec approval, trust infrastructure, plans) are listed in
 `.claude/skills/kitimark-mode/SKILL.md`, which `CLAUDE.md` loads in every session.
@@ -545,7 +547,7 @@ The owner catches up on GitHub, not in a chat session:
 - **`/no-comments` before a hand-over.** A PR whose diff adds comments goes to the owner only
   after the orchestrator's `/no-comments` pass over its head and the push of what the pass
   accepts. A verifier then gives a verdict at that cleaned head. A wording-only change still gets
-  the pass, and only the verifier is skipped. The catch-up names the pass and its result, or says
+  the pass; only an author with a known reported model may skip the verifier. The catch-up names the pass and its result, or says
   "no-comments: no new comments".
 - **CodeRabbit before a hand-over.** A PR goes to the owner only once
   `.claude/scripts/bot-review.sh` reads `reviewed` at its head and its PR owner has answered that
