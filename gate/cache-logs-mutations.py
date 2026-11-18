@@ -10,7 +10,7 @@ CLEANUP = "Drop restored cheat and mutant logs"
 STEP = f"      - name: {CLEANUP}\n        if: always()\n        run: rm -rf .lake/cheats .lake/mutants\n"
 
 with tempfile.TemporaryDirectory(prefix="cache-logs-mutations-") as tmp:
-    for workflow, jobs in [("ci", ["checks", "cheat-shard"]), ("nightly", ["full"])]:
+    for workflow, jobs in [("ci", ["checks", "gate-tests", "cheat-shard"]), ("nightly", ["full"])]:
         source = (ROOT / f".github/workflows/{workflow}.yml").read_text()
         assert source.count(STEP) == len(jobs)
         for position, job in enumerate(jobs):
@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix="cache-logs-mutations-") as tmp:
                                         capture_output=True, text=True, timeout=20)
                 assert parsed.returncode == 0, (mutation, parsed)
                 predecessor = {"checks": "actions/cache@v4", "cheat-shard": "actions/cache/restore@v4",
-                               "full": "./.github/actions/setup"}[job]
+                               "gate-tests": "actions/cache/restore@v4", "full": "./.github/actions/setup"}[job]
                 out = subprocess.run([str(CHECK), str(file), job, predecessor],
                                      capture_output=True, text=True, timeout=30)
                 assert out.returncode != 0, (workflow, job, mutation, out)
