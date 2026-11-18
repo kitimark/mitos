@@ -1665,18 +1665,20 @@ separate bot-review provenance limitation remains [#309](https://github.com/kiti
 | Remaining refusals and scorer differences | An individual explanation for every ineligible/held/unknown case and other disagreement; any new feature/main disagreement remains blocking unless the owner explicitly decides it. |
 | Separate merge prerequisites | [R0b's live-GET/local-intercept IO evidence](https://github.com/kitimark/mitos/issues/191#issuecomment-6960447923), current-head CI, reviews and independence, and owner merge control. R0b does not establish planner eligibility or authorize a merge. |
 
-## Residual reconstruction after the B+C merge
+## Residual reconstruction after the B+C and N merges
 
 #488 landed on 18 November 2026 at `a8907d5e1cd8eccea4a26152a88cde4535c0b4f0`.
 Its tree is the reviewed `4d66709` tree. The reader and Shadow implementation, required raw
 review evidence, stronger repository guards, complete proofs and current callers now belong
-to main. #336 is rebuilt from that main plus the unlanded N, T and F hunks. No original B/C
-change is reintroduced from the frozen feature copy.
+to main. #496 then landed owner-ping admission at
+`58e5ddd99524acc2f7f739ddb15a3eae53cbc5fc` on 18 November 2026. Its five source/oracle paths,
+task and run record now belong to main too. #336 is rebuilt from that actual main plus the
+unlanded T and F hunks. Neither landed unit is reintroduced from the frozen feature copy.
 
-The residual retains owner-ping admission, the complete final decoded workflow contract and
-its actual script callers, and the answer/handoff/apply/report transition. Separate N and T
-extractions remain possible in the selected order; their work is removed here only after it
-actually merges. This reconstruction is not the temporary decide-only T contract.
+The residual retains the complete final decoded workflow contract and its actual script
+callers, and the answer/handoff/apply/report transition. The separate T extraction remains
+next in the selected order; its work is removed here only after it actually merges. This
+reconstruction is not the temporary decide-only T contract.
 
 All #491 author-model, null/provider, effort, adverse-evidence and provenance audit repairs
 remain. All #494 isolated suite workers, execution-record admission, dependencies, artifacts,
