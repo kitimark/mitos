@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: .github/scripts/land-decide.sh <owner/name> <dashboard-issue> <dir>
-# Exit 0: decided, or skipped under the REST floor. Exit 1: refused, or the record could not be written. Exit 2: usage.
+# Exit 0: decided, or skipped under the REST floor. Exit 1: refused, or the record or handoff could not be written. Exit 2: usage.
 set -u
 
 die() { printf 'land-decide: %s\n' "$1" >&2; exit 2; }
@@ -9,7 +9,8 @@ repo=$1 dash=$2 out=$3
 gate=${MITOS_GATE:-.lake/build/bin/mitos-gate}
 fetch=${SNAPSHOT_FETCH:-gate/snapshot-fetch.sh}
 floor=${LAND_REST_FLOOR:-300}
-for tool in jq git date gh timeout; do command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"; done
+digester=${LAND_DIGEST_SCRIPT:-.github/scripts/land-digest.sh}
+for tool in jq git date gh timeout sha256sum; do command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"; done
 mkdir -p -- "$out" || die "cannot make the folder"
 [ -z "$(ls -A -- "$out")" ] || die "the folder is not empty"
 
@@ -104,3 +105,25 @@ jq -c --argjson head "$head" --argjson trees "$trees" --slurpfile decision "$out
   '$head + {outcome: {kind: "decided", snapshot: ., decision: $decision[0], trees: $trees,
     notes: $notes}}' "$out/snapshot.json" >"$out/record.json" || unwritten
 cat "$out/decision.json" "$out/snapshot.err"
+
+handoff() {
+  local merge pr='' head='' approval='' digest='' requires_spec='' answers
+  "$gate" land-answers "$out/snapshot.json" >"$out/answers.json" 2>"$out/answers.err" || return 1
+  jq -e 'type == "object" and has("merge") and has("answers")' "$out/answers.json" >/dev/null || return 1
+  answers=$(jq -ce '.answers | arrays | select(length <= 100)' "$out/answers.json") && [ "${#answers}" -le 65536 ] || return 1
+  merge=$(jq -c '.merge' "$out/answers.json") || return 1
+  jq -e --argjson m "$merge" 'if .plan.kind == "merge"
+    then $m != null and $m.pr == .plan.pr and $m.head == .plan.head else $m == null end' \
+    "$out/decision.json" >/dev/null || return 1
+  if [ "$merge" != null ]; then
+    pr=$(jq -r .pr <<<"$merge") head=$(jq -r .head <<<"$merge") approval=$(jq -r .approval <<<"$merge")
+    [[ $pr =~ ^[1-9][0-9]{0,6}$ && $head =~ ^[0-9a-f]{40}$ && $approval =~ ^[1-9][0-9]{0,19}$ ]] || return 1
+    requires_spec=$(jq -r .requiresSpec <<<"$merge")
+    [[ $requires_spec = true || $requires_spec = false ]] || return 1
+    digest=$("$digester" "$out/reads/comments-$pr.json" "$out/reads/review-comments-$pr.json" \
+      "$out/reads/reviews-$pr.json") || return 1
+  fi
+  [ -z "${GITHUB_OUTPUT:-}" ] || printf 'pr=%s\nhead=%s\napproval=%s\ndigest=%s\nrequires_spec=%s\nanswers=%s\n' \
+    "$pr" "$head" "$approval" "$digest" "$requires_spec" "$answers" >>"$GITHUB_OUTPUT"
+}
+handoff || { cat "$out/answers.err" >&2; printf 'land-decide: the handoff was not written\n' >&2; exit 1; }

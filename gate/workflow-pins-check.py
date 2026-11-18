@@ -50,20 +50,14 @@ with tempfile.TemporaryDirectory(prefix='workflow-pins-') as scratch:
         path.write_text(mutate(path.read_text()))
         check(folder, f'refused {reason}' if reason else None, status)
 
-    case('readOnlyLandAccepts', 'land.yml', lambda s: s)
-    for job, name in [('apply', 'applyJobIsNotCurrentAuthority'),
-                      ('report', 'reportJobIsNotCurrentAuthority')]:
-        case(name, 'land.yml', lambda s, j=job: s + '\n  ' + j + ':\n    steps:\n      - run: true\n', 'land.shape')
-    case('producerOutputsAreNotCurrentAuthority', 'land.yml', lambda s: change(s,
-         '    steps:\n', '    outputs:\n      pr: ${{ steps.decide.outputs.pr }}\n    steps:\n'), 'land.shape')
-    case('producer-step-id', 'land.yml', lambda s: change(s,
-         '      - name: Decide (prints only)\n', '      - name: Decide (prints only)\n        id: decide\n'), 'land.decide')
-    case('landMintIsNotCurrentAuthority', 'land.yml', lambda s: change(s,
-         'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
-         'actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510'), 'land.mint')
-    case('rootInputOverrideRefuses', 'land.yml', lambda s:
-         'env:\n  INPUT_PERMISSION_ADMINISTRATION: write\n' + s, 'land.shape')
-    case('root-switch', 'land.yml', lambda s: "env:\n  LAND_MERGE: 'on'\n" + s, 'land.shape')
+    case('finalLandAccepts', 'land.yml', lambda s: s)
+    old_if = "    if: >-\n      github.ref == 'refs/heads/main' && github.run_attempt == '1' &&\n      needs.decide.outputs.pr != ''"
+    case('apply-or', 'land.yml', lambda s: change(s, old_if, old_if.replace(' && ', ' || ', 1)), 'land.apply-condition')
+    case('apply-comment', 'land.yml', lambda s: change(s, old_if,
+         "    # github.run_attempt == '1'\n    if: >-\n      github.ref == 'refs/heads/main' && needs.decide.outputs.pr != ''"), 'land.apply-condition')
+    case('apply-map', 'land.yml', lambda s: change(s, old_if,
+         "    if:\n      nested: github.ref == 'refs/heads/main' && github.run_attempt == '1' && needs.decide.outputs.pr != ''"), 'land.apply-condition')
+    case('apply-literal-space', 'land.yml', lambda s: change(s, old_if, old_if.replace('heads/main', 'heads/ main')), 'land.apply-condition')
     case('permissions-text', 'land.yml', lambda s: change(s, 'permissions: {}', "permissions: '{}'"), 'land.shape')
     case('permissions-seq', 'land.yml', lambda s: change(s, 'permissions: {}', 'permissions: []'), 'land.shape')
     case('extra-job', 'land.yml', lambda s: s + '\n  other: {}\n', 'land.shape')
@@ -76,9 +70,9 @@ with tempfile.TemporaryDirectory(prefix='workflow-pins-') as scratch:
             ('mixed-case', 'SeCrEtS.OTHER'), ('spaced-bracket', "sEcReTs [ 'OTHER' ]")]:
         case('decide-secret-' + name, 'land.yml', lambda s, e=expression: change(s,
              '    env:\n      LAND_DASHBOARD:', '    env:\n      EXTRA: ${{ ' + e + ' }}\n      LAND_DASHBOARD:'), 'land.decide')
-        case('global-secret-' + name, 'land.yml', lambda s, e=expression:
-             'env:\n  EXTRA: ${{ ' + e + ' }}\n' + s, 'land.shape')
-    case('secret-key', 'land.yml', lambda s: 'env:\n  SeCrEtS: data\n' + s, 'land.shape')
+        case('global-secret-' + name, 'land.yml', lambda s, e=expression: change(s,
+             'env:\n', 'env:\n  EXTRA: ${{ ' + e + ' }}\n'), 'land.scope')
+    case('secret-key', 'land.yml', lambda s: change(s, 'env:\n', 'env:\n  SeCrEtS: data\n'), 'land.scope')
     case('extra-step', 'land.yml', lambda s: change(s, '      - id: t0', '      - run: other\n      - id: t0'), 'land.decide')
     checkout = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262'
     cache = 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830'
@@ -96,21 +90,38 @@ with tempfile.TemporaryDirectory(prefix='workflow-pins-') as scratch:
                               ('event', "github['event']"), ('mixed-case', "GiThUb['ToKeN']")]:
         case('dashboard-context-' + name, 'land.yml', lambda s, e=expression: change(s,
              '      LAND_DASHBOARD: 43', '      LAND_DASHBOARD: ${{ ' + e + ' }}'), 'land.decide')
-        case('root-env-context-' + name, 'land.yml', lambda s, e=expression:
-             'env:\n  EXTRA: ${{ ' + e + ' }}\n' + s, 'land.shape')
-    case('decide-runner-context', 'land.yml', lambda s: change(s,
-         '    runs-on: ubuntu-24.04', "    runs-on: ${{ github['token'] }}"), 'land.decide')
-    case('decide-timeout-context', 'land.yml', lambda s: change(s,
-         '    timeout-minutes: 15', '    timeout-minutes: ${{ toJSON(github) }}'), 'land.decide')
+        case('output-context-' + name, 'land.yml', lambda s, e=expression: change(s,
+             '      pr: ${{ steps.decide.outputs.pr }}', '      pr: ${{ ' + e + ' }}'), 'land.decide')
+        case('root-env-context-' + name, 'land.yml', lambda s, e=expression: change(s,
+             'env:\n', 'env:\n  EXTRA: ${{ ' + e + ' }}\n'), 'land.scope')
     case('root-name-context', 'land.yml', lambda s: change(s, 'name: land', 'name: ${{ toJSON(github) }}'), 'land.shape')
     case('root-run-name-context', 'land.yml', lambda s: change(s, 'name: land', "name: land\nrun-name: ${{ github['token'] }}"), 'land.shape')
+    for job, occurrence in [('decide', 0), ('apply', 1), ('report', 2)]:
+        case(job + '-runner-context', 'land.yml', lambda s, i=occurrence: change(s,
+             '    runs-on: ubuntu-24.04', "    runs-on: ${{ github['token'] }}", i), 'land.' + job)
+    for job, value, occurrence in [('decide', '15', 0), ('apply', '5', 0), ('report', '5', 1)]:
+        case(job + '-timeout-context', 'land.yml', lambda s, v=value, i=occurrence: change(s,
+             '    timeout-minutes: ' + v, '    timeout-minutes: ${{ toJSON(github) }}', i), 'land.' + job)
     for name, anchor in [('path', '            ~/.elan'), ('key', '          key: lean-'),
                           ('restore-key', '          restore-keys: lean-')]:
         case('cache-' + name + '-context', 'land.yml', lambda s, a=anchor: change(s,
              a, a.replace('~/.elan', "${{ github['token'] }}").replace('lean-', "${{ github['token'] }}lean-")), 'land.decide')
+    case('apply-output-context', 'land.yml', lambda s: change(s,
+         '      outcome: ${{ steps.apply.outputs.outcome }}', '      outcome: ${{ toJSON(github) }}'), 'land.apply')
+    case('report-condition-context', 'land.yml', lambda s: change(s,
+         "      always() && github.ref", "      ${{ github['event'] }} && github.ref"), 'land.report')
+    case('report-needs-context', 'land.yml', lambda s: change(s,
+         '    needs: [decide, apply]', "    needs: ${{ github['token'] }}"), 'land.report')
+    case('event-other-job', 'land.yml', lambda s: change(s, '          LAND_ANSWERS:', '          EXTRA: ${{ github.event.comment.body }}\n          LAND_ANSWERS:'), 'land.report')
+    case('event-other-output', 'land.yml', lambda s: change(s, '      pr: ${{ steps.decide.outputs.pr }}', '      other: ${{ github.event.comment.body }}\n      pr: ${{ steps.decide.outputs.pr }}'), 'land.decide')
     case('multiline-run', 'land.yml', lambda s: change(s, '      - run: .github/scripts/install-elan.sh', '      - run: |\n          .github/scripts/install-elan.sh\n          other'), 'land.decide')
     case('token-other-site', 'land.yml', lambda s: change(s, '    env:\n      LAND_DASHBOARD:', '    env:\n      OTHER: ${{ github.token }}\n      LAND_DASHBOARD:'), 'land.decide')
     case('top-concurrency', 'land.yml', lambda s: change(s, 'permissions: {}', 'concurrency: other\npermissions: {}'), 'land.shape')
+    case('apply-concurrency', 'land.yml', lambda s: change(s, '      group: land-apply', '      group: other'), 'land.apply')
+    case('apply-token-binding', 'land.yml', lambda s: change(s, '          LAND_MERGE_TOKEN: ${{ steps.app.outputs.token }}', '          LAND_MERGE_TOKEN: ${{ github.token }}'), 'land.apply')
+    case('apply-requires-spec', 'land.yml', lambda s: change(s, '          LAND_REQUIRES_SPEC: ${{ needs.decide.outputs.requires_spec }}', '          LAND_REQUIRES_SPEC: false'), 'land.apply')
+    case('switch-override', 'land.yml', lambda s: change(s, '    env:\n      LAND_DASHBOARD:', "    env:\n      LAND_MERGE: 'on'\n      LAND_DASHBOARD:"), 'land.decide')
+    case('report-write', 'land.yml', lambda s: change(s, '      pull-requests: write', '      pull-requests: read'), 'land.report')
     case('protection-permission-type', 'land-protection.yml', lambda s: change(s, 'permissions: {}', "permissions: '{}'"), 'protection.permissions')
     case('protection-extra-job', 'land-protection.yml', lambda s: s + '\n  other: {}\n', 'protection.jobs')
     case('protection-condition', 'land-protection.yml', lambda s: change(s, "github.event_name == 'push'", "github.event_name == 'other'"), 'protection.condition')
@@ -176,12 +187,11 @@ with tempfile.TemporaryDirectory(prefix='workflow-pins-') as scratch:
     check(folder)
 
     for file, job, step_reason, root_reason, job_reason, earlier_name in [
-            ('land-protection.yml', 'read', 'protection.steps', 'protection.jobs',
-             'protection.jobs', 'protectionEarlierEnvWriterRefuses'),
-            ('update-prs.yml', 'rebase', 'mint.updater', 'mint.updater',
-             'mint.updater', 'updaterEarlierEnvWriterRefuses')]:
-        case('owned-mint-root-env-' + job, file, lambda s:
-             'env:\n  INPUT_PERMISSION_ADMINISTRATION: write\n' + s, root_reason)
+            ('land.yml', 'apply', 'land.apply', 'land.scope', 'land.shape', 'landEarlierEnvWriterRefuses'),
+            ('land-protection.yml', 'read', 'protection.steps', 'protection.jobs', 'protection.jobs', 'protectionEarlierEnvWriterRefuses'),
+            ('update-prs.yml', 'rebase', 'mint.updater', 'mint.updater', 'mint.updater', 'updaterEarlierEnvWriterRefuses')]:
+        case('owned-mint-root-env-' + job, file, lambda s: 'env:\n  INPUT_PERMISSION_ADMINISTRATION: write\n' + s
+             if not s.startswith('name: land\n') else change(s, "  LAND_MERGE: 'on'", "  LAND_MERGE: 'on'\n  INPUT_PERMISSION_ADMINISTRATION: write"), root_reason)
         case('owned-mint-job-env-' + job, file, lambda s, j=job: change(s,
              '  ' + j + ':\n', '  ' + j + ':\n    env:\n      INPUT_PERMISSION_ADMINISTRATION: write\n'), job_reason)
         case('owned-mint-step-env-' + job, file, lambda s: change(s,
@@ -295,7 +305,7 @@ with tempfile.TemporaryDirectory(prefix='workflow-pins-') as scratch:
                 ('case', 'EnV', '\n          DATA: harmless')]:
             case('ci-' + step_name + '-env-' + name, 'ci.yml', lambda s, st=step, k=key, v=value: change(s,
                  st, st.replace('        run:', '        ' + k + ': ' + v + '\n        run:')), 'ci.schedule')
-    for suite in ['land-protection', 'land-decide']:
+    for suite in ['land-protection', 'land-decide', 'land-apply', 'land-report']:
         case('ci-' + suite + '-env-hook', 'ci.yml', lambda s, name=suite: change(s,
              '        run: .github/scripts/' + name + '.test.sh\n',
              '        run: .github/scripts/' + name + '.test.sh\n        env:\n          BASH_ENV: /tmp/hook\n'), 'ci.schedule')

@@ -65,6 +65,13 @@ printf '%s\n' "$@" >"$STUB_FETCH_ARGS"
 echo '{"full_name":"owner/mitos","owner":{"login":"owner"}}' >"$3/repo.json"
 [ -n "${STUB_NO_MAIN:-}" ] || jq -n --arg s "$STUB_MAIN" '{commit: {sha: $s}}' >"$3/main.json"
 [ -z "${STUB_FETCH_ERR:-}" ] || printf '%s\n' "$STUB_FETCH_ERR" >&2
+if [ -n "${STUB_MERGE_READS:-}" ]; then
+  for read_pr in 153 "${STUB_EXTRA_READ_PR:-153}"; do
+    printf '%s\n' "$STUB_MERGE_READS" >"$3/comments-$read_pr.json"
+    echo '[[]]' >"$3/review-comments-$read_pr.json"
+    echo '[[]]' >"$3/reviews-$read_pr.json"
+  done
+fi
 exit "${STUB_FETCH_CODE:-0}"
 EOF
 cat >"$tmp/gate" <<'EOF'
@@ -82,6 +89,9 @@ case "$1" in
     cat "$STUB_SNAPSHOT_FILE"
     [ -z "${STUB_NOTES:-}" ] || printf '%s\n' "$STUB_NOTES" >&2 ;;
   land) shift; exec "$REAL_GATE" land "$@" ;;
+  land-answers)
+    [ -z "${STUB_ANSWERS:-}" ] || { cat "$STUB_ANSWERS"; exit; }
+    shift; exec "$REAL_GATE" land-answers "$@" ;;
   *) exit 64 ;;
 esac
 EOF
@@ -106,9 +116,9 @@ run() {
   code=0
   (cd "$clone" && env -u LAND_EVENT -u LAND_EVENT_HEAD -u LAND_EVENT_CONCLUSION -u LAND_EVENT_PR \
     -u LAND_EVENT_COMMENT -u LAND_T0 -u LAND_REST_FLOOR -u MITOS_GATE -u SNAPSHOT_FETCH \
-    PATH="$tmp/bin:$PATH" MITOS_GATE="$tmp/gate" SNAPSHOT_FETCH="$tmp/fetch" REAL_GATE="$real" \
+    PATH="$tmp/bin:$PATH" LAND_DIGEST_SCRIPT="$root/.github/scripts/land-digest.sh" MITOS_GATE="$tmp/gate" SNAPSHOT_FETCH="$tmp/fetch" REAL_GATE="$real" \
     STUB_LOG="$dir/gh.log" STUB_FETCH_ARGS="$dir/fetch.args" STUB_MAIN="$m1" \
-    STUB_SNAPSHOT=file STUB_SNAPSHOT_FILE="$tmp/queue.json" "$@" \
+    GITHUB_OUTPUT="$dir/outputs" STUB_SNAPSHOT=file STUB_SNAPSHOT_FILE="$tmp/queue.json" "$@" \
     "$script" owner/mitos 43 "$dir/out") >"$dir/stdout" 2>"$dir/stderr" || code=$?
   [ ! -f "$dir/gh.log" ] || cat "$dir/gh.log" >>"$calls"
 }
@@ -297,6 +307,99 @@ has "$decided"
 has '.outcome.decision.plan == {kind: "push", pr: 153, expect: "aaa", replay: $r}
   and .outcome.trees == [{commit: $r, tree: $t}]' --arg r "$r1" --arg t "$r1tree"
 finish a-push-plan-records-its-tree
+
+h=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+jq -c --arg h "$h" '{prs:[.prs[0]]} | .prs[0] |= (.head=$h | .base={kind:"current"} |
+  .pushes=[] | .ids=[{sha:$h,id:"a"}] | .words[0].about=$h | .botAt=$h |
+  .verdicts |= map(.head=$h))' "$queue" >"$tmp/merge.json"
+read_comments='[[{"id":450,"user":{"login":"owner"},"created_at":"2026-11-14T08:00:00Z","updated_at":"2026-11-14T08:00:00Z","body":"/land"}]]'
+start
+run merge-outputs STUB_SNAPSHOT_FILE="$tmp/merge.json" STUB_MERGE_READS="$read_comments"
+exits 0
+want_answers=$("$real" land-answers "$tmp/merge.json")
+digest=$("$root/.github/scripts/land-digest.sh" "$dir/out/reads/comments-153.json" \
+  "$dir/out/reads/review-comments-153.json" "$dir/out/reads/reviews-153.json")
+[ "$(cat "$dir/outputs")" = "$(printf 'pr=153\nhead=%s\napproval=450\ndigest=%s\nrequires_spec=false\nanswers=%s' \
+  "$h" "$digest" "$(jq -c .answers <<<"$want_answers")")" ] || note "outputs: $(cat "$dir/outputs")"
+finish decide-outputs-on-a-merge-plan
+start
+jq -cn --arg h "$h" '{merge:{pr:999,head:$h,approval:450,requiresSpec:false},answers:[]}' >"$tmp/wrong-pr.json"
+run wrong-pr STUB_SNAPSHOT_FILE="$tmp/merge.json" STUB_MERGE_READS="$read_comments" STUB_EXTRA_READ_PR=999 STUB_ANSWERS="$tmp/wrong-pr.json"
+exits 1
+[ ! -s "$dir/outputs" ] || note "wrong PR wrote outputs"
+finish merge-with-wrong-pr-is-refused
+start
+jq -cn --arg h "$absent" '{merge:{pr:153,head:$h,approval:450,requiresSpec:false},answers:[]}' >"$tmp/wrong-head.json"
+run wrong-head STUB_SNAPSHOT_FILE="$tmp/merge.json" STUB_MERGE_READS="$read_comments" STUB_ANSWERS="$tmp/wrong-head.json"
+exits 1
+[ ! -s "$dir/outputs" ] || note "wrong head wrote outputs"
+finish merge-with-wrong-head-is-refused
+start
+for file in "$tmp/queue.json" "$tmp/push.json"; do
+  run no-merge STUB_SNAPSHOT_FILE="$file"
+  exits 0
+  if grep -qx 'pr=' "$dir/outputs" && grep -qx 'head=' "$dir/outputs" && grep -qx 'approval=' "$dir/outputs" \
+    && grep -qx 'digest=' "$dir/outputs" && grep -qx 'requires_spec=' "$dir/outputs" \
+    && grep -q '^answers=\[' "$dir/outputs"; then :
+  else note "nonmerge handoff: $(cat "$dir/outputs")"; fi
+done
+finish no-merge-hands-nothing-to-apply
+start
+echo '{"merge":{"pr":999,"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","approval":450,"requiresSpec":false},"answers":[]}' >"$tmp/wrong.json"
+run disagree STUB_ANSWERS="$tmp/wrong.json"
+exits 1
+[ ! -s "$dir/outputs" ] || note "disagreement wrote outputs"
+echo '{"answers":[]}' >"$tmp/wrong.json"
+run missing STUB_ANSWERS="$tmp/wrong.json"
+exits 1
+[ ! -s "$dir/outputs" ] || note "missing key wrote outputs"
+finish land-and-land-answers-disagree-is-refused
+start
+run missing-reads STUB_SNAPSHOT_FILE="$tmp/merge.json"
+exits 1
+has "$decided"
+[ ! -s "$dir/outputs" ] || note "missing reads wrote outputs"
+finish a-merge-without-its-reads-is-not-handed-on
+start
+jq -n '{merge:null,answers:[{pr:1,line:("x" * 65537),body:"x"}]}' >"$tmp/large.json"
+run answer-cap STUB_ANSWERS="$tmp/large.json" STUB_SNAPSHOT_FILE="$tmp/push.json"
+exits 1
+has "$decided"
+[ ! -s "$dir/outputs" ] || note "large answers wrote outputs"
+finish answers-over-the-cap-are-refused
+for answer_count in 100 101; do
+  start
+  count_marker=$(sed -n "s/^marker='\(.*\)'$/\1/p" "$root/.github/scripts/land-report.sh")
+  [ -n "$count_marker" ] || note "the report marker is missing"
+  jq -cn --arg h "$h" --arg m "$count_marker" --argjson n "$answer_count" \
+    '{merge:{pr:153,head:$h,approval:450,requiresSpec:false},
+      answers:[range(1; $n + 1) | {pr:.,line:"answer",body:($m + "\nanswer")}]}' \
+    >"$tmp/answers-$answer_count.json"
+  [ "$(wc -c <"$tmp/answers-$answer_count.json")" -lt 65536 ] || note "count fixture exceeds the byte cap"
+  run "answer-count-$answer_count" STUB_SNAPSHOT_FILE="$tmp/merge.json" STUB_MERGE_READS="$read_comments" \
+    STUB_ANSWERS="$tmp/answers-$answer_count.json"
+  has "$decided"
+  if [ "$answer_count" = 100 ]; then
+    exits 0
+    sed -n 's/^answers=//p' "$dir/outputs" | jq -e 'length == 100' >/dev/null \
+      || note "the valid 100-answer list was not handed on"
+    finish answers-at-the-count-cap-are-handed-on
+  else
+    exits 1
+    [ ! -s "$dir/outputs" ] || note "101 answers wrote outputs"
+    finish answers-over-the-count-cap-are-refused
+  fi
+done
+start
+"$real" land-answers "$tmp/queue.json" >"$tmp/answers.json"
+marker=$(sed -n "s/^marker='\(.*\)'$/\1/p" "$root/.github/scripts/land-report.sh")
+marker_matches='$m != "" and (.answers | length > 0) and all(.answers[]; .body | startswith($m + "\n"))'
+jq -e --arg m "$marker" "$marker_matches" "$tmp/answers.json" >/dev/null \
+  || note "the marker differs"
+! jq -e --arg m '' "$marker_matches" "$tmp/answers.json" >/dev/null || note "an empty marker passed"
+printf '{"answers":[]}\n' >"$tmp/empty-answers.json"
+! jq -e --arg m "$marker" "$marker_matches" "$tmp/empty-answers.json" >/dev/null || note "empty answers passed"
+finish the-marker-is-the-reports
 
 joined=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$script")
 

@@ -31,6 +31,7 @@ assert(entry.includes('getPermissionsFromInputs(process.env)'), 'entrypoint bypa
 assert(entry.includes('main('), 'entrypoint bypasses main');
 
 const callers = [
+  ['land.yml', 'apply', 1, { contents: 'write', workflows: 'write' }],
   ['land-protection.yml', 'read', 1, { administration: 'read' }],
   ['update-prs.yml', 'rebase', 1, { contents: 'write', pull_requests: 'write', workflows: 'write' }],
 ];
@@ -97,5 +98,5 @@ async function checkCaller([file, job, index, expected], inherited = {}) {
     await checkCaller(caller);
     await checkCaller(caller, { INPUT_PERMISSION_ADMINISTRATION: 'write', INPUT_PERMISSION_CONTENTS: 'write' });
   }
-  console.log('4 bundled permission-map controls passed (offline stubs; dependency initialization excluded)');
+  console.log('6 bundled permission-map controls passed (offline stubs; dependency initialization excluded)');
 })().catch(error => { console.error(error); process.exitCode = 1; });

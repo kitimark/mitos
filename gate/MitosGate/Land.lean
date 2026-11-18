@@ -266,6 +266,9 @@ inductive Plan
   /-- Push the replay with `--force-with-lease=<ref>:<expect>`, if it has the tree of `replay`. -/
   | push (pr : Pr) (expect replay : Sha)
   | idle
+  /-- Rebase-merge `pr` pinned to `head` (`PUT …/pulls/<pr>/merge` with `sha=<head>`): `land.yml`'s
+  `apply` job makes this one call with the updater app's token, after it reads the pull request and
+  its conversation again. -/
   | merge (pr : Pr) (head : Sha)
   deriving DecidableEq
 
@@ -340,8 +343,6 @@ def wake (agentInLine ownerInLine covered : Pr → Bool) : Event → Wake
   | .gateDone p g =>
     if g == .failure then .holder p
     else if agentInLine p then .lander p
-    -- on the owner's word alone the workflow posts the merge command for a green gate; any other
-    -- result goes to the orchestrator, because no timer would start or re-run the gate
     else if ownerInLine p then (if g == .success then .nobody else .orchestrator)
     else if covered p then .nobody
     else .holder p

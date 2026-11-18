@@ -10,4 +10,4 @@ curl --disable --fail --silent --show-error --location --connect-timeout 15 --ma
   https://raw.githubusercontent.com/actions/create-github-app-token/64ab729a6294000f5aa4a4bc0b73d1f32bc45510/dist/main.cjs \
   --output "$bundle" || { echo "FAIL pinned action bundle download"; exit 1; }
 node "$root/gate/app-token-input-contract.test.cjs" "$real" "$root" "$bundle" || exit 1
-echo "4 passed, 0 failed"
+echo "6 passed, 0 failed"
