@@ -48,8 +48,13 @@ def main (args : List String) : IO UInt32 := do
 '''
 
 
+def require(condition, detail):
+    if not condition:
+        raise AssertionError(detail)
+
+
 def changed(modules, name, old, new):
-    assert old in modules[name], (name, old)
+    require(old in modules[name], (name, old))
     modules[name] = modules[name].replace(old, new)
 
 
@@ -137,19 +142,19 @@ with tempfile.TemporaryDirectory(prefix="mitos-provider-mutants-") as directory:
                 path.write_text(contents)
                 result = subprocess.run([lean, "-o", str(path.with_suffix(".olean")), str(path)],
                                         cwd=build, env=env, capture_output=True, timeout=60)
-                assert result.returncode == 0, result.stdout.decode() + result.stderr.decode()
+                require(result.returncode == 0, result.stdout.decode() + result.stderr.decode())
             (build / "Probe.lean").write_text(probe)
         raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode().hex().upper()
         frame = "<!-- mitos-provenance:v2 -->\n```text\n" + "\n".join(raw[i:i+64] for i in range(0, len(raw), 64))
         (build / "source.block").write_text(frame + "\n```\n<!-- /mitos-provenance:v2 -->")
         result = subprocess.run([lean, "--run", "Probe.lean", "source.block", mode], cwd=build, env=env,
                                 capture_output=True, timeout=60)
-        assert result.returncode == 0, result.stdout.decode() + result.stderr.decode()
+        require(result.returncode == 0, result.stdout.decode() + result.stderr.decode())
         return result.stdout.decode().strip()
 
     for n, (name, modules, payload, mode, scope) in enumerate(cases):
         baseline = evaluate(original, payload, mode, "baseline")
         mutant = evaluate(modules, payload, mode, str(n) + "-mutant")
-        assert baseline == "false" and mutant == "true", (name, baseline, mutant)
+        require(baseline == "false" and mutant == "true", (name, baseline, mutant))
         print(f"ok {name}: negative expectation false -> true ({scope}; fresh .olean closure + Lean interpreter)", flush=True)
 print(f"{len(cases)} guard mutants rejected by their named negative expectations")

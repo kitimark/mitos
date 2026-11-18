@@ -2,7 +2,7 @@
 
 goal: A truthful null author model can pass only with a standing accepted Claude PASS from another provider.
 statement: Provenance.unknownAdmitted; Provenance.unknownRequiredHasEffort
-touches: gate/MitosGate/ModelIdentity.lean, gate/MitosGate/Land.lean, gate/MitosGate/Provenance.lean, their projection/serialization/proof adapters and fixtures, scoped native tests, kitimark-mode rules, this task, one new run record
+touches: gate/MitosGate/ModelIdentity.lean, gate/MitosGate/Land.lean, gate/MitosGate/Provenance.lean, their projection/serialization/proof adapters and fixtures, scoped native tests, .claude/skills/kitimark-mode/SKILL.md, docs/process.md, this task, one new run record
 must_not_touch: source/record version numbers, source fields or limits, archived records, prospective acceptance clauses, publisher/dashboard/assignment/labels, #487, #488, #336, Core/spec/locks/workflows
 checks: full build, source proofs/axiom audits, real-source/native snapshot/hook/record/replay controls, guard mutations, transport/legacy/Land/Shadow/Speech/carry, imports/lock/runlog, required local matrix and current-head hosted CI
 budget: 120 iterations · 3h wall · tokens unmetered
@@ -39,7 +39,7 @@ Requested model text supplies no identity, including when a valid null author us
 | `ProvenanceProviderTest.lean`, `provenance-provider-test.sh`, `provenance-fixtures/488.json` | Typed raw-source facts, real-head Snapshot projection, mapped events and isolated record/replay. |
 | `snapshot-test.sh`, `land-test.sh` | Native source transport/hook/recorder and strict wire controls. |
 | `provenance-provider-mutants.py` | Fresh compiled definition-closure/interpreter controls for named guard expectations. |
-| `kitimark-mode/SKILL.md` | Narrow owner-approved exception. |
+| `kitimark-mode/SKILL.md`, `docs/process.md` | Narrow owner-approved exception and consistent reported-author-only wording classification. |
 
 ### Policy and compatibility boundary
 
@@ -93,3 +93,12 @@ Results and exact guard scopes are recorded in the PR body and this attempt's ru
 Local UID-map or root-ancestry refusals must be reported as environmental failures with no bypass;
 hosted current-head CI supplies required sandbox evidence. The deployed old main will hold the
 unknown author of this bootstrap PR until the owner merges this approved policy change.
+
+
+## CodeRabbit repair
+
+The first public review identified inconsistent generic wording-only exceptions and test controls that
+could accept missing authors, renderer failures, disabled Python assertions or a detached decision file.
+The repair qualifies the directly related process references, strengthens those checks and adds a direct
+valid-null Land decision. This adds `docs/process.md` to the original module map to propagate the same
+approved exception. Production Lean, source schema, archived records and the record writer are unchanged.

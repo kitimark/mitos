@@ -37,7 +37,10 @@ with tempfile.TemporaryDirectory(prefix="mitos-provider-") as directory:
         payload.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")))
         rendered = run([binary, "provenance", "render", "kitimark/mitos", payload])
         if rendered.returncode:
-            return None
+            if rendered.returncode == 1 and not rendered.stdout and rendered.stderr == b"provenance: source payload refused\n":
+                return None
+            raise AssertionError("renderer failed unexpectedly: " + str(rendered.returncode) + " " +
+                                 rendered.stderr.decode(errors="replace"))
         block = work / "source.block"
         block.write_bytes(rendered.stdout)
         result = run(["lake", "env", "lean", "--run", "gate/ProvenanceProviderTest.lean", block], cwd=root)

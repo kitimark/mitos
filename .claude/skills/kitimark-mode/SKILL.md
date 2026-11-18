@@ -278,13 +278,14 @@ watcher's echo filter and the merge rule below rely on both.
 
 - The root spawns a verifier at the head each PR owner reports, or at the head that follows its
   `/no-comments` pass (see Needs you means assigned to the user), except for a wording-only
-  change. Only an agent that did not write the code gives a verdict. CI, bot reviews and the root's own
+  change from an author with a known reported model. Only an agent that did not write the code gives a verdict. CI, bot reviews and the root's own
   reading are inputs to one.
 - A wording-only change alters no behavior. It edits prose, comments or typos, and no code,
   script, spec, lock, workflow, skill rule or hook, and no line of a plan row or a task file that
   sets a type, a statement, a rule or a cut line. The root confirms that from the diff. A
-  wording-only change needs no verdict, and a green `gate` at its head stands in for one in the
-  merge rule below.
+  wording-only change from an author with a known reported model needs no verdict, and a green
+  `gate` at its head stands in for one in the merge rule below. An unknown author still needs the
+  independent PASS even for a wording-only change.
 - The verifier runs on the model that did not write most of the diff. A trust-critical PR also
   gets an `opus` verifier at `xhigh` or above at every head that needs a verifier, so an
   `opus`-written one gets two. Trust-critical means the PR needs `spec-approved` or touches a
@@ -379,7 +380,7 @@ watcher's echo filter and the merge rule below rely on both.
   role says Opus. Keep all adverse events and their real giver/order when publishing an update.
   A supplemental low-effort PASS does not veto sufficient independent evidence. The existing
   independent Claude/root wording-only classification is the sole wording-only exception, and
-  requires a reported author model. An unknown author still needs the independent PASS above.
+  requires a known reported author model. An unknown author still needs the independent PASS above.
   The block is a manual trusted-root assertion checked against actual launch/review evidence,
   not runtime authentication or proof of which shared-account writer edited the dashboard.
   Schema and evidence URLs do not prove those facts or detect an omitted adverse event (#327,
@@ -389,7 +390,7 @@ watcher's echo filter and the merge rule below rely on both.
   requested text and evidence; canonical version 1 retains truthful author/verdict facts and
   uses source admission to gate eligibility without inventing a factual HOLD or owner speech.
 - A PR merges when four things hold at its current head. It has a passing verdict or is a
-  wording-only change. Its `gate` is green. No review comment from the user is unanswered, read
+  wording-only change from an author with a known reported model. Its `gate` is green. No review comment from the user is unanswered, read
   from the comment routes in **Forge**. It touches nothing the user keeps (see What stays with
   the user). `pr-state.sh` shows all four on each open PR's line, and a `merge-ready #N` line
   with the merge command pinned to the head only when the first three hold and the shared
