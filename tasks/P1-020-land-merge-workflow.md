@@ -309,7 +309,7 @@ B's module map is atomic. Paths are relative to `gate/MitosGate/` except the she
 |---|---|---|
 | `Snapshot/Types.lean` | A post's optional review identity | +1/-0 |
 | `Snapshot/Fields.lean` | Submission normalization and its lower-bound theorem | +49/-2 |
-| `Snapshot/Obs.lean` | Review speech and the strengthened kept-approval theorem | +36/-26 |
+| `Snapshot/Obs.lean` | Review speech and the strengthened kept-approval theorem | +37/-26 |
 | `Snapshot/Fixtures.lean` | Existing post migration and seven review boundary fixtures | +38/-5 |
 | `Snapshot.lean` | Standard-axiom audit with every current provenance audit retained | +4/-2 |
 | `SnapshotCli.lean` | Raw listed-review parsing and normalization | +5/-3 |
