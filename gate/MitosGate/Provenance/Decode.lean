@@ -1,14 +1,12 @@
 import Lean.Data.Json
 import MitosGate.Provenance
 import MitosGate.Speech.Commit
+import MitosGate.Provenance.SourceTransport
 
 namespace MitosGate.Provenance
 
 open Lean (Json)
 open Land (Sha Pr Teammate Author Verdict Result Obs)
-
-def startMarker : String := "<!-- mitos-provenance:v1 -->"
-def endMarker : String := "<!-- /mitos-provenance:v1 -->"
 
 private def get (j : Json) (k : String) : Except String Json :=
   (j.getObjVal? k).mapError fun _ => "missing field"
@@ -116,19 +114,27 @@ def decodePayload (repo : String) (j : Json) : Except String (List PullFact) := 
   unless (ps.map (·.number)).eraseDups.length == ps.length do throw "duplicate pull"
   return ps
 
-def block (j : Json) : String := startMarker ++ "\n```json\n" ++ j.compress ++ "\n```\n" ++ endMarker
-
 def decode (repo body : String) : Except String (List PullFact) := do
-  unless body.utf8ByteSize ≤ 262144 do throw "dashboard exceeds bound"
-  unless (body.splitOn "<!-- mitos-provenance:").length == 2 &&
-      (body.splitOn "<!-- /mitos-provenance:").length == 2 do throw "missing or duplicate source section"
-  let [_, after] := body.splitOn startMarker | throw "unrecognized source version"
-  let [inside, _] := after.splitOn endMarker | throw "malformed source section"
-  let ["", framed] := inside.splitOn "\n```json\n" | throw "expected canonical JSON fence"
-  let [payload, ""] := framed.splitOn "\n```\n" | throw "expected canonical JSON fence"
-  unless payload.utf8ByteSize ≤ 131072 do throw "payload exceeds bound"
-  let j ← (Json.parse payload).mapError fun _ => "malformed JSON"
-  unless j.compress == payload do throw "expected canonical single-line JSON"
-  decodePayload repo j
+  decodePayload repo (← SourceTransport.readCanonicalJson body)
+
+def render (repo : String) (j : Json) : Except String String := do
+  let body := SourceTransport.publicationBlock j
+  let _ ← decode repo body
+  return body
+
+theorem render_isDecoded {repo : String} {j : Json} {body : String}
+    (h : render repo j = .ok body) : ∃ facts, decode repo body = .ok facts := by
+  unfold render at h
+  dsimp only at h
+  cases hd : decode repo (SourceTransport.publicationBlock j) with
+  | error e =>
+    rw [hd] at h
+    change (Except.error e : Except String String) = .ok body at h
+    cases h
+  | ok facts =>
+    rw [hd] at h
+    change (Except.ok (SourceTransport.publicationBlock j) : Except String String) = .ok body at h
+    cases h
+    exact ⟨facts, hd⟩
 
 end MitosGate.Provenance

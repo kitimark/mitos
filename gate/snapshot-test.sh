@@ -250,7 +250,10 @@ jq '.[0][0].performed_via_github_app = {slug: "claude"}' "$b/comments-7.json" >"
 expect_land "an app's /land is no entry" "$me7" \
   "{\"next\":9,\"plan\":{\"head\":\"$q1\",\"kind\":\"merge\",\"pr\":9},\"step\":{\"kind\":\"stop\",\"why\":\"noEntry\"},\"word\":\"none\"}"
 fresh
-sed 's/claude-sonnet-5-5/claude-opus-4-6/g' "$b/dashboard.json" >"$d/dashboard.json"
+jq -cS '.pulls[].author.actualModel = "claude-opus-4-6"' "$tmp/source.json" >"$tmp/same-model.json"
+"$bin" provenance render owner/mitos "$tmp/same-model.json" >"$tmp/same-model.block"
+jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/same-model.block")" '.body = $body' \
+  "$b/dashboard.json" >"$d/dashboard.json"
 expect_land "a pass on the author's model covers nothing" "$me7" \
   '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"stands"}'
 
@@ -320,7 +323,20 @@ source_case() {
     fi
   fi
   if snap && jq -e "$check" "$tmp/snap.json" >/dev/null &&
-      native_hook_matches "$wanted"; then ok "$name"
+      native_hook_matches "$wanted"; then
+    ok "$name"
+    cp "$tmp/snap.json" "$tmp/v2-snap.json"
+    cp "$tmp/candidates.json" "$tmp/v2-candidates.json"
+    cp "$tmp/admission.json" "$tmp/v2-admission.json"
+    jq --arg dash "$(dash_body)" --rawfile raw "$tmp/mutated.json" \
+      '.body = $dash + "\n\n<!-- mitos-provenance:v1 -->\n\u0060\u0060\u0060json\n" +
+        ($raw | rtrimstr("\n")) + "\n\u0060\u0060\u0060\n<!-- /mitos-provenance:v1 -->"' \
+      "$b/dashboard.json" >"$d/dashboard.json"
+    if snap && cmp -s "$tmp/snap.json" "$tmp/v2-snap.json" && native_hook_matches "$wanted" &&
+        cmp -s "$tmp/candidates.json" "$tmp/v2-candidates.json" &&
+        cmp -s "$tmp/admission.json" "$tmp/v2-admission.json"; then
+      ok "$name: legacy and v2 preserve exact snapshot facts and native admission"
+    else bad "$name: legacy and v2 preserve exact snapshot facts and native admission"; fi
   else bad "$name" "$(cat "$tmp/snap.err")" "$(jq -c '.prs[0]' "$tmp/snap.json")"; fi
 }
 
@@ -483,15 +499,24 @@ if [ "$(wc -c <"$tmp/oversize-source.json")" -gt 131072 ] && [ "$render_status" 
 else bad "renderer refuses an over-limit valid-schema payload before publishing a block" \
   "exit $render_status: $(cat "$tmp/oversize.err")"; fi
 jq -cS '.pulls[].verdicts |= .[0:180]' "$tmp/oversize-source.json" >"$tmp/bounded-source.json"
-if "$bin" provenance render owner/mitos "$tmp/bounded-source.json" >"$tmp/bounded.block" 2>"$tmp/bounded.err"; then
+jq -nr --rawfile raw "$tmp/bounded-source.json" \
+  '"<!-- mitos-provenance:v1 -->\n\u0060\u0060\u0060json\n" + ($raw | rtrimstr("\n")) +
+    "\n\u0060\u0060\u0060\n<!-- /mitos-provenance:v1 -->"' >"$tmp/bounded.block"
+if [ "$(wc -c <"$tmp/bounded-source.json")" -le 131072 ]; then
   jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/bounded.block")" '.body = $body' \
     "$tmp/native-hook/dash.json" >"$tmp/bounded-dash.json"
   mv "$tmp/bounded-dash.json" "$tmp/native-hook/dash.json"
   if "$bin" provenance candidates "$tmp/native-hook" owner/mitos owner >"$tmp/bounded-candidates.json" 2>"$tmp/bounded-candidates.err"; then
-    ok "within-limit rendered block round trips through the exact shared source decoder"
-  else bad "within-limit rendered block round trips through the exact shared source decoder" \
+    ok "within-limit legacy block round trips through the exact shared source decoder"
+  else bad "within-limit legacy block round trips through the exact shared source decoder" \
     "$(cat "$tmp/bounded-candidates.err")"; fi
-else bad "within-limit rendered block round trips through the exact shared source decoder" "$(cat "$tmp/bounded.err")"; fi
+else bad "within-limit legacy block round trips through the exact shared source decoder"; fi
+render_status=0
+"$bin" provenance render owner/mitos "$tmp/bounded-source.json" >"$tmp/bounded-v2.block" 2>"$tmp/bounded.err" \
+  || render_status=$?
+if [ "$render_status" = 1 ] && [ ! -s "$tmp/bounded-v2.block" ]; then
+  ok "large valid legacy source explicitly refuses new publication rather than losing events"
+else bad "large valid legacy source explicitly refuses new publication rather than losing events"; fi
 render_status=0
 printf '%s\n' '{"pulls":[],"repository":"owner/mitos","version":1,"version":1}' >"$tmp/render-duplicate.json"
 "$bin" provenance render owner/mitos "$tmp/render-duplicate.json" >"$tmp/render-duplicate.block" 2>"$tmp/render-duplicate.err" \
@@ -539,6 +564,35 @@ if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH=
   ok "low actual effort survives raw-to-record round trip without inventing HOLD or owner speech"
 else bad "low actual effort survives raw-to-record round trip without inventing HOLD or owner speech" \
   "$(cat "$tmp/low-record.err")"; fi
+
+source_case "opaque URL and unknown adverse facts survive both source versions" \
+  '.pulls[0].author.requestedModel = "https://example.invalid/requested/opus" |
+    .pulls[0].verdicts[0].evidence += "-https://example.invalid/opaque-nested-url" |
+    .pulls[0].verdicts += [(.pulls[0].verdicts[0] | .actor = "unknown-reviewer" | .actualModel = null |
+      .requestedModel = "https://example.invalid/requested/opus" | .effort = null | .result = "fail" |
+      .order = 3 | .evidence += "-fail"),
+      (.pulls[0].verdicts[0] | .actor = "hold-reviewer" | .head = ("f" * 40) | .result = "hold" |
+        .order = 2 | .evidence += "-hold")]' \
+  '.prs[0] | .rest and .verdicts[1].model == "unknown" and
+    .verdicts[1].result == "fail" and .verdicts[2].result == "hold"' critical false
+for version in legacy v2; do
+  if [ "$version" = v2 ]; then
+    jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/mutated.block")" '.body = $body' \
+      "$b/dashboard.json" >"$d/dashboard.json"
+  fi
+  if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH="$tmp/record-fetch" \
+        ROUNDTRIP_MAIN="$m2" ROUNDTRIP_READS="$d" bash "$root/.github/scripts/land-decide.sh" owner/mitos 43 "$tmp/$version-record") \
+        >"$tmp/$version-record.out" 2>"$tmp/$version-record.err" &&
+      cmp -s "$d/dashboard.json" "$tmp/$version-record/reads/dashboard.json" &&
+      jq -e '.v == 1 and .outcome.kind == "decided"' "$tmp/$version-record/record.json" >/dev/null; then
+    jq -c '.outcome.snapshot' "$tmp/$version-record/record.json" >"$tmp/$version-record-snapshot.json"
+    ok "$version source preserves raw dashboard and canonical record v1"
+  else bad "$version source preserves raw dashboard and canonical record v1" "$(cat "$tmp/$version-record.err")"; fi
+done
+if cmp -s "$tmp/legacy-record-snapshot.json" "$tmp/v2-record-snapshot.json" &&
+    cmp -s "$tmp/legacy-record/decision.json" "$tmp/v2-record/decision.json"; then
+  ok "legacy and v2 records preserve exact facts and replay decision"
+else bad "legacy and v2 records preserve exact facts and replay decision"; fi
 
 source_case "prepare local-only native refusal control" '.' '.prs[0].rest'
 jq -cS '.pulls[0].author.head = ("f" * 40)' "$tmp/source.json" >"$tmp/unknown-head.json"

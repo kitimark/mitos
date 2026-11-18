@@ -348,12 +348,20 @@ watcher's echo filter and the merge rule below rely on both.
   head and the verdict cell keeps the models: `PASS opus-xhigh carried from 43fc333, author
   sonnet`. The root updates the Head cell and the verdict cell together. This prose is for
   people; neither consumer infers author identity, verdict identity or admission from it.
-- The root also publishes exactly one `mitos-provenance:v1` section after the dashboard's
+- The root also publishes exactly one `mitos-provenance:v2` section after the dashboard's
   human sections, using `mitos-gate provenance render <owner/repo> <payload.json>` from main.
-  The renderer validates the payload and writes the exact marker, JSON fence and canonical
-  single-line bytes the decoder accepts. Supply compact, sorted payload bytes from a JSON
+  The renderer validates the complete section through the shared decoder and writes exact
+  markers and a text fence containing uppercase UTF-8 hex, wrapped at 64 characters with LF.
+  Supply compact, sorted source-schema-v1 payload bytes from a JSON
   encoder (`jq -cS` for these ASCII fields); the renderer refuses noncanonical input rather than
-  silently overwriting duplicate keys. Do not hand-format the fenced JSON. Its object has
+  silently overwriting duplicate keys. Do not hand-format the section. Existing v1 JSON sections
+  remain readable with their exact legacy interpretation; new publication always uses v2.
+  The physical payload cap remains 131072 bytes and the dashboard cap 262144 bytes. Hex wrapping
+  limits fresh publication to 64528 decoded bytes; larger valid legacy sources refuse with empty
+  stdout. Preserve every event and stop on refusal. Source schema and archived record stay v1.
+  Local round trips do not prove publication: after owner merge, an authorized publisher must
+  read the current dashboard, publish current real facts, read back exact machine bytes and run
+  the deployed shared decoder (#483). The decoded object has
   `version: 1`, `repository: "owner/repo"`, and `pulls: [...]`. Each pull has `number`, an
   `author` object and a `verdicts` list, which may be empty before any review completes.
   Author fields are `head` (full SHA), `provider`, `actor` (stable real giver), `actualModel`
