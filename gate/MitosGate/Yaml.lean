@@ -401,8 +401,8 @@ open Lean
 
 private def objTagNat : Name := .str .anonymous "getObjTagNat"
 
-private def objTagFromPrelude (env : Environment) : Bool :=
-  match env.getModuleIdxFor? objTagNat with
+private def inPrelude (env : Environment) (n : Name) : Bool :=
+  match env.getModuleIdxFor? n with
   | some idx => env.header.moduleNames[idx.toNat]? == some `Init.Prelude
   | none => false
 
@@ -504,7 +504,7 @@ private def generatedCtorIdxImpl (env : Environment) (n target : Name) : CoreM B
   if (← findDeclarationRanges? n).isSome || (← findDeclarationRanges? target).isSome then
     return false
   let ty := stripMData d.type
-  unless objTagFromPrelude env do return false
+  unless inPrelude env objTagNat do return false
   return implMirrors ty (stripMData t.value) && kernelOk env ind ty (stripMData d.value)
 
 private def overrideReasons (env : Environment) (n : Name) : CoreM (List String) := do
@@ -708,7 +708,11 @@ open Lean in
     throwError "audit guard: generated kernel rejected"
   unless !kernelOk env ind ty (litZero ind) do
     throwError "audit guard: literal kernel accepted"
-  if objTagFromPrelude env then
+  unless inPrelude env ``Nat.add do
+    throwError "audit guard: Nat.add is not Init.Prelude"
+  unless !inPrelude env ``L4YAML.ScalarStyle do
+    throwError "audit guard: L4YAML.ScalarStyle is Init.Prelude"
+  if inPrelude env objTagNat then
     let hits := (env.constants.toList.map Prod.fst).filter fun n =>
       (privateToUserName n).toString == "MitosGate.Yaml.AuditTag.ctorIdx"
     match hits with
