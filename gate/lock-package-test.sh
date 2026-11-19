@@ -1234,6 +1234,26 @@ else
 fi
 
 lock_ec=0
+(cd "$symws" && LEAN_PATH="core/../.lake/packages/symroot/.lake/build/lib/lean:$base_lean_path" \
+  "$bin" lock --check >"$out" 2>&1) || lock_ec=$?
+if [ "$lock_ec" = 1 ] && grep -q 'symroot' "$out" && grep -q 'outside' "$out" \
+    && ! grep -q 'uncaught exception' "$out"; then
+  ok "lock --check refuses a symlinked package root reached via leading .. in LEAN_PATH"
+else
+  bad "lock --check refuses a symlinked package root reached via leading .. in LEAN_PATH"
+fi
+
+mkdir -p "$symws/.lake/packages/inpkg/.lake/build/lib/lean"
+lock_ec=0
+(cd "$symws" && LEAN_PATH="core/.lake/build/lib/lean:.lake/packages/inpkg/.lake/build/lib/lean:$base_lean_path" \
+  "$bin" lock --check >"$out" 2>&1) || lock_ec=$?
+if [ "$lock_ec" = 0 ] && grep -q 'statements.lock up to date' "$out"; then
+  ok "lock --check accepts ordinary core and in-package LEAN_PATH entries"
+else
+  bad "lock --check accepts ordinary core and in-package LEAN_PATH entries"
+fi
+
+lock_ec=0
 (cd "$symws" && LEAN_PATH="$symws/.lake/packages/../outside:$base_lean_path" \
   "$bin" lock --check >"$out" 2>&1) || lock_ec=$?
 if [ "$lock_ec" = 1 ] && grep -q 'escapes' "$out" \

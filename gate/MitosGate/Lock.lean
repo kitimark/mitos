@@ -426,14 +426,16 @@ def popComponent : List String → List String
   | [""] => [""]
   | cs => cs.dropLast
 
-def packageEntryName (pkgDirPrefixes : List (List String)) (entry : List String) : Option String :=
-  pkgDirPrefixes.findSome? fun pre =>
-    if !pre.isEmpty && pre.isPrefixOf entry then
-      match entry.drop pre.length with
-      | name :: _ => some name
-      | [] => none
-    else
-      none
+def nextEnteredPackage (pkgDirBase cur : List String) (entered : Option String) (c : String) :
+    Option String :=
+  if entered.isNone && cur == pkgDirBase then some c else entered
+
+def trackLexicalPackage (pkgDirBase : List String) (parts : List String) :
+    Option String × List String :=
+  parts.foldl (init := (none, [""])) fun (entered, cur) c =>
+    let entered' := nextEnteredPackage pkgDirBase cur entered c
+    let cur' := if c == ".." then popComponent cur else cur ++ [c]
+    (entered', cur')
 
 example : cleanLexical ["", "a", "", "b", ".", "..", "c", ""] = ["", "a", "b", "..", "c"] := by
   decide
@@ -441,25 +443,38 @@ example : cleanLexical ["", "a", "", "b", ".", "..", "c", ""] = ["", "a", "b", "
 example : cleanLexical [".", ".lake", "packages", "evil", "..", "..", "..", "out"] =
     [".lake", "packages", "evil", "..", "..", "..", "out"] := by decide
 
-example : packageEntryName [[".lake", "packages"], ["", "ws", ".lake", "packages"]]
-    ["", "ws", ".lake", "packages", "evil", "..", "..", "..", "core", ".lake", "build", "lib", "lean"] =
-    some "evil" := by decide
+example : trackLexicalPackage ["", "ws", ".lake", "packages"]
+    ["ws", "core", "..", ".lake", "packages", "symroot", ".lake", "build", "lib", "lean"] =
+    (some "symroot", ["", "ws", ".lake", "packages", "symroot", ".lake", "build", "lib", "lean"]) := by
+  decide
 
-example : packageEntryName [[".lake", "packages"], ["", "ws", ".lake", "packages"]]
-    ["", "ws", ".lake", "packages", "..", "out"] = some ".." := by decide
+example : trackLexicalPackage ["", "ws", ".lake", "packages"]
+    ["ws", ".lake", "packages", "evil", "..", "..", "..", "core", ".lake", "build", "lib", "lean"] =
+    (some "evil", ["", "ws", "core", ".lake", "build", "lib", "lean"]) := by
+  decide
 
-example : packageEntryName [[".lake", "packages"], ["", "ws", ".lake", "packages"]]
-    ["", "ws", "core", ".lake", "build", "lib", "lean"] = none := by decide
+example : trackLexicalPackage ["", "ws", ".lake", "packages"]
+    ["ws", ".lake", "packages", "..", "out"] = (some "..", ["", "ws", ".lake", "out"]) := by
+  decide
+
+example : trackLexicalPackage ["", "ws", ".lake", "packages"]
+    ["ws", "core", ".lake", "build", "lib", "lean"] =
+    (none, ["", "ws", "core", ".lake", "build", "lib", "lean"]) := by
+  decide
 
 example : popComponent ["", "ws", "a"] = ["", "ws"] ∧ popComponent [""] = [""] := by decide
 
-def resolveEntryPath (cwd entry : System.FilePath) : IO (Except String (List String)) := do
+def resolveTrackedEntry (cwd : System.FilePath) (pkgDirBase? : Option (List String))
+    (entry : System.FilePath) : IO (Except (Option String × String) (Option String × List String)) := do
   let absEntry := if entry.isAbsolute then entry else cwd / entry
   let parts := match lexicalComponents absEntry with
     | "" :: rest => rest
     | cs => cs
   let mut cur : List String := [""]
+  let mut entered : Option String := none
   for c in parts do
+    if let some pkgDirBase := pkgDirBase? then
+      entered := nextEnteredPackage pkgDirBase cur entered c
     if c == ".." then
       cur := popComponent cur
     else
@@ -474,49 +489,37 @@ def resolveEntryPath (cwd entry : System.FilePath) : IO (Except String (List Str
           let real ← realPathNormalized next
           cur := lexicalComponents real
         catch e =>
-          return .error s!"path component {next} cannot be resolved: {e}"
+          return .error (entered, s!"path component {next} cannot be resolved: {e}")
       else
         cur := cur ++ [c]
-  return .ok cur
+  return .ok (entered, cur)
 
 def checkLeanPathEntries (cwd : System.FilePath) (pkgDir : System.FilePath)
     (entries : List System.FilePath) : IO (List String) := do
-  let realCwd ← realPathNormalized cwd
-  let pkgDirBase ← match ← resolveEntryPath cwd pkgDir with
-    | .ok cs => pure cs
-    | .error e => return [s!"packagesDir {pkgDir} cannot be resolved: {e}"]
-  let pkgDirPrefixes :=
-    [ lexicalComponents pkgDir,
-      lexicalComponents (cwd / pkgDir),
-      lexicalComponents (realCwd / pkgDir),
-      pkgDirBase ].eraseDups
+  let pkgDirBase ← match ← resolveTrackedEntry cwd none pkgDir with
+    | .ok (_, cs) => pure cs
+    | .error (_, e) => return [s!"packagesDir {pkgDir} cannot be resolved: {e}"]
   let mut errs : List String := []
   for entry in entries do
-    let entryComps := lexicalComponents entry
-    match packageEntryName pkgDirPrefixes entryComps with
-    | none => pure ()
-    | some name =>
+    match ← resolveTrackedEntry cwd (some pkgDirBase) entry with
+    | .error (some name, e) =>
+      errs := errs ++ [s!"LEAN_PATH entry {entry} for package {name}: {e}"]
+    | .error (none, e) =>
+      errs := errs ++ [s!"LEAN_PATH entry {entry}: {e}"]
+    | .ok (none, _) => pure ()
+    | .ok (some name, resolved) =>
       if name == ".." then
         errs := errs ++ [s!"LEAN_PATH entry {entry} escapes {pkgDir}"]
       else
         let pkgRoot := pkgDir / name
-        let pkgTree? ← match ← resolveEntryPath cwd pkgRoot with
-          | .error e =>
-            errs := errs ++ [s!"LEAN_PATH entry {entry} for package {name}: {e}"]
-            pure none
-          | .ok realPkg =>
-            if realPkg != pkgDirBase ++ [name] then
-              errs := errs ++ [s!"package {name} at {pkgRoot} resolves to {pathOfComponents realPkg}, outside {pathOfComponents (pkgDirBase ++ [name])}"]
-              pure none
-            else
-              pure (some realPkg)
-        if let some pkgTree := pkgTree? then
-          match ← resolveEntryPath cwd entry with
-          | .error e =>
-            errs := errs ++ [s!"LEAN_PATH entry {entry} for package {name}: {e}"]
-          | .ok resolved =>
-            unless underComponents pkgTree resolved do
-              errs := errs ++ [s!"LEAN_PATH entry {entry} for package {name} resolves to {pathOfComponents resolved}, outside {pathOfComponents pkgTree}"]
+        match ← resolveTrackedEntry cwd none pkgRoot with
+        | .error (_, e) =>
+          errs := errs ++ [s!"LEAN_PATH entry {entry} for package {name}: {e}"]
+        | .ok (_, realPkg) =>
+          if realPkg != pkgDirBase ++ [name] then
+            errs := errs ++ [s!"package {name} at {pkgRoot} resolves to {pathOfComponents realPkg}, outside {pathOfComponents (pkgDirBase ++ [name])}"]
+          else unless underComponents realPkg resolved do
+            errs := errs ++ [s!"LEAN_PATH entry {entry} for package {name} resolves to {pathOfComponents resolved}, outside {pathOfComponents realPkg}"]
   return errs
 
 def leanPathStatus : IO UInt32 := do

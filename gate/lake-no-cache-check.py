@@ -22,8 +22,13 @@ LAKE_STEP_RE = re.compile(
 UNSET_RE = re.compile(
     r"(?:unset\s+(?:-[^\s]+\s+)*LAKE_NO_CACHE\b"
     r"|env\s+[^\n]*-u\s*LAKE_NO_CACHE\b"
+    r"|(?<![\w-])--try-cache\b"
     r"|\bLAKE_NO_CACHE=(?!1(?:\s|$|['\"]?\s|['\"]?$)))"
 )
+
+GITHUB_ENV_RE = re.compile(r"\bGITHUB_ENV\b")
+LAKE_NO_CACHE_NAME_RE = re.compile(r"\bLAKE_NO_CACHE\b")
+GITHUB_ENV_OK_RE = re.compile(r"\bLAKE_NO_CACHE=1(?=(?:\\n)?['\"]?(?:\s|$))")
 
 EXPECTED_LAKE_JOBS = {
     ("ci.yml", "checks"),
@@ -42,6 +47,15 @@ def env_map(container):
     if not isinstance(raw, dict):
         raise ValueError("non-mapping env")
     return raw
+
+
+def has_bad_github_env_write(run_cmd):
+    if not GITHUB_ENV_RE.search(run_cmd):
+        return False
+    for match in LAKE_NO_CACHE_NAME_RE.finditer(run_cmd):
+        if not GITHUB_ENV_OK_RE.match(run_cmd, match.start()):
+            return True
+    return False
 
 
 def check_workflows(workflow_dir):
@@ -79,7 +93,13 @@ def check_workflows(workflow_dir):
                 if not isinstance(step, dict):
                     continue
                 run_cmd = step.get("run")
-                if not isinstance(run_cmd, str) or not LAKE_STEP_RE.search(run_cmd):
+                if not isinstance(run_cmd, str):
+                    continue
+                if has_bad_github_env_write(run_cmd):
+                    problems.append(
+                        f"{path.name}/{job_name}/steps[{idx}]: run script writes non-1 or uninspectable LAKE_NO_CACHE to GITHUB_ENV"
+                    )
+                if not LAKE_STEP_RE.search(run_cmd):
                     continue
                 found_lake_jobs.add((path.name, job_name))
                 try:
@@ -129,6 +149,16 @@ with tempfile.TemporaryDirectory(prefix="lake-no-cache-") as tmp:
         assert problems, f"mutation {name} was not caught"
         mutations += 1
 
+    def accept(name, filename, transform):
+        dst = tmp / name
+        shutil.copytree(WORKFLOWS, dst)
+        target = dst / filename
+        before = target.read_text()
+        after = transform(before)
+        assert after != before, name
+        target.write_text(after)
+        check_clean(dst)
+
     for wf_name, job_name in sorted(EXPECTED_LAKE_JOBS):
         def drop_env(text, j=job_name):
             idx = text.index(f"  {j}:\n")
@@ -172,6 +202,51 @@ with tempfile.TemporaryDirectory(prefix="lake-no-cache-") as tmp:
         lambda s: s.replace(
             "        run: lake build\n",
             "        run: env -u LAKE_NO_CACHE lake build\n",
+            1,
+        ),
+    )
+    mutate(
+        "run-try-cache",
+        "ci.yml",
+        lambda s: s.replace(
+            "        run: lake build\n",
+            "        run: lake --try-cache build\n",
+            1,
+        ),
+    )
+    mutate(
+        "github-env-zero",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Override cache via GITHUB_ENV\n        run: echo 'LAKE_NO_CACHE=0' >> \"$GITHUB_ENV\"\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    mutate(
+        "github-env-dynamic",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Dynamic cache via GITHUB_ENV\n        run: echo \"LAKE_NO_CACHE=$VAL\" >> \"$GITHUB_ENV\"\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    mutate(
+        "github-env-heredoc",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Heredoc cache via GITHUB_ENV\n        run: |\n          { echo 'LAKE_NO_CACHE<<EOF'; echo 0; echo EOF; } >> \"$GITHUB_ENV\"\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    accept(
+        "github-env-unrelated",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Unrelated GITHUB_ENV\n        run: echo 'OTHER_VAR=0' >> \"$GITHUB_ENV\"\n      - name: Build core and gate\n",
             1,
         ),
     )
