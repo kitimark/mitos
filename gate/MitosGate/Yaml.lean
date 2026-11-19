@@ -401,6 +401,12 @@ open Lean
 
 private def objTagNat : Name := .str .anonymous "getObjTagNat"
 
+/-- The reader Lean ships in v4.36. A same-named declaration in any other module is a forgery. -/
+private def objTagFromPrelude (env : Environment) : Bool :=
+  match env.getModuleIdxFor? objTagNat with
+  | some idx => env.header.moduleNames[idx.toNat]? == some `Init.Prelude
+  | none => false
+
 private def stripMData : Expr → Expr
   | .mdata _ e => stripMData e
   | .app f a => .app (stripMData f) (stripMData a)
@@ -506,6 +512,8 @@ private def generatedCtorIdxImpl (env : Environment) (n target : Name) : CoreM B
   if (← findDeclarationRanges? n).isSome || (← findDeclarationRanges? target).isSome then
     return false
   let ty := stripMData d.type
+  -- v4.35 has no `getObjTagNat`, so a vendored root declaration of that name would otherwise match.
+  unless objTagFromPrelude env do return false
   return implMirrors ty (stripMData t.value) && kernelOk env ind ty (stripMData d.value)
 
 /-- Every reason `n` may run code other than its checked kernel value. Empty means none. -/
@@ -569,6 +577,17 @@ private def installCtorIdx (indName : Name) (kernel impl : Expr) : CoreM Unit :=
   | .ok env => setEnv env
   | .error e => throwError e
   modifyEnv fun env => addProtected (addProtected env idx) imp
+
+/-- A root `getObjTagNat` whose body ignores its argument. v4.35 will accept the declaration. -/
+private def installRootTag : CoreM Unit := do
+  let u : Name := `u
+  let sortU := Expr.sort (Level.param u)
+  let type := Expr.forallE `α sortU (Expr.forallE `x (.bvar 0) (mkConst ``Nat) .default) .implicit
+  let value := Expr.lam `α sortU (Expr.lam `x (.bvar 0) (mkRawNatLit 42) .default) .implicit
+  Lean.addDecl <| .defnDecl {
+    name := objTagNat, levelParams := [u], type, value
+    hints := .regular 1, safety := .safe
+  }
 
 end
 
@@ -709,7 +728,7 @@ open Lean in
     throwError "audit guard: generated kernel rejected"
   unless !kernelOk env ind ty (litZero ind) do
     throwError "audit guard: literal kernel accepted"
-  if env.contains objTagNat then
+  if objTagFromPrelude env then
     let hits := (env.constants.toList.map Prod.fst).filter fun n =>
       (privateToUserName n).toString == "MitosGate.Yaml.AuditTag.ctorIdx"
     match hits with
@@ -739,5 +758,26 @@ open Lean in
     expectNow body [s!"implemented_by {body.str "_impl"}"]
     let kern ← forge "MitosGate.Yaml.AuditKernel" true false
     expectNow kern [s!"implemented_by {kern.str "_impl"}"]
+  else
+    -- Pinned toolchain: a root `getObjTagNat` is not Lean's reader. The same forgery that v4.36
+    -- accepts must be refused here, and the declaration must not remain in the environment.
+    let saved ← getEnv
+    installRootTag
+    let expectNow (n : Name) (want : List String) : CoreM Unit := do
+      let got ← overrideReasons (← getEnv) n
+      unless got == want do
+        throwError "audit guard: {n} reasons {got}"
+    let some indName := (env.constants.toList.map Prod.fst).find? fun n =>
+        (privateToUserName n).toString == "MitosGate.Yaml.AuditReach"
+      | throwError "audit guard: missing AuditReach"
+    let some (.inductInfo info) := env.find? indName | throwError "audit guard: AuditReach is not inductive"
+    let table ← match rawCtorIdx env info with
+      | .ok v => pure v
+      | .error e => throwError "audit guard: {e}"
+    installCtorIdx indName table (tagReader info)
+    expectNow (indName.str "ctorIdx") [s!"implemented_by {(indName.str "ctorIdx").str "_impl"}"]
+    setEnv saved
+    if (← getEnv).contains objTagNat then
+      throwError "audit guard: root getObjTagNat was left in the environment"
 
 end MitosGate.Yaml
