@@ -27,8 +27,6 @@ UNSET_RE = re.compile(
 )
 
 GITHUB_ENV_RE = re.compile(r"\bGITHUB_ENV\b")
-LAKE_NO_CACHE_NAME_RE = re.compile(r"\bLAKE_NO_CACHE\b")
-GITHUB_ENV_OK_RE = re.compile(r"\bLAKE_NO_CACHE=1(?=(?:\\n)?['\"]?(?:\s|$))")
 
 EXPECTED_LAKE_JOBS = {
     ("ci.yml", "checks"),
@@ -47,15 +45,6 @@ def env_map(container):
     if not isinstance(raw, dict):
         raise ValueError("non-mapping env")
     return raw
-
-
-def has_bad_github_env_write(run_cmd):
-    if not GITHUB_ENV_RE.search(run_cmd):
-        return False
-    for match in LAKE_NO_CACHE_NAME_RE.finditer(run_cmd):
-        if not GITHUB_ENV_OK_RE.match(run_cmd, match.start()):
-            return True
-    return False
 
 
 def check_workflows(workflow_dir):
@@ -89,18 +78,19 @@ def check_workflows(workflow_dir):
             steps = job.get("steps")
             if not isinstance(steps, list):
                 continue
+            job_has_lake = False
+            github_env_steps = []
             for idx, step in enumerate(steps):
                 if not isinstance(step, dict):
                     continue
                 run_cmd = step.get("run")
                 if not isinstance(run_cmd, str):
                     continue
-                if has_bad_github_env_write(run_cmd):
-                    problems.append(
-                        f"{path.name}/{job_name}/steps[{idx}]: run script writes non-1 or uninspectable LAKE_NO_CACHE to GITHUB_ENV"
-                    )
+                if GITHUB_ENV_RE.search(run_cmd):
+                    github_env_steps.append(idx)
                 if not LAKE_STEP_RE.search(run_cmd):
                     continue
+                job_has_lake = True
                 found_lake_jobs.add((path.name, job_name))
                 try:
                     step_env = {**job_env, **env_map(step)}
@@ -115,6 +105,11 @@ def check_workflows(workflow_dir):
                 if UNSET_RE.search(run_cmd):
                     problems.append(
                         f"{path.name}/{job_name}/steps[{idx}]: run script overrides or unsets LAKE_NO_CACHE"
+                    )
+            if job_has_lake:
+                for idx in github_env_steps:
+                    problems.append(
+                        f"{path.name}/{job_name}/steps[{idx}]: run script writes GITHUB_ENV in a Lake job"
                     )
     missing = EXPECTED_LAKE_JOBS - found_lake_jobs
     if missing:
@@ -241,12 +236,21 @@ with tempfile.TemporaryDirectory(prefix="lake-no-cache-") as tmp:
             1,
         ),
     )
-    accept(
-        "github-env-unrelated",
+    mutate(
+        "github-env-split",
         "ci.yml",
         lambda s: s.replace(
             "      - name: Build core and gate\n",
-            "      - name: Unrelated GITHUB_ENV\n        run: echo 'OTHER_VAR=0' >> \"$GITHUB_ENV\"\n      - name: Build core and gate\n",
+            "      - name: Split cache via GITHUB_ENV\n        run: echo 'LAKE_NO_'CACHE'=0' >> \"$GITHUB_ENV\"\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    accept(
+        "github-env-non-lake-job",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Cancel this branch's superseded runs, or only this run when the PR is closed\n",
+            "      - name: Non-Lake GITHUB_ENV\n        run: echo 'OTHER_VAR=0' >> \"$GITHUB_ENV\"\n      - name: Cancel this branch's superseded runs, or only this run when the PR is closed\n",
             1,
         ),
     )
