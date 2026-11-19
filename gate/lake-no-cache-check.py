@@ -1,5 +1,6 @@
 import pathlib
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -19,39 +20,58 @@ LAKE_STEP_RE = re.compile(
     r"|mitos-gate\s+cheats(?!\s+aggregate\b)"
 )
 
-UNSET_RE = re.compile(
-    r"(?:unset\s+(?:-[^\s]+\s+)*LAKE_NO_CACHE\b"
-    r"|env\s+[^\n]*-u\s*LAKE_NO_CACHE\b"
-    r"|(?<![\w-])--try-cache\b"
-    r"|\bLAKE_NO_CACHE=(?!1(?:\s|$|['\"]?\s|['\"]?$)))"
-)
-
-INDIRECT_OR_ENV_RE = re.compile(
-    r"\bGITHUB_ENV\b"
-    r"|\$\{!"
-    r"|(?:^|[\s;|&(])eval(?:\s|$)"
-    r"|\b(?:declare|local|typeset)\b[^\n]*-[A-Za-z]*n\b"
-    r"|\b(?:printenv|environ|getenv|ENVIRON)\b"
-    r"|\bopen\s*\("
-    r"|\b(?:GITHUB_OUTPUT|GITHUB_STEP_SUMMARY|RUNNER_TEMP)\s*="
-)
-
 SAFE_WRITE_TARGET_RE = re.compile(
     r"^(?:"
-    r"&[12]"
-    r"|/dev/null"
-    r"|\"(?:\$GITHUB_OUTPUT|\$\{GITHUB_OUTPUT\})\""
+    r"/dev/null"
     r"|(?:\$GITHUB_OUTPUT|\$\{GITHUB_OUTPUT\})"
-    r"|\"(?:\$GITHUB_STEP_SUMMARY|\$\{GITHUB_STEP_SUMMARY\})\"'?"
     r"|(?:\$GITHUB_STEP_SUMMARY|\$\{GITHUB_STEP_SUMMARY\})"
-    r"|\"(?:\$RUNNER_TEMP|\$\{RUNNER_TEMP\})/(?!.*\.\.)[A-Za-z0-9._/-]+\""
     r"|(?:\$RUNNER_TEMP|\$\{RUNNER_TEMP\})/(?!.*\.\.)[A-Za-z0-9._/-]+"
-    r"|(?:\.lake|/tmp)/(?!.*\.\.)[A-Za-z0-9._/-]+"
+    r"|\.lake/(?!.*\.\.)[A-Za-z0-9._/-]+"
+    r"|/tmp/mitos-gate\.ldd"
     r")$"
 )
 
-REDIRECT_RE = re.compile(r"(?:>>|>\||<>|>)\s*(&[0-9]+|[^\s;|&)]*)")
-TEE_RE = re.compile(r"(?:^|[|\s;&(])tee(?:\s+([^\n|;&)]*))?")
+ALLOWED_CMDS = {
+    "set", "[", "cd", "echo", "printf", "exit", "true", "command", "trap",
+    "lake", "rm", "mkdir", "cat", "git", "grep", "sed", "ldd", "strip",
+    "tar", "tee", "date", "sudo", "python3",
+}
+
+ALLOWED_SCRIPT_RE = re.compile(
+    r"^(?:\.claude/scripts/|\.github/scripts/|gate/)[A-Za-z0-9._-]+\.sh$"
+    r"|^\.lake/build/bin/mitos-gate$"
+)
+
+ALLOWED_PYTHON_SCRIPT_RE = re.compile(r"^\.github/scripts/[A-Za-z0-9._-]+\.py$")
+ALLOWED_PYTHON_SNIPPETS = {
+    "import yaml",
+    "import yaml; print(yaml.__version__)",
+}
+ALLOWED_SUDO_ARGS = {
+    ("apt-get", "update", "-q"),
+    ("apt-get", "install", "-y", "-q", "shellcheck"),
+    ("apt-get", "install", "-y", "python3-yaml"),
+    ("sysctl", "-w", "kernel.apparmor_restrict_unprivileged_userns=0"),
+}
+FORBIDDEN_ENV_KEYS = {"BASH_ENV", "ENV"}
+LOCAL_ASSIGN_RE = re.compile(r"^[a-z_][a-z0-9_]*=")
+CONTROL_WORDS = {"if", "then", "else", "elif", "fi", "!", "{", "}"}
+WRITE_REDIRECT_OPS = {">", ">>", ">|", "<>", "&>", "&>>", "1>", "1>>", "2>", "2>>"}
+DUP_REDIRECT_OPS = {">&", "1>&", "2>&"}
+SEPARATORS = {";", "|", "||", "&&", "&", "\n", "(", ")"}
+PUNCT_CHARS = set(";|&<>()\n")
+PUNCT_SPLIT_RE = re.compile(r"&>>|&>|>>|>\||<>|>&|\|\||&&|<<|[;|&<>()\n]")
+FORBIDDEN_RAW_RE = re.compile(
+    r"\bLAKE_NO_CACHE\b"
+    r"|\bGITHUB_ENV\b"
+    r"|(?<![\w-])--try-cache\b"
+    r"|\$\{!"
+    r"|\$\{[^}]*="
+    r"|\$\(\("
+    r"|\$'"
+    r"|[<>]\("
+    r"|<<"
+)
 QUOTE_ESCAPE_RE = re.compile(r"""['"\\]""")
 
 EXPECTED_LAKE_JOBS = {
@@ -73,36 +93,246 @@ def env_map(container):
     return raw
 
 
-def strip_quotes(text):
-    return QUOTE_ESCAPE_RE.sub("", text)
+def default_shell(container):
+    defaults = container.get("defaults") if isinstance(container, dict) else None
+    if defaults is None:
+        return None
+    if not isinstance(defaults, dict):
+        raise ValueError("non-mapping defaults")
+    run_cfg = defaults.get("run")
+    if run_cfg is None:
+        return None
+    if not isinstance(run_cfg, dict):
+        raise ValueError("non-mapping defaults.run")
+    return run_cfg.get("shell")
 
 
-def has_uninspectable_env_write(run_cmd):
-    code_lines = [
-        line for line in run_cmd.splitlines()
-        if not line.lstrip().startswith("#")
-    ]
-    joined = re.sub(r"\\\n", " ", "\n".join(code_lines))
-    if INDIRECT_OR_ENV_RE.search(joined) or INDIRECT_OR_ENV_RE.search(strip_quotes(joined)):
-        return True
-    for line in joined.splitlines():
-        for match in REDIRECT_RE.finditer(line):
-            target = match.group(1)
-            if not target or not SAFE_WRITE_TARGET_RE.match(target):
-                return True
-        for text in (line, strip_quotes(line)):
-            for match in TEE_RE.finditer(text):
-                raw_args = match.group(1) or ""
-                in_flags = True
-                for arg in raw_args.split():
-                    if in_flags and arg == "--":
-                        in_flags = False
-                        continue
-                    if in_flags and arg.startswith("-"):
-                        continue
-                    if not SAFE_WRITE_TARGET_RE.match(arg):
-                        return True
-    return False
+def extract_and_replace_cmd_substs(text):
+    subs = []
+    out = []
+    i = 0
+    in_sq = False
+    in_dq = False
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\" and not in_sq and i + 1 < n:
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        if ch == "'" and not in_dq:
+            in_sq = not in_sq
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"' and not in_sq:
+            in_dq = not in_dq
+            out.append(ch)
+            i += 1
+            continue
+        if not in_sq and ch == "`":
+            return None, None
+        if not in_sq and text[i:i + 2] == "$(":
+            depth = 1
+            j = i + 2
+            sub_sq = False
+            sub_dq = False
+            while j < n and depth > 0:
+                c = text[j]
+                if c == "\\" and not sub_sq and j + 1 < n:
+                    j += 2
+                    continue
+                if c == "'" and not sub_dq:
+                    sub_sq = not sub_sq
+                elif c == '"' and not sub_sq:
+                    sub_dq = not sub_dq
+                elif not sub_sq:
+                    if text[j:j + 2] == "$(":
+                        depth += 1
+                        j += 1
+                    elif not sub_dq and c == "(":
+                        depth += 1
+                    elif not sub_dq and c == ")":
+                        depth -= 1
+                j += 1
+            if depth != 0:
+                return None, None
+            subs.append(text[i + 2:j - 1])
+            out.append("__CMD_SUBST__")
+            i = j
+            continue
+        out.append(ch)
+        i += 1
+    if in_sq or in_dq:
+        return None, None
+    return subs, "".join(out)
+
+
+def tokenize_shell(script):
+    joined = re.sub(r"\\\n", " ", script)
+    lex = shlex.shlex(joined, posix=True, punctuation_chars=";|&<>()\n")
+    lex.whitespace = " \t\r"
+    lex.whitespace_split = True
+    lex.commenters = "#"
+    tokens = []
+    while True:
+        tok = lex.get_token()
+        if tok is None:
+            break
+        if tok and all(ch in PUNCT_CHARS for ch in tok):
+            tokens.extend(PUNCT_SPLIT_RE.findall(tok))
+        else:
+            tokens.append(tok)
+    return tokens
+
+
+def check_command(argv):
+    if not argv:
+        return None
+    while argv and argv[0] in CONTROL_WORDS:
+        argv = argv[1:]
+    if not argv:
+        return None
+    while argv and LOCAL_ASSIGN_RE.match(argv[0]):
+        argv = argv[1:]
+    if not argv:
+        return None
+    cmd = argv[0]
+    args = argv[1:]
+    if ALLOWED_SCRIPT_RE.match(cmd):
+        if cmd != ".lake/build/bin/mitos-gate" and not (ROOT / cmd).is_file():
+            return f"unknown repo script {cmd!r}"
+        return None
+    if cmd not in ALLOWED_CMDS:
+        return f"disallowed command {cmd!r}"
+    if cmd == "lake":
+        for idx, arg in enumerate(args):
+            if arg == "--try-cache" or arg.startswith("--try-cache="):
+                return f"disallowed lake flag {arg!r}"
+            if "$" in arg and not (idx > 0 and args[idx - 1] == "--base"):
+                return f"dynamic lake argument {arg!r}"
+    elif cmd == "cd":
+        if args not in (["core"], ["examples/acme"]):
+            return f"unallowlisted cd target {args!r}"
+    elif cmd == "printf":
+        if args and args[0].startswith("-"):
+            return f"disallowed printf option {args[0]!r}"
+        for arg in args:
+            if arg == "-v" or arg.startswith("-v"):
+                return "printf -v is disallowed"
+    elif cmd == "tee":
+        in_flags = True
+        for arg in args:
+            if in_flags and arg == "--":
+                in_flags = False
+                continue
+            if in_flags and arg.startswith("-"):
+                continue
+            if not SAFE_WRITE_TARGET_RE.match(arg):
+                return f"unallowlisted tee target {arg!r}"
+    elif cmd == "strip":
+        for idx, arg in enumerate(args):
+            if arg == "-o":
+                if idx + 1 >= len(args) or not SAFE_WRITE_TARGET_RE.match(args[idx + 1]):
+                    return f"unallowlisted strip -o target {args[idx + 1:idx + 2]!r}"
+    elif cmd == "tar":
+        if args != ["-x", "-C", "$dir"]:
+            return f"unallowlisted tar invocation {args!r}"
+    elif cmd == "python3":
+        idx = 0
+        while idx < len(args) and args[idx] == "-I":
+            idx += 1
+        rest = args[idx:]
+        if len(rest) == 2 and rest[0] == "-c" and rest[1] in ALLOWED_PYTHON_SNIPPETS:
+            return None
+        if rest and ALLOWED_PYTHON_SCRIPT_RE.match(rest[0]) and (ROOT / rest[0]).is_file():
+            return None
+        return f"unallowlisted python3 invocation {args!r}"
+    elif cmd == "sudo":
+        if tuple(args) not in ALLOWED_SUDO_ARGS:
+            return f"unallowlisted sudo command {args!r}"
+    elif cmd == "command":
+        if not args or args[0] != "-v":
+            return f"unallowlisted command invocation {args!r}"
+    elif cmd == "trap":
+        if len(args) < 2:
+            return f"unallowlisted trap invocation {args!r}"
+        err = check_run_script(args[0])
+        if err:
+            return f"trap body: {err}"
+    elif cmd == "git":
+        if args == ["diff"]:
+            return None
+        if len(args) == 3 and args[0] == "merge-base" and not any(a.startswith("-") for a in args[1:]):
+            return None
+        if len(args) == 3 and args[0] == "cat-file" and args[1] == "-e":
+            return None
+        if len(args) == 3 and args[0] == "archive" and args[2] == "ops/runs" and not args[1].startswith("-"):
+            return None
+        return f"unallowlisted git invocation {args!r}"
+    elif cmd == "sed":
+        if args != ["s/^/### /"]:
+            return f"unallowlisted sed invocation {args!r}"
+    return None
+
+
+def check_run_script(script):
+    code_lines = [line for line in script.splitlines() if not line.lstrip().startswith("#")]
+    code = "\n".join(code_lines)
+    if FORBIDDEN_RAW_RE.search(code) or FORBIDDEN_RAW_RE.search(QUOTE_ESCAPE_RE.sub("", code)):
+        return "forbidden env or shell override token"
+    subs, stripped = extract_and_replace_cmd_substs(code)
+    if subs is None:
+        return "uninspectable quoting, backtick, or command substitution"
+    for sub in subs:
+        err = check_run_script(sub)
+        if err:
+            return f"command substitution: {err}"
+    try:
+        tokens = tokenize_shell(stripped)
+    except ValueError as err:
+        return f"shell parse error: {err}"
+    merged = []
+    idx = 0
+    while idx < len(tokens):
+        tok = tokens[idx]
+        if tok in {"1", "2"} and idx + 1 < len(tokens) and tokens[idx + 1] in {">", ">>", ">|", "<>", ">&"}:
+            merged.append(tok + tokens[idx + 1])
+            idx += 2
+            continue
+        merged.append(tok)
+        idx += 1
+    argv = []
+    idx = 0
+    while idx < len(merged):
+        tok = merged[idx]
+        if tok == "(" and any(word not in CONTROL_WORDS for word in argv):
+            return f"unexpected subshell/function syntax after {argv!r}"
+        if tok in SEPARATORS:
+            err = check_command(argv)
+            if err:
+                return err
+            argv = []
+            idx += 1
+            continue
+        if tok in DUP_REDIRECT_OPS:
+            if idx + 1 >= len(merged) or merged[idx + 1] not in {"1", "2"}:
+                return f"unsafe fd redirect {tok!r} {merged[idx + 1:idx + 2]!r}"
+            idx += 2
+            continue
+        if tok in WRITE_REDIRECT_OPS:
+            if idx + 1 >= len(merged):
+                return f"dangling redirect {tok!r}"
+            target = merged[idx + 1]
+            if not SAFE_WRITE_TARGET_RE.match(target):
+                return f"unallowlisted redirect target {target!r}"
+            idx += 2
+            continue
+        if tok == "<":
+            return "input redirect is disallowed"
+        argv.append(tok)
+        idx += 1
+    return check_command(argv)
 
 
 def check_workflows(workflow_dir):
@@ -119,6 +349,7 @@ def check_workflows(workflow_dir):
             continue
         try:
             root_env = env_map(doc)
+            root_shell = default_shell(doc)
         except ValueError as err:
             problems.append(f"{path.name}: {err}")
             continue
@@ -130,6 +361,7 @@ def check_workflows(workflow_dir):
                 continue
             try:
                 job_env = {**root_env, **env_map(job)}
+                job_shell = default_shell(job) if default_shell(job) is not None else root_shell
             except ValueError as err:
                 problems.append(f"{path.name}/{job_name}: {err}")
                 continue
@@ -137,37 +369,41 @@ def check_workflows(workflow_dir):
             if not isinstance(steps, list):
                 continue
             job_has_lake = False
-            unsafe_write_steps = []
+            step_script_issues = []
             for idx, step in enumerate(steps):
                 if not isinstance(step, dict):
                     continue
-                run_cmd = step.get("run")
-                if not isinstance(run_cmd, str):
-                    continue
-                if has_uninspectable_env_write(run_cmd):
-                    unsafe_write_steps.append(idx)
-                if not LAKE_STEP_RE.search(run_cmd):
-                    continue
-                job_has_lake = True
-                found_lake_jobs.add((path.name, job_name))
                 try:
                     step_env = {**job_env, **env_map(step)}
                 except ValueError as err:
-                    problems.append(f"{path.name}/{job_name}/steps[{idx}]: {err}")
+                    step_script_issues.append((idx, str(err)))
                     continue
+                for key in FORBIDDEN_ENV_KEYS:
+                    if key in step_env:
+                        step_script_issues.append((idx, f"forbidden env key {key!r}"))
+                run_cmd = step.get("run")
+                if not isinstance(run_cmd, str):
+                    continue
+                shell = step.get("shell", job_shell)
+                if shell not in (None, "bash"):
+                    step_script_issues.append((idx, f"unallowlisted shell {shell!r}"))
+                else:
+                    script_err = check_run_script(run_cmd)
+                    if script_err:
+                        step_script_issues.append((idx, script_err))
+                if not (LAKE_STEP_RE.search(run_cmd) or LAKE_STEP_RE.search(QUOTE_ESCAPE_RE.sub("", run_cmd))):
+                    continue
+                job_has_lake = True
+                found_lake_jobs.add((path.name, job_name))
                 val = step_env.get("LAKE_NO_CACHE")
                 if val != "1":
                     problems.append(
                         f"{path.name}/{job_name}/steps[{idx}]: LAKE_NO_CACHE is {val!r}, want '1'"
                     )
-                if UNSET_RE.search(run_cmd) or UNSET_RE.search(strip_quotes(run_cmd)):
-                    problems.append(
-                        f"{path.name}/{job_name}/steps[{idx}]: run script overrides or unsets LAKE_NO_CACHE"
-                    )
             if job_has_lake:
-                for idx in unsafe_write_steps:
+                for idx, err in step_script_issues:
                     problems.append(
-                        f"{path.name}/{job_name}/steps[{idx}]: run script may write GITHUB_ENV in a Lake job"
+                        f"{path.name}/{job_name}/steps[{idx}]: {err}"
                     )
     missing = EXPECTED_LAKE_JOBS - found_lake_jobs
     if missing:
@@ -268,6 +504,42 @@ with tempfile.TemporaryDirectory(prefix="lake-no-cache-") as tmp:
         ),
     )
     mutate(
+        "run-try-cache-split",
+        "ci.yml",
+        lambda s: s.replace(
+            "        run: lake build\n",
+            "        run: lake --try-''cache build\n",
+            1,
+        ),
+    )
+    mutate(
+        "run-dynamic-lake-arg",
+        "ci.yml",
+        lambda s: s.replace(
+            "        run: lake build\n",
+            "        run: |\n          f=--try-; g=cache\n          lake \"$f$g\" build\n",
+            1,
+        ),
+    )
+    mutate(
+        "run-printf-v",
+        "ci.yml",
+        lambda s: s.replace(
+            "        run: lake build\n",
+            "        run: |\n          printf -v LAKE_NO_CACHE 0\n          lake build\n",
+            1,
+        ),
+    )
+    mutate(
+        "run-printf-v-indirect",
+        "ci.yml",
+        lambda s: s.replace(
+            "        run: lake build\n",
+            "        run: |\n          printf -v foo 0\n          lake build\n",
+            1,
+        ),
+    )
+    mutate(
         "github-env-zero",
         "ci.yml",
         lambda s: s.replace(
@@ -291,15 +563,6 @@ with tempfile.TemporaryDirectory(prefix="lake-no-cache-") as tmp:
         lambda s: s.replace(
             "      - name: Build core and gate\n",
             "      - name: Heredoc cache via GITHUB_ENV\n        run: |\n          { echo 'LAKE_NO_CACHE<<EOF'; echo 0; echo EOF; } >> \"$GITHUB_ENV\"\n      - name: Build core and gate\n",
-            1,
-        ),
-    )
-    mutate(
-        "run-try-cache-split",
-        "ci.yml",
-        lambda s: s.replace(
-            "        run: lake build\n",
-            "        run: lake --try-''cache build\n",
             1,
         ),
     )
@@ -345,6 +608,33 @@ with tempfile.TemporaryDirectory(prefix="lake-no-cache-") as tmp:
         lambda s: s.replace(
             "      - name: Build core and gate\n",
             "      - name: Arbitrary tee in Lake job\n        run: echo 'LAKE_NO_CACHE=0' | tee \"$env_file\"\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    mutate(
+        "github-env-perl-sysopen",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Override cache via perl\n        run: |\n          perl -e 'use Fcntl; sysopen(F,$ENV{\"GITHUB_\".\"ENV\"},O_WRONLY|O_APPEND) or die $!; print F \"LAKE_NO_CACHE=0\\n\"'\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    mutate(
+        "github-env-perl-split",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Override cache via split perl\n        run: |\n          perl -e 'use Fcntl; sysopen(F,$ENV{\"GITHUB_\".\"ENV\"},O_WRONLY|O_APPEND) or die $!; print F \"LAKE_NO_\".\"CACHE=0\\n\"'\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    mutate(
+        "step-python-shell",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Override cache via python shell\n        shell: python\n        run: print('hi')\n      - name: Build core and gate\n",
             1,
         ),
     )
