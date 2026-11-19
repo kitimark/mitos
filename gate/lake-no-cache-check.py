@@ -26,7 +26,33 @@ UNSET_RE = re.compile(
     r"|\bLAKE_NO_CACHE=(?!1(?:\s|$|['\"]?\s|['\"]?$)))"
 )
 
-GITHUB_ENV_RE = re.compile(r"\bGITHUB_ENV\b")
+INDIRECT_OR_ENV_RE = re.compile(
+    r"\bGITHUB_ENV\b"
+    r"|\$\{!"
+    r"|(?:^|[\s;|&(])eval(?:\s|$)"
+    r"|\b(?:declare|local|typeset)\b[^\n]*-[A-Za-z]*n\b"
+    r"|\b(?:printenv|environ|getenv|ENVIRON)\b"
+    r"|\bopen\s*\("
+    r"|\b(?:GITHUB_OUTPUT|GITHUB_STEP_SUMMARY|RUNNER_TEMP)\s*="
+)
+
+SAFE_WRITE_TARGET_RE = re.compile(
+    r"^(?:"
+    r"&[12]"
+    r"|/dev/null"
+    r"|\"(?:\$GITHUB_OUTPUT|\$\{GITHUB_OUTPUT\})\""
+    r"|(?:\$GITHUB_OUTPUT|\$\{GITHUB_OUTPUT\})"
+    r"|\"(?:\$GITHUB_STEP_SUMMARY|\$\{GITHUB_STEP_SUMMARY\})\"'?"
+    r"|(?:\$GITHUB_STEP_SUMMARY|\$\{GITHUB_STEP_SUMMARY\})"
+    r"|\"(?:\$RUNNER_TEMP|\$\{RUNNER_TEMP\})/(?!.*\.\.)[A-Za-z0-9._/-]+\""
+    r"|(?:\$RUNNER_TEMP|\$\{RUNNER_TEMP\})/(?!.*\.\.)[A-Za-z0-9._/-]+"
+    r"|(?:\.lake|/tmp)/(?!.*\.\.)[A-Za-z0-9._/-]+"
+    r")$"
+)
+
+REDIRECT_RE = re.compile(r"(?:>>|>\||<>|>)\s*(&[0-9]+|[^\s;|&)]*)")
+TEE_RE = re.compile(r"(?:^|[|\s;&(])tee(?:\s+([^\n|;&)]*))?")
+QUOTE_ESCAPE_RE = re.compile(r"""['"\\]""")
 
 EXPECTED_LAKE_JOBS = {
     ("ci.yml", "checks"),
@@ -45,6 +71,38 @@ def env_map(container):
     if not isinstance(raw, dict):
         raise ValueError("non-mapping env")
     return raw
+
+
+def strip_quotes(text):
+    return QUOTE_ESCAPE_RE.sub("", text)
+
+
+def has_uninspectable_env_write(run_cmd):
+    code_lines = [
+        line for line in run_cmd.splitlines()
+        if not line.lstrip().startswith("#")
+    ]
+    joined = re.sub(r"\\\n", " ", "\n".join(code_lines))
+    if INDIRECT_OR_ENV_RE.search(joined) or INDIRECT_OR_ENV_RE.search(strip_quotes(joined)):
+        return True
+    for line in joined.splitlines():
+        for match in REDIRECT_RE.finditer(line):
+            target = match.group(1)
+            if not target or not SAFE_WRITE_TARGET_RE.match(target):
+                return True
+        for text in (line, strip_quotes(line)):
+            for match in TEE_RE.finditer(text):
+                raw_args = match.group(1) or ""
+                in_flags = True
+                for arg in raw_args.split():
+                    if in_flags and arg == "--":
+                        in_flags = False
+                        continue
+                    if in_flags and arg.startswith("-"):
+                        continue
+                    if not SAFE_WRITE_TARGET_RE.match(arg):
+                        return True
+    return False
 
 
 def check_workflows(workflow_dir):
@@ -79,15 +137,15 @@ def check_workflows(workflow_dir):
             if not isinstance(steps, list):
                 continue
             job_has_lake = False
-            github_env_steps = []
+            unsafe_write_steps = []
             for idx, step in enumerate(steps):
                 if not isinstance(step, dict):
                     continue
                 run_cmd = step.get("run")
                 if not isinstance(run_cmd, str):
                     continue
-                if GITHUB_ENV_RE.search(run_cmd):
-                    github_env_steps.append(idx)
+                if has_uninspectable_env_write(run_cmd):
+                    unsafe_write_steps.append(idx)
                 if not LAKE_STEP_RE.search(run_cmd):
                     continue
                 job_has_lake = True
@@ -102,14 +160,14 @@ def check_workflows(workflow_dir):
                     problems.append(
                         f"{path.name}/{job_name}/steps[{idx}]: LAKE_NO_CACHE is {val!r}, want '1'"
                     )
-                if UNSET_RE.search(run_cmd):
+                if UNSET_RE.search(run_cmd) or UNSET_RE.search(strip_quotes(run_cmd)):
                     problems.append(
                         f"{path.name}/{job_name}/steps[{idx}]: run script overrides or unsets LAKE_NO_CACHE"
                     )
             if job_has_lake:
-                for idx in github_env_steps:
+                for idx in unsafe_write_steps:
                     problems.append(
-                        f"{path.name}/{job_name}/steps[{idx}]: run script writes GITHUB_ENV in a Lake job"
+                        f"{path.name}/{job_name}/steps[{idx}]: run script may write GITHUB_ENV in a Lake job"
                     )
     missing = EXPECTED_LAKE_JOBS - found_lake_jobs
     if missing:
@@ -237,11 +295,56 @@ with tempfile.TemporaryDirectory(prefix="lake-no-cache-") as tmp:
         ),
     )
     mutate(
+        "run-try-cache-split",
+        "ci.yml",
+        lambda s: s.replace(
+            "        run: lake build\n",
+            "        run: lake --try-''cache build\n",
+            1,
+        ),
+    )
+    mutate(
         "github-env-split",
         "ci.yml",
         lambda s: s.replace(
             "      - name: Build core and gate\n",
             "      - name: Split cache via GITHUB_ENV\n        run: echo 'LAKE_NO_'CACHE'=0' >> \"$GITHUB_ENV\"\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    mutate(
+        "github-env-split-indirect",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Split indirect cache via GITHUB_ENV\n        run: |\n          target=GITHUB_''ENV\n          printf '%s\\n' 'LAKE_NO_'CACHE'=0' >> \"${!target}\"\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    mutate(
+        "github-env-concat-indirect",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Concat indirect cache via GITHUB_ENV\n        run: |\n          a=GITHUB_; b=ENV; target=\"$a$b\"\n          echo 'LAKE_NO_CACHE=0' >> \"${!target}\"\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    mutate(
+        "github-env-arbitrary-redirect",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Arbitrary redirect in Lake job\n        run: echo 'LAKE_NO_CACHE=0' >> \"$env_file\"\n      - name: Build core and gate\n",
+            1,
+        ),
+    )
+    mutate(
+        "github-env-arbitrary-tee",
+        "ci.yml",
+        lambda s: s.replace(
+            "      - name: Build core and gate\n",
+            "      - name: Arbitrary tee in Lake job\n        run: echo 'LAKE_NO_CACHE=0' | tee \"$env_file\"\n      - name: Build core and gate\n",
             1,
         ),
     )
