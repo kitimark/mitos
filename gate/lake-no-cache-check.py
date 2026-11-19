@@ -20,8 +20,8 @@ LAKE_STEP_RE = re.compile(
 )
 
 UNSET_RE = re.compile(
-    r"(?:(?<![\w-])unset\s+(?:-[^\s]+\s+)*LAKE_NO_CACHE\b"
-    r"|env\s+[^\n]*(?:-u\s*|--unset(?:=|\s+))LAKE_NO_CACHE\b"
+    r"(?:unset\s+(?:-[^\s]+\s+)*LAKE_NO_CACHE\b"
+    r"|env\s+[^\n]*(?:-u\s*|--unset=)LAKE_NO_CACHE\b"
     r"|(?<![\w-])--try-cache\b"
     r"|\bLAKE_NO_CACHE=(?!1(?:\s|$|['\"]?\s|['\"]?$)))"
 )
