@@ -530,6 +530,46 @@ private def overrideReasons (env : Environment) (n : Name) : CoreM (List String)
   if (getExternAttrData? env n).isSome then r := r ++ ["extern"]
   return r
 
+/-- The `casesOn` index table for a parameter-free inductive whose constructors have no fields. -/
+private def rawCtorIdx (env : Environment) (ind : InductiveVal) : Except String Expr := do
+  if ind.numParams != 0 || ind.numIndices != 0 then
+    throw s!"{ind.name} is not a parameter-free fixture"
+  let motive := Expr.lam `x (mkConst ind.name) (mkConst ``Nat) .default
+  let mut value := mkApp (mkConst (mkCasesOnName ind.name) [Level.succ .zero]) motive
+  value := mkApp value (.bvar 0)
+  for c in ind.ctors do
+    let some (.ctorInfo ci) := env.find? c | throw s!"missing constructor {c}"
+    if ci.numFields != 0 then throw s!"{c} has fields"
+    value := mkApp value (mkRawNatLit ci.cidx)
+  return Expr.lam `x (mkConst ind.name) value .default
+
+private def tagReader (ind : InductiveVal) : Expr :=
+  let domain := mkConst ind.name
+  Expr.lam `x domain (mkApp2 (mkConst objTagNat [Level.succ .zero]) domain (.bvar 0)) .default
+
+private def litZero (ind : InductiveVal) : Expr :=
+  Expr.lam `x (mkConst ind.name) (mkRawNatLit 0) .default
+
+/-- Install `ctorIdx` and `_impl` with the compiler's metadata and no source range.
+A source declaration cannot reach `implMirrors` and `kernelOk`: it has a range and regular hints. -/
+private def installCtorIdx (indName : Name) (kernel impl : Expr) : CoreM Unit := do
+  let type := mkForall `x .default (mkConst indName) (mkConst ``Nat)
+  let idx := indName.str "ctorIdx"
+  let imp := idx.str "_impl"
+  Lean.addDecl <| .defnDecl {
+    name := idx, levelParams := [], type, value := kernel
+    hints := .regular 1, safety := .safe
+  }
+  Lean.addDecl <| .defnDecl {
+    name := imp, levelParams := [], type, value := impl
+    hints := .opaque, safety := .unsafe
+  }
+  Lean.setImplementedBy idx imp
+  match Compiler.setInlineAttribute (← getEnv) imp .alwaysInline with
+  | .ok env => setEnv env
+  | .error e => throwError e
+  modifyEnv fun env => addProtected (addProtected env idx) imp
+
 end
 
 private def returnsSort (type : Lean.Expr) : Lean.CoreM Bool :=
@@ -584,7 +624,8 @@ open Lean in
 
 /-! Guards. A generated `ctorIdx` passes on both toolchains. A hand-written `implemented_by` does
 not, including a `genCtorIdx false` lookalike and, where `getObjTagNat` exists, one whose runtime
-body is that reader. -/
+body is that reader. Two further forgeries carry the compiler's metadata and change only the
+runtime body, or only the kernel table. -/
 
 private unsafe def auditEvil (_ : String) : Nat := 0
 
@@ -604,6 +645,33 @@ private unsafe def AuditProbe.ctorIdx._impl (_ : AuditProbe) : Nat := 0
 private inductive AuditOk where
   | a
   | b
+
+set_option genCtorIdx false in
+private inductive AuditReach where
+  | a
+  | b
+
+set_option genCtorIdx false in
+private inductive AuditBody where
+  | a
+  | b
+
+set_option genCtorIdx false in
+private inductive AuditKernel where
+  | a
+  | b
+
+-- A tag reader passes `implMirrors`. A literal body does not. Neither check needs the constant to exist.
+section
+open Lean
+#guard implMirrors
+  (.forallE `x (mkConst ``AuditOk) (mkConst ``Nat) .default)
+  (.lam `x (mkConst ``AuditOk)
+    (mkApp2 (mkConst objTagNat [Level.succ .zero]) (mkConst ``AuditOk) (.bvar 0)) .default)
+#guard !implMirrors
+  (.forallE `x (mkConst ``AuditOk) (mkConst ``Nat) .default)
+  (.lam `x (mkConst ``AuditOk) (mkRawNatLit 0) .default)
+end
 
 open Lean Elab Command in
 private def elabAudit (s : String) : CommandElabM Unit := do
@@ -634,11 +702,42 @@ open Lean in
   expect ``AuditOk.ctorIdx []
   expect ``auditHandWritten [s!"implemented_by {``auditEvil}"]
   expect ``AuditProbe.ctorIdx [s!"implemented_by {``AuditProbe.ctorIdx._impl}"]
+  let some ind := isCtorIdxCore? env ``AuditOk.ctorIdx | throwError "audit guard: AuditOk.ctorIdx"
+  let some (.defnInfo d) := env.find? ``AuditOk.ctorIdx | throwError "audit guard: AuditOk.ctorIdx"
+  let ty := stripMData d.type
+  unless kernelOk env ind ty (stripMData d.value) do
+    throwError "audit guard: generated kernel rejected"
+  unless !kernelOk env ind ty (litZero ind) do
+    throwError "audit guard: literal kernel accepted"
   if env.contains objTagNat then
     let hits := (env.constants.toList.map Prod.fst).filter fun n =>
       (privateToUserName n).toString == "MitosGate.Yaml.AuditTag.ctorIdx"
     match hits with
     | [n] => expect n [s!"implemented_by {n.str "_impl"}"]
     | other => throwError "audit guard: tag lookalike names {other}"
+    -- These forgeries have the compiler's metadata. Only the runtime body, or only the kernel
+    -- table, is wrong, so a recognizer that skips `implMirrors` or `kernelOk` accepts one of them.
+    let expectNow (n : Name) (want : List String) : CoreM Unit := do
+      let got ← overrideReasons (← getEnv) n
+      unless got == want do
+        throwError "audit guard: {n} reasons {got}"
+    let forge (user : String) (badKernel badBody : Bool) : CoreM Name := do
+      let some indName := (env.constants.toList.map Prod.fst).find? fun n =>
+          (privateToUserName n).toString == user
+        | throwError "audit guard: missing {user}"
+      let some (.inductInfo info) := env.find? indName | throwError "audit guard: {user} is not inductive"
+      let table ← match rawCtorIdx env info with
+        | .ok v => pure v
+        | .error e => throwError "audit guard: {e}"
+      installCtorIdx indName (if badKernel then litZero info else table)
+        (if badBody then litZero info else tagReader info)
+      return indName.str "ctorIdx"
+    -- Reach has the compiler's table and reader, so it passes. Each forgery changes one of them.
+    let reach ← forge "MitosGate.Yaml.AuditReach" false false
+    expectNow reach []
+    let body ← forge "MitosGate.Yaml.AuditBody" false true
+    expectNow body [s!"implemented_by {body.str "_impl"}"]
+    let kern ← forge "MitosGate.Yaml.AuditKernel" true false
+    expectNow kern [s!"implemented_by {kern.str "_impl"}"]
 
 end MitosGate.Yaml

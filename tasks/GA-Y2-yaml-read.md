@@ -66,7 +66,8 @@ Primary tags are retained by the parser and refused by the seam, or rejected by 
   the `ctorIdx` reader Lean itself attaches, from v4.36.0-rc1, to a multi-constructor inductive:
   the kernel term stays that inductive's `casesOn` index table, and the runtime term is the
   compiler's unsafe `getObjTagNat` reader. A hand-written `implemented_by`, including one whose
-  name and body imitate that reader, is still rejected. The check is not an inventory of
+  name and body imitate that reader, and one that copies the compiler's metadata but changes the
+  runtime body or the kernel table, is still rejected. The check is not an inventory of
   arbitrary vendor namespaces, startup code, or later declarations. It checks declarations
   exported in `MitosGate.Yaml` for exposed `L4YAML.*` types.
 - Real-parser guards cover the refusal constructors, escape table, multi-line scalars, all
