@@ -38,6 +38,7 @@ jobs:
       actions: read
     env:
       LAND_DASHBOARD: 43
+      LAKE_NO_CACHE: '1'
     outputs:
       pr: ${{ steps.decide.outputs.pr }}
       head: ${{ steps.decide.outputs.head }}

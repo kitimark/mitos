@@ -132,6 +132,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    env:
+      LAKE_NO_CACHE: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -359,6 +361,8 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1, 2]
+    env:
+      LAKE_NO_CACHE: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -443,6 +447,8 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1, 2]
+    env:
+      LAKE_NO_CACHE: '1'
     steps:
       - uses: actions/checkout@v4
         with:

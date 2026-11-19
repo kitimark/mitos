@@ -48,7 +48,8 @@ private def approvedCondition (ci : Doc) : Bool :=
 
 private def jobControls (ci : Doc) : Bool :=
   keysAt ci [.key "jobs", .key "checks"]
-    ["if", "runs-on", "timeout-minutes", "permissions", "steps"] &&
+    ["if", "runs-on", "timeout-minutes", "permissions", "env", "steps"] &&
+  nodeAt ci [.key "jobs", .key "checks", .key "env"] (.map [("LAKE_NO_CACHE", .text "1")]) &&
   match mapAt? ci [] with
   | some entries => entries.all fun (key, _) => !["defaults", "env"].contains (lower key)
   | none => false

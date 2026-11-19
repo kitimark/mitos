@@ -11,6 +11,8 @@ permissions:
 jobs:
   full:
     runs-on: ubuntu-24.04
+    env:
+      LAKE_NO_CACHE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -112,6 +114,7 @@ jobs:
         version: ${{ fromJSON(needs.resolve.outputs.versions) }}
     env:
       VERSION: ${{ matrix.version }}
+      LAKE_NO_CACHE: '1'
     steps:
       - uses: actions/checkout@v4
 

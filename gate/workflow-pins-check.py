@@ -288,6 +288,7 @@ with tempfile.TemporaryDirectory(prefix='workflow-pins-') as scratch:
     for key in ['defaults', 'DeFaUlTs']:
         case('ci-global-' + key, 'ci.yml', lambda s, k=key: change(s, 'permissions: {}',
              k + ':\n  run:\n    shell: true {0}\npermissions: {}'), 'ci.schedule')
+    checks_env = "    env:\n      LAKE_NO_CACHE: '1'\n"
     for name, key, value in [
             ('bash-hook', 'env', "\n  BASH_ENV: $(printf 'exit 0\\n' > /tmp/workflow-pin-hook)/tmp/workflow-pin-hook"),
             ('node-options', 'env', '\n  NODE_OPTIONS: --require=/tmp/hook'),
@@ -295,8 +296,17 @@ with tempfile.TemporaryDirectory(prefix='workflow-pins-') as scratch:
             ('case', 'EnV', '\n  DATA: harmless')]:
         case('ci-inherited-env-' + name, 'ci.yml', lambda s, k=key, v=value: change(s,
              'permissions: {}', k + ': ' + v + '\npermissions: {}'), 'ci.schedule')
-        case('ci-job-env-' + name, 'ci.yml', lambda s, k=key, v=value: change(s,
-             '  checks:\n', '  checks:\n    ' + k + ': ' + v.replace('\n  ', '\n      ') + '\n'), 'ci.schedule')
+        if name == 'empty':
+            mut = lambda s: change(s, checks_env, '    env: {}\n')
+        elif name == 'case':
+            mut = lambda s: change(s, checks_env, "    EnV:\n      LAKE_NO_CACHE: '1'\n")
+        else:
+            mut = lambda s, v=value: change(s, checks_env, checks_env.rstrip('\n') + v.replace('\n  ', '\n      ') + '\n')
+        case('ci-job-env-' + name, 'ci.yml', mut, 'ci.schedule')
+    case('ci-job-env-missing', 'ci.yml', lambda s: change(s, checks_env, ''), 'ci.schedule')
+    case('ci-job-env-zero', 'ci.yml', lambda s: change(s, checks_env, "    env:\n      LAKE_NO_CACHE: '0'\n"), 'ci.schedule')
+    case('land-decide-no-cache-missing', 'land.yml', lambda s: change(s, "      LAKE_NO_CACHE: '1'\n", ''), 'land.decide')
+    case('land-decide-no-cache-zero', 'land.yml', lambda s: change(s, "      LAKE_NO_CACHE: '1'\n", "      LAKE_NO_CACHE: '0'\n"), 'land.decide')
     for step_name, step in [('build', build_step), ('test', ci_step)]:
         for name, key, value in [
                 ('bash-hook', 'env', "\n          BASH_ENV: $(printf 'exit 0\\n' > /tmp/workflow-pin-hook)/tmp/workflow-pin-hook"),

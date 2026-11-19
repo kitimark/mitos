@@ -42,8 +42,10 @@ def usage : String := s!"usage:
                                                  that exact seam may also import it
   mitos-gate lock [--check]                      write or check statements.lock; either fails on a
                                                  module under core/Mitos/Core/ that Mitos.Core.Spec does
-                                                 not import, directly or transitively, or when the root
-                                                 and core git dependencies disagree
+                                                 not import, directly or transitively, when the root and
+                                                 core git dependencies disagree, or when a LEAN_PATH
+                                                 entry under <packagesDir>/<name>/ resolves outside that
+                                                 package
   mitos-gate lock --check-header                 statements.lock starts with MitosGate.Lock.header,
                                                  the newline after its format line included
   mitos-gate lock --text                         print pre-canonical toString digest lines
@@ -153,7 +155,8 @@ def lockReach (core : Lock.ImportedRoot) : IO UInt32 := do
 
 def lockStatements (check : Bool) : IO UInt32 := do
   let man ← Lock.manifestStatus
-  if man != 0 && !check then return man
+  let lp ← Lock.leanPathStatus
+  if (man != 0 || lp != 0) && !check then return 1
   try
     let headerCode ← if check then lockHeaderStatus else pure 0
     let core ← Lock.importRoot `Mitos.Core.Spec
@@ -161,7 +164,7 @@ def lockStatements (check : Bool) : IO UInt32 := do
     let code ← writeOrCheck "statements.lock" (Lock.render es) check s!"{es.size} declarations"
       "the meaning of the trusted core changed"
     let reachCode ← lockReach core
-    return if man != 0 || headerCode != 0 || code != 0 || reachCode != 0 then 1 else 0
+    return if man != 0 || lp != 0 || headerCode != 0 || code != 0 || reachCode != 0 then 1 else 0
   catch e =>
     IO.println (ciLine s!"{e}")
     return 1
@@ -204,7 +207,8 @@ def cli (args : List String) : IO UInt32 := do
   | ["lock", "--check-header"] => lockHeaderStatus
   | ["lock", "--text"] =>
     let man ← Lock.manifestStatus
-    if man != 0 then return man
+    let lp ← Lock.leanPathStatus
+    if man != 0 || lp != 0 then return 1
     try
       let core ← Lock.importRoot `Mitos.Core.Spec
       let es ← Lock.textEntries core.env [`Mitos.Core]

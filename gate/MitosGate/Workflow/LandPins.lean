@@ -82,10 +82,11 @@ private def topology (d : Doc) : Bool :=
 private def decideJob (d : Doc) : Bool :=
   host d "decide" "15" &&
   nodeAt d (jp "decide" [.key "if"]) (.text decideIf) &&
-  keysAt d (jp "decide" [.key "env"]) ["LAND_DASHBOARD"] &&
+  keysAt d (jp "decide" [.key "env"]) ["LAND_DASHBOARD", "LAKE_NO_CACHE"] &&
   (match textAt? d (jp "decide" [.key "env", .key "LAND_DASHBOARD"]) with
     | some value => !has "${{" value
     | none => false) &&
+  nodeAt d (jp "decide" [.key "env", .key "LAKE_NO_CACHE"]) (.text "1") &&
   nodeAt d (jp "decide" [.key "outputs"]) (.map (
     ["pr", "head", "approval", "digest", "requires_spec", "answers"].map fun name =>
       (name, .text ("${{ steps.decide.outputs." ++ name ++ " }}")))) &&
