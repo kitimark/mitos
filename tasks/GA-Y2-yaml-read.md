@@ -65,7 +65,8 @@ Primary tags are retained by the parser and refused by the seam, or rejected by 
   `csimp` substitutions within the `L4YAML.*` namespace. The one accepted `implemented_by` is
   the `ctorIdx` reader Lean itself attaches, from v4.36.0-rc1, to a multi-constructor inductive:
   the kernel term stays that inductive's `casesOn` index table, and the runtime term is the
-  compiler's unsafe `getObjTagNat` reader. A hand-written `implemented_by`, including one whose
+  compiler's unsafe `getObjTagNat` reader from `Init.Prelude`. A same-named declaration in any
+  other module is refused, including on the pinned toolchain, which has no such constant. A hand-written `implemented_by`, including one whose
   name and body imitate that reader, and one that copies the compiler's metadata but changes the
   runtime body or the kernel table, is still rejected. The check is not an inventory of
   arbitrary vendor namespaces, startup code, or later declarations. It checks declarations
