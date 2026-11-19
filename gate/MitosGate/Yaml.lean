@@ -5,6 +5,11 @@ import Lean.Util.CollectAxioms
 import Lean.Compiler.CSimpAttr
 import Lean.Compiler.ImplementedByAttr
 import Lean.Compiler.ExternAttr
+import Lean.Compiler.InlineAttrs
+import Lean.Compiler.LCNF.Util
+import Lean.Meta.Constructions.CtorIdx
+import Lean.AuxRecursor
+import Lean.Elab.Command
 import Lean.Meta
 
 namespace MitosGate.Yaml
@@ -391,6 +396,142 @@ private def pipelineAgrees (src : String) : Bool :=
 #guard pipelineAgrees "a: \"${{ \\x6eeeds.x }}\" # retained\nb: [x, y]\n"
 #guard pipelineAgrees "a: |+\n  x\n# tail\nb: {}\n"
 
+section
+open Lean
+
+private def objTagNat : Name := .str .anonymous "getObjTagNat"
+
+private def stripMData : Expr → Expr
+  | .mdata _ e => stripMData e
+  | .app f a => .app (stripMData f) (stripMData a)
+  | .lam n t b bi => .lam n (stripMData t) (stripMData b) bi
+  | .forallE n t b bi => .forallE n (stripMData t) (stripMData b) bi
+  | .letE n t v b d => .letE n (stripMData t) (stripMData v) (stripMData b) d
+  | .proj n i e => .proj n i (stripMData e)
+  | e => e
+
+/-- `body` is `fun x => getObjTagNat (type of x) x` after the last binder of `domain`. -/
+private def isTagReader (domain body : Expr) : Bool :=
+  match body with
+  | .app (.app (.const n _) ty) (.bvar 0) =>
+    n == objTagNat && ty == domain.liftLooseBVars 0 1
+  | _ => false
+
+/-- The runtime value mirrors `type` and its body is the tag reader, with no other work. -/
+private def implMirrors : Expr → Expr → Bool
+  | .forallE _ t b _, .lam _ t' v _ =>
+    t == t' &&
+      match b with
+      | .forallE .. => implMirrors b v
+      | _ => b == mkConst ``Nat && isTagReader t v
+  | _, _ => false
+
+private def lamLit (fields cidx : Nat) (e : Expr) : Bool :=
+  match fields, e with
+  | 0, .lit (.natVal n) => n == cidx
+  | f + 1, .lam _ _ b _ => lamLit f cidx b
+  | _, _ => false
+
+private def motiveOk (n : Nat) (e : Expr) : Bool :=
+  match n, e with
+  | 0, e => e == mkConst ``Nat
+  | k + 1, .lam _ _ b _ => motiveOk k b
+  | _, _ => false
+
+private def altsOk (env : Environment) (ctors : List Name) (args : Array Expr) (start : Nat) : Bool :=
+  match ctors with
+  | [] => start == args.size
+  | c :: cs =>
+    match env.find? c, args[start]? with
+    | some (.ctorInfo ci), some alt =>
+      lamLit ci.numFields ci.cidx alt && altsOk env cs args (start + 1)
+    | _, _ => false
+
+private def paramsOk (args : Array Expr) (numParams numIndices : Nat) : Bool :=
+  let nB := numParams + numIndices + 1
+  (List.range numParams).all fun i => args[i]? == some (.bvar (nB - 1 - i))
+
+private def indicesOk (args : Array Expr) (numParams numIndices : Nat) : Bool :=
+  (List.range numIndices).all fun j =>
+    args[numParams + 1 + j]? == some (.bvar (numIndices - j))
+
+private def kernelBody (env : Environment) (ind : InductiveVal) (body : Expr) : Bool :=
+  let fn := body.getAppFn
+  let args := body.getAppArgs
+  let nParams := ind.numParams
+  let nIdx := ind.numIndices
+  match fn with
+  | .const n ls =>
+    n == mkCasesOnName ind.name &&
+      ls == Level.succ Level.zero :: ind.levelParams.map Level.param &&
+      args.size == nParams + nIdx + ind.numCtors + 2 &&
+      paramsOk args nParams nIdx &&
+      indicesOk args nParams nIdx &&
+      args[nParams + 1 + nIdx]? == some (.bvar 0) &&
+      motiveOk (nIdx + 1) (args[nParams]?.getD default) &&
+      altsOk env ind.ctors args (nParams + nIdx + 2)
+  | _ => false
+
+private def stripBinders (n : Nat) (type value : Expr) : Option Expr :=
+  match n, type, value with
+  | 0, t, v => if t == mkConst ``Nat then some v else none
+  | k + 1, .forallE _ t b _, .lam _ t' v _ =>
+    if t == t' then stripBinders k b v else none
+  | _, _, _ => none
+
+/-- `value` is the `casesOn` index table `mkCtorIdx` builds, not a hand-written match. -/
+private def kernelOk (env : Environment) (ind : InductiveVal) (type value : Expr) : Bool :=
+  match stripBinders (ind.numParams + ind.numIndices + 1) type value with
+  | some body => kernelBody env ind body
+  | none => false
+
+/-- `target` is the runtime term Lean attaches to generated `ctorIdx` (lean4#15407, v4.36.0-rc1+):
+`n._impl`, with no source range, the compiler's opaque `always_inline` tag reader, and `n`'s
+kernel value the `casesOn` table. `isCtorIdxCore?` is only a name check, so the term checks are
+what refuse a hand-written copy. -/
+private def generatedCtorIdxImpl (env : Environment) (n target : Name) : CoreM Bool := do
+  let some ind := isCtorIdxCore? env n | return false
+  if ind.numCtors ≤ 1 then return false
+  if Compiler.LCNF.isRuntimeBuiltinType ind.name then return false
+  if target != n.str "_impl" then return false
+  let some (.defnInfo d) := env.find? n | return false
+  let some (.defnInfo t) := env.find? target | return false
+  if d.safety != .safe || t.safety != .unsafe then return false
+  if !(match t.hints with | .opaque => true | _ => false) then return false
+  if t.type != d.type || t.levelParams != d.levelParams then return false
+  if (getExternAttrData? env target).isSome then return false
+  if (Compiler.getImplementedBy? env target).isSome then return false
+  if Compiler.getInlineAttribute? env target != some .alwaysInline then return false
+  if !isProtected env n || !isProtected env target then return false
+  if (← findDeclarationRanges? n).isSome || (← findDeclarationRanges? target).isSome then
+    return false
+  let ty := stripMData d.type
+  return implMirrors ty (stripMData t.value) && kernelOk env ind ty (stripMData d.value)
+
+/-- Every reason `n` may run code other than its checked kernel value. Empty means none. -/
+private def overrideReasons (env : Environment) (n : Name) : CoreM (List String) := do
+  let some info := env.find? n | return ["unknown declaration"]
+  let companionName := Compiler.mkUnsafeRecName n
+  let companion := env.find? companionName
+  let totalCompanion := match Compiler.isUnsafeRecName? n with
+    | some original => match env.find? original with
+      | some (.defnInfo parent) => parent.safety == .safe
+      | _ => false
+    | none => false
+  let mut r : List String := []
+  if info.isUnsafe then r := r ++ ["unsafe"]
+  if info.isPartial && !totalCompanion then r := r ++ ["partial without total companion"]
+  if companion.any (·.isUnsafe) then r := r ++ [s!"unsafe companion {companionName}"]
+  if (info matches .opaqueInfo ..) && companion.isSome then
+    r := r ++ [s!"opaque with companion {companionName}"]
+  if let some t := Compiler.getImplementedBy? env n then
+    unless (← generatedCtorIdxImpl env n t) do
+      r := r ++ [s!"implemented_by {t}"]
+  if (getExternAttrData? env n).isSome then r := r ++ ["extern"]
+  return r
+
+end
+
 private def returnsSort (type : Lean.Expr) : Lean.CoreM Bool :=
   Lean.Meta.MetaM.run' <| Lean.Meta.forallTelescopeReducing type fun _ body => do
     return (← Lean.Meta.whnf body).isSort
@@ -413,21 +554,13 @@ open Lean in
       seen := seen.insert n
       let some info := env.find? n | throwError "YAML audit: unknown declaration {n}"
       if (`L4YAML).isPrefixOf (privateToUserName n) then
-        let companionName := Compiler.mkUnsafeRecName n
-        let companion := env.find? companionName
-        let totalCompanion := match Compiler.isUnsafeRecName? n with
-          | some original => match env.find? original with
-            | some (.defnInfo parent) => parent.safety == .safe
-            | _ => false
-          | none => false
-        let runtimeOverride := companion.any (·.isUnsafe) ||
-          ((info matches .opaqueInfo ..) && companion.isSome)
-        if info.isUnsafe || (info.isPartial && !totalCompanion) || runtimeOverride || (Compiler.getImplementedBy? env n).isSome ||
-            (getExternAttrData? env n).isSome then
-          throwError "YAML audit: unsafe or overridden parser dependency {n}"
+        let reasons ← overrideReasons env n
+        unless reasons.isEmpty do
+          throwError "YAML audit: unsafe or overridden parser dependency {n}: {reasons}"
         if (Compiler.CSimp.ext.getState env).map.find? n |>.isSome then
           throwError "YAML audit: csimp parser dependency {n}"
-        if companion.isSome then pending := pending.push companionName
+        let companionName := Compiler.mkUnsafeRecName n
+        if (env.find? companionName).isSome then pending := pending.push companionName
       pending := pending ++ info.type.getUsedConstants
       if let some value := info.value? (allowOpaque := true) then
         pending := pending ++ value.getUsedConstants
@@ -448,5 +581,64 @@ open Lean in
               typePending := typePending ++ aliasInfo.type.getUsedConstants
               if let some value := aliasInfo.value? (allowOpaque := true) then
                 typePending := typePending ++ value.getUsedConstants
+
+/-! Guards. A generated `ctorIdx` passes on both toolchains. A hand-written `implemented_by` does
+not, including a `genCtorIdx false` lookalike and, where `getObjTagNat` exists, one whose runtime
+body is that reader. -/
+
+private unsafe def auditEvil (_ : String) : Nat := 0
+
+@[implemented_by auditEvil] private def auditHandWritten (_ : String) : Nat := 1
+
+set_option genCtorIdx false in
+private inductive AuditProbe where
+  | a
+  | b
+
+private unsafe def AuditProbe.ctorIdx._impl (_ : AuditProbe) : Nat := 0
+
+@[implemented_by AuditProbe.ctorIdx._impl] private def AuditProbe.ctorIdx : AuditProbe → Nat
+  | .a => 0
+  | .b => 1
+
+private inductive AuditOk where
+  | a
+  | b
+
+open Lean Elab Command in
+private def elabAudit (s : String) : CommandElabM Unit := do
+  match Parser.runParserCategory (← getEnv) `command s with
+  | .ok stx => elabCommand stx
+  | .error e => throwError e
+
+open Lean Elab Command in
+local elab "audit_tag_lookalike" : command => do
+  unless (← getEnv).contains (.str .anonymous "getObjTagNat") do
+    return
+  elabAudit "set_option genCtorIdx false"
+  elabAudit "private inductive AuditTag where\n  | a\n  | b"
+  elabAudit "private unsafe def AuditTag.ctorIdx._impl (x : AuditTag) : Nat := getObjTagNat x"
+  elabAudit "@[implemented_by AuditTag.ctorIdx._impl] private def AuditTag.ctorIdx : AuditTag → Nat\n  | .a => 0\n  | .b => 1"
+  elabAudit "set_option genCtorIdx true"
+
+audit_tag_lookalike
+
+open Lean in
+#eval show CoreM Unit from do
+  let env ← getEnv
+  let expect (n : Name) (want : List String) : CoreM Unit := do
+    let got ← overrideReasons env n
+    unless got == want do
+      throwError "audit guard: {n} reasons {got}"
+  expect ``L4YAML.YamlValue.ctorIdx []
+  expect ``AuditOk.ctorIdx []
+  expect ``auditHandWritten [s!"implemented_by {``auditEvil}"]
+  expect ``AuditProbe.ctorIdx [s!"implemented_by {``AuditProbe.ctorIdx._impl}"]
+  if env.contains objTagNat then
+    let hits := (env.constants.toList.map Prod.fst).filter fun n =>
+      (privateToUserName n).toString == "MitosGate.Yaml.AuditTag.ctorIdx"
+    match hits with
+    | [n] => expect n [s!"implemented_by {n.str "_impl"}"]
+    | other => throwError "audit guard: tag lookalike names {other}"
 
 end MitosGate.Yaml

@@ -62,9 +62,13 @@ Primary tags are retained by the parser and refused by the seam, or rejected by 
 - The build audits these declarations and `Doc.ofNode` for only `propext`, `Classical.choice`,
   and `Quot.sound` axioms. It traverses types and bodies reachable from `read`, including private
   names, rejecting unsafe/partial declarations and `implemented_by`, `extern`, and compiler
-  `csimp` substitutions within the `L4YAML.*` namespace. It checks declarations exported in
-  `MitosGate.Yaml` before the audit for exposed `L4YAML.*` types; the check is not an inventory
-  of arbitrary vendor namespaces, startup code, or later declarations.
+  `csimp` substitutions within the `L4YAML.*` namespace. The one accepted `implemented_by` is
+  the `ctorIdx` reader Lean itself attaches, from v4.36.0-rc1, to a multi-constructor inductive:
+  the kernel term stays that inductive's `casesOn` index table, and the runtime term is the
+  compiler's unsafe `getObjTagNat` reader. A hand-written `implemented_by`, including one whose
+  name and body imitate that reader, is still rejected. The check is not an inventory of
+  arbitrary vendor namespaces, startup code, or later declarations. It checks declarations
+  exported in `MitosGate.Yaml` for exposed `L4YAML.*` types.
 - Real-parser guards cover the refusal constructors, escape table, multi-line scalars, all
   eight #405 cases, and two scan/parse composition drift cases. Alias refusal itself is guarded
   at the seam: the parser rejects undefined aliases, and a valid alias always follows an anchor
