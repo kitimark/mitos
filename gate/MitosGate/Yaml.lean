@@ -401,7 +401,6 @@ open Lean
 
 private def objTagNat : Name := .str .anonymous "getObjTagNat"
 
-/-- The reader Lean ships in v4.36. A same-named declaration in any other module is a forgery. -/
 private def objTagFromPrelude (env : Environment) : Bool :=
   match env.getModuleIdxFor? objTagNat with
   | some idx => env.header.moduleNames[idx.toNat]? == some `Init.Prelude
@@ -416,14 +415,12 @@ private def stripMData : Expr → Expr
   | .proj n i e => .proj n i (stripMData e)
   | e => e
 
-/-- `body` is `fun x => getObjTagNat (type of x) x` after the last binder of `domain`. -/
 private def isTagReader (domain body : Expr) : Bool :=
   match body with
   | .app (.app (.const n _) ty) (.bvar 0) =>
     n == objTagNat && ty == domain.liftLooseBVars 0 1
   | _ => false
 
-/-- The runtime value mirrors `type` and its body is the tag reader, with no other work. -/
 private def implMirrors : Expr → Expr → Bool
   | .forallE _ t b _, .lam _ t' v _ =>
     t == t' &&
@@ -485,16 +482,11 @@ private def stripBinders (n : Nat) (type value : Expr) : Option Expr :=
     if t == t' then stripBinders k b v else none
   | _, _, _ => none
 
-/-- `value` is the `casesOn` index table `mkCtorIdx` builds, not a hand-written match. -/
 private def kernelOk (env : Environment) (ind : InductiveVal) (type value : Expr) : Bool :=
   match stripBinders (ind.numParams + ind.numIndices + 1) type value with
   | some body => kernelBody env ind body
   | none => false
 
-/-- `target` is the runtime term Lean attaches to generated `ctorIdx` (lean4#15407, v4.36.0-rc1+):
-`n._impl`, with no source range, the compiler's opaque `always_inline` tag reader, and `n`'s
-kernel value the `casesOn` table. `isCtorIdxCore?` is only a name check, so the term checks are
-what refuse a hand-written copy. -/
 private def generatedCtorIdxImpl (env : Environment) (n target : Name) : CoreM Bool := do
   let some ind := isCtorIdxCore? env n | return false
   if ind.numCtors ≤ 1 then return false
@@ -512,11 +504,9 @@ private def generatedCtorIdxImpl (env : Environment) (n target : Name) : CoreM B
   if (← findDeclarationRanges? n).isSome || (← findDeclarationRanges? target).isSome then
     return false
   let ty := stripMData d.type
-  -- v4.35 has no `getObjTagNat`, so a vendored root declaration of that name would otherwise match.
   unless objTagFromPrelude env do return false
   return implMirrors ty (stripMData t.value) && kernelOk env ind ty (stripMData d.value)
 
-/-- Every reason `n` may run code other than its checked kernel value. Empty means none. -/
 private def overrideReasons (env : Environment) (n : Name) : CoreM (List String) := do
   let some info := env.find? n | return ["unknown declaration"]
   let companionName := Compiler.mkUnsafeRecName n
@@ -538,7 +528,6 @@ private def overrideReasons (env : Environment) (n : Name) : CoreM (List String)
   if (getExternAttrData? env n).isSome then r := r ++ ["extern"]
   return r
 
-/-- The `casesOn` index table for a parameter-free inductive whose constructors have no fields. -/
 private def rawCtorIdx (env : Environment) (ind : InductiveVal) : Except String Expr := do
   if ind.numParams != 0 || ind.numIndices != 0 then
     throw s!"{ind.name} is not a parameter-free fixture"
@@ -558,8 +547,6 @@ private def tagReader (ind : InductiveVal) : Expr :=
 private def litZero (ind : InductiveVal) : Expr :=
   Expr.lam `x (mkConst ind.name) (mkRawNatLit 0) .default
 
-/-- Install `ctorIdx` and `_impl` with the compiler's metadata and no source range.
-A source declaration cannot reach `implMirrors` and `kernelOk`: it has a range and regular hints. -/
 private def installCtorIdx (indName : Name) (kernel impl : Expr) : CoreM Unit := do
   let type := mkForall `x .default (mkConst indName) (mkConst ``Nat)
   let idx := indName.str "ctorIdx"
@@ -578,7 +565,6 @@ private def installCtorIdx (indName : Name) (kernel impl : Expr) : CoreM Unit :=
   | .error e => throwError e
   modifyEnv fun env => addProtected (addProtected env idx) imp
 
-/-- A root `getObjTagNat` whose body ignores its argument. v4.35 will accept the declaration. -/
 private def installRootTag : CoreM Unit := do
   let u : Name := `u
   let sortU := Expr.sort (Level.param u)
@@ -641,11 +627,6 @@ open Lean in
               if let some value := aliasInfo.value? (allowOpaque := true) then
                 typePending := typePending ++ value.getUsedConstants
 
-/-! Guards. A generated `ctorIdx` passes on both toolchains. A hand-written `implemented_by` does
-not, including a `genCtorIdx false` lookalike and, where `getObjTagNat` exists, one whose runtime
-body is that reader. Two further forgeries carry the compiler's metadata and change only the
-runtime body, or only the kernel table. -/
-
 private unsafe def auditEvil (_ : String) : Nat := 0
 
 @[implemented_by auditEvil] private def auditHandWritten (_ : String) : Nat := 1
@@ -680,7 +661,6 @@ private inductive AuditKernel where
   | a
   | b
 
--- A tag reader passes `implMirrors`. A literal body does not. Neither check needs the constant to exist.
 section
 open Lean
 #guard implMirrors
@@ -734,8 +714,6 @@ open Lean in
     match hits with
     | [n] => expect n [s!"implemented_by {n.str "_impl"}"]
     | other => throwError "audit guard: tag lookalike names {other}"
-    -- These forgeries have the compiler's metadata. Only the runtime body, or only the kernel
-    -- table, is wrong, so a recognizer that skips `implMirrors` or `kernelOk` accepts one of them.
     let expectNow (n : Name) (want : List String) : CoreM Unit := do
       let got ← overrideReasons (← getEnv) n
       unless got == want do
@@ -751,7 +729,6 @@ open Lean in
       installCtorIdx indName (if badKernel then litZero info else table)
         (if badBody then litZero info else tagReader info)
       return indName.str "ctorIdx"
-    -- Reach has the compiler's table and reader, so it passes. Each forgery changes one of them.
     let reach ← forge "MitosGate.Yaml.AuditReach" false false
     expectNow reach []
     let body ← forge "MitosGate.Yaml.AuditBody" false true
@@ -759,8 +736,6 @@ open Lean in
     let kern ← forge "MitosGate.Yaml.AuditKernel" true false
     expectNow kern [s!"implemented_by {kern.str "_impl"}"]
   else
-    -- Pinned toolchain: a root `getObjTagNat` is not Lean's reader. The same forgery that v4.36
-    -- accepts must be refused here, and the declaration must not remain in the environment.
     let saved ← getEnv
     installRootTag
     let expectNow (n : Name) (want : List String) : CoreM Unit := do
