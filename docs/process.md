@@ -179,7 +179,10 @@ each constructor line pins that constructor's type. A reached unlisted spec indu
 its constructors gets a line. The walk enters those constructors, and that line's canonical type
 folds unlisted package declarations, so a package constant that appears only in such a constructor
 type is pinned. When each package builds and downloads its release inside its own tree, a package bump that changes what a spec statement means turns the lock red, and a bump
-that changes nothing reached does not. A package that sends its build or its release archive elsewhere is out of the lock's reach, and #462 closes that in CI with `LAKE_NO_CACHE=1`. The walk
+that changes nothing reached does not. Every CI job that runs Lake sets `LAKE_NO_CACHE=1`, so a
+package cannot fetch a release archive during CI, and `mitos-gate lock` refuses any `LEAN_PATH`
+entry under `<packagesDir>/<name>/` that resolves outside that package's tree (including through
+`..` or symlinks). The walk
 never enters theorem proofs. A reached unlisted spec opaque, axiom or unsafe declaration is an
 error, and so is a reached package axiom, unsafe declaration, or unlisted opaque. The location rule assumes that same in-tree build and download. A module whose
 `.olean` directory is the toolchain is toolchain, and a Lake `.trace` or `.olean.hash` beside that `.olean` is an error. A `Mitos.Core` module whose `.olean` directory

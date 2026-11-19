@@ -410,6 +410,130 @@ example : packageAtComponents [] ["", "repo", "core", ".lake", "build", "lib", "
 example : coreBuildSuffix.isSuffixOf ["", "repo", ".lake", "build", "lib", "lean"] = false := by
   decide
 
+def cleanLexical : List String → List String
+  | "" :: rest => "" :: rest.filter (fun c => !c.isEmpty && c != ".")
+  | cs => cs.filter (fun c => !c.isEmpty && c != ".")
+
+def lexicalComponents (p : System.FilePath) : List String :=
+  cleanLexical p.components
+
+def pathOfComponents : List String → System.FilePath
+  | [""] => "/"
+  | cs => System.mkFilePath cs
+
+def popComponent : List String → List String
+  | [] => []
+  | [""] => [""]
+  | cs => cs.dropLast
+
+def packageEntryName (pkgDirPrefixes : List (List String)) (entry : List String) : Option String :=
+  pkgDirPrefixes.findSome? fun pre =>
+    if !pre.isEmpty && pre.isPrefixOf entry then
+      match entry.drop pre.length with
+      | name :: _ => some name
+      | [] => none
+    else
+      none
+
+example : cleanLexical ["", "a", "", "b", ".", "..", "c", ""] = ["", "a", "b", "..", "c"] := by
+  decide
+
+example : cleanLexical [".", ".lake", "packages", "evil", "..", "..", "..", "out"] =
+    [".lake", "packages", "evil", "..", "..", "..", "out"] := by decide
+
+example : packageEntryName [[".lake", "packages"], ["", "ws", ".lake", "packages"]]
+    ["", "ws", ".lake", "packages", "evil", "..", "..", "..", "core", ".lake", "build", "lib", "lean"] =
+    some "evil" := by decide
+
+example : packageEntryName [[".lake", "packages"], ["", "ws", ".lake", "packages"]]
+    ["", "ws", ".lake", "packages", "..", "out"] = some ".." := by decide
+
+example : packageEntryName [[".lake", "packages"], ["", "ws", ".lake", "packages"]]
+    ["", "ws", "core", ".lake", "build", "lib", "lean"] = none := by decide
+
+example : popComponent ["", "ws", "a"] = ["", "ws"] ∧ popComponent [""] = [""] := by decide
+
+def resolveEntryPath (cwd entry : System.FilePath) : IO (Except String (List String)) := do
+  let absEntry := if entry.isAbsolute then entry else cwd / entry
+  let parts := match lexicalComponents absEntry with
+    | "" :: rest => rest
+    | cs => cs
+  let mut cur : List String := [""]
+  for c in parts do
+    if c == ".." then
+      cur := popComponent cur
+    else
+      let next := pathOfComponents (cur ++ [c])
+      let existsEntry ← try
+        discard <| next.symlinkMetadata
+        pure true
+      catch _ =>
+        pure false
+      if existsEntry then
+        try
+          let real ← realPathNormalized next
+          cur := lexicalComponents real
+        catch e =>
+          return .error s!"path component {next} cannot be resolved: {e}"
+      else
+        cur := cur ++ [c]
+  return .ok cur
+
+def checkLeanPathEntries (cwd : System.FilePath) (pkgDir : System.FilePath)
+    (entries : List System.FilePath) : IO (List String) := do
+  let realCwd ← realPathNormalized cwd
+  let pkgDirBase ← match ← resolveEntryPath cwd pkgDir with
+    | .ok cs => pure cs
+    | .error e => return [s!"packagesDir {pkgDir} cannot be resolved: {e}"]
+  let pkgDirPrefixes :=
+    [ lexicalComponents pkgDir,
+      lexicalComponents (cwd / pkgDir),
+      lexicalComponents (realCwd / pkgDir),
+      pkgDirBase ].eraseDups
+  let mut errs : List String := []
+  for entry in entries do
+    let entryComps := lexicalComponents entry
+    match packageEntryName pkgDirPrefixes entryComps with
+    | none => pure ()
+    | some name =>
+      if name == ".." then
+        errs := errs ++ [s!"LEAN_PATH entry {entry} escapes {pkgDir}"]
+      else
+        let pkgRoot := pkgDir / name
+        let pkgTree? ← match ← resolveEntryPath cwd pkgRoot with
+          | .error e =>
+            errs := errs ++ [s!"LEAN_PATH entry {entry} for package {name}: {e}"]
+            pure none
+          | .ok realPkg =>
+            if realPkg != pkgDirBase ++ [name] then
+              errs := errs ++ [s!"package {name} at {pkgRoot} resolves to {pathOfComponents realPkg}, outside {pathOfComponents (pkgDirBase ++ [name])}"]
+              pure none
+            else
+              pure (some realPkg)
+        if let some pkgTree := pkgTree? then
+          match ← resolveEntryPath cwd entry with
+          | .error e =>
+            errs := errs ++ [s!"LEAN_PATH entry {entry} for package {name}: {e}"]
+          | .ok resolved =>
+            unless underComponents pkgTree resolved do
+              errs := errs ++ [s!"LEAN_PATH entry {entry} for package {name} resolves to {pathOfComponents resolved}, outside {pathOfComponents pkgTree}"]
+  return errs
+
+def leanPathStatus : IO UInt32 := do
+  let pkgDir ← try
+    let root ← readManifest "lake-manifest.json" "root"
+    liftExcept (parsePackagesDir root)
+  catch _ =>
+    return 1
+  let some raw ← IO.getEnv "LEAN_PATH" | return 0
+  let cwd ← IO.Process.getCurrentDir
+  let errs ← checkLeanPathEntries cwd pkgDir (System.SearchPath.parse raw)
+  if errs.isEmpty then
+    return 0
+  for msg in errs do
+    IO.println (ciLine msg)
+  return 1
+
 def classify (roots : Roots) (mod : Name) : IO (Except String Origin) := do
   let placed ← try
     pure (← oleanPlace mod)

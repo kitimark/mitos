@@ -281,7 +281,8 @@ class GateTests(unittest.TestCase):
     def test_workflow_shape_and_contract_mutations(self):
         jobs = yaml.safe_load(WORKFLOW)["jobs"]
         worker = jobs["gate-tests"]
-        self.assertEqual(set(worker), {"if", "runs-on", "timeout-minutes", "permissions", "strategy", "steps"})
+        self.assertEqual(set(worker), {"if", "runs-on", "timeout-minutes", "permissions", "strategy", "env", "steps"})
+        self.assertEqual(worker["env"], {"LAKE_NO_CACHE": "1"})
         self.assertEqual(worker["permissions"], {"contents": "read"})
         self.assertEqual(worker["strategy"], {"fail-fast": False, "matrix": {"shard": [0, 1, 2]}})
         self.assertEqual(worker["if"], jobs["checks"]["if"])

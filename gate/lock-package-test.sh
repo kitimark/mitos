@@ -1093,5 +1093,155 @@ else
   bad "lock writes the same statements.lock on main"
 fi
 
+relrepo="$tmp/relrepo"
+relpayload="$tmp/relpayload"
+relpkg="$tmp/relpkg"
+relws="$tmp/relws"
+mkdir -p "$relrepo/releases/download/v1" "$relpayload/lib/lean" "$relpkg" "$relws/core/Mitos/Core"
+printf 'planted\n' >"$relpayload/planted.txt"
+tar -czf "$relrepo/releases/download/v1/relpkg.tar.gz" -C "$relpayload" .
+git init -q "$relpkg"
+cp "$root/lean-toolchain" "$relpkg/lean-toolchain"
+cat >"$relpkg/lakefile.toml" <<EOF
+name = "relpkg"
+buildDir = "../../../relout"
+preferReleaseBuild = true
+releaseRepo = "file://$relrepo"
+buildArchive = "relpkg.tar.gz"
+defaultTargets = ["RelPkg"]
+
+[[lean_lib]]
+name = "RelPkg"
+EOF
+cat >"$relpkg/RelPkg.lean" <<'EOF'
+def relVal : Nat := 1
+EOF
+git -C "$relpkg" add -A
+git -C "$relpkg" -c commit.gpgsign=false commit -q -m "relpkg"
+git -C "$relpkg" tag v1
+relrev=$(git -C "$relpkg" rev-parse HEAD)
+cp "$root/lean-toolchain" "$relws/lean-toolchain"
+cp "$root/lean-toolchain" "$relws/core/lean-toolchain"
+cat >"$relws/lakefile.toml" <<'EOF'
+name = "rel-root"
+
+[[require]]
+name = "rel-core"
+path = "core"
+EOF
+cat >"$relws/core/lakefile.toml" <<EOF
+name = "rel-core"
+packagesDir = "../.lake/packages"
+defaultTargets = ["RelCore"]
+
+[[require]]
+name = "relpkg"
+git = "file://$relpkg"
+rev = "$relrev"
+
+[[lean_lib]]
+name = "RelCore"
+roots = ["Mitos.Core.Spec"]
+EOF
+cat >"$relws/core/Mitos/Core/Spec.lean" <<'EOF'
+namespace Mitos.Core.Spec
+
+def cleanSpec : Nat := 1
+
+end Mitos.Core.Spec
+EOF
+if (cd "$relws/core" && env -u LAKE_NO_CACHE lake update relpkg >"$tmp/lake.out" 2>&1) \
+    && (cd "$relws" && env -u LAKE_NO_CACHE lake update >"$tmp/lake.out" 2>&1) \
+    && (cd "$relws/core" && LAKE_NO_CACHE=1 lake build relpkg >"$tmp/lake.out" 2>&1) \
+    && (cd "$relws/core" && LAKE_NO_CACHE=1 lake build >"$tmp/lake.out" 2>&1) \
+    && [ ! -f "$relws/relout/planted.txt" ]; then
+  ok "LAKE_NO_CACHE=1 prevents a file:// releaseRepo package from unpacking a release archive"
+else
+  cat "$tmp/lake.out" >"$out"
+  bad "LAKE_NO_CACHE=1 prevents a file:// releaseRepo package from unpacking a release archive"
+fi
+
+rm -rf "$relws/relout" "$relws/.lake/packages/relpkg/.lake"
+if (cd "$relws/core" && env -u LAKE_NO_CACHE lake build relpkg >"$tmp/lake.out" 2>&1) \
+    && [ -f "$relws/relout/planted.txt" ]; then
+  ok "without LAKE_NO_CACHE a file:// releaseRepo package unpacks its release archive outside its tree"
+else
+  cat "$tmp/lake.out" >"$out"
+  bad "without LAKE_NO_CACHE a file:// releaseRepo package unpacks its release archive outside its tree"
+fi
+
+run_at "$relws" lock
+if [ "$lock_ec" = 1 ] && [ ! -f "$relws/statements.lock" ] \
+    && grep -q 'relpkg' "$out" && grep -q 'outside' "$out" \
+    && ! grep -q 'uncaught exception' "$out"; then
+  ok "lock refuses to write statements.lock when a package LEAN_PATH entry escapes its tree"
+else
+  bad "lock refuses to write statements.lock when a package LEAN_PATH entry escapes its tree"
+fi
+
+cp "$root/statements.lock" "$relws/statements.lock"
+run_at "$relws" lock --check
+if [ "$lock_ec" = 1 ] && grep -q 'relpkg' "$out" && grep -q 'outside' "$out" \
+    && ! grep -q 'uncaught exception' "$out"; then
+  ok "lock --check refuses a package LEAN_PATH entry that escapes its tree via .."
+else
+  bad "lock --check refuses a package LEAN_PATH entry that escapes its tree via .."
+fi
+
+symws="$tmp/symws"
+symout="$tmp/symout"
+mkdir -p "$symws/core/Mitos" "$symws/.lake/packages/sympkg/.lake" "$symout/lib/lean"
+cp "$root/statements.lock" "$symws/statements.lock"
+pin aaa >"$symws/lake-manifest.json"
+pin aaa >"$symws/core/lake-manifest.json"
+cp -R "$root/core/Mitos/Core" "$symws/core/Mitos/Core"
+cp "$root/core/Mitos/Core.lean" "$symws/core/Mitos/Core.lean"
+ln -s "$symout" "$symws/.lake/packages/sympkg/.lake/build"
+ln -s "$symout" "$symws/.lake/packages/symroot"
+repo_env
+base_lean_path=$LEAN_PATH
+
+lock_ec=0
+(cd "$symws" && LEAN_PATH="$symws/.lake/packages/sympkg/.lake/build/lib/lean:$base_lean_path" \
+  "$bin" lock --check >"$out" 2>&1) || lock_ec=$?
+if [ "$lock_ec" = 1 ] && grep -q 'sympkg' "$out" && grep -q 'outside' "$out" \
+    && ! grep -q 'uncaught exception' "$out"; then
+  ok "lock --check refuses a package LEAN_PATH entry that escapes via a symlink"
+else
+  bad "lock --check refuses a package LEAN_PATH entry that escapes via a symlink"
+fi
+
+rm "$symws/.lake/packages/sympkg/.lake/build"
+ln -s "$tmp/sym-missing" "$symws/.lake/packages/sympkg/.lake/build"
+lock_ec=0
+(cd "$symws" && LEAN_PATH="$symws/.lake/packages/sympkg/.lake/build/lib/lean:$base_lean_path" \
+  "$bin" lock --check >"$out" 2>&1) || lock_ec=$?
+if [ "$lock_ec" = 1 ] && grep -q 'sympkg' "$out" && grep -q 'cannot be resolved' "$out" \
+    && ! grep -q 'uncaught exception' "$out"; then
+  ok "lock --check refuses a package LEAN_PATH entry through a dangling symlink"
+else
+  bad "lock --check refuses a package LEAN_PATH entry through a dangling symlink"
+fi
+
+lock_ec=0
+(cd "$symws" && LEAN_PATH="$symws/.lake/packages/symroot/.lake/build/lib/lean:$base_lean_path" \
+  "$bin" lock --check >"$out" 2>&1) || lock_ec=$?
+if [ "$lock_ec" = 1 ] && grep -q 'symroot' "$out" && grep -q 'outside' "$out" \
+    && ! grep -q 'uncaught exception' "$out"; then
+  ok "lock --check refuses a symlinked package root in LEAN_PATH"
+else
+  bad "lock --check refuses a symlinked package root in LEAN_PATH"
+fi
+
+lock_ec=0
+(cd "$symws" && LEAN_PATH="$symws/.lake/packages/../outside:$base_lean_path" \
+  "$bin" lock --check >"$out" 2>&1) || lock_ec=$?
+if [ "$lock_ec" = 1 ] && grep -q 'escapes' "$out" \
+    && ! grep -q 'uncaught exception' "$out"; then
+  ok "lock --check refuses a LEAN_PATH entry escaping packagesDir via .."
+else
+  bad "lock --check refuses a LEAN_PATH entry escaping packagesDir via .."
+fi
+
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]
