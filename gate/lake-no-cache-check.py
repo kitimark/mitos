@@ -480,18 +480,18 @@ def inspect_local_action(uses_ref, repo_root, inherited_env, seen):
             continue
         sub_run = sub_step.get("run")
         if not isinstance(sub_run, str):
-            lake_step_issues.append(f"{uses_ref}/steps[{sub_idx}]: non-string run")
+            unclassifiable_issues.append(f"{uses_ref}/steps[{sub_idx}]: non-string run")
             continue
         resolved_run = ACTION_PATH_EXPR_RE.sub(rel_dir, sub_run)
         sub_shell = sub_step.get("shell")
         if sub_shell != "bash":
-            lake_step_issues.append(
+            unclassifiable_issues.append(
                 f"{uses_ref}/steps[{sub_idx}]: unallowlisted shell {sub_shell!r}"
             )
         else:
             err = check_run_script(resolved_run, repo_root)
             if err:
-                lake_step_issues.append(f"{uses_ref}/steps[{sub_idx}]: {err}")
+                unclassifiable_issues.append(f"{uses_ref}/steps[{sub_idx}]: {err}")
         if is_lake_run_cmd(resolved_run):
             has_lake = True
             val = sub_env.get("LAKE_NO_CACHE")
@@ -913,6 +913,14 @@ with tempfile.TemporaryDirectory(prefix="lake-no-cache-") as tmp:
         "extra.yml",
         "jobs:\n  b:\n    steps:\n      - uses: ./.github/actions/fake-node\n",
         expect_substr="unclassifiable local action",
+    )
+    mutate_with_action(
+        "local-action-python-shell",
+        ".github/actions/fake-python/action.yml",
+        "name: example\nruns:\n  using: composite\n  steps:\n    - shell: python\n      run: |\n        import subprocess\n        subprocess.run([\"la\" + \"ke\", \"build\"], check=True)\n",
+        "extra.yml",
+        "jobs:\n  b:\n    steps:\n      - uses: ./.github/actions/setup\n      - uses: ./.github/actions/fake-python\n",
+        expect_substr="unallowlisted shell",
     )
     mutate(
         "new-lake-build-job",
