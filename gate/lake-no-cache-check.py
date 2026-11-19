@@ -20,8 +20,8 @@ LAKE_STEP_RE = re.compile(
 )
 
 UNSET_RE = re.compile(
-    r"(?:unset\s+(?:-[^\s]+\s+)*LAKE_NO_CACHE\b"
-    r"|env\s+[^\n]*-u\s*LAKE_NO_CACHE\b"
+    r"(?:(?<![\w-])unset\s+(?:-[^\s]+\s+)*LAKE_NO_CACHE\b"
+    r"|env\s+[^\n]*(?:-u\s*|--unset(?:=|\s+))LAKE_NO_CACHE\b"
     r"|(?<![\w-])--try-cache\b"
     r"|\bLAKE_NO_CACHE=(?!1(?:\s|$|['\"]?\s|['\"]?$)))"
 )
@@ -197,6 +197,33 @@ with tempfile.TemporaryDirectory(prefix="lake-no-cache-") as tmp:
         lambda s: s.replace(
             "        run: lake build\n",
             "        run: env -u LAKE_NO_CACHE lake build\n",
+            1,
+        ),
+    )
+    mutate(
+        "run-env-unset",
+        "ci.yml",
+        lambda s: s.replace(
+            "        run: lake build\n",
+            "        run: env --unset=LAKE_NO_CACHE lake build\n",
+            1,
+        ),
+    )
+    mutate(
+        "run-env-unset-space",
+        "ci.yml",
+        lambda s: s.replace(
+            "        run: lake build\n",
+            "        run: env --unset LAKE_NO_CACHE lake build\n",
+            1,
+        ),
+    )
+    mutate(
+        "run-assign-zero",
+        "ci.yml",
+        lambda s: s.replace(
+            "        run: lake build\n",
+            "        run: LAKE_NO_CACHE=0 lake build\n",
             1,
         ),
     )
