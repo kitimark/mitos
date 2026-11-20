@@ -115,4 +115,4 @@ does with it.
 
 ## Neutral copy
 
-Claude Code keeps following `.claude/skills`. `.agents/skills` is the harness-neutral copy for a host that does not load this tree. A rewrite-class edit here is unfinished until the neutral body matches and `python3 .cursor/skills/agents-skills.py stamp` then `check` both succeed. `resync-pstack.sh` refreshes the vendored Cursor skills, then syncs the mirror rows into `.agents/skills`. It does not overwrite a rewrite body.
+Claude Code keeps following `.claude/skills`. `.agents/skills` is the harness-neutral copy for a host that does not load this tree. A rewrite-class edit here is unfinished until the neutral body matches and `python3 .agents/scripts/agents-skills.py stamp` then `check` both succeed. `.agents/scripts/resync-pstack.sh` refreshes vendored skills into `.agents/skills` and agents into `.agents/agents`, then syncs the mirror rows. It does not overwrite a rewrite body.

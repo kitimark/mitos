@@ -141,7 +141,7 @@ jobs:
           persist-credentials: false
 
       - name: Neutral skill tree matches the roster
-        run: python3 .cursor/skills/agents-skills.py check
+        run: python3 .agents/scripts/agents-skills.py check
 
       - name: pr-state.sh, watch-github.sh and the files they source run gh only as gh api in their wrappers, and never name GraphQL
         run: .claude/scripts/gh-api-rest.test.sh
