@@ -21,6 +21,13 @@ jobs:
         if: always()
         run: rm -rf .lake/cheats .lake/mutants
 
+      - name: Resources before the heavy steps
+        run: |
+          nproc
+          free -m
+          swapon --show
+          df -h
+
       - run: lake build
       - run: lake exe mitos-gate imports
       - run: lake exe mitos-gate lock --check
@@ -47,12 +54,29 @@ jobs:
       - name: Mutation testing (paranoid)
         shell: bash
         run: |
+          # A runner shutdown skips every later step, if: always() included, so this step logs
+          # memory, swap, free disk and the largest processes itself, every 10 s (#521).
+          sample() {
+            free -m | awk '/^Mem:/ {printf "mem used %sM, available %sM", $3, $7} /^Swap:/ {printf ", swap used %sM", $3}'
+            df -h --output=avail / | awk 'NR == 2 {printf ", disk free %s", $1}'
+            ps -eo rss=,comm= --sort=-rss | awk 'NR <= 3 {printf ", %s %dM", $2, $1 / 1024}'
+          }
+          while :; do echo "resources $(date -u +%T): $(sample)"; sleep 10 >/dev/null 2>&1; done &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null || true' EXIT
           status=0
           lake --dir eval/mutants exe mitos-mutants --paranoid | tee "$RUNNER_TEMP/mutants.txt" \
             || status=$?
           { echo '### Mutation testing'; echo '```'; cat "$RUNNER_TEMP/mutants.txt"; echo '```'; } \
             >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      - name: Resources at the end of the job
+        if: always()
+        run: |
+          free -m
+          df -h
+          sudo -n dmesg | grep -i -E 'oom|out of memory' | tail -n 20 || true
 
       - if: always()
         uses: actions/upload-artifact@v4
@@ -151,11 +175,28 @@ jobs:
             exit "$code"
           fi
 
+      - name: Resources before the checks
+        run: |
+          nproc
+          free -m
+          swapon --show
+          df -h
+
       - name: Run the checks on the candidate toolchain
         shell: bash
         run: |
           set -euo pipefail
           trap 'printf "### canary %s: FAILED\nEarly warning, not a failure of main: an upgrade to %s breaks a check. Schedule the bump (docs/process.md, tripwires).\n" "$VERSION" "$VERSION" >> "$GITHUB_STEP_SUMMARY"' ERR
+          # A runner shutdown skips every later step, if: always() included, so this step logs
+          # memory, swap, free disk and the largest processes itself, every 10 s (#521).
+          sample() {
+            free -m | awk '/^Mem:/ {printf "mem used %sM, available %sM", $3, $7} /^Swap:/ {printf ", swap used %sM", $3}'
+            df -h --output=avail / | awk 'NR == 2 {printf ", disk free %s", $1}'
+            ps -eo rss=,comm= --sort=-rss | awk 'NR <= 3 {printf ", %s %dM", $2, $1 / 1024}'
+          }
+          while :; do echo "resources $(date -u +%T): $(sample)"; sleep 10 >/dev/null 2>&1; done &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null || true' EXIT
           lake build
           (cd core && lake check)
           if [ -f core/Mitos/Proofs/Resolver.lean ]; then (cd core && lake comparator); fi
@@ -165,3 +206,10 @@ jobs:
           lake --dir eval/mutants build
           lake --dir eval/mutants exe mitos-mutants
           echo "### canary $VERSION: passed" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resources at the end of the job
+        if: always()
+        run: |
+          free -m
+          df -h
+          sudo -n dmesg | grep -i -E 'oom|out of memory' | tail -n 20 || true
