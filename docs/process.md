@@ -206,7 +206,7 @@ field's default value.
 | Core imports only `Init`, `Std`, `Mitos.*`; `core/Mitos/Proofs` may also import `Mathlib`, and only Proofs files import `Mitos.Proofs`; a file under `core/Mitos/Core/` outside the plugin-surface closure may also import `Mathlib`, and a file in that closure imports only `Init`, `Std` and `Mitos.Core`; gate imports only `Init`, `Std`, `Lean`, `MitosGate`, except the vendored parser and its exact YAML seam; the spec never imports implementations | `lake exe mitos-gate imports` | ✓ | ✓ | ✓ | yes |
 | Lock matches the compiled core, and the root and core git dependencies agree. `statements.lock` starts with `MitosGate.Lock.header`, including the `# format: canon-1` line | `lake exe mitos-gate lock --check` | ✓ | ✓ | ✓ | yes |
 | `pr-state.sh`, `watch-github.sh` and the files they source run `gh` only as `gh api` in their wrappers, and never name GraphQL | `.claude/scripts/gh-api-rest.test.sh` | ✓ | ✓ | | yes |
-| Neutral skill tree matches the roster | `python3 .cursor/skills/agents-skills.py check` | ✓ | ✓ | | yes |
+| Neutral skill tree matches the roster | `python3 .agents/scripts/agents-skills.py check` | ✓ | ✓ | | yes |
 | `hook-state.sh` and every `.claude/scripts/lib/*.sh` name bash with a shebang, and `shellcheck -x` follows the scripts that source them | `.claude/scripts/sourced-bash.test.sh` | ✓ | ✓ | | yes |
 | `main-tool.sh` finds and builds main's tool in a checkout inside the git directory, builds only when a tool input changed, and `ensure` waits out another caller's build | `.claude/scripts/main-tool.test.sh` | ✓ | | | no |
 | `carry.sh` asks `mitos-gate carry` of main's tool whether a commit covers a PR's head, and `bot-review.sh` reads `reviewed … (carried from <sha>)` only when it does | `.claude/scripts/carry.test.sh`, `.claude/scripts/bot-review.test.sh` | ✓ | | | no |
@@ -601,8 +601,9 @@ At the end of each phase the owner reviews the scorecard trend and the run logs:
 
 A Cursor session loads `.cursor/rules/kitimark-mode.mdc` and `.cursor/rules/process-pointers.mdc`
 on every chat, and `.cursor/rules/lean-trust.mdc` when a `.lean` file is in context.
-`.cursor/skills/kitimark-mode/SKILL.md` tells the agent to read
-`.claude/skills/kitimark-mode/SKILL.md` and this document, which stay canonical. pstack is
+That rule points at `.claude/skills/kitimark-mode/SKILL.md` and this document, which stay canonical.
+The skills themselves are under `.agents/skills/`, the agents under `.agents/agents/`, and the
+roster checker is `python3 .agents/scripts/agents-skills.py check`. pstack is
 installed in Cursor as a plugin (`/add-plugin pstack`,
 [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack)), and `.claude/` is the port
 this repository maintains. #100 leaves `AGENTS.md` out of the repository, because outside

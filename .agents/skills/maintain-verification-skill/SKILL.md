@@ -38,4 +38,4 @@ Only edit the verification skill's own directory (its SKILL.md, features/, and a
 
 Keep concise run notes (features covered, unreachable prerequisites, confirmed drift, outcome) in a scratch location; don't commit them.
 
-A generated `verify-<slug>` name is not exempt from the roster. Add a row to `.cursor/skills/agents-roster.tsv` for that directory or the skill-tree check fails.
+A generated `verify-<slug>` name is not exempt from the roster. Add a row to `.agents/scripts/agents-roster.tsv` for that directory or the skill-tree check fails.

@@ -43,4 +43,4 @@ Run its own instructions end to end once: launch, doctor, drive ONE mapped featu
 
 Point the user at `/maintain-verification-skill` for keeping the map honest as the app changes. Suggest a cadence only if they ask.
 
-A generated `verify-<slug>` name is not exempt from the roster. Add a row to `.cursor/skills/agents-roster.tsv` for that directory or the skill-tree check fails.
+A generated `verify-<slug>` name is not exempt from the roster. Add a row to `.agents/scripts/agents-roster.tsv` for that directory or the skill-tree check fails.
