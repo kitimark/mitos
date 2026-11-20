@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""Check and refresh the harness-neutral skill tree.
-
-The roster at .cursor/skills/agents-roster.tsv classifies every skill under
-.cursor/skills. `sync` copies mirror-class directories as real files and writes
-agents/openai.yaml for explicit skills. It never writes a rewrite-class
-SKILL.md or that skill's hand-written companions. `check` prints one fault per
-line and exits 0 only when the tree matches the roster.
-"""
 
 from __future__ import annotations
 
@@ -40,7 +32,6 @@ ALLOWED_SENTENCES = (FANOUT, ASK, SKIP, MODEL)
 
 CANONICAL_POLICY = "policy:\n  allow_implicit_invocation: false\n"
 
-# Longer tokens first so AskUserQuestion is not also reported as AskQuestion.
 BANNED_TOKENS = (
     "AskUserQuestion",
     "AskQuestion",
@@ -70,8 +61,7 @@ KEPT_NAMES = (
     "swarm",
 )
 
-# Dialect files that live outside the skill directory and still belong to the stamp.
-REWRITE_ALSO = {
+DIALECT_STAMP_EXTRAS = {
     "no-comments": {
         "cursor": (".cursor/agents/comment-sicko.md",),
         "claude": (".claude/agents/comment-sicko.md",),
@@ -87,7 +77,6 @@ KITIMARK_PHRASES = (
     "never post a merge command",
 )
 
-# Playbooks that tell an agent to merge lose to docs/process.md.
 MERGE_RULE_FILES = (
     ".agents/skills/poteto-mode/playbooks/shipping.md",
     ".agents/skills/poteto-mode/playbooks/autopilot-full.md",
@@ -205,7 +194,7 @@ class FileEntry:
 
 
 class SyncAction:
-    """No subclass writes a rewrite-class SKILL.md or a hand-written companion."""
+    pass
 
 
 @dataclass(frozen=True)
@@ -221,8 +210,6 @@ class MirrorCopy(SyncAction):
 
 @dataclass(frozen=True)
 class PolicyWrite(SyncAction):
-    """Write the canonical policy, or delete openai.yaml when invocation is named."""
-
     name: str
     present: bool
 
@@ -550,7 +537,7 @@ def dialect_payload(root: Path, name: str, side: str) -> tuple[tuple[tuple[str, 
     if directory.is_symlink():
         return None, faults
     payload = [(entry.rel, entry.data) for entry in files]
-    for rel in REWRITE_ALSO.get(name, {}).get(side, ()):
+    for rel in DIALECT_STAMP_EXTRAS.get(name, {}).get(side, ()):
         path = root / rel
         if path.is_symlink() or not path.is_file():
             faults.append(
@@ -582,7 +569,7 @@ def evaluate(root: Path) -> tuple[Fault, ...]:
         return tuple(loaded)
     roster = loaded
     faults: list[Fault] = []
-    _bind_excluded(roster)
+    excluded = {row.name for row in roster.rows if row.klass is Class.exclude}
     names, walk_faults = cursor_skill_names(root)
     faults.extend(walk_faults)
     by_name = {row.name: row for row in roster.rows}
@@ -599,7 +586,7 @@ def evaluate(root: Path) -> tuple[Fault, ...]:
     faults.extend(_forbidden(root))
     faults.extend(_agents_shape(root, roster))
     for row in roster.rows:
-        faults.extend(_row_tree(root, row))
+        faults.extend(_row_tree(root, row, excluded))
     return tuple(faults)
 
 
@@ -665,7 +652,7 @@ def _agents_shape(root: Path, roster: Roster) -> list[Fault]:
     return faults
 
 
-def _row_tree(root: Path, row: RosterRow) -> list[Fault]:
+def _row_tree(root: Path, row: RosterRow, excluded: set[str]) -> list[Fault]:
     faults: list[Fault] = []
     if row.klass is Class.exclude:
         return faults
@@ -685,7 +672,7 @@ def _row_tree(root: Path, row: RosterRow) -> list[Fault]:
             Fault(FaultKind.RewriteMissing, f".agents/skills/{row.name}/SKILL.md", "missing rewrite body")
         )
     if (neutral / "SKILL.md").is_file() and not (neutral / "SKILL.md").is_symlink():
-        faults.extend(_skill_text(root, row, neutral))
+        faults.extend(_skill_text(root, row, neutral, excluded))
     faults.extend(_policy(row, neutral))
     return faults
 
@@ -766,7 +753,7 @@ def _stamp(
             Fault(FaultKind.StampMismatch, f".cursor/skills/{row.name}", "cursor dialect is missing")
         )
     else:
-        digest = tree_sha256(tuple(_body_only(cursor_payload, "cursor")))
+        digest = tree_sha256(cursor_payload)
         if digest != row.cursor_sha256:
             faults.append(
                 Fault(
@@ -785,7 +772,7 @@ def _stamp(
                 )
             )
     else:
-        digest = tree_sha256(tuple(_body_only(claude_payload, "claude")))
+        digest = tree_sha256(claude_payload)
         if digest != row.claude_sha256:
             faults.append(
                 Fault(
@@ -795,11 +782,6 @@ def _stamp(
                 )
             )
     return faults
-
-
-def _body_only(payload: tuple[tuple[str, bytes], ...], side: str) -> list[tuple[str, bytes]]:
-    """Skill-relative paths plus the repo-relative extras for this side."""
-    return list(payload)
 
 
 def mirror_source_dir(root: Path, row: RosterRow) -> Path | None:
@@ -858,7 +840,7 @@ def _under_root(root: Path, path: str) -> str:
         return path
 
 
-def _skill_text(root: Path, row: RosterRow, neutral: Path) -> list[Fault]:
+def _skill_text(root: Path, row: RosterRow, neutral: Path, excluded: set[str]) -> list[Fault]:
     faults: list[Fault] = []
     skill = neutral / "SKILL.md"
     text = skill.read_text(encoding="utf-8")
@@ -911,20 +893,13 @@ def _skill_text(root: Path, row: RosterRow, neutral: Path) -> list[Fault]:
                 faults.append(
                     Fault(FaultKind.KitimarkPhraseMissing, rel, f"missing {phrase}")
                 )
-    faults.extend(_scan_tree(root, row, neutral))
+    faults.extend(_scan_tree(root, row, neutral, excluded))
     return faults
 
 
-def _scan_tree(root: Path, row: RosterRow, neutral: Path) -> list[Fault]:
+def _scan_tree(root: Path, row: RosterRow, neutral: Path, excluded: set[str]) -> list[Fault]:
     faults: list[Fault] = []
     files, _walk_faults = _walk(neutral)
-    excluded = set()
-    # Links to exclude-class names are faults. The caller passes the row's roster
-    # through the closure in evaluate; re-read the names from the roster file's
-    # already-checked rows by walking siblings is unnecessary. evaluate calls
-    # this per row, so the excluded set is loaded once per file from the roster
-    # object stored on the function by evaluate. See _bind_excluded.
-    excluded = _EXCLUDED_NAMES
     for entry in files:
         rel = f".agents/skills/{row.name}/{entry.rel}"
         try:
@@ -957,14 +932,6 @@ def _scan_tree(root: Path, row: RosterRow, neutral: Path) -> list[Fault]:
                 faults.append(Fault(FaultKind.ExcludedSkillLink, rel, name))
                 break
     return faults
-
-
-_EXCLUDED_NAMES: set[str] = set()
-
-
-def _bind_excluded(roster: Roster) -> None:
-    global _EXCLUDED_NAMES
-    _EXCLUDED_NAMES = {row.name for row in roster.rows if row.klass is Class.exclude}
 
 
 def _excluded_link(text: str, name: str) -> bool:
@@ -1286,7 +1253,6 @@ def main(argv: list[str]) -> int:
         if isinstance(loaded, list):
             _print_faults(tuple(loaded))
             return 1
-        _bind_excluded(loaded)
         faults = evaluate(root) + tuple(_merge_rules(root))
         _print_faults(faults)
         return 1 if faults else 0
@@ -1296,9 +1262,6 @@ def main(argv: list[str]) -> int:
             _print_faults(tuple(item for item in plan if isinstance(item, Fault)))
             return 1
         apply_sync(root, tuple(item for item in plan if isinstance(item, SyncAction)))
-        loaded = load_roster(roster_path(root))
-        if not isinstance(loaded, list):
-            _bind_excluded(loaded)
         faults = evaluate(root) + tuple(_merge_rules(root))
         _print_faults(faults)
         return 1 if faults else 0

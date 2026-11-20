@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Re-copy pstack skills and agents from https://github.com/cursor/plugins.
-# Usage: resync-pstack.sh [<commit>]
-# With no argument, uses the tip of that repo's main branch.
-# Kept skill names come from the roster. After the vendor copy, sync refreshes
-# the neutral mirror tree. Sync does not write a rewrite body under .agents/skills.
 set -euo pipefail
 
 kept_agents=(poteto-agent.md)
