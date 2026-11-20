@@ -285,6 +285,100 @@ if rebuild "eq_of_id"; then
 fi
 restore_sources
 
+python3 - <<'PY'
+from pathlib import Path
+g = Path("core/Mitos/Core/Graph.lean")
+gtext = g.read_text()
+gneedle = "namespace Mitos\n"
+if gneedle not in gtext:
+    raise SystemExit("missing Graph namespace anchor")
+g.write_text(gtext.replace(gneedle, gneedle + "\naxiom hiddenAx.inj : False\n", 1))
+
+l = Path("core/Mitos/Core/Lines.lean")
+ltext = l.read_text()
+lneedle = "def lines.go : List Char"
+if lneedle not in ltext:
+    raise SystemExit("missing lines.go anchor")
+l.write_text(ltext.replace(lneedle, "theorem lines.go.match_1.congr_eq_7 : True := .intro\n\n" + lneedle, 1))
+PY
+
+if rebuild "hidden axiom and congr_eq"; then
+  if write_lock "$tmp/axcongr.canon"; then
+    got=$(changed_ids "$tmp/base.canon" "$tmp/axcongr.canon")
+    want=$(printf '%s\n%s' 'AXIOM Mitos.hiddenAx.inj' 'theorem Mitos.lines.go.match_1.congr_eq_7')
+    if [ "$got" = "$want" ]; then
+      ok "a hidden axiom and a hand-written congr_eq lemma each get a line"
+    else
+      bad "a hidden axiom and a hand-written congr_eq lemma"
+      printf '%s\n' "$got" | sed 's/^/  /'
+    fi
+  fi
+fi
+restore_sources
+
+python3 - <<'PY'
+from pathlib import Path
+g = Path("core/Mitos/Core/Graph.lean")
+gtext = g.read_text()
+gneedle = "namespace Mitos\n"
+if gneedle not in gtext:
+    raise SystemExit("missing Graph namespace anchor")
+extra = (
+    gneedle
+    + "\nprivate axiom hiddenPrivAx : False\n"
+    + "axiom _hiddenInternalAx : False\n"
+    + "theorem lookalike.inj : True := .intro\n"
+    + "theorem proof_2 : True := .intro\n"
+)
+g.write_text(gtext.replace(gneedle, extra, 1))
+PY
+
+if rebuild "private and internal axioms and lookalikes"; then
+  if write_lock "$tmp/lookalike.canon"; then
+    got=$(changed_ids "$tmp/base.canon" "$tmp/lookalike.canon")
+    want=$(printf '%s\n%s\n%s\n%s' \
+      'AXIOM Mitos._hiddenInternalAx' \
+      'AXIOM _private.Mitos.Core.Graph.0.Mitos.hiddenPrivAx' \
+      'theorem Mitos.lookalike.inj' \
+      'theorem Mitos.proof_2')
+    if [ "$got" = "$want" ]; then
+      ok "private/internal axioms and hand-written suffix lookalikes each get a line"
+    else
+      bad "private/internal axioms and hand-written suffix lookalikes"
+      printf '%s\n' "$got" | sed 's/^/  /'
+    fi
+  fi
+fi
+restore_sources
+
+python3 - <<'PY'
+from pathlib import Path
+g = Path("core/Mitos/Core/Graph.lean")
+gtext = g.read_text()
+gneedle = "namespace Mitos\n"
+if gneedle not in gtext:
+    raise SystemExit("missing Graph namespace anchor")
+extra = (
+    gneedle
+    + "\nprivate partial def hiddenPartial (n : Nat) : Nat := hiddenPartial n\n"
+    + "def usesHiddenPartial (n : Nat) : Nat := hiddenPartial n\n"
+)
+g.write_text(gtext.replace(gneedle, extra, 1))
+PY
+
+if rebuild "unlisted partial opaque"; then
+  if "$bin" lock >"$tmp/partial.out" 2>&1; then
+    bad "a reached unlisted partial opaque is refused"
+    sed 's/^/  /' "$tmp/partial.out"
+  elif grep -q 'opaque' "$tmp/partial.out" && grep -q 'hiddenPartial' "$tmp/partial.out"; then
+    ok "a reached unlisted partial opaque is refused"
+  else
+    bad "a reached unlisted partial opaque is refused (unexpected message)"
+    sed 's/^/  /' "$tmp/partial.out"
+  fi
+fi
+restore_sources
+
 if rebuild "restore"; then
   if "$bin" lock --check >"$tmp/lock.out" 2>&1; then
     ok "lock --check passes on the restored tree"
