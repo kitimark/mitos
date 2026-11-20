@@ -61,23 +61,30 @@ Provenance, the license, and what was left out are in
 ```
 
 The script copies `pstack/skills/` and `pstack/agents/` again and leaves the
-edited and repository-only skills and agents above in place (`kept_skills` and
-`kept_agents` at its top). For each kept path that upstream changed since the
-pinned commit, it prints the changed files and a compare link. Merge what
-applies by hand, in the `.cursor/` copy and, where it applies, the `.claude/`
-copy, before you commit the re-sync.
+edited and repository-only skills and agents above in place. Kept skill names
+come from `python3 .cursor/skills/agents-skills.py kept`. `kept_agents` stays
+at the top of the script. After the vendor copy, the script runs
+`python3 .cursor/skills/agents-skills.py sync`, which refreshes mirror skills
+and does not write a rewrite body. For each kept path that upstream changed
+since the pinned commit, it prints the changed files and a compare link. Merge
+what applies by hand, in the `.cursor/` copy and, where it applies, the
+`.claude/` copy, before you commit the re-sync.
 
-## Same skill name twice
+## Same skill name three times
 
-Cursor discovers both `.cursor/skills/kitimark-mode/` and `.claude/skills/kitimark-mode/`.
+Cursor discovers `.cursor/skills/kitimark-mode/` and `.claude/skills/kitimark-mode/`.
 Both use the skill name `kitimark-mode`. Follow `.claude/skills/kitimark-mode/SKILL.md`
 when both appear. The wrapper under `.cursor/skills/` only points at that file.
+`.agents/skills/kitimark-mode/` is the harness-neutral text for a host that does not
+load the Claude file. It is not always on. Invoke it as `$kitimark-mode` or `/kitimark-mode`.
 
-Every other skill in both trees has the same name twice too. In Cursor, follow the
-`.cursor/skills/` copy: it names Cursor's tools, and it carries the same mitos rules.
+Every other name under `.cursor/skills/` is the copy Cursor follows. Codex and
+Antigravity follow `.agents/skills/<name>/`. When Cursor shows the `.agents` text
+for a name that also exists under `.cursor` or `.claude`, ignore it.
 
 ## No `AGENTS.md`
 
 The repository has no `AGENTS.md`. [#100](https://github.com/kitimark/mitos/issues/100)
 keeps it out: outside reviewers read instructions from the head, and a root instruction
 file would be a second copy of these rules and a place a pull request could change them.
+`.agents/` is skills only: no `AGENTS.md`, no `.agents/rules`, and no `.agents/README.md`.

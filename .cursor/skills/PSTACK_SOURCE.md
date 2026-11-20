@@ -8,7 +8,7 @@ Copied from [cursor/plugins](https://github.com/cursor/plugins), directory `psta
 
 Cursor loads `pstack/skills/` and `pstack/agents/` (`pstack/.cursor-plugin/plugin.json`). Those two trees are copied here: each skill directory under `.cursor/skills/<name>/`, and the agent files under `.cursor/agents/`. Upstream ships no rules.
 
-Edited copies. `architect`, `no-comments`, `poteto-mode`, `reflect`, `show-me-your-work`, `swarm` and `agents/poteto-agent.md` are upstream's files at the commit above, plus this repository's rules written in Cursor's terms. The `.claude/` ports carry the same rules (`.cursor/README.md`). `kitimark-mode` and `principle-split-by-topic` are this repository's own skills, and upstream has no skill by either name. Re-sync keeps all of these (`kept_skills` and `kept_agents` in the script). For each one that upstream changed, added or removed since the pinned commit, it prints a notice, the changed files and a compare link, so a person merges upstream's change by hand.
+Edited copies. `architect`, `no-comments`, `poteto-mode`, `reflect`, `show-me-your-work`, `swarm` and `agents/poteto-agent.md` are upstream's files at the commit above, plus this repository's rules written in Cursor's terms. The `.claude/` ports carry the same rules (`.cursor/README.md`). `kitimark-mode` and `principle-split-by-topic` are this repository's own skills, and upstream has no skill by either name. Re-sync keeps all of these. Skill names come from `python3 .cursor/skills/agents-skills.py kept`, and `kept_agents` stays in the script. For each one that upstream changed, added or removed since the pinned commit, it prints a notice, the changed files and a compare link, so a person merges upstream's change by hand.
 
 Not copied. Cursor does not load these as project skills, rules, or agents:
 
@@ -28,3 +28,7 @@ From the repository root:
 ```
 
 The script fetches that commit (default: `main`), copies `pstack/skills/` and `pstack/agents/`, refreshes `PSTACK_LICENSE`, and rewrites the three bullets above. It leaves the kept skills and agents in place.
+
+## Neutral tree
+
+`.cursor/skills/agents-roster.tsv` classifies every skill under `.cursor/skills`. `python3 .cursor/skills/agents-skills.py check` fails when `.agents/skills` and the roster disagree. `python3 .cursor/skills/agents-skills.py sync` refreshes the mirror skills and the explicit `agents/openai.yaml` files. It does not write a rewrite body. Re-sync is not done until that sync has run. The script runs it after the vendor copy and exits non-zero when the tree does not match.

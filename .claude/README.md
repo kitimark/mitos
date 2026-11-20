@@ -112,3 +112,7 @@ does with it.
 | Cursor's built-in babysit skill | dropped | only named to say "do not route there" |
 | `setup-pstack`, `pstack-models.mdc` | dropped | fixed model defaults in each file |
 | Cursor cloud agents, Origin, Graphite, agent store | dropped | see the change list above |
+
+## Neutral copy
+
+Claude Code keeps following `.claude/skills`. `.agents/skills` is the harness-neutral copy for a host that does not load this tree. A rewrite-class edit here is unfinished until the neutral body matches and `python3 .cursor/skills/agents-skills.py stamp` then `check` both succeed. `resync-pstack.sh` refreshes the vendored Cursor skills, then syncs the mirror rows into `.agents/skills`. It does not overwrite a rewrite body.
