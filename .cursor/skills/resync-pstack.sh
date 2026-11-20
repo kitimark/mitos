@@ -2,12 +2,26 @@
 # Re-copy pstack skills and agents from https://github.com/cursor/plugins.
 # Usage: resync-pstack.sh [<commit>]
 # With no argument, uses the tip of that repo's main branch.
+# Kept skill names come from the roster. After the vendor copy, sync refreshes
+# the neutral mirror tree. Sync does not write a rewrite body under .agents/skills.
 set -euo pipefail
 
-kept_skills=(architect kitimark-mode no-comments poteto-mode principle-split-by-topic reflect show-me-your-work swarm)
 kept_agents=(poteto-agent.md)
 
 root=$(git rev-parse --show-toplevel)
+if ! kept_out=$(python3 "$root/.cursor/skills/agents-skills.py" kept); then
+  echo "could not read kept skill names from the roster" >&2
+  exit 1
+fi
+kept_skills=()
+while IFS= read -r name; do
+  [[ -n "$name" ]] || continue
+  kept_skills+=("$name")
+done <<< "$kept_out"
+if [[ ${#kept_skills[@]} -eq 0 ]]; then
+  echo "roster kept list is empty" >&2
+  exit 1
+fi
 ref=${1:-main}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -109,3 +123,7 @@ awk -v commit="$sha" -v tree="$tree" -v ver="$ver" '
 mv "$tmp" "$src"
 
 echo "vendored pstack $ver at $sha (tree $tree)"
+if ! python3 "$root/.cursor/skills/agents-skills.py" sync; then
+  echo "neutral skill tree does not match the roster" >&2
+  exit 1
+fi
