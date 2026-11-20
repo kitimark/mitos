@@ -44,6 +44,22 @@ HEADER = (
     "name\tclass\tsource\tinvocation\tcursor\tcursor_sha256\tclaude_sha256\n"
 )
 
+PLAYBOOK_RELS = (
+    ".agents/skills/poteto-mode/playbooks/shipping.md",
+    ".agents/skills/poteto-mode/playbooks/autopilot-full.md",
+    ".agents/skills/poteto-mode/playbooks/autopilot-stack.md",
+    ".agents/skills/poteto-mode/playbooks/babysit.md",
+    ".agents/skills/poteto-mode/playbooks/pause-safely.md",
+    ".agents/skills/poteto-mode/playbooks/orchestrate.md",
+)
+
+PLAYBOOK_TEXT = (
+    "docs/process.md wins where this playbook says to merge. "
+    "Never enable auto-merge, and never post a merge command.\n"
+)
+
+CANONICAL_POLICY = "policy:\n  allow_implicit_invocation: false\n"
+
 
 class Check:
     def __init__(self) -> None:
@@ -127,6 +143,10 @@ def build_base(root: Path) -> None:
     write_skill(root, ".agents", "tdd", mirror)
     policy(root, "tdd")
     rows.append(roster_line("tdd", "mirror", "both", "explicit", "vendored"))
+    for rel in PLAYBOOK_RELS:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(PLAYBOOK_TEXT, encoding="utf-8")
     roster = root / ".agents" / "scripts" / "agents-roster.tsv"
     roster.parent.mkdir(parents=True, exist_ok=True)
     roster.write_text("".join(rows), encoding="utf-8")
@@ -183,6 +203,15 @@ def main() -> int:
         fixture_unrostered(check)
         fixture_sync_preserves_rewrite(check)
         fixture_sync_idempotent(check)
+        fixture_roster_escape(check)
+        fixture_exclude_removes_skill(check)
+        fixture_sync_linked_skill_dir(check)
+        fixture_sync_linked_nested(check)
+        fixture_sync_linked_temp(check)
+        fixture_sync_linked_dest_file(check)
+        fixture_playbooks_missing(check)
+        fixture_playbooks_symlink(check)
+        fixture_verify_roster_row(check)
 
     real = run(REPO, "check")
     check.expect(real.returncode == 0 and real.stdout == "", f"real tree\n{real.stdout}")
@@ -434,6 +463,149 @@ def fixture_sync_idempotent(check: Check) -> None:
         second = run(root, "sync")
         check.expect(second.returncode == 0 and snapshot(root) == before, "second sync changed bytes or mtimes")
         check.expect(mirror.read_bytes() == (root / ".cursor" / "skills" / "tdd" / "SKILL.md").read_bytes(), "mirror bytes")
+
+
+def fixture_roster_escape(check: Check) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        build_base(root)
+        victim = root / ".agents" / "outside"
+        victim.mkdir()
+        marker = victim / "marker.txt"
+        marker.write_text("keep\n", encoding="utf-8")
+        _append_row(root, roster_line("../outside", "exclude", "cursor", "explicit", "vendored"))
+        proc = run(root, "sync")
+        check.expect(proc.returncode != 0 and "BadName:" in proc.stdout, proc.stdout)
+        check.expect(marker.read_text(encoding="utf-8") == "keep\n", "sync deleted outside .agents/skills")
+        check.expect((root / ".agents" / "skills" / "tdd" / "SKILL.md").is_file(), "skill tree changed")
+
+
+def fixture_exclude_removes_skill(check: Check) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        build_base(root)
+        text = skill_text("drop-me", "Drop this.", "Body.\n", True)
+        write_skill(root, ".agents", "drop-me", text)
+        (root / ".agents" / "skills" / "drop-me" / "notes.md").write_text("gone\n", encoding="utf-8")
+        _append_row(root, roster_line("drop-me", "exclude", "cursor", "explicit", "vendored"))
+        proc = run(root, "sync")
+        check.expect(not (root / ".agents" / "skills" / "drop-me").exists(), proc.stdout + proc.stderr)
+        check.expect((root / ".agents" / "skills" / "tdd" / "SKILL.md").is_file(), "removed a kept skill")
+
+
+def fixture_sync_linked_skill_dir(check: Check) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        build_base(root)
+        outside = root / "outside-skill"
+        outside.mkdir()
+        victim = outside / "SKILL.md"
+        victim.write_text("OUTSIDE\n", encoding="utf-8")
+        dest = root / ".agents" / "skills" / "tdd"
+        shutil.rmtree(dest)
+        dest.symlink_to(outside, target_is_directory=True)
+        proc = run(root, "sync")
+        check.expect(victim.read_text(encoding="utf-8") == "OUTSIDE\n", proc.stdout + proc.stderr)
+        check.expect(proc.returncode != 0 and "Symlink:" in proc.stdout, proc.stdout)
+
+
+def fixture_sync_linked_nested(check: Check) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        build_base(root)
+        outside = root / "outside-agents"
+        outside.mkdir()
+        victim = outside / "openai.yaml"
+        victim.write_text("OUTSIDE\n", encoding="utf-8")
+        agents = root / ".agents" / "skills" / "tdd" / "agents"
+        shutil.rmtree(agents)
+        agents.symlink_to(outside, target_is_directory=True)
+        neutral = (root / ".agents" / "skills" / "tdd" / "SKILL.md").read_text(encoding="utf-8")
+        proc = run(root, "sync")
+        check.expect(victim.read_text(encoding="utf-8") == "OUTSIDE\n", proc.stdout + proc.stderr)
+        check.expect(
+            (root / ".agents" / "skills" / "tdd" / "SKILL.md").read_text(encoding="utf-8") == neutral,
+            "wrote before rejecting the link",
+        )
+        check.expect(proc.returncode != 0 and "Symlink:" in proc.stdout, proc.stdout)
+
+
+def fixture_sync_linked_temp(check: Check) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        build_base(root)
+        outside = root / "outside-temp.txt"
+        outside.write_text("OUTSIDE\n", encoding="utf-8")
+        skill = root / ".agents" / "skills" / "tdd" / "SKILL.md"
+        source = (root / ".cursor" / "skills" / "tdd" / "SKILL.md").read_text(encoding="utf-8")
+        skill.write_text(source + "DIRTY\n", encoding="utf-8")
+        temporary = skill.parent / ".SKILL.md.agents-tmp"
+        temporary.symlink_to(outside)
+        proc = run(root, "sync")
+        check.expect(outside.read_text(encoding="utf-8") == "OUTSIDE\n", proc.stdout + proc.stderr)
+        check.expect(skill.read_text(encoding="utf-8") == source, proc.stdout + proc.stderr)
+        check.expect(skill.is_file() and not skill.is_symlink(), "skill is still a link")
+        check.expect(not temporary.exists() and not temporary.is_symlink(), "temp link remains")
+        check.expect(proc.returncode == 0, proc.stdout + proc.stderr)
+
+
+def fixture_sync_linked_dest_file(check: Check) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        build_base(root)
+        outside = root / "outside-dest.txt"
+        outside.write_text("OUTSIDE\n", encoding="utf-8")
+        skill = root / ".agents" / "skills" / "tdd" / "SKILL.md"
+        source = (root / ".cursor" / "skills" / "tdd" / "SKILL.md").read_text(encoding="utf-8")
+        skill.unlink()
+        skill.symlink_to(outside)
+        proc = run(root, "sync")
+        check.expect(outside.read_text(encoding="utf-8") == "OUTSIDE\n", proc.stdout + proc.stderr)
+        check.expect(skill.is_file() and not skill.is_symlink(), "followed the destination link")
+        check.expect(skill.read_text(encoding="utf-8") == source, proc.stdout + proc.stderr)
+        check.expect(proc.returncode == 0, proc.stdout + proc.stderr)
+
+
+def fixture_playbooks_missing(check: Check) -> None:
+    def mutate(root: Path) -> None:
+        shutil.rmtree(root / ".agents" / "skills" / "poteto-mode" / "playbooks")
+
+    proc = with_base(mutate)
+    check.expect(proc.returncode != 0, proc.stdout)
+    for rel in PLAYBOOK_RELS:
+        check.expect(f"MergeRuleMissing: {rel}:" in proc.stdout, proc.stdout)
+
+
+def fixture_playbooks_symlink(check: Check) -> None:
+    def mutate(root: Path) -> None:
+        playbooks = root / ".agents" / "skills" / "poteto-mode" / "playbooks"
+        held = root / "held-playbooks"
+        playbooks.rename(held)
+        playbooks.symlink_to(held, target_is_directory=True)
+
+    proc = with_base(mutate)
+    check.expect(
+        "Symlink:" in proc.stdout and ".agents/skills/poteto-mode/playbooks" in proc.stdout,
+        proc.stdout,
+    )
+    for rel in PLAYBOOK_RELS:
+        check.expect(f"MergeRuleMissing: {rel}:" in proc.stdout, proc.stdout)
+
+
+def fixture_verify_roster_row(check: Check) -> None:
+    def mutate(root: Path) -> None:
+        text = skill_text("verify-notes", "Drive the notes app.", "Launch and look.\n", True)
+        write_skill(root, ".agents", "verify-notes", text)
+        policy(root, "verify-notes")
+        written = (root / ".agents" / "skills" / "verify-notes" / "agents" / "openai.yaml").read_text(
+            encoding="utf-8"
+        )
+        if written != CANONICAL_POLICY:
+            raise SystemExit("fixture policy drifted")
+        _append_row(root, roster_line("verify-notes", "rewrite", "none", "explicit", "kept"))
+
+    proc = with_base(mutate)
+    check.expect(proc.returncode == 0 and proc.stdout == "", proc.stdout)
 
 
 def _append_row(root: Path, line: str) -> None:

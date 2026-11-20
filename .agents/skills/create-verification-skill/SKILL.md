@@ -22,7 +22,14 @@ If the checkout doesn't build or start as-is, fix that first (or report it preci
 
 ## 2. Generate the skill
 
-Write `.agents/skills/verify-<slug>/SKILL.md` with YAML frontmatter (`name: verify-<slug>` and a `description` that names the app, the surface, and when to reach for it — without frontmatter the skill never registers) and these sections, each grounded in what the interview actually found (no placeholders left):
+Write `.agents/skills/verify-<slug>/SKILL.md` with YAML frontmatter (`name` matching the folder, a non-empty `description` that names the app, the surface, and when to reach for it, and the explicit-invocation flag set to true). The flag's key is the one this file sets to true above the body, and it lives only in the generated frontmatter. Without that frontmatter the skill never registers. Also write `.agents/skills/verify-<slug>/agents/openai.yaml` as this canonical policy, byte for byte:
+
+```yaml
+policy:
+  allow_implicit_invocation: false
+```
+
+Then write these sections, each grounded in what the interview actually found (no placeholders left):
 
 - **Launch:** the exact command that starts the app for verification, and how to tell it's ready (a log line, a prompt). Launch must reach a usable state from an empty data dir, including any migrations and seed data. Ready means usable, not just that a process answers. A database health check can pass while its init scripts are still running. Include teardown. For a short-lived CLI or TUI there is no server to keep alive: launch means build the binary (or install deps) once, then start each drive in its own isolated PTY or tmux session.
 - **Doctor:** one read-only check that answers "is this instance worth driving?" — process up, right version/build, port owned by us, auth valid. An agent runs this first whenever anything looks off.
@@ -43,4 +50,17 @@ Run its own instructions end to end once: launch, doctor, drive ONE mapped featu
 
 Point the user at `/maintain-verification-skill` for keeping the map honest as the app changes. Suggest a cadence only if they ask.
 
-A generated `verify-<slug>` name is not exempt from the roster. Add a row to `.agents/scripts/agents-roster.tsv` for that directory or the skill-tree check fails.
+A generated `verify-<slug>` name is not exempt from the roster. A neutral-only skill passes the skill-tree check as this exact row, with both hash cells a hyphen:
+
+```
+verify-<slug>	rewrite	none	explicit	kept	-	-
+```
+
+The row is tab-separated. `verify-<slug>` is the folder name. The skill file is `.agents/skills/verify-<slug>/SKILL.md`, with frontmatter `name` matching that folder, a non-empty `description`, and the explicit-invocation flag set to true. That flag's key is the one this file sets to true above the body, and it lives only in the generated frontmatter, not in this skill's body. `agents/openai.yaml` equals the canonical policy:
+
+```yaml
+policy:
+  allow_implicit_invocation: false
+```
+
+Run the skill-tree check before handoff. An unrostered directory fails the check.
