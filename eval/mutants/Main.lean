@@ -467,6 +467,28 @@ structure Checked where
   commands : Nat
   gens     : Nat
 
+/-- `s` in memory of its own, which outlives the regions of the environment it was read from. -/
+def copy (s : String) : String := String.ofList s.toList
+
+/-- Imports `m` without its extensions, runs `act` on the environment, and then frees the
+environment's compacted regions, as `Lean.withImportModules` does. Without the free, every import
+stays in memory until the process ends, and each import made while another holds the same
+modules gets its own copy of them: with Mathlib in the spec, about 1.75 GiB each (#521). `act` must
+return nothing read from the environment; its error leaves the scope as a copy. -/
+unsafe def withImportUnsafe {α : Type} (m : String) (act : Environment → ExceptT String IO α) :
+    ExceptT String IO α := ExceptT.mk do
+  let env ← importModules #[{ module := m.toName }] {}
+  try
+    match ← (act env).run with
+    | .ok a => return .ok a
+    | .error e => return .error (copy e)
+  catch e => return .error (copy (toString e))
+  finally env.freeRegions
+
+@[implemented_by withImportUnsafe]
+opaque withImport {α : Type} (m : String) (act : Environment → ExceptT String IO α) :
+  ExceptT String IO α
+
 def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath)
     (reuse : Option PackageReuse) : ExceptT String IO Checked := do
   let genPath (k : Nat) : String := s!"Challenge/MutantsOutput{k}.lean"
@@ -499,55 +521,57 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath)
     build "the Challenge module and the cross-check's probes" (a.files ++ first)
       (a.chalModule :: first.map (moduleOf ·.1))
     initSearchPath (← findSysroot) (searchPath dir reuse)
-    let import_ (m : String) : IO Environment := importModules #[{ module := m.toName }] {}
-    let load (m : String) : ExceptT String IO (Environment × List String × List CrossCheck.Decl) := do
-      let env ← import_ m
-      let some (imps, ds) := CrossCheck.built env m.toName
-        | throw s!"{m}: not in the environment that imports it"
-      return (env, imps, ds)
-    let (approvedEnv, imps, ds) ← load a.chalModule
-    let ps := CrossCheck.problems a.challenge a.defs imps ds
-    unless ps.isEmpty do
-      throw ("the refutation reader read the Challenge otherwise than Lean built it: " ++
-        "; ".intercalate (ps.map (·.text)).eraseDups)
-    for p in CrossCheck.probes do
-      let (_, pi, pd) ← load (moduleOf p.path)
-      unless p.caught pi pd do
-        let found := (CrossCheck.problems p.lines p.defs pi pd).map (·.text)
-        throw (s!"the cross-check missed a known misread in {p.path}: " ++
-          s!"expected {p.expect}, found {found}")
-    let penv ← Output.parseEnv (CrossCheck.importNames a.challenge)
-    let parsed (src : String) : ExceptT String IO (List String × List String × List Output.Cmd) :=
-      ExceptT.adapt (s!"Lean's parser stops: {·}") (ExceptT.mk (Output.readParse penv src))
-    let (hdr, pimps, cmds) ← parsed chalSrc
-    let pps := Output.parseProblems a.challenge hdr pimps cmds
-    unless pps.isEmpty do
-      throw ("the refutation reader read the Challenge otherwise than Lean's parser: " ++
-        "; ".intercalate (pps.map (·.text)))
-    for p in Output.parseProbes do
-      let (h, i, c) ← parsed p.source
-      let found := (Output.parseProblems p.lines h i c).map (·.key)
-      unless p.expect.all found.contains do
-        throw s!"the parse check missed a known misread in probe {p.name}: expected {p.expect}, found {found}"
-    build "the generated Challenges and the output check's probes" second (second.map (moduleOf ·.1))
-    let check (aenv : Environment) (am m : String) (g : Output.Gen) :
-        ExceptT String IO (List Output.OutProblem) := do
+    let load {α : Type} (m : String)
+        (act : Environment → List String → List CrossCheck.Decl → ExceptT String IO α) :
+        ExceptT String IO α :=
+      withImport m fun env => do
+        let some (imps, ds) := CrossCheck.built env m.toName
+          | throw s!"{m}: not in the environment that imports it"
+        act env imps ds
+    let check (aenv : Environment) (am m : String) (g : Output.Gen)
+        (judge : List Output.OutProblem → ExceptT String IO Unit) : ExceptT String IO Unit := do
       let want ← ExceptT.adapt (s!"{g.what}: {·}") (ExceptT.mk (Output.wantTypes aenv am.toName g.wants))
-      let env ← import_ m
-      let some (imps, found) := Output.builtTheorems env m.toName
-        | throw s!"{m}: not in the environment that imports it"
-      return Output.outProblems Output.sameType want g.imports imps found
-    for (k, g) in numbered do
-      let ps ← check approvedEnv a.chalModule (moduleOf (genPath k)) g
+      withImport m fun env => do
+        let some (imps, found) := Output.builtTheorems env m.toName
+          | throw s!"{m}: not in the environment that imports it"
+        judge (Output.outProblems Output.sameType want g.imports imps found)
+    let (decls, commands) ← load a.chalModule fun approvedEnv imps ds => do
+      let ps := CrossCheck.problems a.challenge a.defs imps ds
       unless ps.isEmpty do
-        throw (s!"{g.what}, as Lean built it, does not state what it must: " ++
-          "; ".intercalate (ps.map (·.text)))
+        throw ("the refutation reader read the Challenge otherwise than Lean built it: " ++
+          "; ".intercalate (ps.map (·.text)).eraseDups)
+      for p in CrossCheck.probes do
+        load (moduleOf p.path) fun _ pi pd => do
+          unless p.caught pi pd do
+            let found := (CrossCheck.problems p.lines p.defs pi pd).map (·.text)
+            throw (s!"the cross-check missed a known misread in {p.path}: " ++
+              s!"expected {p.expect}, found {found}")
+      let penv ← Output.parseEnv (CrossCheck.importNames a.challenge)
+      let parsed (src : String) : ExceptT String IO (List String × List String × List Output.Cmd) :=
+        ExceptT.adapt (s!"Lean's parser stops: {·}") (ExceptT.mk (Output.readParse penv src))
+      let (hdr, pimps, cmds) ← parsed chalSrc
+      let pps := Output.parseProblems a.challenge hdr pimps cmds
+      unless pps.isEmpty do
+        throw ("the refutation reader read the Challenge otherwise than Lean's parser: " ++
+          "; ".intercalate (pps.map (·.text)))
+      for p in Output.parseProbes do
+        let (h, i, c) ← parsed p.source
+        let found := (Output.parseProblems p.lines h i c).map (·.key)
+        unless p.expect.all found.contains do
+          throw s!"the parse check missed a known misread in probe {p.name}: expected {p.expect}, found {found}"
+      build "the generated Challenges and the output check's probes" second (second.map (moduleOf ·.1))
+      for (k, g) in numbered do
+        check approvedEnv a.chalModule (moduleOf (genPath k)) g fun ps =>
+          unless ps.isEmpty do
+            throw (s!"{g.what}, as Lean built it, does not state what it must: " ++
+              "; ".intercalate (ps.map (·.text)))
+      return (ds.length, cmds.length)
     for (p, g, gp) in outProbes do
-      let ps ← check (← import_ (moduleOf p.path)) (moduleOf p.path) (moduleOf gp) g
-      let found := ps.map (·.key)
-      unless p.expect.all found.contains do
-        throw s!"the output check missed a known misread in {p.path}: expected {p.expect}, found {found}"
-    return { decls := ds.length, commands := cmds.length, gens := gens.length }
+      withImport (moduleOf p.path) fun aenv => check aenv (moduleOf p.path) (moduleOf gp) g fun ps => do
+        let found := ps.map (·.key)
+        unless p.expect.all found.contains do
+          throw s!"the output check missed a known misread in {p.path}: expected {p.expect}, found {found}"
+    return { decls, commands, gens := gens.length }
   finally
     IO.FS.removeDirAll dir
 
