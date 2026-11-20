@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Fault fixtures for the neutral skill tree. Each case uses a temporary root."""
 
 from __future__ import annotations
 
@@ -67,7 +66,6 @@ def run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def skill_text(name: str, description: str, body: str, disable: bool) -> str:
     lines = ["---", f"name: {name}", f"description: {description!r}"]
-    # !r uses single quotes. The parser accepts single quotes.
     lines = ["---", f"name: {name}", "description: " + _quote(description)]
     if disable:
         lines.append("disable-model-invocation: true")
@@ -218,7 +216,6 @@ def fixture_folder_mismatch(check: Check) -> None:
     def mutate(root: Path) -> None:
         path = root / ".agents" / "skills" / "tdd" / "SKILL.md"
         path.write_text(path.read_text(encoding="utf-8").replace("name: tdd", "name: tdx", 1), encoding="utf-8")
-        # Keep the mirror bytes aligned so the name fault is the one under test.
         for tree in (".cursor", ".claude"):
             source = root / tree / "skills" / "tdd" / "SKILL.md"
             source.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
