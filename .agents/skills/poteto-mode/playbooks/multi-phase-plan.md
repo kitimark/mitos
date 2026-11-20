@@ -57,7 +57,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Open the PR ready, never draft, per **Opening a PR**, through its **Forge** create route (`.claude/scripts/open-pr.sh --head <branch> --title <title> --body-file <file> --base <base-branch>` where the repository ships it). A stack child targets its parent branch.
 - [ ] Run the repo's lint and typecheck once before the PR-facing push. Push with hooks on.
 - [ ] Run the slop strip from poteto-mode's Non-negotiables before each commit and `/no-comments` before review. Under the **kitimark-mode** skill the root runs `/no-comments` on the head the owner reports.
-- [ ] Triage every automated review comment against the code. Cursor-only; skip this step on other hosts.
+- [ ] Triage every automated review comment against the code.
 - [ ] Rebase onto current trunk before the code-ready report and babysit. Keep that merge base in fix rounds. Rebase again only at merge prep, on a `git merge-tree` conflict with trunk, on a CI failure that comes from a change on trunk, or when a known concurrent change to the same files lands.
 
 ### Verdict and merge, for every PR
@@ -126,7 +126,7 @@ Each live lane runs in its own worktree at the PR head. Drive the surface throug
 **Merge.**
 
 - [ ] Root's clean verdict at the exact head SHA.
-- [ ] Automated review triage done. Cursor-only; skip this step on other hosts.
+- [ ] Automated review triage done.
 - [ ] Rebased onto current trunk after the verdict. The verdict holds at the rebased head only when `mitos-gate carry` exits 0 (the **kitimark-mode** skill's Verdicts). Otherwise a verifier passes that head before merge, or for a wording-only change a green `gate` there does.
 - [ ] <The owner rebase-merges its own PR, or the root appends it to the base-branch stack and the operator lands it bottom-up.>
 

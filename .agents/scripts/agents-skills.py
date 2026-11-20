@@ -251,6 +251,15 @@ def load_roster(path: Path) -> Roster | list[Fault]:
             )
             continue
         name, klass, source, invocation, cursor, cursor_hash, claude_hash = parts
+        if NAME_RE.fullmatch(name) is None:
+            faults.append(
+                Fault(
+                    FaultKind.BadName,
+                    _rel(path),
+                    f"line {lineno}: name {name!r} is not a lowercase skill slug",
+                )
+            )
+            continue
         if name in seen:
             faults.append(
                 Fault(FaultKind.RosterInvariant, _rel(path), f"duplicate name {name}")
@@ -1060,14 +1069,26 @@ def _policy(row: RosterRow, neutral: Path) -> list[Fault]:
     return faults
 
 
+def _is_link(path: Path) -> bool:
+    try:
+        return stat.S_ISLNK(path.lstat().st_mode)
+    except OSError:
+        return False
+
+
 def _merge_rules(root: Path) -> list[Fault]:
     playbooks = root / ".agents" / "skills" / "poteto-mode" / "playbooks"
-    if not playbooks.is_dir() or playbooks.is_symlink():
-        return []
     faults: list[Fault] = []
+    if _is_link(playbooks):
+        faults.append(
+            Fault(FaultKind.Symlink, ".agents/skills/poteto-mode/playbooks", "symlink")
+        )
+        for rel in MERGE_RULE_FILES:
+            faults.append(Fault(FaultKind.MergeRuleMissing, rel, "playbook is missing"))
+        return faults
     for rel in MERGE_RULE_FILES:
         path = root / rel
-        if not path.is_file() or path.is_symlink():
+        if _is_link(path) or not path.is_file():
             faults.append(Fault(FaultKind.MergeRuleMissing, rel, "playbook is missing"))
             continue
         text = path.read_text(encoding="utf-8")
@@ -1115,7 +1136,10 @@ def plan_sync(root: Path) -> tuple[SyncAction, ...] | tuple[Fault, ...]:
     return tuple(actions)
 
 
-def apply_sync(root: Path, plan: tuple[SyncAction, ...]) -> None:
+def apply_sync(root: Path, plan: tuple[SyncAction, ...]) -> list[Fault]:
+    refused = _refuse_linked_destinations(root, plan)
+    if refused:
+        return refused
     for action in plan:
         if isinstance(action, MirrorCopy):
             _apply_mirror(root, action)
@@ -1125,6 +1149,63 @@ def apply_sync(root: Path, plan: tuple[SyncAction, ...]) -> None:
             _apply_exclude(root, action)
         else:
             raise RuntimeError("sync has no rewrite-body action")
+    return []
+
+
+def _sync_targets(root: Path, action: SyncAction) -> list[Path]:
+    if isinstance(action, MirrorCopy):
+        dest = root / ".agents" / "skills" / action.name
+        targets = [dest / "SKILL.md"]
+        files, faults = _walk(Path(action.source_dir))
+        if not faults:
+            targets.extend(dest / entry.rel for entry in files if entry.rel != POLICY_REL)
+        return targets
+    if isinstance(action, PolicyWrite):
+        return [root / ".agents" / "skills" / action.name / "agents" / "openai.yaml"]
+    return []
+
+
+def _blocking_symlink(root: Path, target: Path) -> Path | None:
+    skills = root / ".agents" / "skills"
+    try:
+        relative = target.relative_to(skills)
+    except ValueError:
+        return None
+    if _is_link(skills):
+        return skills
+    current = skills
+    for part in relative.parts[:-1]:
+        current = current / part
+        if _is_link(current):
+            return current
+        try:
+            current.lstat()
+        except OSError:
+            return None
+    return None
+
+
+def _display_rel(root: Path, path: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _refuse_linked_destinations(root: Path, plan: tuple[SyncAction, ...]) -> list[Fault]:
+    faults: list[Fault] = []
+    seen: set[str] = set()
+    for action in plan:
+        for target in _sync_targets(root, action):
+            linked = _blocking_symlink(root, target)
+            if linked is None:
+                continue
+            rel = _display_rel(root, linked)
+            if rel in seen:
+                continue
+            seen.add(rel)
+            faults.append(Fault(FaultKind.Symlink, rel, "symlink"))
+    return faults
 
 
 def _apply_mirror(root: Path, action: MirrorCopy) -> None:
@@ -1166,19 +1247,55 @@ def _apply_exclude(root: Path, action: ExcludeDelete) -> None:
 
 
 def _write_file(path: Path, data: bytes, mode: int) -> None:
-    if path.is_symlink():
+    try:
+        info = path.lstat()
+    except OSError:
+        info = None
+    if info is not None and stat.S_ISLNK(info.st_mode):
         path.unlink()
-    elif path.is_dir():
+    elif info is not None and stat.S_ISDIR(info.st_mode):
         _remove_tree(path)
-    elif path.is_file():
-        current = path.stat()
-        if path.read_bytes() == data and stat.S_IMODE(current.st_mode) == (mode & 0o777):
+    elif info is not None and stat.S_ISREG(info.st_mode):
+        if path.read_bytes() == data and stat.S_IMODE(info.st_mode) == (mode & 0o777):
             return
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.parent / f".{path.name}.agents-tmp"
-    temporary.write_bytes(data)
-    os.chmod(temporary, mode & 0o777)
-    os.replace(temporary, path)
+    _unlink_temp(temporary)
+    _create_temp(temporary, data, mode)
+    try:
+        os.replace(temporary, path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _unlink_temp(temporary: Path) -> None:
+    try:
+        info = temporary.lstat()
+    except OSError:
+        return
+    if stat.S_ISLNK(info.st_mode) or stat.S_ISREG(info.st_mode):
+        temporary.unlink()
+        return
+    raise OSError(f"staging path is not a file: {temporary}")
+
+
+def _create_temp(temporary: Path, data: bytes, mode: int) -> None:
+    flags = os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_WRONLY
+    fd = os.open(temporary, flags, mode & 0o777)
+    try:
+        view = memoryview(data)
+        while len(view):
+            written = os.write(fd, view)
+            if written <= 0:
+                raise OSError("short write")
+            view = view[written:]
+        os.fchmod(fd, mode & 0o777)
+    except Exception:
+        os.close(fd)
+        temporary.unlink(missing_ok=True)
+        raise
+    os.close(fd)
 
 
 def _remove_tree(path: Path) -> None:
@@ -1298,7 +1415,10 @@ def main(argv: list[str]) -> int:
         if plan and isinstance(plan[0], Fault):
             _print_faults(tuple(item for item in plan if isinstance(item, Fault)))
             return 1
-        apply_sync(root, tuple(item for item in plan if isinstance(item, SyncAction)))
+        refused = apply_sync(root, tuple(item for item in plan if isinstance(item, SyncAction)))
+        if refused:
+            _print_faults(tuple(refused))
+            return 1
         faults = evaluate(root) + tuple(_merge_rules(root))
         _print_faults(faults)
         return 1 if faults else 0

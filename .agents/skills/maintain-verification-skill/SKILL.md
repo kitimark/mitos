@@ -38,4 +38,17 @@ Only edit the verification skill's own directory (its SKILL.md, features/, and a
 
 Keep concise run notes (features covered, unreachable prerequisites, confirmed drift, outcome) in a scratch location; don't commit them.
 
-A generated `verify-<slug>` name is not exempt from the roster. Add a row to `.agents/scripts/agents-roster.tsv` for that directory or the skill-tree check fails.
+A generated `verify-<slug>` name is not exempt from the roster. A neutral-only skill passes the skill-tree check as this exact row, with both hash cells a hyphen:
+
+```
+verify-<slug>	rewrite	none	explicit	kept	-	-
+```
+
+The row is tab-separated. `verify-<slug>` is the folder name. The skill file is `.agents/skills/verify-<slug>/SKILL.md`, with frontmatter `name` matching that folder, a non-empty `description`, and the explicit-invocation flag set to true. That flag's key is the one this file sets to true above the body, and it lives only in the generated frontmatter, not in this skill's body. `agents/openai.yaml` equals the canonical policy:
+
+```yaml
+policy:
+  allow_implicit_invocation: false
+```
+
+Run the skill-tree check before handoff. An unrostered directory fails the check.

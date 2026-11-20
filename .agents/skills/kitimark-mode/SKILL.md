@@ -38,6 +38,8 @@ root. It does its brief's work itself and follows the parts of this file for its
 
 spawn a subagent with your host's tool (Codex `spawn_agent`, Antigravity `invoke_subagent`, Cursor `Task`, Claude Code `Agent`); if none, run the steps one at a time.
 
+When the host has no subagent tool, that same session does the repository edit; when a subagent tool exists, the root still edits no repository file.
+
 Inherit the parent model, or the host's default.
 
 Only the root spawns agents. A subagent spawns one only after a probe in the current environment shows that it can, because a subagent's toolset may have no way to spawn.
