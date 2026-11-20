@@ -46,15 +46,17 @@ Agent tool.
 
 | Role | Job | `subagent_type` | `model` | `effort` |
 |---|---|---|---|---|
-| Architect | designs each open plan row once, at plan time, with the **architect** skill (see Plan-time designs) | `general-purpose` | runners on `opus` and `fable`; the judge on whichever of the two the root is not running | `xhigh`, or `max` for a trust-critical spec |
+| Architect | designs each open plan row once, at plan time, with the **architect** skill (see Plan-time designs) | `general-purpose` | runners on `opus` and `sonnet`; the judge on `sonnet` when the root runs on `opus`, and on `opus` otherwise | `xhigh`, or `max` for a trust-critical spec |
 | PR owner, hard | Lean proofs, a trust-critical PR (see Verdicts), a skill or design change | `general-purpose`, worktree | `opus` | `xhigh`, or `max` for the subtlest proof |
 | PR owner, routine | a script, a fixture, a doc fix, a rebase, a conflict merge, a one-line fix | `general-purpose`, worktree | `sonnet` | `high`, or `medium` for a rebase or a one-line fix |
 | Verifier | checks one head it did not write and returns pass or fail with evidence | `general-purpose`, worktree | the model that did not write most of the diff | `xhigh`, or `high` at a rebase or small-fix head (a few lines changed since the last verified head) |
 | Watcher | waits on one condition the root's GitHub monitor cannot report (see Watchers) and returns when it changes | `general-purpose` | `sonnet` | `low` |
 | Researcher | reads docs or prior art, or diagnoses a failure, and edits nothing | `general-purpose` | `sonnet`, or `opus` for a judgment call | `medium`, or `high` on `opus` |
 
-`opus` and `fable` share one weekly limit with the `opus` verifiers that trust-critical PRs need
-(see Verdicts). Spend them first on what many agents reuse: plan-time designs and verdicts.
+All `opus` spawns share one weekly limit, the `opus` verifiers that trust-critical PRs need (see
+Verdicts) included. Spend it first on what many agents reuse: plan-time designs and verdicts.
+`fable` runs only when the owner asks for it on a specific task. No row, default or fallback uses
+it otherwise.
 
 - **Briefs.** Each brief states the user's goal, the task, the paths the agent may write, the
   evidence that proves the job done, and where the agent stops. A brief for a plan row names the
@@ -63,9 +65,9 @@ Agent tool.
   because an isolated worktree starts from the default branch.
 - **Other spawns.** When a routed skill (`how`, `swarm`, `reflect` and the like) or an agent file
   names the model for a spawn, the spawn keeps that model and takes the closest row's `effort`.
-  The Architect row is the exception. Its models replace the `sonnet` runner and judge that
-  **architect** and **arena** name. Under the **poteto-mode** skill, `poteto-agent` replaces
-  `general-purpose` for PR owners. If the Agent tool rejects a value, omit that field and say so.
+  The Architect row names the same runners and judge as **architect** and **arena**. Under the
+  **poteto-mode** skill, `poteto-agent` replaces `general-purpose` for PR owners. If the Agent tool
+  rejects a value, omit that field and say so.
 - **Usage limits.** On a usage-limit error, probe the preferred model before any fallback, with a
   foreground agent whose whole prompt is `probe`. Probe it again before each later spawn that
   wants that model. A reset time says when the limit lifts at the latest, not when to try again.
