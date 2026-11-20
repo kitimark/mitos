@@ -47,22 +47,55 @@ private def sha256Short (s : String) : IO String := do
 
 private def digest (e : Expr) : IO String := sha256Short (toString e)
 
-def generatedSuffixes : List String :=
-  ["rec", "sizeOf_spec", "noConfusionType", "ctorIdx", "ofNat_ctorIdx", "toCtorIdx", "ofNat",
-   "ctorElim", "ctorElimType", "inj", "injEq", "repr", "decEq"]
+private def declaredBySource (env : Environment) (n : Name) : Bool :=
+  match declRangeExt.find? env n with
+  | none => false
+  | some r =>
+    !(env.getModuleIdxFor? n == env.getModuleIdxFor? n.getPrefix &&
+      (declRangeExt.find? env n.getPrefix).any fun q =>
+        q.range == r.range && q.selectionRange == r.selectionRange)
 
-def isGenerated (env : Environment) (n : Name) : Bool :=
-  let numbered (pre s : String) :=
-    let suffix := s.drop pre.length
-    s.startsWith pre && !suffix.isEmpty && suffix.toString.toList.all Char.isDigit
-  let isMatcher (m : Name) := match env.getModuleIdxFor? m with
-    | some idx => (Meta.Match.Extension.extension.getModuleEntries env idx).any (·.name == m)
-    | none => false
-  match n with
-  | .str p s => generatedSuffixes.contains s || isMatcher n ||
-      (s.startsWith "eq_" && (env.find? n).all (·.type.getUsedConstants.contains p) &&
-        (if isMatcher p then numbered "eq_" s else isReservedName env n)) || numbered "proof_" s
-  | _ => false
+def nameListed (env : Environment) (n : Name) : Bool :=
+  (declaredBySource env n && !n.isInternal) || (env.find? n).any (· matches .axiomInfo _)
+
+theorem nameListed_of_axiom {env : Environment} {n : Name} {v : AxiomVal}
+    (h : env.find? n = some (.axiomInfo v)) :
+    nameListed env n = true := by
+  simp [nameListed, h]
+
+theorem nameListed_of_declared {env : Environment} {n : Name} {r : DeclarationRanges}
+    (hr : declRangeExt.find? env n = some r)
+    (hspan : (env.getModuleIdxFor? n == env.getModuleIdxFor? n.getPrefix) = false ∨
+      ∀ q, declRangeExt.find? env n.getPrefix = some q →
+        (q.range == r.range && q.selectionRange == r.selectionRange) = false)
+    (hi : n.isInternal = false) :
+    nameListed env n = true := by
+  simp only [nameListed, declaredBySource, hr, hi, Bool.not_false, Bool.and_true, Bool.or_eq_true,
+    Bool.not_eq_true', Bool.and_eq_false_iff]
+  left
+  rcases hspan with hmod | hq
+  · exact Or.inl hmod
+  · right
+    cases hpref : declRangeExt.find? env n.getPrefix with
+    | none => rfl
+    | some q => exact hq q hpref
+
+private theorem not_declaredBySource_of_no_range {env : Environment} {n : Name}
+    (h : declRangeExt.find? env n = none) :
+    declaredBySource env n = false := by
+  simp [declaredBySource, h]
+
+theorem not_nameListed_of_no_range {env : Environment} {n : Name}
+    (hr : declRangeExt.find? env n = none)
+    (hax : ∀ v, env.find? n ≠ some (.axiomInfo v)) :
+    nameListed env n = false := by
+  simp only [nameListed, not_declaredBySource_of_no_range hr, Bool.false_and, Bool.false_or]
+  cases hf : env.find? n with
+  | none => rfl
+  | some ci =>
+    cases ci with
+    | axiomInfo v => exact absurd hf (hax v)
+    | _ => rfl
 
 def pinned : ConstantInfo → List Expr
   | .defnInfo d => [d.type, d.value]
@@ -84,15 +117,14 @@ structure ImportedRoot where
 
 def importRoot (root : Name) : IO ImportedRoot := do
   initSearchPath (← findSysroot)
-  return ⟨root, ← importModules #[{ module := root }] {} (trustLevel := 0)⟩
+  return ⟨root, ← importModules #[{ module := root }] {} (trustLevel := 0) (level := .private)⟩
 
 /-- Pre-canonical digest lines: `sha256` of `toString`, plus `aux=`. `lock --text` prints them. The checked lock is `entries`. -/
 def textEntries (env : Environment) (prefixes : List Name) : IO (Array String) := do
   let inCore (n : Name) : Bool := match env.getModuleIdxFor? n with
     | some idx => prefixes.any (·.isPrefixOf env.header.moduleNames[idx.toNat]!)
     | none => false
-  let listed (n : Name) : Bool := inCore n &&
-    !(n.isInternal || isAuxRecursor env n || isNoConfusion env n || isGenerated env n)
+  let listed (n : Name) : Bool := inCore n && nameListed env n
   let mut out : Array String := #[]
   for (n, ci) in env.constants.map₁.toArray do
     unless listed n do continue
@@ -201,9 +233,6 @@ example : gitPinDisagreements [] [⟨"a", "u", "1"⟩] =
 
 example : gitPinDisagreements [⟨"a", "u", "1"⟩, ⟨"a", "u", "1"⟩] [⟨"a", "u", "1"⟩] =
     ["package a is duplicated in the root lake-manifest.json"] := by decide
-
-def nameListed (env : Environment) (n : Name) : Bool :=
-  !(n.isInternal || isAuxRecursor env n || isNoConfusion env n || isGenerated env n)
 
 def specModule (env : Environment) (prefixes : List Name) (n : Name) : Bool :=
   match env.getModuleIdxFor? n with
