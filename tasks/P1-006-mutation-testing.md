@@ -826,6 +826,42 @@ refuted, no known gap, 20 cheat cases rejected at their runs (231 s, 217 s and 7
 cases also with `--paranoid` (67 s). The runner reads the approved Challenge as 14 declarations and
 14 commands.
 
+### Memory of the Lean checks (#521)
+
+Since Mathlib joined the spec (7c513cd), every module set the first step imports (the approved
+Challenge, each probe, each generated Challenge) holds `Mitos.Core.Spec`'s 2,091 modules. Lean maps
+an import's `.olean` files at fixed addresses, so only the first import of a module is mapped from
+the file. An import made while another one holds the same module reads its own copy into memory,
+about 1.75 GiB for this set. Lean gives that memory back only on `Environment.freeRegions`. The
+first step made about 22 such imports and freed none. On the nightly's 16 GB runner,
+`mitos-mutants` reached 14,353 MiB with the 3 GiB swap full, a minute into the step, and the runner
+was lost (run 44780516036).
+
+`withImport` now imports a module set without its extensions, runs one check on it, and then frees
+its regions, the way `Lean.withImportModules` does. The approved Challenge's scope covers the
+cross-check, the cross-check probes, the parse check and the output check of every generated
+Challenge. Each probe's and each generated Challenge's scope covers only its own check. Only a
+count and a copy of the check's error leave a scope. The parse check's environment loads extensions
+and runs initializers, which can leave references in global state, so it is never freed: one copy
+stays until the process ends. The checks, their order and their messages are unchanged.
+
+**Evidence** (local, 4 cores and 16 GB, the nightly's command `lake --dir eval/mutants exe
+mitos-mutants --paranoid` with all 44 cases in one invocation, `/usr/bin/time -v`, under a cgroup
+memory cap):
+- After: two runs, both `all 44 cases as expected` (2088 s and 2064 s). Max RSS was 5,001,284 and
+  4,990,768 KiB (4.77 and 4.76 GiB). The `mitos-mutants` process peaked at 4,883 and 4,873 MiB in
+  the first step and held about 3.9 GiB afterwards. The whole process tree, comparator runs
+  included, peaked at 4,080 and 4,061 MiB of anonymous memory. `--prepare` gave 5,001,472 KiB with
+  the 44 cases (15 generated Challenges) and 4,992,568 KiB with one case (2), so the peak no longer
+  grows with the number of distinct `breaks=` sets.
+- Before (`main` at 9d455df): killed in the first step under an 11 GiB cap after 50 s (max RSS
+  12,526,572 KiB) and under a 12 GiB cap after 66 s (13,130,272 KiB). The whole run cannot finish
+  in 16 GB, so the old binary ran the 44 cases in 7 batches of at most 3 generated Challenges each,
+  under an 11 GiB cap with a 14 GiB swap file. Each batch still reached 12,374,660 to 12,619,028 KiB
+  of RSS, with about 7.5 GiB more in swap, and each passed.
+- Each case's name, result, expectation and evidence line are identical between the batches and
+  each run after (TIME left out), and so are the leanCheck lines and the control.
+
 ## Done when
 - [x] every `breaks=` case is refuted, every `survives=` case survives and every cheat case is
       rejected at its run, locally, default and `--paranoid`
