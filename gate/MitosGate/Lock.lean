@@ -94,7 +94,7 @@ def textEntries (env : Environment) (prefixes : List Name) : IO (Array String) :
   let listed (n : Name) : Bool := inCore n &&
     !(n.isInternal || isAuxRecursor env n || isNoConfusion env n || isGenerated env n)
   let mut out : Array String := #[]
-  for (n, ci) in env.constants.map₁.toList do
+  for (n, ci) in env.constants.map₁.toArray do
     unless listed n do continue
     let ty ← digest ci.type
     let line ← match ci with
@@ -820,7 +820,7 @@ def entries (env : Environment) (prefixes : List Name) : IO (Array String) := do
   refuseMisplaced p
   let mut out : Array String := #[]
   let mut specRoots : Array Name := #[]
-  for (n, ci) in env.constants.map₁.toList do
+  for (n, ci) in env.constants.map₁.toArray do
     unless specModule env prefixes n && nameListed env n do continue
     if n.hasMacroScopes then
       throw <| IO.userError s!"listed declaration {n} has a macro scope"
