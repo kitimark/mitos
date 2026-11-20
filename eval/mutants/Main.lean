@@ -467,26 +467,29 @@ structure Checked where
   commands : Nat
   gens     : Nat
 
-/-- `s` in memory of its own, which outlives the regions of the environment it was read from. -/
-def copy (s : String) : String := String.ofList s.toList
+class Detach (α : Type) where
+  detach : α → α
 
-/-- Imports `m` without its extensions, runs `act` on the environment, and then frees the
-environment's compacted regions, as `Lean.withImportModules` does. Without the free, every import
-stays in memory until the process ends, and each import made while another holds the same
-modules gets its own copy of them: with Mathlib in the spec, about 1.75 GiB each (#521). `act` must
-return nothing read from the environment; its error leaves the scope as a copy. -/
-unsafe def withImportUnsafe {α : Type} (m : String) (act : Environment → ExceptT String IO α) :
-    ExceptT String IO α := ExceptT.mk do
+def detachFromRegions (s : String) : String := String.ofList s.toList
+
+instance : Detach String := ⟨detachFromRegions⟩
+instance : Detach Unit := ⟨fun _ => ()⟩
+instance : Detach Nat := ⟨fun n => n.repr.toNat!⟩
+instance {α β : Type} [Detach α] [Detach β] : Detach (α × β) :=
+  ⟨fun (a, b) => (Detach.detach a, Detach.detach b)⟩
+
+unsafe def withImportUnsafe {α : Type} [Detach α] (m : String)
+    (act : Environment → ExceptT String IO α) : ExceptT String IO α := ExceptT.mk do
   let env ← importModules #[{ module := m.toName }] {}
   try
     match ← (act env).run with
-    | .ok a => return .ok a
-    | .error e => return .error (copy e)
-  catch e => return .error (copy (toString e))
+    | .ok a => return .ok (Detach.detach a)
+    | .error e => return .error (Detach.detach e)
+  catch e => return .error (Detach.detach (toString e))
   finally env.freeRegions
 
 @[implemented_by withImportUnsafe]
-opaque withImport {α : Type} (m : String) (act : Environment → ExceptT String IO α) :
+opaque withImport {α : Type} [Detach α] (m : String) (act : Environment → ExceptT String IO α) :
   ExceptT String IO α
 
 def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath)
@@ -521,7 +524,7 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath)
     build "the Challenge module and the cross-check's probes" (a.files ++ first)
       (a.chalModule :: first.map (moduleOf ·.1))
     initSearchPath (← findSysroot) (searchPath dir reuse)
-    let load {α : Type} (m : String)
+    let load {α : Type} [Detach α] (m : String)
         (act : Environment → List String → List CrossCheck.Decl → ExceptT String IO α) :
         ExceptT String IO α :=
       withImport m fun env => do

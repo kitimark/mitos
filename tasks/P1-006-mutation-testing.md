@@ -840,8 +840,12 @@ was lost (run 44780516036).
 `withImport` now imports a module set without its extensions, runs one check on it, and then frees
 its regions, the way `Lean.withImportModules` does. The approved Challenge's scope covers the
 cross-check, the cross-check probes, the parse check and the output check of every generated
-Challenge. Each probe's and each generated Challenge's scope covers only its own check. Only a
-count and a copy of the check's error leave a scope. The parse check's environment loads extensions
+Challenge. Each probe's and each generated Challenge's scope covers only its own check. A scope's
+result and its error leave it only through `Detach`, which rebuilds them in fresh memory. Its
+instances are `String`, `Nat`, `Unit` and pairs, so a result read from the environment (an
+`Environment`, `Expr` or `Name`) does not compile. The output check of a generated Challenge still
+compares its types with types read from the approved Challenge, so that scope runs inside the
+approved Challenge's scope. The parse check's environment loads extensions
 and runs initializers, which can leave references in global state, so it is never freed: one copy
 stays until the process ends. The checks, their order and their messages are unchanged.
 
@@ -853,7 +857,9 @@ memory cap):
   the first step and held about 3.9 GiB afterwards. The whole process tree, comparator runs
   included, peaked at 4,080 and 4,061 MiB of anonymous memory. `--prepare` gave 5,001,472 KiB with
   the 44 cases (15 generated Challenges) and 4,992,568 KiB with one case (2), so the peak no longer
-  grows with the number of distinct `breaks=` sets.
+  grows with the number of distinct `breaks=` sets. With `Detach` (round 2 of #536), one more run
+  gave the same result list, max RSS 4,989,044 KiB, runner peak 4,872 MiB and tree peak 4,092 MiB
+  (2154 s).
 - Before (`main` at 9d455df): killed in the first step under an 11 GiB cap after 50 s (max RSS
   12,526,572 KiB) and under a 12 GiB cap after 66 s (13,130,272 KiB). The whole run cannot finish
   in 16 GB, so the old binary ran the 44 cases in 7 batches of at most 3 generated Challenges each,
