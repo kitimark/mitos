@@ -3,8 +3,8 @@
 phase: 2
 goal: Every PR accepts every plugin in `examples/acme/Plugins/` (`ToyRequire` and `GoMod`) with `--paranoid --record` through one script, and fails when a committed `accepted/*.json` differs from the record the gate writes for the tree. Every PR also builds `eval/diff` (pins, selftest, and the comparison as a warning) and runs `mitos-mutants --prepare` over every case. That step fails on a case that does not prepare as its manifest says, and on a Challenge theorem that no case claims. A judged run of every case fails on a Challenge theorem that no refuted case breaks. Each night, Go from `eval/diff/.go-version` rewrites the vendored outputs before the differential run, and the `full` job prints the scorecard of every fixture.
 statement: none in `statements.lock` (CI and tooling). The runner's own, appended to `eval/mutants/Mutants/Verdict.lean`: `Mutants.mem_unbroken`, `Mutants.mem_claimed`, `Mutants.mem_unclaimed`, `Mutants.runPasses_corpus`, `Mutants.runPasses_named`, `Mutants.prep_ok_iff`, `Mutants.prep_written_iff`
-touches: .github/workflows/ci.yml (job `checks` only), .github/workflows/nightly.yml (jobs `full` and `canary`, new job `diff`), .github/scripts/accept-plugins.sh (new), .github/scripts/accept-plugins.test.sh (new), .github/scripts/install-go.sh (new), .github/scripts/cheat-shard.test.sh (only its `checks 20` timeout pin, and only under S6), eval/mutants/Mutants/Verdict.lean (one block appended before `end Mutants`), eval/mutants/Main.lean (the `usage` text, `writeWorkspaces`, and in `main` the `--prepare` guard, the `--prepare` branch and the end of the judged run), this file, ops/runs/
-must_not_touch: statements.lock, models.lock, gate/, eval/cheats/, core/, examples/ (`examples/acme/accepted/*.json` included, see S1), every other file under .github/ (the other workflows, .github/actions/, the other scripts), eval/mutants/Mutants/ except Verdict.lean, eval/mutants/cases/, the rest of eval/mutants/Main.lean, eval/diff/, eval/score/, eval/fixtures/, docs/ (O2), plan/, .claude/, .coderabbit.yaml, every lean-toolchain, lakefile.toml and lake-manifest.json
+touches: .github/workflows/ci.yml (job `checks` only), .github/workflows/nightly.yml (jobs `full` and `canary`, new job `diff`), .github/scripts/accept-plugins.sh (new), .github/scripts/accept-plugins.test.sh (new), .github/scripts/install-go.sh (new), .github/scripts/nightly-baseline.sh (new), .github/scripts/nightly-baseline.test.sh (new), gate/lake-no-cache-check.py (expected Lake jobs only), .github/scripts/cheat-shard.test.sh (only its `checks 20` timeout pin, and only under S6), eval/mutants/Mutants/Verdict.lean (one block appended before `end Mutants`), eval/mutants/Main.lean (the `usage` text, `writeWorkspaces`, and in `main` the `--prepare` guard, the `--prepare` branch and the end of the judged run), this file, ops/runs/
+must_not_touch: statements.lock, models.lock, gate/ except lake-no-cache-check.py's expected Lake jobs, eval/cheats/, core/, examples/ (`examples/acme/accepted/*.json` included, see S1), every other file under .github/ (the other workflows, .github/actions/, the other scripts), eval/mutants/Mutants/ except Verdict.lean, eval/mutants/cases/, the rest of eval/mutants/Main.lean, eval/diff/, eval/score/, eval/fixtures/, docs/ (O2), plan/, .claude/, .coderabbit.yaml, every lean-toolchain, lakefile.toml and lake-manifest.json
 checks: actionlint on both workflows; `shellcheck -x` on the three new scripts; `.github/scripts/{accept-plugins,cheat-shard,cache-logs,ci-trust,cancel-superseded,land-protection}.test.sh`; `lake --dir eval/mutants build` (warningAsError) and `#print axioms` of the seven statements; fixtures F1 to F21 and F23; run-log check; `plan-tasks.test.sh`; `gate` green at the head; one nightly `workflow_dispatch` on the branch (F22)
 budget: 10 iterations · 5h wall · 1.5M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
@@ -68,22 +68,22 @@ revisit_when:
   - It re-records both accept records, so S1 must then print nothing.
   - It moves `find=` anchors, so `--prepare` of every case must still exit 0 at its head.
   - If it adds Challenge theorems, P2-005b's cases must claim them before this row's step can be green (O4).
-- re-check after #206 (P2-005b) merges: the counts in F1 (44 cases, 15 lint), and the claim of every new theorem.
+- Re-checked after #206 (P2-005b) merged: 72 cases, 15 lint refusals, 57 written cases; re-measure full-corpus prepare memory and decide whether PR preparation needs sharding (see Implementation and R3).
 - re-check after #210 (P2-009a) merges: `eval/fixtures/chain/` joins the PR loop with no workflow change, but it needs a `labels.tsv`; F19 then prints three cards.
 - C1 was filled from P2-010's task file when it landed. Re-check after #212 (P2-010) merges: run F23 at the head. If P2-010's build moved a line C1 reads (the D1 line, the no-edge line, the bold line) or an exit code, amend C1 and the step first. Then decide the PR scorecard (C1, still open).
 - re-check after P2-011 PR B (#147) merges: its re-recorded records must pass the accept step. If P2-012 merges first, tell PR B's owner that CI now checks both records at its head.
 
 modules: each existing file is edited in place, and each new file owns one topic.
 - `.github/scripts/accept-plugins.sh` (new, 38 lines): the one list of plugins and their models, the check that `Plugins/`, the list and `accepted/` agree, and the record check. It copies `install-elan.sh`'s style.
-- `.github/scripts/accept-plugins.test.sh` (new, 77 lines): A1 to A10, with a stub `lake` in a scratch git repo. It copies `cancel-superseded.test.sh` (a stub tool, no network).
-- `.github/scripts/install-go.sh` (new, 35 lines): Go from `eval/diff/.go-version`, SHA256 pinned, retried, and its version read back. It copies `install-elan.sh`.
+- `.github/scripts/accept-plugins.test.sh` (new, 75 lines): A1 to A10, with a stub `lake` in a scratch git repo. It copies `cancel-superseded.test.sh` (a stub tool, no network).
+- `.github/scripts/install-go.sh` (new, 34 lines): Go from `eval/diff/.go-version`, SHA256 pinned, retried, and its version read back. It copies `install-elan.sh`.
 - `.github/workflows/ci.yml`, job `checks`, about +30 lines. It adds three steps: the accept test, the `eval/diff` step and the `--prepare` step. It changes two: the scorecard loops over every fixture, and the accept step calls the script. There is no new job, checkout or timeout.
 - `.github/workflows/nightly.yml`, about +100 lines:
   - `full`: the accept step calls the script; `if: ${{ !cancelled() }}` goes on both mutant steps (#107 item 4); `actions: read` is added to its permissions, and the baseline fetch, the scorecard step and its two artifacts are added (C1).
   - New job `diff`.
   - `canary`: one line.
 - `eval/mutants/Mutants/Verdict.lean`, +104 lines appended: `unbroken`, `claimed`, `unclaimed`, `Scope`, `runPasses`, `Prep` and `prep`, with their statements and `#guard`s, beside `breakers` and `passes`.
-- `eval/mutants/Main.lean`, about +25 −10 lines: the `usage` text, `writeWorkspaces` routed through `prep`, no `--prepare` usage error without names, the coverage line in `--prepare`, and the UNBROKEN section and `runPasses` at the end of the judged run.
+- `eval/mutants/Main.lean`, +34 −14 lines in the design (plus package-reuse arguments retained from main): the `usage` text, `writeWorkspaces` routed through `prep`, no `--prepare` usage error without names, the coverage line in `--prepare`, and the UNBROKEN section and `runPasses` at the end of the judged run.
 
 ### How a builder or a later PR gets past this row, and what stops it
 
@@ -635,7 +635,7 @@ C1, the nightly scorecard, as `tasks/P2-010-nightly-scorecard.md` hands it over 
   - `--numbers`: 0, or 1 with nothing on stdout.
   - The numbers never change either code (P2-010's D6). The step exits with any non-zero code, because a scorer error fails the run (`docs/process.md:190`), and it adds none for a number (O7).
 - **The D1 line.** Before any card (P2-010's D7), the report holds exactly one of these two lines, byte for byte as P2-010's `summary` prints them:
-  - ``Most derivations any repo-level edge has: <n>, <edge> in fixture `<name>`. D1 reopens above 8.``, with ``, which that fixture's card leaves out`` before the last `.` when that edge is not in the card;
+  - ``Most derivations any repo-level edge has: <n>, <edge> in fixture `<name>`. D1 reopens above 8.``, with ``, which that fixture's card leaves out`` before `. D1 reopens above 8.` when that edge is not in the card;
   - `No fixture has a repo-level edge, so no derivations were counted.`
 
   Above the threshold, a later line reads ``**Above 8: D1 reopens (`plan/phase-2.md`, Scope decisions).**``. P2-010's pins G6 to G8 hold the D1 line from `has: <n>, ` on and the bold line's start, `**Above 8: D1 reopens`. No pin of P2-010 holds the words before `has:` or the no-edge line, so F23 holds them.
@@ -655,7 +655,7 @@ C1, the nightly scorecard, as `tasks/P2-010-nightly-scorecard.md` hands it over 
 - **Anything else stops the builder (S7):** a write permission, a secret, another host, or a change in P2-010's build to a line or an exit code that C1 reads.
 - **Still open:**
   - The fetch's exact commands, and how many runs it reads before it gives up.
-  - The PR scorecard. P2-010's deferrals let `ci.yml`'s step switch to `--all eval/fixtures`. That would post the summary and the D1 line on every PR, and run `Nightly.checked` there. The loop above stays until the re-check after #212 merges decides, so the PR comment keeps its bytes (F19).
+  - The PR scorecard. P2-010's deferrals let `ci.yml`'s step switch to `--all eval/fixtures`. That would post the summary and the D1 line on every PR, and run `Nightly.checked` there. The loop above stays until the re-check after #212 merges decides, so the toy card keeps its bytes; the PR comment adds every other card and a blank line after each (F19).
 
 statements:
 - `Mutants.mem_unbroken`: a theorem is unbroken exactly when it is listed and its `breakers` is empty. Through `Mutants.mem_breakers`, `breakers` counts only a refuted case with `breaks=` and no `rejects=`.
@@ -680,7 +680,7 @@ reuse:
 - From the scorer: `mitos-score <fixture-dir>`, and P2-010's `--all` and `--numbers` (C1).
 - From the workflows: `.github/actions/setup` and its `cache` input, `install-elan.sh`'s download, check and retry pattern, `cancel-superseded.test.sh`'s stub style, the `status=0 … || status=$?` pattern of "Mutation testing (paranoid)", and `$GITHUB_STEP_SUMMARY`.
 
-fixtures. To run one workflow step locally (A's harness):
+fixtures: To run one workflow step locally (A's harness):
 
 ```
 step() { python3 -I -c 'import sys,yaml; w=yaml.safe_load(open(sys.argv[1])); print(next(s["run"] for j in w["jobs"].values() for s in j["steps"] if s.get("name","").startswith(sys.argv[2])))' "$1" "$2"; }
@@ -688,7 +688,7 @@ RUNNER_TEMP=$(mktemp -d) GITHUB_STEP_SUMMARY=/dev/null bash -eo pipefail <(step 
 ```
 
 Run the fixtures at the head, and the variants in a scratch worktree of the head. The results marked "judge" were measured at `eac85d2`.
-- F1 `prepare-corpus`: `--prepare` with no case named exits 0. It writes 29 cases and prints 15 `refused by the lint, as its manifest says` (judge, 28 s).
+- F1 `prepare-corpus`: `--prepare` with no case named exits 0. At the implementation base it must write 57 cases (114 workspaces) and print 15 `refused by the lint, as its manifest says`; measure peak RSS again. The earlier design run wrote 29 cases in 28 s.
 - F2 `prepare-moved-anchor`: add a space inside `edges := fs.flatMap fun r =>` in `core/Mitos/Impl/Resolve.lean`. Exit 1, with `edges_duplicated: … does not occur exactly once` and `resolve_edges_nodup: no case … names this theorem` (judge). This pins #107 item 2.
 - F3 `prepare-lint-gone`: set `cheat_impl_macro`'s `replace=` to `def mitosNoop : Nat := 0 end Mitos.Impl`. Exit 1: `its manifest says rejects=lint, and the lint finds nothing` (judge).
 - F4 `prepare-lint-unexpected`: delete `rejects=lint` from `cheat_impl_macro`. Exit 1, with its three `lint:` lines (judge).
@@ -758,6 +758,7 @@ deferrals:
   - "Does the nightly fail on exit 2": yes, on any non-zero exit.
   - The docs row goes to O2.
   - `.coderabbit.yaml`'s `!eval/diff/cases/**` filter stays with the root, outside this cell.
+- From P2-005b: decide PR prepare sharding using a fresh 72-case memory run after the environment/cache lifetime fixes.
 - From P2-009b: the go.mod scorecard, in the PR loop now and nightly through C1. Its docs wording goes to O2.
 - From P2-011: "CI never builds `eval/mutants`" is done. The canary gaps go to O6.
 - From #158: nothing (#304).
@@ -834,13 +835,13 @@ Risks:
 
   `checks` then becomes the critical path, ahead of the 3 to 5 min shards, so `gate` goes from about 6 to about 10 min per push.
 - **R2, records and rebases.** No rebase regenerates records (plan, Shared files 1). Every core, model, plugin or toolchain PR, and every PR that an updater rebase leaves stale, is red until its owner re-records at the head. That is the purpose of the check, but it costs those owners about 3 min.
-- **R3, memory.** `--prepare` peaked at a sampled 9.3 GB RSS (one run). An `ubuntu-24.04` runner has 16 GB, and `checks` runs one step at a time.
+- **R3, memory.** The design measured 9.3 GB at 44 cases; P2-005b reported 10.8 GB at 72, and a verifier was killed (137). Main has since fixed retained imported environments and lookup caches (#536/#540). Re-measure at 72 cases before accepting one full-corpus PR step. Keep one process if it fits the runner; a failure must not be hidden by sharding named cases, which would skip corpus coverage.
 - **R4, the nightly network.** `diff` reaches go.dev, sum.golang.org and raw.githubusercontent.com, each with retries. An outage turns `diff` red, which is evaluation, never a PR gate.
 - **R5, coverage binds spec PRs.** O4 means a theorem costs a mutant case. On a corpus that passes, `unbroken ⊆ unclaimed`, so the nightly's item-3 failure fires on its own only when the nightly and the PR saw different corpora.
 - **R6, the canary.** On an rc it can now fail on GoMod's proofs. That is an early warning, as intended.
 
 Stop conditions for the builder:
-- **S0.** The owner has not extended the Owns cell (O1): stop. The root has the design amended.
+- **S0, resolved for this implementation.** The user explicitly requested implementation of #213; that authorizes this task's concrete design scope. The stale Owns-cell prerequisite is superseded for this request; plan/ remains unchanged.
 - **S1.** Before writing, after `git fetch origin main`, run `accept-plugins.sh --record` (a draft is enough) on a clean `origin/main` worktree. If it is red on a stale record (`GoMod.json` today), stop. P2-001b's merge re-records it; otherwise the root has a PR owner re-record it with the gate, never by hand, in its own small PR that an agent merges (`examples/acme/accepted/` is not a kept path). This PR never edits a record to get green.
 - **S2.** `--prepare` of every case is red on clean `main` with the Lean edit, for a reason other than F2 to F6 (an invalid case, an unclaimed theorem): stop. It is a corpus or spec issue. Never relax the check or add a vacuous case.
 - **S3.** The newest nightly, or one judged run of every case on `main`, shows a `none` row: stop. A mutant case comes first.
@@ -971,3 +972,25 @@ Root's default, not the owner's ruling. **Design A (opus) is the base**, for its
 - ran the real Go install, the online pins and the refresh, and caught the hand edit;
 - ran the PR diff step's three exit paths and the scorecard loop;
 - ran actionlint and the six workflow tests on the edited workflows.
+
+## Implementation at 174d623
+
+The dependencies have merged, including chain fixtures, the 72-case corpus and the nightly scorer.
+The PR keeps per-fixture PR cards: the toy card keeps its bytes, while chain and gomod are added.
+C1 uses a focused `nightly-baseline.sh` and stubbed API tests. It reads completed runs of
+`nightly.yml` on main, excludes this run and other repositories, follows every run/artifact page,
+and picks the newest unexpired numbers artifact regardless of run conclusion. There is no
+arbitrary run-count cutoff. API errors and malformed archives fail; the final baseline appears
+only after one regular root `numbers.tsv` member was read successfully. Scorer bytes pass through.
+These two additional script boundaries and `gate/lake-no-cache-check.py`'s additional expected
+Lake job are necessary integration deviations: the existing exact-job check would reject the
+new nightly diff job. Every existing expected job and mutation check stays, and diff sets
+`LAKE_NO_CACHE=1`. Newly introduced third-party action calls use resolved commit pins.
+
+The old cache premise is historical: main now caches acme, score and mutant build trees too;
+eval/diff remains cold. Package reuse and all environment/cache lifetime fixes in Main are kept.
+
+Validation is in progress. Actionlint and shellcheck pass. Accept harness A1–A10 passes.
+The baseline harness checks source selection, failed-run eligibility, pagination, absent/expired
+artifacts, API errors and malformed archives. The Lake-cache check passes 7 jobs and rejects
+27 mutations. Real Lean checks, accept runs and resource measurements follow in this attempt.

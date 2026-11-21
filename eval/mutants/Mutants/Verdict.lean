@@ -210,4 +210,108 @@ theorem mem_breakers {rs : List Result} {t n : String} :
     have : outcome x = .refuted := outcome_refuted_iff.mpr hx
     simp [this, ht]
 
+def unbroken (theorems : List String) (rs : List Result) : List String :=
+  theorems.filter fun t => (breakers rs t).isEmpty
+
+theorem mem_unbroken {theorems : List String} {rs : List Result} {t : String} :
+    t ∈ unbroken theorems rs ↔ t ∈ theorems ∧ breakers rs t = [] := by
+  simp [unbroken, List.mem_filter, List.isEmpty_iff]
+
+def claimed (ms : List Mutant) : List String :=
+  ms.flatMap fun m =>
+    match m.expect, m.rejects with
+    | .breaks ts, none => ts
+    | _, _ => []
+
+theorem mem_claimed {ms : List Mutant} {t : String} :
+    t ∈ claimed ms ↔ ∃ m ∈ ms, ∃ ts, m.expect = .breaks ts ∧ m.rejects = none ∧ t ∈ ts := by
+  simp only [claimed, List.mem_flatMap]
+  constructor
+  · rintro ⟨m, hm, h⟩
+    rcases hx : m.expect with ts | g <;> rcases hr : m.rejects with _ | s <;> simp [hx, hr] at h
+    exact ⟨m, hm, ts, hx, hr, h⟩
+  · rintro ⟨m, hm, ts, hx, hr, h⟩
+    exact ⟨m, hm, by simp [hx, hr, h]⟩
+
+def unclaimed (theorems : List String) (ms : List Mutant) : List String :=
+  theorems.filter fun t => !(claimed ms).contains t
+
+theorem mem_unclaimed {theorems : List String} {ms : List Mutant} {t : String} :
+    t ∈ unclaimed theorems ms ↔ t ∈ theorems ∧ t ∉ claimed ms := by
+  simp [unclaimed, List.mem_filter]
+
+inductive Scope where
+  | corpus
+  | named
+  deriving Repr, DecidableEq
+
+def Scope.ofNamed (named : List String) : Scope :=
+  if named.isEmpty then .corpus else .named
+
+def Scope.gaps : Scope → List String → List String
+  | .corpus, missing => missing
+  | .named, _ => []
+
+def runPasses (scope : Scope) (control : Run) (cases : List String) (rs : List Result)
+    (theorems : List String) : Bool :=
+  passes control cases rs && (scope.gaps (unbroken theorems rs)).isEmpty
+
+theorem runPasses_corpus {control : Run} {cases ts : List String} {rs : List Result} :
+    runPasses .corpus control cases rs ts = true ↔
+      passes control cases rs = true ∧ ∀ t ∈ ts, breakers rs t ≠ [] := by
+  simp only [runPasses, Scope.gaps, Bool.and_eq_true, List.isEmpty_iff,
+    List.eq_nil_iff_forall_not_mem, mem_unbroken, not_and, ne_eq]
+
+theorem runPasses_named {control : Run} {cases ts : List String} {rs : List Result} :
+    runPasses .named control cases rs ts = passes control cases rs := by
+  simp [runPasses, Scope.gaps]
+
+inductive Prep where
+  | written
+  | refusedAsExpected
+  | refusedUnexpectedly
+  | notRefused
+  deriving Repr, DecidableEq
+
+def prep : Option Stage → List String → Prep
+  | some .lint, [] => .notRefused
+  | some .lint, _ :: _ => .refusedAsExpected
+  | _, [] => .written
+  | _, _ :: _ => .refusedUnexpectedly
+
+def Prep.ok : Prep → Bool
+  | .written | .refusedAsExpected => true
+  | .refusedUnexpectedly | .notRefused => false
+
+theorem prep_ok_iff (r : Option Stage) (l : List String) :
+    (prep r l).ok = true ↔ (r = some .lint ↔ l ≠ []) := by
+  rcases r with _ | (_ | _ | _ | _) <;> cases l <;> simp [prep, Prep.ok]
+
+theorem prep_written_iff (r : Option Stage) (l : List String) :
+    prep r l = .written ↔ r ≠ some .lint ∧ l = [] := by
+  rcases r with _ | (_ | _ | _ | _) <;> cases l <;> simp [prep]
+
+private def refutedBy (n : String) (ts : List String) : Result :=
+  { name := n
+    judged := .ran (.breaks ts) none
+      { holes := some .accepted, approved := some .rejected, refutation := some .accepted } }
+
+private def refusedAtLint (n : String) (ts : List String) : Result :=
+  { name := n, judged := .ran (.breaks ts) (some .lint) { lint := ["a macro"] } }
+
+#guard unbroken ["a", "b"] [refutedBy "m1" ["a"]] == ["b"]
+#guard unbroken ["a"] [refusedAtLint "c1" ["a"]] == ["a"]
+#guard unbroken ["a"] [refutedBy "m1" ["a"], refusedAtLint "c1" ["a"]] == []
+#guard unbroken ["a"] [] == ["a"]
+#guard runPasses .named .accepted ["m1"] [refutedBy "m1" ["a"]] ["a", "b"]
+#guard !runPasses .corpus .accepted ["m1"] [refutedBy "m1" ["a"]] ["a", "b"]
+#guard runPasses .corpus .accepted ["m1"] [refutedBy "m1" ["a"]] ["a"]
+#guard Scope.ofNamed [] == .corpus
+#guard Scope.ofNamed ["m1"] == .named
+#guard (prep (some .lint) []).ok == false
+#guard (prep (some .lint) ["macro"]).ok
+#guard (prep none ["macro"]).ok == false
+#guard (prep none []).ok
+#guard (prep (some .holes) ["macro"]).ok == false
+
 end Mutants

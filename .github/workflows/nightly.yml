@@ -11,6 +11,9 @@ permissions:
 jobs:
   full:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
     env:
       LAKE_NO_CACHE: '1'
     steps:
@@ -38,16 +41,16 @@ jobs:
           fi
 
       - run: cd examples/acme && lake build
-      - name: Honest toy plugin is accepted
-        run: |
-          lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
-            --model Models.ToyRequire.model --paranoid
+      - name: Every plugin in examples/acme/Plugins is accepted, and its committed record is the one the gate writes
+        run: .github/scripts/accept-plugins.sh --record
       - run: lake exe mitos-gate cheats --jobs 4
 
       - name: Build the mutant runner
+        if: ${{ !cancelled() }}
         run: lake --dir eval/mutants build
 
       - name: Mutation testing (paranoid)
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           .github/scripts/sample-resources.sh during &
@@ -59,6 +62,51 @@ jobs:
           { echo '### Mutation testing'; echo '```'; cat "$RUNNER_TEMP/mutants.txt"; echo '```'; } \
             >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      - name: The numbers of main's newest nightly that has them, as the scorecard's baseline
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/nightly-baseline.sh
+
+      - name: Scorecard of every fixture, its diff against main's numbers, and the most derivations any repo-level edge has
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          lake --dir eval/score build
+          base=()
+          if [ -f "$RUNNER_TEMP/base/numbers.tsv" ]; then base=("$RUNNER_TEMP/base/numbers.tsv"); fi
+          status=0
+          lake --dir eval/score exe mitos-score --all eval/fixtures "${base[@]}" > "$RUNNER_TEMP/scorecard.md" || status=$?
+          cat "$RUNNER_TEMP/scorecard.md" >> "$GITHUB_STEP_SUMMARY"
+          [ "$status" -eq 0 ] || exit "$status"
+          lake --dir eval/score exe mitos-score --numbers eval/fixtures > "$RUNNER_TEMP/numbers.part"
+          mkdir -p "$RUNNER_TEMP/numbers"
+          mv "$RUNNER_TEMP/numbers.part" "$RUNNER_TEMP/numbers/numbers.tsv"
+          n=$(sed -n '/^Most derivations any repo-level edge has: /{s/^Most derivations any repo-level edge has: \([0-9][0-9]*\), .*/\1/p;q;}' "$RUNNER_TEMP/scorecard.md")
+          if [ -n "$n" ]; then
+            echo "Most derivations any repo-level edge has: $n"
+            if grep -q '^\*\*Above [0-9][0-9]*: D1 reopens ' "$RUNNER_TEMP/scorecard.md"; then
+              echo "::warning::a repo-level edge has $n derivations, above D1's threshold, so D1 is the owner's to reopen (plan/phase-2.md, Scope decisions)"
+            fi
+          elif ! grep -Fqx 'No fixture has a repo-level edge, so no derivations were counted.' "$RUNNER_TEMP/scorecard.md"; then
+            echo "::error::the scorecard has no line that starts 'Most derivations any repo-level edge has: <n>, ', so this step and mitos-score --all disagree on its format"
+            exit 1
+          fi
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: scorecard
+          path: ${{ runner.temp }}/scorecard.md
+          if-no-files-found: error
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: scorecard-numbers
+          path: ${{ runner.temp }}/numbers/numbers.tsv
+          if-no-files-found: ignore
 
       - name: Resources at the end of the job
         if: always()
@@ -76,6 +124,56 @@ jobs:
         with:
           name: mutant-logs
           path: .lake/mutants/
+          if-no-files-found: ignore
+
+  diff:
+    runs-on: ubuntu-24.04
+    env:
+      LAKE_NO_CACHE: '1'
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: "false"
+
+      - name: Go from eval/diff/.go-version (SHA256 pinned in install-go.sh, retried)
+        run: .github/scripts/install-go.sh
+
+      - name: The pins match their bytes, sum.golang.org and the reviewed licence sources
+        run: eval/diff/check-pins.sh --online
+
+      - name: Build eval/diff and run its selftest
+        run: |
+          lake --dir eval/diff build
+          eval/diff/selftest.sh
+
+      - name: Go rewrites the vendored outputs, then the differential run compares them with the plugin
+        shell: bash
+        run: |
+          status=0
+          lake --dir eval/diff exe mitos-diff eval/diff --refresh > "$RUNNER_TEMP/diff.md" || status=$?
+          { echo '### Differential run (go.mod, refreshed with Go)'; cat "$RUNNER_TEMP/diff.md"; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Go printed the vendored bytes (the refresh left the tree clean)
+        if: ${{ !cancelled() }}
+        run: |
+          moved=$(git status --porcelain --untracked-files=all -- eval/diff)
+          if [ -n "$moved" ]; then
+            printf '%s\n' "$moved"
+            git diff --stat -- eval/diff
+            echo "::error::Go $(cat eval/diff/.go-version) does not print the vendored module.json bytes"
+            exit 1
+          fi
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diff-report
+          path: ${{ runner.temp }}/diff.md
           if-no-files-found: ignore
 
   resolve:
@@ -175,8 +273,7 @@ jobs:
           lake build
           (cd core && lake check)
           if [ -f core/Mitos/Proofs/Resolver.lean ]; then (cd core && lake comparator); fi
-          lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
-            --model Models.ToyRequire.model --paranoid
+          .github/scripts/accept-plugins.sh --no-record
           lake exe mitos-gate cheats --jobs 4
           lake --dir eval/mutants build
           lake --dir eval/mutants exe mitos-mutants

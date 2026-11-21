@@ -253,6 +253,12 @@ jobs:
       - name: Every app token is narrowed in trusted
         run: .github/scripts/app-token.test.sh
 
+      - name: accept-plugins.sh accepts exactly the plugins in examples/acme/Plugins, and every workflow accepts through it
+        run: .github/scripts/accept-plugins.test.sh
+
+      - name: Nightly baselines select only this repository's main nightly and fail on API errors
+        run: .github/scripts/nightly-baseline.test.sh
+
       - name: Make PyYAML available for the independent workflow parser
         run: |
           python3 -c 'import yaml' 2>/dev/null || sudo apt-get install -y python3-yaml
@@ -330,10 +336,35 @@ jobs:
       - name: Example workspace builds
         run: cd examples/acme && lake build
 
-      - name: Scorecard on the fixture (precision and recall per edge type against hand labels)
+      - name: The go.mod differential runner builds, its pins and selftest pass, and its report is in the summary (no Go; a mismatch warns)
+        shell: bash
+        run: |
+          lake --dir eval/diff build
+          eval/diff/check-pins.sh
+          eval/diff/selftest.sh
+          status=0
+          lake --dir eval/diff exe mitos-diff eval/diff > "$RUNNER_TEMP/diff.md" || status=$?
+          { echo '### Differential run (go.mod, vendored outputs)'; cat "$RUNNER_TEMP/diff.md"; } >> "$GITHUB_STEP_SUMMARY"
+          case $status in
+            0) ;;
+            1) echo "::warning::untriaged mismatch or stale line in eval/diff/triage.tsv; the nightly diff job fails on it" ;;
+            *) cat "$RUNNER_TEMP/diff.md"; echo "::error::mitos-diff could not read eval/diff (exit $status)"; exit "$status" ;;
+          esac
+
+      - name: Every mutant case prepares as its manifest says, and a case claims every Challenge theorem (mitos-mutants --prepare)
+        run: |
+          lake --dir eval/mutants build
+          lake --dir eval/mutants exe mitos-mutants --prepare "$RUNNER_TEMP/mutants"
+
+      - name: Scorecard on every fixture (precision and recall per edge type against hand labels)
+        shell: bash
         run: |
           lake --dir eval/score build
-          lake --dir eval/score exe mitos-score eval/fixtures/toy > "$RUNNER_TEMP/scorecard.md"
+          : > "$RUNNER_TEMP/scorecard.md"
+          for f in eval/fixtures/*/; do
+            lake --dir eval/score exe mitos-score "${f%/}" >> "$RUNNER_TEMP/scorecard.md"
+            echo >> "$RUNNER_TEMP/scorecard.md"
+          done
           cat "$RUNNER_TEMP/scorecard.md"
           cat "$RUNNER_TEMP/scorecard.md" >> "$GITHUB_STEP_SUMMARY"
 
@@ -342,10 +373,8 @@ jobs:
           name: scorecard
           path: ${{ runner.temp }}/scorecard.md
 
-      - name: Honest toy plugin is accepted (gates 0-6, independent kernels)
-        run: |
-          lake exe mitos-gate accept --workspace examples/acme --plugin ToyRequire \
-            --model Models.ToyRequire.model --paranoid
+      - name: Every plugin in examples/acme/Plugins is accepted (gates 0-6, independent kernels), and its committed record is the one the gate writes
+        run: .github/scripts/accept-plugins.sh --record
 
       - name: Model lint allowlist accepts and rejects each command kind
         run: lake exe mitos-lint-test

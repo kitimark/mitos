@@ -34,6 +34,7 @@ EXPECTED_LAKE_JOBS = {
     ("ci.yml", "cheat-shard"),
     ("land.yml", "decide"),
     ("nightly.yml", "full"),
+    ("nightly.yml", "diff"),
     ("nightly.yml", "canary"),
 }
 
