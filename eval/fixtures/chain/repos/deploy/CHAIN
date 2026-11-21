@@ -1,0 +1,2 @@
+binds DATABASE_URL orders-db
+binds QUEUE_URL jobs-queue

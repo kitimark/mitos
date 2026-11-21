@@ -1,6 +1,7 @@
 import Mitos.Core.Spec
 import Mitos.Impl.Resolve
 import Plugins.ToyRequire
+import Score.Chain
 import Score.GoMod
 
 namespace Score
@@ -41,12 +42,20 @@ def declared (src : String) : List Fact :=
 
 def factsOf (f : SourceFile) : List (Fact × Assumption) :=
   if GoMod.reads f.path then GoMod.facts f.text else
+  if Chain.reads f.path then Chain.facts f.repo f.path f.text else
   let fromPlugin := (ToyRequire.extractor.run f.text).map (·, .extractor "ToyRequire")
   let fromDecl :=
     if f.path == "PROVIDES" then
       (declared f.text).map (·, .humanDeclaredOutsideSource s!"{f.repo}/PROVIDES")
     else []
   fromPlugin ++ fromDecl
+
+theorem factsOf_chain {f : SourceFile} (h : Chain.reads f.path = true) :
+    factsOf f = Chain.facts f.repo f.path f.text := by
+  have hg : GoMod.reads f.path = false := by
+    simp only [Chain.reads, Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with h | h <;> rw [h] <;> decide
+  simp [factsOf, hg, h]
 
 def ingest (files : List SourceFile) : Except String (List Located) := do
   let mut out : Array Located := #[]
@@ -80,8 +89,21 @@ def parseLabels (txt : String) : Except String (List RepoKey) := do
 def collapse (es : List Edge) : List (RepoKey × Status) :=
   es.foldl (init := []) fun acc e =>
     if acc.any (·.1 == e.repoKey) then
-      acc.map fun (k, s) => (k, if k == e.repoKey && e.status == .inferred then .inferred else s)
+      acc.map fun (k, s) => (k, if k == e.repoKey && e.status == .confirmed then .confirmed else s)
     else acc ++ [(e.repoKey, e.status)]
+
+private def unionKey (dst : String) : RepoKey :=
+  { requiringRepo := "web", providingRepo := dst, ident := { kind := "env", key := "K" },
+    scope := .runtime }
+
+private def unionRecord (dst : String) (s : Status) : Edge :=
+  { unionKey dst with key := .direct 0 0, assumes := [], status := s }
+
+theorem collapse_union :
+    collapse [unionRecord "a" .inferred, unionRecord "a" .confirmed, unionRecord "b" .confirmed,
+        unionRecord "b" .inferred, unionRecord "c" .inferred, unionRecord "c" .inferred] =
+      [(unionKey "a", .confirmed), (unionKey "b", .confirmed), (unionKey "c", .inferred)] := by
+  decide
 
 def ratio (n d : Nat) : String :=
   if d = 0 then "n/a" else
@@ -115,8 +137,11 @@ def Scorecard.render (c : Scorecard) (name : String) : String := Id.run do
   let pred := c.predicted.map (·.1)
   let types := (pred ++ c.labels).map edgeType |>.eraseDups
   let reqs := c.facts.filter (·.fact.kind == .requires) |>.length
+  let provs := c.facts.filter (·.fact.kind == .provides) |>.length
+  let binds := c.facts.filter (·.fact.kind matches .binds _) |>.length
   let mut out := s!"### Scorecard: fixture `{name}`\n\n"
-  out := out ++ s!"{c.facts.length} facts ({reqs} requirements, {c.facts.length - reqs} provisions), "
+  out := out ++ s!"{c.facts.length} facts ({reqs} requirements, {provs} provisions"
+  out := out ++ (if binds = 0 then "), " else s!", {binds} bindings), ")
   out := out ++ s!"{pred.length} repo-level edges predicted, {c.labels.length} hand-labelled, "
   out := out ++ s!"{c.unresolved.length} requirements unresolved.\n\n"
   out := out ++ "| Edge type | Predicted | Labelled | TP | FP | FN | Precision | Recall |\n"
@@ -149,5 +174,17 @@ def Scorecard.render (c : Scorecard) (name : String) : String := Id.run do
       out := out ++ s!"- `{l.repo}/{l.path}` bytes {l.fact.span.start}+{l.fact.span.len}: "
       out := out ++ s!"`{repr l.fact.ident.key}`\n"
   return out
+
+private def chainUnionFiles : List SourceFile :=
+  [{ repo := "deploy", path := "CHAIN", text := "binds A db\n" },
+   { repo := "deploy", path := "CHAIN.ai", text := "binds A db\n" },
+   { repo := "orders", path := "CHAIN", text := "serves db\n" },
+   { repo := "web", path := "CHAIN", text := "needs A\n" }]
+
+theorem chain_union_end_to_end :
+    (score chainUnionFiles []).toOption.map (fun c => (c.facts.length, c.predicted)) =
+      some (4, [({ requiringRepo := "web", providingRepo := "orders", ident := ⟨"env", "A"⟩,
+                   scope := .runtime }, .confirmed)]) := by
+  decide +kernel
 
 end Score
