@@ -1,5 +1,5 @@
 why=Walks the requirements twice for the unresolved list, so every unresolved requirement is listed twice.
 breaks=resolve_unresolved_nodup
 file=Mitos/Impl/Resolve.lean
-find=((fs.filter isRequirement).filter fun r => (providers fs r).isEmpty).map (·.id)
-replace=(((fs ++ fs).filter isRequirement).filter fun r => (providers fs r).isEmpty).map (·.id)
+find=unresolved := rows.flatMap Prod.snd
+replace=unresolved := (rows ++ rows).flatMap Prod.snd

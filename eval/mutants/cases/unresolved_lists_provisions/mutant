@@ -1,5 +1,5 @@
 why=Forgets to keep only requirements, so a provision that nobody uses is reported as unresolved.
 breaks=resolve_unresolved_exact
 file=Mitos/Impl/Resolve.lean
-find=((fs.filter isRequirement).filter fun r
-replace=(fs.filter fun r
+find=if isRequirement r && allEnds.isEmpty then [r.id] else []
+replace=if allEnds.isEmpty then [r.id] else []

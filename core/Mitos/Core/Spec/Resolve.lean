@@ -4,7 +4,7 @@ namespace Mitos.Spec
 
 def Sound (R : Resolver) : Prop :=
   ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∃ c ∈ derivations fs,
-    c.key = e.key ∧ c.repoKey = e.repoKey
+    c.key = e.key ∧ c.repoKey = e.repoKey ∧ c.through = e.through
 
 def Complete (R : Resolver) : Prop :=
   ∀ fs, WellFormed fs → ∀ c ∈ derivations fs, ∃ e ∈ (R fs).edges, e.key = c.key

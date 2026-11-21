@@ -2,15 +2,18 @@
 # A change to this file needs the `spec-approved` label (see docs/process.md).
 # format: canon-1
 ctor Mitos.Affects.step params=0 type=3360acb4c2454e0335e61be17a44a2fb
+ctor Mitos.Affects.through params=0 type=a1b7778654f33afdc98a476dcf5e3512
 ctor Mitos.Affects.trans params=0 type=ddb47105bdec66314e6fbe4073469c14
 ctor Mitos.Assumption.ai params=0 type=ccf66c489f0e76120d225418a7df7efd
 ctor Mitos.Assumption.extractor params=0 type=ccf66c489f0e76120d225418a7df7efd
 ctor Mitos.Assumption.humanDeclaredOutsideSource params=0 type=ccf66c489f0e76120d225418a7df7efd
 ctor Mitos.Chain.mk params=0 type=f9d0fbda5e41b6bafbef24685dc0bc49
+ctor Mitos.Derivation.bound params=0 type=a91b0154095f0366ef0931d7c129b3fe
 ctor Mitos.Derivation.direct params=0 type=94e6741f3d82b36370a7284b6eabbe8b
-ctor Mitos.Edge.mk params=0 type=028bc21f191cc6846145b84feb0a5205
+ctor Mitos.Edge.mk params=0 type=37e01cd273d01809093e04e8765c762b
 ctor Mitos.Extractor.mk params=0 type=9109424187e93a69e2b2c58989dfd091
 ctor Mitos.Fact.mk params=0 type=fb550e0b2d293d53ca5f7adfd1c4aaf5
+ctor Mitos.FactKind.binds params=0 type=d53d0dad3c63924d1af9d89bf27a1cb9
 ctor Mitos.FactKind.provides params=0 type=3c25dd6f3776b6dba3060ba87b755c63
 ctor Mitos.FactKind.requires params=0 type=3c25dd6f3776b6dba3060ba87b755c63
 ctor Mitos.GoldenFile.mk params=0 type=43fbd9e5f5e9f78ad08c1b4e3b02ca9f
@@ -29,22 +32,25 @@ ctor Mitos.Status.confirmed params=0 type=fd873231eee991051d95feb9ac057af3
 ctor Mitos.Status.inferred params=0 type=fd873231eee991051d95feb9ac057af3
 def Mitos.Anchored params=0 type=9eb01e6917367f8c383bcf8a5520cd8c value=63cd28ca56f71ccc43d3eac189fd625c
 def Mitos.Assumption.isAI params=0 type=09d2d5f6855fe3273165344246850839 value=320af93eb03eaa581dfc3c09e14973fc
+def Mitos.Chain.bound params=0 type=c17af3af66127958f736bdfe8d9b9931 value=259dd1c4113292b7390522b554f02ded
 def Mitos.Chain.direct params=0 type=a9ebf13ba98fc77b41db7d2f6cd67023 value=49f8165f2e290ec56ba5a1f7e38e66bd
 def Mitos.Chain.key params=0 type=1186dd98f754011bac6b33608f6e4a22 value=84fd4eac359afa8fced0d99e9723e29f
 def Mitos.Chain.origins params=0 type=7797a9f7b26768bdb2bfd6532e21c47a value=161d0fbac62081bb1a30ca925b547a6e
 def Mitos.Chain.provision params=0 type=31358c38ac2fdc7255a3a9fc3721db46 value=a5bc93400499be95a8793163d8f8b5a7
 def Mitos.Chain.repoKey params=0 type=b1ac0ea243d374302638dad284f57486 value=50024f190b9dface6942f3cf14d82902
 def Mitos.Chain.requirement params=0 type=31358c38ac2fdc7255a3a9fc3721db46 value=498ee8bb1c465bf4bd228d02cb912f8f
+def Mitos.Chain.through params=0 type=e886e3c351c402c0efa6834aef1c8c3b value=8abb4031c589661a67d79b4e6298a153
 def Mitos.Chain.via params=0 type=9d9c11719e95f01ab124edc8de60b4b9 value=454fe2e8e7b11fa6ac0a1c13465876bc
 def Mitos.CompleteWrt params=0 type=22c259908b1784b8ef8961d3e7914c77 value=829b5251222797b9395e520e8a4e2e6e
-def Mitos.Derivation.providingFactId params=0 type=95eb0487782036f6c37b7efea0cd9dd8 value=c1c9765a17332a8091a0c76ca16d076a
-def Mitos.Derivation.requiringFactId params=0 type=95eb0487782036f6c37b7efea0cd9dd8 value=fd1d605f1fe4073b9d18554576f2b734
+def Mitos.Derivation.providingFactId params=0 type=95eb0487782036f6c37b7efea0cd9dd8 value=c4f6ce1642c59ec3b1d343b033ecc2de
+def Mitos.Derivation.requiringFactId params=0 type=95eb0487782036f6c37b7efea0cd9dd8 value=8df165e32227ccdcbce493a0bec53fc9
 def Mitos.Edge.assumes params=0 type=dde6174c5713e5f5b525108afea71b95 value=7fd9ebafab42c42d217925d029f099cd
 def Mitos.Edge.key params=0 type=7b260a3f97459221801a65a7d56be3d8 value=447d6bb4e058b2781414aafaae58f43b
 def Mitos.Edge.providingFactId params=0 type=d3d8f672243668571982801f856a2d10 value=f7c929d1c9c9979164dd83cd177407b8
 def Mitos.Edge.repoKey params=0 type=ca75566ef04de247c174c42fcbf48473 value=a40f3f11b5bc572bb8633c469e32dd87
 def Mitos.Edge.requiringFactId params=0 type=d3d8f672243668571982801f856a2d10 value=4c02e4c0eb3c5618025af1ce506c4c45
 def Mitos.Edge.status params=0 type=48a1a2a060f40d78afcc0022a3acc8e4 value=16e3b8c66994b00cf49bc7862e1a895c
+def Mitos.Edge.through params=0 type=feeec9811cc5f1bf7f3bdbdf333866eb value=d51cbb97ad078f2ccecbc90c078394e6
 def Mitos.Extractor.empty params=0 type=b96be8897153376c144827b1d8634f0c value=5980d6d26fa664a10c10ef544153f97e
 def Mitos.Extractor.run params=0 type=619a74e1437ab2f00b689624b01b0b7b value=617ee1778c377ffae3265f001c545eaf
 def Mitos.Fact.ident params=0 type=5a48c0917c3994f5f7f1b7ff1168becd value=7790610d8894e7a38d52c9944b7507dd
@@ -65,6 +71,7 @@ def Mitos.Model.Adequate params=0 type=d395966c8672ed4b94647888bded3e1e value=73
 def Mitos.Model.Holds params=0 type=9de1e00e8032b0685860af6566fea06b value=323432744617b10de359f58634e4ca75
 def Mitos.ModelExamples.everyListedGoldenFact params=0 type=a9ae0910e7e1bd07db5a6312345b06a6 value=99e5171779998b73f4e48f261fe22aaa
 def Mitos.ModelExamples.golden params=0 type=15c261439edb255341c112701a9f1a09 value=9c716e44051c39737df39dcc0db034b7
+def Mitos.NoBinds params=0 type=62074dfdd4840fbdf6aea7e5e6a8cd87 value=12de2e7c48635e42834aab02f01d513b
 def Mitos.RepoKey.ident params=0 type=1a21ac9d73ec9c08dba932b48494e539 value=4f7d5f5115ffcd4d1114e2ebda698b71
 def Mitos.RepoKey.providingRepo params=0 type=a037e8301ff3c973dc01977086872021 value=885b3efa3026969f877b27f44bd481cb
 def Mitos.RepoKey.requiringRepo params=0 type=a037e8301ff3c973dc01977086872021 value=645882bdd9cdc12b5d72e7b532ebbefd
@@ -80,7 +87,7 @@ def Mitos.Span.text params=0 type=291f4fe62a0a0a6692ac05bbc65fa885 value=5f10216
 def Mitos.Spec.Adequacy.accented params=0 type=a2121f8960870692a3b44dab2a615b20 value=944293af8eda358fcbf1aee76a9973df
 def Mitos.Spec.Adequacy.cite params=0 type=ab30876f1e0d9133599d196be43dddd0 value=808b86d756a6b57d3daeac8edd8a8135
 def Mitos.Spec.Adequacy.citing params=0 type=9f0829078de5aa554020d2e054ca7329 value=281e7549e5558e1b9a70825e50513f71
-def Mitos.Spec.Adequacy.goodEdge params=0 type=e57d6d51ad51a955bf2c25ad1ca21c8d value=00323e79895fd4d88219289ce2f14604
+def Mitos.Spec.Adequacy.goodEdge params=0 type=e57d6d51ad51a955bf2c25ad1ca21c8d value=a3e42e578c3384e6f5d76db21f4c11de
 def Mitos.Spec.Adequacy.prov params=0 type=e02375259be89b0e9972bae24ab2e746 value=276b7aaa8d35fa8c6b6f8ddb23d21bb9
 def Mitos.Spec.Adequacy.provAI params=0 type=e02375259be89b0e9972bae24ab2e746 value=edb13deecea5f7082add04bf5180fb96
 def Mitos.Spec.Adequacy.provDeclared params=0 type=e02375259be89b0e9972bae24ab2e746 value=0395ffdf4e59f7fa4dd077050c1877ea
@@ -88,25 +95,40 @@ def Mitos.Spec.Adequacy.req params=0 type=e02375259be89b0e9972bae24ab2e746 value
 def Mitos.Spec.Adequacy.twoProvisions params=0 type=ee6cc5a565c77e0f16aa64a5e0489c73 value=5f57b6a3ab768084bb75633959424f00
 def Mitos.Spec.AssumptionsExact params=0 type=670c3cbc4be8fbd87741c63341279a5a value=a1f62a436f710c789e6de154fd42dd5f
 def Mitos.Spec.AssumptionsNodup params=0 type=670c3cbc4be8fbd87741c63341279a5a value=656e99a774d05d7905c80ca71f2e33a5
+def Mitos.Spec.Chains.bindAI params=0 type=e02375259be89b0e9972bae24ab2e746 value=52e8745fd1532dbf841b7cb650791b37
+def Mitos.Spec.Chains.bindDb params=0 type=e02375259be89b0e9972bae24ab2e746 value=ba68d1aa47ed6442df9773d4eaecb658
+def Mitos.Spec.Chains.bindStaging params=0 type=e02375259be89b0e9972bae24ab2e746 value=b05fc9da27627619d3c616abc257452d
+def Mitos.Spec.Chains.chain params=0 type=ee6cc5a565c77e0f16aa64a5e0489c73 value=64967d2ec0063ac66138b19a6cdb8831
+def Mitos.Spec.Chains.chainAI params=0 type=ee6cc5a565c77e0f16aa64a5e0489c73 value=01b62a2372abc6946ef3ac35eed9f151
+def Mitos.Spec.Chains.chainEdge params=0 type=e57d6d51ad51a955bf2c25ad1ca21c8d value=6bd8ef04012b9582e448d0022de06a16
+def Mitos.Spec.Chains.fork params=0 type=ee6cc5a565c77e0f16aa64a5e0489c73 value=dac7233a868fb37562454cfd7e6fc511
+def Mitos.Spec.Chains.forkBind params=0 type=e02375259be89b0e9972bae24ab2e746 value=394e963b7f2918da4af24d787150d73b
+def Mitos.Spec.Chains.forkProv params=0 type=e02375259be89b0e9972bae24ab2e746 value=3bb2284fe12b238f478e38a47db62f49
+def Mitos.Spec.Chains.needDb params=0 type=e02375259be89b0e9972bae24ab2e746 value=3eb5ca5c23a6e4702d4b053eb00e6ebd
+def Mitos.Spec.Chains.provDb params=0 type=e02375259be89b0e9972bae24ab2e746 value=8421b778740824e2bbcee2198ace769b
+def Mitos.Spec.Chains.selfBind params=0 type=e02375259be89b0e9972bae24ab2e746 value=8f56d829312dce7eff823d3e7d49133e
+def Mitos.Spec.Chains.selfBound params=0 type=ee6cc5a565c77e0f16aa64a5e0489c73 value=afd7a17d917fc839905317229b715730
+def Mitos.Spec.Chains.twoBindings params=0 type=ee6cc5a565c77e0f16aa64a5e0489c73 value=566064ff54c6277ad6c28e5de4918c56
 def Mitos.Spec.Complete params=0 type=670c3cbc4be8fbd87741c63341279a5a value=86355f0c0300e9d1ce4f8d95dbdbd685
 def Mitos.Spec.EdgesNodup params=0 type=670c3cbc4be8fbd87741c63341279a5a value=a73cefd1e8e493df61fd65f4a0c60769
 def Mitos.Spec.ImpactCorrect params=0 type=e07c2bc35ede56c06ab2227c775852a0 value=3ccc8ab6cd6b4d38c63ea8dafc733703
 def Mitos.Spec.ImpactNodup params=0 type=e07c2bc35ede56c06ab2227c775852a0 value=5b71c17ca395ea9b492ef21a75c61683
 def Mitos.Spec.RetractExact params=0 type=670c3cbc4be8fbd87741c63341279a5a value=93f83053ce2dda65fe90bc7c6891ae47
-def Mitos.Spec.Sound params=0 type=670c3cbc4be8fbd87741c63341279a5a value=4ca7c92689615a3275862d2b60e3757a
+def Mitos.Spec.Sound params=0 type=670c3cbc4be8fbd87741c63341279a5a value=e269ae8187c79cb0ea5a484e0b941e3a
 def Mitos.Spec.StatusHonest params=0 type=670c3cbc4be8fbd87741c63341279a5a value=2c685b5c19092bc4e2c41879622cfd23
 def Mitos.Spec.Total params=0 type=670c3cbc4be8fbd87741c63341279a5a value=b956e5f3a1a9ccbf10c3f97664c2f338
 def Mitos.Spec.UnresolvedExact params=0 type=670c3cbc4be8fbd87741c63341279a5a value=1146f1db363f5a4a526c7dbca58bc832
 def Mitos.Spec.UnresolvedNodup params=0 type=670c3cbc4be8fbd87741c63341279a5a value=536f7fe9ea2808a0b7d35c678b36bc54
 def Mitos.Utf8ByteCount params=0 type=6ee78366d8d44bf375e68b8975cf8ee2 value=8ee7e0fad26f50bef2ba39d555c05d79
 def Mitos.WellFormed params=0 type=62074dfdd4840fbdf6aea7e5e6a8cd87 value=763409aa353c87abcdb20554b1bb7475
-def Mitos.derivations params=0 type=fd599e004e172380fcce6f3b85615683 value=d8d9a1ba4ac4225bf5404db5a5c4e140
+def Mitos.boundB params=0 type=406ff07338aeb527521d2fb3a0fe04ca value=a2530280266717a5e04352b980975afd
+def Mitos.derivations params=0 type=fd599e004e172380fcce6f3b85615683 value=4ab0aab589b559676699663722828c4a
 def Mitos.instDecidableEqAssumption params=0 type=b5c3e49fc1fd61c49945701a860d7629 value=5ffc03b2ce9cdccc3e0a3827f48ce269
 def Mitos.instDecidableEqChain params=0 type=3ebb08daff3c9121fb39400da7c4bd6a value=3a790c1e03cadc6b839e5de143244976
-def Mitos.instDecidableEqDerivation params=0 type=2be60222d1a3a644fee3f8ec19f54385 value=48a5ce8ea25f0d1c80084ca19389e887
-def Mitos.instDecidableEqEdge params=0 type=4d32c61af07be49335a21bc05333ac2b value=b828da4608247459ca8564db0c7991d2
+def Mitos.instDecidableEqDerivation params=0 type=2be60222d1a3a644fee3f8ec19f54385 value=ce5c81860c134f209f1cd1b2c17e42f4
+def Mitos.instDecidableEqEdge params=0 type=4d32c61af07be49335a21bc05333ac2b value=46b9701387ef21e766d1cfc59f98bf0c
 def Mitos.instDecidableEqFact params=0 type=80383da02a2ebcd10d71f2f7c2cd91a4 value=ef79471bb649e2e6b557c7137a3d5ce9
-def Mitos.instDecidableEqFactKind params=0 type=dda7ce45a63f99d292036c461fd5588d value=89c00092dfd96d8ee158eacbdca4f26f
+def Mitos.instDecidableEqFactKind params=0 type=dda7ce45a63f99d292036c461fd5588d value=4cf6eb1cbf6d8e49986e1b680a4409d6
 def Mitos.instDecidableEqIdentity params=0 type=1a37725581a7a5beaa536af412012a26 value=e8ee4197b8decc773f36c21aae2c4c58
 def Mitos.instDecidableEqLocated params=0 type=b690520c06f18f84dbbaec19eb916019 value=d5d70331bf24b9f22a6c8debbce806bf
 def Mitos.instDecidableEqRepoKey params=0 type=08c97c76a9355fc89badc32d819f6d2f value=a8a105aaeff72570010b2916c1a6f990
@@ -115,10 +137,10 @@ def Mitos.instDecidableEqSpan params=0 type=646ef60696575612568f80c553d3e292 val
 def Mitos.instDecidableEqStatus params=0 type=9a5aa89a5dd812f8cdf5727037a8a407 value=92a4c8d8542a7c878737cacc49e513ed
 def Mitos.instReprAssumption params=0 type=ca3ac0e824972164b0bdde7ab4a8d504 value=0519c69edd331c10bada8b3d8074a418
 def Mitos.instReprChain params=0 type=bd79e2143a72b14bfab9b97cad33eee2 value=28069b101e07b06aa6729a45c9c5340f
-def Mitos.instReprDerivation params=0 type=3b83c65ede21bc57bc1648db1c8061e8 value=8b1abe37132e5564f794998c6cce34de
-def Mitos.instReprEdge params=0 type=5b682e2d4d7d10fe1a39804c29cc6af0 value=d92580911c0cc26ccd97b6e11543e485
+def Mitos.instReprDerivation params=0 type=3b83c65ede21bc57bc1648db1c8061e8 value=65ff545dce4f55dc430702b20cc71c3f
+def Mitos.instReprEdge params=0 type=5b682e2d4d7d10fe1a39804c29cc6af0 value=4e0fe5003912e65ebe2fb9ce2f5e51ee
 def Mitos.instReprFact params=0 type=e5c8f5724d76375f0d02a24cb7e8c100 value=3198c642d1bd834825b57589a9ccadf6
-def Mitos.instReprFactKind params=0 type=6fff9836ef38f7f1ec3f6ebc6dda9168 value=e288a890a65aa95137d0e3e04c765091
+def Mitos.instReprFactKind params=0 type=6fff9836ef38f7f1ec3f6ebc6dda9168 value=9a592e1c61215145da25d43af7b4b0e2
 def Mitos.instReprIdentity params=0 type=5c0063e3120bd66126431f31bb25b704 value=8d21276f3b5ce647f4b0222236546ab4
 def Mitos.instReprLocated params=0 type=1e774ae0741efe6ee0891e04878cbd28 value=910b3131c575ede3c5a893e6931e6c1c
 def Mitos.instReprRepoKey params=0 type=069cd386c6a81c219593cbc2563fcc3d value=53876251b28d50a9e06108af8dd434b8
@@ -162,39 +184,62 @@ theorem Mitos.Span.text_eq_some params=0 type=102adebdf36e7a7bc74581ec0cb72ec0
 theorem Mitos.Span.text_isValid params=0 type=12329729701ec2330380adac165fc569
 theorem Mitos.Span.text_toByteArray params=0 type=2013000b55fc9e10a1613f93ae6ae2cd
 theorem Mitos.Spec.Adequacy.assumptions_exact_lists_leaf_origins params=0 type=80d20c9ee093b184e80ffa5ba04ae744
-theorem Mitos.Spec.Adequacy.backwards_not_sound params=0 type=b1e398eb4b08830dcdf519564ee42a72
+theorem Mitos.Spec.Adequacy.backwards_not_sound params=0 type=f67eceb52b25e4bb96f6fdb576b7c7bb
 theorem Mitos.Spec.Adequacy.byte_span_anchored params=0 type=3d1b716919a83ac8c50dd94871d8cead
 theorem Mitos.Spec.Adequacy.char_span_not_anchored params=0 type=de0a14087166d4d46d49b4663af9510a
 theorem Mitos.Spec.Adequacy.complete_keeps_both_derivations params=0 type=b32f2d38eb5eea4db327cdc7a6ee90ca
-theorem Mitos.Spec.Adequacy.doubled_assumption_not_nodup params=0 type=c9984fb30abc195ddd72de1d02015f43
+theorem Mitos.Spec.Adequacy.doubled_assumption_not_nodup params=0 type=fcf2dbb278c48b152619cb3ab362cc27
 theorem Mitos.Spec.Adequacy.doubled_impact_not_nodup params=0 type=39eebcab8fd87006c9212b75e6e1304b
 theorem Mitos.Spec.Adequacy.doubled_unresolved_not_nodup params=0 type=24245b418c32fef167bfa5d77e6b2f2a
 theorem Mitos.Spec.Adequacy.dropping_not_total params=0 type=60d0f90370b32f401bd69250493544c5
-theorem Mitos.Spec.Adequacy.forgetful_not_exact params=0 type=6d9c5217b0feaa9c1a36181336f31d18
+theorem Mitos.Spec.Adequacy.forgetful_not_exact params=0 type=582afe99d2b8e5119d772fcd2162cd5a
 theorem Mitos.Spec.Adequacy.mid_char_span_not_anchored params=0 type=b30b1c97399a5bb60dfe99ebb2edf54e
 theorem Mitos.Spec.Adequacy.nothing_not_complete params=0 type=4f9aec1bd84336625220219979544185
 theorem Mitos.Spec.Adequacy.nothing_unresolved_not_exact params=0 type=bba73d189ebc4fc36a0331f6059e082e
-theorem Mitos.Spec.Adequacy.same_key_edges_not_nodup params=0 type=3b67cb379a517cf455e79bff4a8e2d64
+theorem Mitos.Spec.Adequacy.same_key_edges_not_nodup params=0 type=e8c93f8c7b130d44dc922349a361d19c
 theorem Mitos.Spec.Adequacy.silent_impact_not_correct params=0 type=375765221e84e3895ba8f6c1364c8a09
 theorem Mitos.Spec.Adequacy.sound_records_the_derivation params=0 type=564922452b7d16a816e826e17d9a1f03
 theorem Mitos.Spec.Adequacy.status_honest_two_provisions_inferred params=0 type=fdcb9decc05f99cc304a8f8d29cd13ad
 theorem Mitos.Spec.Adequacy.sticky_not_retract_exact params=0 type=c36040ce5862241c20b42bf9aa89cadb
-theorem Mitos.Spec.Adequacy.trusting_ai_not_honest params=0 type=a14a34102bd34205c45c4bcebd6fb115
+theorem Mitos.Spec.Adequacy.trusting_ai_not_honest params=0 type=b80d658a8257213ab4e0941ef93f3020
 theorem Mitos.Spec.Adequacy.twoProvisions_derivations params=0 type=5a4d46e9b3304b79281abba66d7c2bc0
 theorem Mitos.Spec.Adequacy.unresolved_exact_skips_resolved params=0 type=59a5ae7c3f49ba64a1b30900ce50dae9
 theorem Mitos.Spec.Adequacy.wf params=0 type=425e224fbe3327f84906c4b57ef41715
 theorem Mitos.Spec.Adequacy.wf1 params=0 type=b8fe0c383b6cbf4b3092471ecd43bef8
 theorem Mitos.Spec.Adequacy.wfAI params=0 type=01b96bb11ff877926b8b742c4cb7e3cb
 theorem Mitos.Spec.Adequacy.wfTwoProvisions params=0 type=782b950cf09b102f3a9f6ecdbf6d41e1
+theorem Mitos.Spec.Chains.assumptions_exact_lists_binding params=0 type=7061e1040df2576341cdb4c3ad7cae6a
+theorem Mitos.Spec.Chains.binding_change_affects_requirer params=0 type=78c5e9bba41c543f9d1addec4b4a3b05
+theorem Mitos.Spec.Chains.binding_retracted_chain_goes params=0 type=438f8d938b67ffce7cdfa2d69e7ddc58
+theorem Mitos.Spec.Chains.binding_retracted_repo_edge_stays params=0 type=b45975ae83f395c963048d496da195d5
+theorem Mitos.Spec.Chains.chain_derivations params=0 type=c419d79793eae4fd0256ec31e76b4743
+theorem Mitos.Spec.Chains.complete_keeps_both_bindings params=0 type=f3948a21549cb223891e8f16dbe2459c
+theorem Mitos.Spec.Chains.fork_derivations params=0 type=469a41a9dbc8d02c6e846304ee61635d
+theorem Mitos.Spec.Chains.noBinds_twoProvisions params=0 type=0efa5c1001195753941eaf5cfcb3fc0a
+theorem Mitos.Spec.Chains.selfBound_derivations params=0 type=cef5c5f9c98726274b933a13ab87926e
+theorem Mitos.Spec.Chains.sound_direct_edges_have_no_through params=0 type=dbfd8f41ed0e48f7866f39bf6caabd5f
+theorem Mitos.Spec.Chains.sound_records_the_binding params=0 type=1d428e509ce986140654bfb455817b98
+theorem Mitos.Spec.Chains.status_honest_ai_binding_inferred params=0 type=0f1726f1a33a1c0a1a8b2a6f32bd9bf9
+theorem Mitos.Spec.Chains.status_honest_fork_inferred params=0 type=c970247052dbe999b50f15e569752d03
+theorem Mitos.Spec.Chains.status_honest_self_binding_confirmed params=0 type=6cef71ec92df75e3f0fd09b83dd1e8f8
+theorem Mitos.Spec.Chains.twoBindings_derivations params=0 type=50dc5db231dac0f09d9c7f6a6009f015
+theorem Mitos.Spec.Chains.unresolved_exact_binding_resolves params=0 type=b8b92d6f64210194a1cf13a5ac3d61a9
+theorem Mitos.Spec.Chains.unresolved_exact_needs_the_binding params=0 type=f8bf9639b8fcc07f449f02f4932177bf
+theorem Mitos.Spec.Chains.wfChain params=0 type=b52678efe5c1d53434c41926581e476d
+theorem Mitos.Spec.Chains.wfChainAI params=0 type=b5b8cf2d82b0d9a0ca3c3aa681c24c5f
+theorem Mitos.Spec.Chains.wfFork params=0 type=cbadd0545f7891ea90a0fd77f1159f14
+theorem Mitos.Spec.Chains.wfSelfBound params=0 type=20e8dd457cccd0d9f400d1fc871ae686
+theorem Mitos.Spec.Chains.wfTwoBindings params=0 type=1d76475ef1b39514b3eaf6855e143433
 theorem Mitos.Spec.declaration_retracted_repo_edge_stays params=0 type=1c15ff21e4c4ad3d43842772bcc4ba20
 theorem Mitos.Spec.extractor_retracted_repo_edge_goes params=0 type=eb2cfce5f4ae796ee62afc3618a97ee0
 theorem Mitos.Spec.retract_repo params=0 type=1fd1a5147997c0a14e9b233ef9f7f34d
 theorem Mitos.WellFormed.eq_of_id params=0 type=cb2e41d6ad3a698a6417dfea49c0fd25
 theorem Mitos.derivations_key_ends params=0 type=daa47d2ae7867eb75706ff7f4700e359
 theorem Mitos.derivations_key_inj params=0 type=c6d0821d43c7f12705e08d9685e57525
-theorem Mitos.derivations_single_provider params=0 type=08e57d38395cdb114fee2c9451537304
+theorem Mitos.derivations_single_provider params=0 type=96d1ba681376605c7c4122cbdedba063
 theorem Mitos.lines.go_anchor params=0 type=754ed9c2bc4d5061aca82fc7ec71d7ac
-theorem Mitos.mem_derivations params=0 type=4dd26dfbaabc6095503c054c3c129790
+theorem Mitos.mem_derivations params=0 type=532fa4adaa49a27eddae5f4ae9f9f6aa
+theorem Mitos.mem_derivations_of_noBinds params=0 type=70765b1beb4fb132f5f60f659dcc8fec
 theorem Mitos.mem_derivations_retract params=0 type=1a0c780ddbba41d2135546dc8225f3d0
 theorem Mitos.mem_lines params=0 type=f2021776631b440cd053c167d345be34
 theorem Mitos.splitBytes_eq_some params=0 type=982dc771041d7765f3ad0fb55cc4c33b

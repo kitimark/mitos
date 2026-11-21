@@ -1,8 +1,8 @@
 namespace Mitos
 
-inductive FactKind where
-  | provides
-  | requires
+structure Identity where
+  kind : String
+  key  : String
   deriving DecidableEq, Repr
 
 inductive Scope where
@@ -10,11 +10,6 @@ inductive Scope where
   | dev
   | test
   | build
-  deriving DecidableEq, Repr
-
-structure Identity where
-  kind : String
-  key  : String
   deriving DecidableEq, Repr
 
 def utf8Len (cs : List Char) : Nat :=
@@ -41,6 +36,12 @@ def Span.text (sp : Span) (src : List Char) : Option (List Char) := do
 
 def Span.after (pre key : String) : Span :=
   ⟨utf8Len pre.toList, utf8Len key.toList⟩
+
+inductive FactKind where
+  | provides
+  | requires
+  | binds (to : Identity)
+  deriving DecidableEq, Repr
 
 structure Fact where
   kind  : FactKind

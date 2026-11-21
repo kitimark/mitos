@@ -5,8 +5,9 @@ open Mitos Mitos.Impl
 
 theorem fires_iff {x : String} {seen : List String} {e : Edge} :
     fires x seen e = true ↔
-      (e.providingRepo = x ∨ e.providingRepo ∈ seen) ∧ e.requiringRepo ∉ seen := by
-  simp [fires]
+      (e.providingRepo = x ∨ e.providingRepo ∈ seen ∨ ∃ b ∈ e.through, b = x ∨ b ∈ seen) ∧
+        e.requiringRepo ∉ seen := by
+  simp [fires, or_assoc]
 
 theorem impactGo_sound (es : List Edge) (x : String) :
     ∀ rest seen, (∀ e ∈ rest, e ∈ es) → (∀ y ∈ seen, Affects es x y) →
@@ -21,15 +22,17 @@ theorem impactGo_sound (es : List Edge) (x : String) :
     · intro y hy
       simp only [List.mem_cons] at hy
       rcases hy with rfl | hy
-      · have hstep : Affects es e.providingRepo e.requiringRepo :=
-          .step (hrest e (List.mem_of_find?_eq_some h))
-        rcases fires_iff.mp (List.find?_some h) with ⟨hd | hd, _⟩
-        · exact hd ▸ hstep
-        · exact .trans (hseen _ hd) hstep
+      · have he := hrest e (List.mem_of_find?_eq_some h)
+        rcases (fires_iff.mp (List.find?_some h)).1 with hd | hd | ⟨b, hb, hd | hd⟩
+        · exact hd ▸ Affects.step he
+        · exact .trans (hseen _ hd) (.step he)
+        · exact hd ▸ Affects.through he hb
+        · exact .trans (hseen _ hd) (.through he hb)
       · exact hseen y hy
 
 def Closed (es : List Edge) (x : String) (out : List String) : Prop :=
-  ∀ e ∈ es, (e.providingRepo = x ∨ e.providingRepo ∈ out) → e.requiringRepo ∈ out
+  ∀ e ∈ es, (e.providingRepo = x ∨ e.providingRepo ∈ out ∨ ∃ b ∈ e.through, b = x ∨ b ∈ out) →
+    e.requiringRepo ∈ out
 
 theorem impactGo_closed (es : List Edge) (x : String) :
     ∀ rest seen, (∀ e ∈ es, e ∈ rest ∨ e.requiringRepo ∈ seen) →
@@ -58,7 +61,8 @@ theorem affects_closed {es : List Edge} {x : String} {out : List String}
     (hc : Closed es x out) : ∀ {a b}, Affects es a b → (a = x ∨ a ∈ out) → b ∈ out := by
   intro a b hab
   induction hab with
-  | step he => intro ha; exact hc _ he ha
+  | step he => intro ha; exact hc _ he (ha.elim .inl (.inr ∘ .inl))
+  | through he hb => intro ha; exact hc _ he (.inr (.inr ⟨_, hb, ha⟩))
   | trans _ _ ih1 ih2 => intro ha; exact ih2 (.inr (ih1 ha))
 
 theorem impact_correct : Spec.ImpactCorrect impact := by

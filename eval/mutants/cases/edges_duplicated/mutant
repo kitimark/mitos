@@ -1,5 +1,5 @@
 why=Walks the facts twice, so the resolver emits every edge twice.
 breaks=resolve_edges_nodup
 file=Mitos/Impl/Resolve.lean
-find=edges := fs.flatMap fun r =>
-replace=edges := (fs ++ fs).flatMap fun r =>
+find=edges := rows.flatMap Prod.fst
+replace=edges := rows.flatMap Prod.fst ++ rows.flatMap Prod.fst

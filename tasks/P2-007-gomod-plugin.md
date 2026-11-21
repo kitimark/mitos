@@ -303,7 +303,10 @@ open Mitos
 
 def keys (fs : List Fact) : List String :=
   fs.map fun f =>
-    (match f.kind with | .provides => "provides " | .requires => "requires ") ++ f.ident.key
+    match f.kind with
+    | .provides => "provides " ++ f.ident.key
+    | .requires => "requires " ++ f.ident.key
+    | .binds target => s!"binds {f.ident.key} to {target.kind}:{target.key}"
 
 def main (paths : List String) : IO UInt32 := do
   let golden := Models.GoMod.model.examples.golden

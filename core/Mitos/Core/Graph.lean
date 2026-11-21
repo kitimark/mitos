@@ -29,13 +29,16 @@ inductive Status where
 
 inductive Derivation where
   | direct (requiringFactId providingFactId : Nat)
+  | bound (requiringFactId bindingFactId providingFactId : Nat)
   deriving DecidableEq, Repr
 
 def Derivation.requiringFactId : Derivation → Nat
   | .direct r _ => r
+  | .bound r _ _ => r
 
 def Derivation.providingFactId : Derivation → Nat
   | .direct _ p => p
+  | .bound _ _ p => p
 
 structure RepoKey where
   requiringRepo : String
@@ -48,6 +51,7 @@ structure Edge extends repoKey : RepoKey where
   key     : Derivation
   assumes : List Assumption
   status  : Status
+  through : List String := []
   deriving DecidableEq, Repr
 
 def Edge.requiringFactId (e : Edge) : Nat := e.key.requiringFactId
@@ -76,6 +80,8 @@ theorem wellFormed_retract {fs : List Located} (a : Assumption) (wf : WellFormed
 
 inductive Affects (es : List Edge) : (changed : String) → (dependent : String) → Prop where
   | step {e : Edge} : e ∈ es → Affects es (changed := e.providingRepo) (dependent := e.requiringRepo)
+  | through {e : Edge} {b : String} : e ∈ es → b ∈ e.through →
+      Affects es (changed := b) (dependent := e.requiringRepo)
   | trans {x y z : String} : Affects es x y → Affects es y z → Affects es x z
 
 end Mitos
