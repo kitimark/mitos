@@ -1,0 +1,1 @@
+{"task":"P2-001b","role":"builder","model":"Codex (GPT-6)","attempt":1,"iterations":1,"wall_min":29,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Applied the owner’s self-binding ruling on current main. Verified the core in an isolated container with the standard bubblewrap sandbox."}

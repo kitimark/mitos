@@ -3,7 +3,9 @@ import Mitos.Core.Spec
 namespace Mitos.Impl
 
 def fires (x : String) (seen : List String) (e : Edge) : Bool :=
-  (e.providingRepo == x || seen.contains e.providingRepo) && !seen.contains e.requiringRepo
+  (e.providingRepo == x || seen.contains e.providingRepo ||
+      e.through.any fun b => b == x || seen.contains b) &&
+    !seen.contains e.requiringRepo
 
 def impactGo (x : String) (rest : List Edge) (seen : List String) : List String :=
   match h : rest.find? (fires x seen) with

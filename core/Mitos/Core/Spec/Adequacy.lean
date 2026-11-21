@@ -112,7 +112,7 @@ theorem sound_records_the_derivation {R : Resolver} (hs : Sound R) :
     ∀ e ∈ (R [req, prov]).edges,
       e.key = Derivation.direct 0 1 ∧ e.repoKey = goodEdge.repoKey := by
   intro e he
-  obtain ⟨c, hc, hk, hr⟩ := hs [req, prov] wf e he
+  obtain ⟨c, hc, hk, hr, -⟩ := hs [req, prov] wf e he
   have hd : derivations [req, prov] = [Chain.direct req prov] := by decide
   rw [hd, List.mem_singleton] at hc
   subst hc

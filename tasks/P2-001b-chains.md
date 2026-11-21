@@ -14,12 +14,12 @@ statement: restates Mitos.Spec.Sound (one conjunct added) and the laws Mitos.mem
 touches: core/Mitos/Core/Fact.lean, core/Mitos/Core/Graph.lean,
   core/Mitos/Core/Spec/Derivations.lean, core/Mitos/Core/Spec/Resolve.lean (one line),
   core/Mitos/Core/Spec/Adequacy.lean (one proof line), core/Mitos/Core/Spec/Repo.lean (proof lines),
-  core/Mitos/Core/Spec/Chains.lean (new), core/Mitos/Core.lean (one import line),
+  core/Mitos/Core/Spec/Chains.lean (new), core/Mitos/Core/Spec.lean (one import line),
   core/Mitos/Impl/Resolve.lean, core/Mitos/Impl/Impact.lean,
   core/Mitos/Proofs/Resolve/{Basic,Edges,Assumptions,Nodup}.lean, core/Mitos/Proofs/Impact.lean,
-  the ten mutant files in the table under "Mutant migration", statements.lock and
+  the mutant files in the table under "Mutant migration", statements.lock and
   examples/acme/accepted/ToyRequire.json and examples/acme/accepted/GoMod.json (all three
-  generated), this file, ops/runs/
+  generated), this file, the scratch example in tasks/P2-007-gomod-plugin.md, ops/runs/
 must_not_touch: core/Challenge/, core/comparator.json, core/lakefile.toml,
   core/Mitos/Core/Lines.lean, core/Mitos/Core/Obligations.lean, core/Mitos/Core/ModelExamples.lean,
   core/Mitos/Proofs/Impact/Nodup.lean, core/Mitos/Proofs/Resolver.lean, every other file in
@@ -41,8 +41,7 @@ escalation: hint → automation → stronger model → pair → split → revisi
   [#156](https://github.com/kitimark/mitos/issues/156#issuecomment-6795388085), repeated in the
   plan's Scope decisions: option C, rules are constructors of `Derivation`, statements quantify over
   the finite list `derivations fs`, `binds` in Phase 2, impact through bindings, the refined status
-  rule. The plan names this row's self-binding choice (#160 item 1) an owner decision that comes
-  first. #160 has no ruling yet, so the design takes a default (owner_decisions, O1).
+  rule. The owner ruled out self-binding derivations (O1).
 - This is a spec PR that carries its implementation and proofs (plan, Scope decisions; P2-000).
   The owner merges it (`spec-approved`).
 - **Answer to the root's question on #276 (lock lines that move with no change of meaning).** Yes,
@@ -59,13 +58,12 @@ escalation: hint → automation → stronger model → pair → split → revisi
     its instances keep their lines.
 - **Answer on the records.** Both `examples/acme/accepted/ToyRequire.json` and
   `examples/acme/accepted/GoMod.json` must be recorded again, and only `core_sha256` changes in
-  each. `core_sha256` hashes every `.lean` file under `core/Mitos`, so any core row moves it. The
+  each. `core_sha256` hashes the plugin surface, and this row changes its `Fact.lean`. The
   plan's row names only `ToyRequire.json` because it predates P2-007's merge (#286). `GoMod.json` is
   stale on `main` already: at c280558 its `core_sha256` is `8ae154a0…`, the value before #277,
   where `ToyRequire.json` holds `f7d74757…`. No plugin, model or `models.lock` file changes, because
   only `FactKind` gains a constructor and no plugin or model matches on it.
-- Where the plan and `main` disagree (the root settles D1 and D2 with the owner before the builder
-  starts, or the builder takes the fallbacks; D3 to D8 need no ruling):
+- Where the plan and `main` differ:
   - **D1. The Owns cell allows "the `find=` lines its `Impl/` edit moves", and the design moves
     more in `eval/mutants/cases/`.** Eight `find=` texts move (`ai_ignored`, `status_requirer_only`,
     `unresolved_dropped`, `unresolved_inverted`, `first_provider_only`, `edges_duplicated`,
@@ -73,13 +71,12 @@ escalation: hint → automation → stronger model → pair → split → revisi
     texts except `unresolved_dropped`'s unchanged `[]`. Four additional anchors move because the
     review fix caches each row; the replacements preserve each mutant's original fault. The `replace=` copy of `Impl/Resolve.lean` inside
     `cheat_proofs_own_hole` is not a `find=` line and must be regenerated, or the case fails at the
-    build and pins nothing (P2-005a, rule R6); it has no fallback. A new `Affects` constructor makes
-    `impact_includes_self/Refute.lean` miss an `induction` alternative, so it gains one line.
+    build and pins nothing (P2-005a, rule R6); it has no fallback. The new `Affects` constructor needs one more induction case in
+    `impact_includes_self/Refute.lean`.
     Fallback for that line only: define `Affects.step` over the edge's legs and drop the
     constructor; not built, and it moves two more anchors.
-  - **D2. `core/Mitos/Core.lean` is not in the cell.** `Spec/Chains.lean` needs one import line
-    there or it builds without being locked (#276 item 1). Fallback: append the chain fixtures to
-    `Spec/Adequacy.lean` (a third topic in that file), named `Spec.Adequacy.*`. Not built.
+  - **D2. The lock needs to reach `Spec/Chains.lean`.** The current spec entry point is
+    `core/Mitos/Core/Spec.lean`, which imports the chain fixtures for the lock.
   - **D3. The plan says `FactKind.binds` "changes `Fact` for every plugin".** On `main` only
     `FactKind` gains a constructor, and no plugin or model matches on it (grep over `examples/`,
     `eval/cheats/`, `gate/`). Both plugins are accepted by gates 0 to 6 with no edit.
@@ -123,8 +120,7 @@ models.lock lean-toolchain lakefile.toml` must print nothing. If it prints a fil
 against this design first (a toolchain bump (#147) or a new mutant case (#231 style) would move it).
 Re-read `eval/mutants/cases/`: a case added since, whose `find=` holds `(providers fs r).isEmpty`,
 `&& (providers fs r)` or `statusOf fs r (`, or whose `Refute.lean` does an `induction` on `Affects`,
-joins the migration table. If the owner rules O1 the other way on #160 or #204, apply O1's
-alternative before step 3.
+joins the migration table. Apply the owner's O1 ruling before step 3.
 
 modules: one topic per file. Line counts are measured in the judged build. A build that outgrows
 this map reports it as a deviation and does not split silently.
@@ -146,8 +142,8 @@ this map reports it as a deviation and does not split silently.
 - `core/Mitos/Core/Spec/Chains.lean` (new): what the statements force on chain inputs. 207 lines.
   Copies the fixture half of `Spec/Adequacy.lean` (inputs as defs, a `WellFormed` theorem per input,
   one consequence theorem per statement whose meaning extends).
-- `core/Mitos/Core.lean`: one import line, `Mitos.Core.Spec.Chains`, last. Without it the file
-  builds but is never locked (#276 item 1).
+- `core/Mitos/Core/Spec.lean`: one import line, `Mitos.Core.Spec.Chains`, last. This makes the
+  chain fixtures reachable from the locked spec.
 - `core/Mitos/Impl/Resolve.lean`: the resolver. 27 → 73. Full text under `types`.
 - `core/Mitos/Impl/Impact.lean`: `fires` reads `through`. 23 → 25.
 - `core/Mitos/Proofs/Resolve/Basic.lean`: what `resolve` lists, and how the ends of a requirement
@@ -161,7 +157,7 @@ this map reports it as a deviation and does not split silently.
   byte (it reads only `(fires_iff.mp _).2`).
 - Generated at the head: `statements.lock`, `examples/acme/accepted/ToyRequire.json`,
   `examples/acme/accepted/GoMod.json`.
-- Mutant files: the nine `mutant` files and one `Refute.lean` under "Mutant migration".
+- Mutant files: the eleven `mutant` files and one `Refute.lean` under "Mutant migration".
 
 ### Usage (caller's view)
 
@@ -179,7 +175,7 @@ requirement's identity, and a provision of the bound identity:
 ```lean
 def boundB (r b p : Located) : Bool :=
   r.fact.kind == .requires && b.fact.ident == r.fact.ident &&
-    b.fact.kind == .binds p.fact.ident && p.fact.kind == .provides
+    b.fact.kind == .binds p.fact.ident && p.fact.kind == .provides && p.fact.ident != r.fact.ident
 
 def Sound (R : Resolver) : Prop :=
   ∀ fs, WellFormed fs → ∀ e ∈ (R fs).edges, ∃ c ∈ derivations fs,
@@ -291,7 +287,7 @@ replaced:
 ```lean
 def boundB (r b p : Located) : Bool :=
   r.fact.kind == .requires && b.fact.ident == r.fact.ident &&
-    b.fact.kind == .binds p.fact.ident && p.fact.kind == .provides
+    b.fact.kind == .binds p.fact.ident && p.fact.kind == .provides && p.fact.ident != r.fact.ident
 
 def Chain.bound (r b p : Located) : Chain :=
   { key := .bound r.id b.id p.id, requirement := r, via := [b], provision := p }
@@ -319,11 +315,10 @@ and `provDb` (a requirement in `web`, a binding in `deploy`, a provision in `ord
 `fork` (a requirement with a direct provider and a bound chain to another), and `selfBind` and
 `selfBound` (a binding from an identity to itself).
 
-`core/Mitos/Impl/Resolve.lean`, the whole file (the `find=` texts of 38 mutant cases match it, so
-every byte is part of the design):
+`core/Mitos/Impl/Resolve.lean`, the whole file:
 
 ```lean
-import Mitos.Core
+import Mitos.Core.Spec
 
 namespace Mitos.Impl
 
@@ -550,7 +545,7 @@ theorem fork_derivations :
 theorem status_honest_fork_inferred {R : Resolver} (hh : StatusHonest R) :
     ∀ e ∈ (R fork).edges, e.requiringFactId = 0 → e.status = .inferred
 theorem selfBound_derivations :
-    derivations selfBound = [Chain.direct req prov, Chain.bound req selfBind prov]
+    derivations selfBound = [Chain.direct req prov]
 theorem status_honest_self_binding_confirmed {R : Resolver} (hs : Sound R)
     (ha : AssumptionsExact R) (hh : StatusHonest R) :
     ∀ e ∈ (R selfBound).edges, e.status = .confirmed
@@ -610,7 +605,7 @@ when the clause it names is weakened, which a `¬ S (constant resolver)` theorem
 | `assumptions_exact_lists_binding` | the record assumes the binding's origin too: the leaf origins of all three facts |
 | `status_honest_ai_binding_inferred` | an AI-proposed binding makes every record of its input `inferred` |
 | `status_honest_fork_inferred` | the plan's status rule, other half: a requirement with a direct provider and a bound chain to another provider has only `inferred` records |
-| `selfBound_derivations`, `status_honest_self_binding_confirmed` | #160 item 1 (O1): a binding from an identity to itself adds a second derivation to the same provider, and every record stays `confirmed` (the plan's "a direct and a bound derivation to the same provider is still `confirmed`") |
+| `selfBound_derivations`, `status_honest_self_binding_confirmed` | #160 item 1 (O1): a binding from an identity to itself yields only the direct record, which is `confirmed` |
 | `binding_retracted_chain_goes` | retract the binding's origin and the chain's record goes |
 | `binding_retracted_repo_edge_stays` | retract one of two bindings and the web-to-orders repo-level edge stays, because the other chain avoids it (the #156 staging and prod example) |
 | `binding_change_affects_requirer` | a change in `deploy` reaches `web` in any correct `impact` |
@@ -631,7 +626,7 @@ Run-level fixtures the builder reports. "Measured" means the judged sketch produ
   from `core/`, shows by `decide`: `(Impl.resolve Spec.Chains.chain).edges.map Edge.key =
   [.bound 0 1 2]`, its `unresolved = []`, its `edges.map Edge.through = [["deploy"]]`,
   `(Impl.resolve Spec.Chains.chainAI).edges.map Edge.status = [.inferred]`,
-  `(Impl.resolve Spec.Chains.selfBound).edges.map Edge.status = [.confirmed, .confirmed]`,
+  `(Impl.resolve Spec.Chains.selfBound).edges.map Edge.status = [.confirmed]`,
   `(Impl.resolve Spec.Chains.fork).edges.map Edge.status = [.inferred, .inferred]`,
   `(Impl.resolve Spec.Chains.twoBindings).edges.map Edge.through = [["deploy"], ["staging"]]`,
   `(Impl.resolve [Spec.Chains.needDb, Spec.Chains.provDb]).unresolved = [0]`; and by `decide +kernel`:
@@ -692,8 +687,8 @@ PR body lists the regenerated diff against this list.
 
 ### Mutant migration
 
-21 distinct `find=` texts on `main`; 8 move, each to the text the new line holds, and every `why=`,
-`breaks=`, `survives=` and `rejects=` line keeps its text.
+Ten cases need a new `find=` anchor. Their `replace=` fields carry the existing faults into the
+new implementation, and the expectation fields keep their text.
 
 | Case | Edit |
 |---|---|
@@ -705,10 +700,12 @@ PR body lists the regenerated diff against this list.
 | `edges_duplicated` | `find=edges := rows.flatMap Prod.fst`, `replace=edges := rows.flatMap Prod.fst ++ rows.flatMap Prod.fst` |
 | `first_fact_skipped` | `find=edges := rows.flatMap Prod.fst`, `replace=edges := rows.tail.flatMap Prod.fst` |
 | `unresolved_lists_provisions` | `find=if isRequirement r && allEnds.isEmpty then [r.id] else []`, `replace=if allEnds.isEmpty then [r.id] else []` |
+| `unresolved_duplicated` | `find=rows.flatMap Prod.snd`, `replace=rows.flatMap Prod.snd ++ rows.flatMap Prod.snd` |
+| `impact_repeats_repo` | Extend the `fires` anchor through the binding-repo branch and keep the mutant's repeated-output behavior. |
 | `cheat_proofs_own_hole` | the `replace=` copy of the implementation takes the same change as `Impl/Resolve.lean` (P2-005a, rule R6): it becomes the new file on one line. Appendix A5 has a command that regenerates it (whitespace runs become one space, `, ` goes before `unresolved :=`) and a check that it is current; the flattened payload must also compile before its mutant is run |
 | `impact_includes_self` | `Refute.lean`: `not_affects_nil`'s `induction` gains `\| through he => simp at he` after its `step` line |
 
-The other 13 distinct texts each still occur exactly once (checked by script on the cached sketch). The `Edge` literals
+The rest of the anchors still occur exactly once. The `Edge` literals
 in 16 `Refute.lean` and `mutant` files build unchanged, because `through` has a default. Each moved
 case was run on the judged sketch and kept its result: `ai_ignored` and `status_requirer_only`
 refuted (`resolve_status_honest`), `unresolved_dropped` and `unresolved_inverted` refuted
@@ -743,7 +740,6 @@ The builder stops and reports when:
 - a restated statement fails for a Phase 2 resolver on a Phase 1 input (a counterexample goes to a
   spec issue), or a replay kernel rejects a `decide` that Lean accepts (the fallback for a fixture
   is `main`'s `obtain` and `simp` style, as in P2-001a's task file);
-- the owner rules O1 against the default after step 3 (apply O1's alternative, rerun steps 3 to 6);
 - a file outgrows its line in `modules` by more than a third.
 
 Before each push, the lines the change can affect, one at a time, from the repository root:
@@ -767,7 +763,7 @@ line for `GoMod.json` and none for `ToyRequire.json`.
 
 cut_line: ships `FactKind.binds`, the bound rule, `Edge.through`, `Affects.through`, the restated
 `Sound`, the laws, `Spec/Chains.lean`, the resolver and impact with all twelve proofs, the
-regenerated lock and both accept records, and the ten mutant-file edits. The PR says `Closes #204`.
+regenerated lock and both accept records, and the mutant-file edits. The PR says `Closes #204`.
 It leaves out new mutant cases (P2-005b), a chain fixture for the scorer and its labels (P2-009a),
 the union view's status rule in the scorer (P2-009a), the derivation count (P2-010), chains longer
 than one binding (a later constructor), an extractor that emits `binds` (YAML is a later phase), and
@@ -833,17 +829,10 @@ Settled by the plan and #156, followed as written: chains exist in Phase 2 throu
 the binding's repo is impact; the status rule in the plan's refined form; this spec PR carries its
 implementation and proofs (P2-000).
 
-The plan's owner decision for this row, with this design's default. The plan lists it under "an
-owner decision comes first"; the root asks on #204 and the builder waits for the owner's
-explicit ruling before implementation. The default below is a review proposal, not approval:
-- O1. A binding from an identity to itself (#160 item 1). Default: keep it as an ordinary binding.
-  It gives a requirement a direct and a bound chain to the same provider, two records with one
-  repo-level key, and the plan's refined rule calls both `confirmed`
-  (`status_honest_self_binding_confirmed`). The binding's repo counts for impact. Alternative:
-  rule it out with one more conjunct in `boundB`, `&& p.fact.ident != r.fact.ident`; then
-  `selfBound_derivations` lists only `Chain.direct req prov`, the status fixture still holds, and
-  nothing else in this file changes. The default needs no special case; the alternative drops a
-  record that says nothing a direct record does not, except the binding repo's impact.
+- O1. A binding from an identity to itself (#160 item 1). The owner ruled out a bound derivation
+  for that case. `boundB` requires distinct endpoint identities, and `selfBound_derivations`
+  lists only `Chain.direct req prov`. The direct record stays `confirmed`.
+  [Owner ruling](https://github.com/kitimark/mitos/issues/204#issuecomment-6898646864)
 
 Design defaults the owner sees at `spec-approved`. They are this design's calls, not the owner's
 rulings. The builder follows each until the owner says otherwise on #204.
@@ -857,10 +846,8 @@ rulings. The builder follows each until the owner says otherwise on #204.
 - O5. `Affects.through` runs from the binding's repo to the requirer only. A binding held in the
   requirer's own repo makes that repo affect itself, so `impact es x` can list `x` without a cycle,
   as a same-repo direct edge already does.
-- O6. The chain fixtures are a new locked file, `Spec/Chains.lean`, which takes one import line in
-  `core/Mitos/Core.lean`; that file is outside the plan's Owns cell for this row (D2). Fallback if
-  the cell stays as written: the same declarations at the end of `Spec/Adequacy.lean`, named
-  `Spec.Adequacy.*`.
+- O6. The chain fixtures are a new locked file, `Spec/Chains.lean`, imported by
+  `core/Mitos/Core/Spec.lean` (D2).
 - O7. `Fact.lean` places `Identity` first, `Scope` second, and `FactKind` just above `Fact`.
   `binds` names `Identity`, which is declared after `FactKind` on `main`; of the orders measured,
   this one moves no unrelated lock line.
@@ -1077,8 +1064,6 @@ runs it), `mitos-lint-test`, and `--record` (it would edit the records).
 ### Open questions and risks
 - D1 and D2: does the owner widen the Owns cell, or take the fallbacks? The `replace=` copy has no
   fallback.
-- O1 is open (#160 item 1). The design and the check hold either way; only `selfBound_derivations`
-  and `boundB` change.
 - The mutant runner was killed by the container's memory limit with several cases in one
   invocation. Is one case per invocation acceptable evidence, as here, until #276's V4 is looked at?
 - A binding in the requirer's own repo makes `x ∈ impact es x`. Is that the impact the owner wants
@@ -1091,6 +1076,20 @@ runs it), `mitos-lint-test`, and `--record` (it would edit the records).
 ### Next implementation step
 Step 1: move `Identity` and `FactKind` in `core/Mitos/Core/Fact.lean`, add `binds (to : Identity)`,
 build, and show `fact-step`.
+
+## Implementation on current main
+
+- D1 carries the existing faults into the row-based resolver and binding-aware impact. The
+  `unresolved_duplicated` and `impact_repeats_repo` cases added after the design also use new
+  anchors. The original mutant expectations still apply.
+- D2 adds the fixture import to `Mitos.Core.Spec` after the plugin surface split.
+- The lock grows from 203 to 248 declarations. The current format records 19 changed entries and
+  45 new ones, including all 36 chain fixture declarations. The source-declaration lock in #524
+  accounts for the count difference from the design, which counted the generated
+  `Affects.below.through` constructor and used the old auxiliary hash for the `Fact` equality
+  instance.
+- The resolver proof uses the current Mathlib no-duplicates lemmas. The GoMod scratch example
+  handles the new constructor and reports bindings if one appears.
 
 ## Done when
 - [ ] all `checks` pass locally at the head except `mitos-lint-test` and the cheat corpus, which
@@ -1183,7 +1182,7 @@ def Chain.repoKey (c : Chain) : RepoKey :=
 
 def boundB (r b p : Located) : Bool :=
   r.fact.kind == .requires && b.fact.ident == r.fact.ident &&
-    b.fact.kind == .binds p.fact.ident && p.fact.kind == .provides
+    b.fact.kind == .binds p.fact.ident && p.fact.kind == .provides && p.fact.ident != r.fact.ident
 
 def Chain.bound (r b p : Located) : Chain :=
   { key := .bound r.id b.id p.id, requirement := r, via := [b], provision := p }
@@ -1254,7 +1253,7 @@ theorem mem_derivations_of_noBinds {fs : List Located} (hnb : NoBinds fs) {c : C
   rintro (h | ⟨r, -, b, hb, p, -, hm, -⟩)
   · exact h
   · simp only [boundB, Bool.and_eq_true, beq_iff_eq] at hm
-    exact absurd hm.1.2 (hnb b hb p.fact.ident)
+    exact absurd hm.1.1.2 (hnb b hb p.fact.ident)
 
 theorem derivations_single_provider {fs : List Located} (wf : WellFormed fs) (hnb : NoBinds fs)
     {c : Chain} (hc : c ∈ derivations fs) :
@@ -1478,7 +1477,7 @@ def selfBound : List Located := [req, prov, selfBind]
 theorem wfSelfBound : WellFormed selfBound := by unfold WellFormed; decide
 
 theorem selfBound_derivations :
-    derivations selfBound = [Chain.direct req prov, Chain.bound req selfBind prov] := by
+    derivations selfBound = [Chain.direct req prov] := by
   decide
 
 theorem status_honest_self_binding_confirmed {R : Resolver} (hs : Sound R)
@@ -1487,17 +1486,15 @@ theorem status_honest_self_binding_confirmed {R : Resolver} (hs : Sound R)
   intro e he
   obtain ⟨c, hc, hk, -⟩ := hs selfBound wfSelfBound e he
   have hc' := hc
-  rw [selfBound_derivations] at hc'
-  have hok : (∀ a ∈ c.origins, a.isAI = false) ∧ c.key.providingFactId = 1 := by
-    simp only [List.mem_cons, List.not_mem_nil, or_false] at hc'
-    rcases hc' with rfl | rfl <;> decide
+  rw [selfBound_derivations, List.mem_singleton] at hc'
+  subst hc'
+  have hnoAI : ∀ a ∈ (Chain.direct req prov).origins, a.isAI = false := by decide
   refine (hh selfBound wfSelfBound e he).mpr
-    ⟨fun a h => hok.1 a ((ha selfBound wfSelfBound e he c hc hk).1 a h), ?_⟩
+    ⟨fun a h => hnoAI a ((ha selfBound wfSelfBound e he _ hc hk).1 a h), ?_⟩
   intro d hd _
-  rw [Edge.providingFactId, ← hk, hok.2]
-  rw [selfBound_derivations] at hd
-  simp only [List.mem_cons, List.not_mem_nil, or_false] at hd
-  rcases hd with rfl | rfl <;> rfl
+  rw [selfBound_derivations, List.mem_singleton] at hd
+  subst hd
+  exact congrArg Derivation.providingFactId hk
 
 theorem binding_change_affects_requirer {I : List Edge → String → List String}
     (hi : ImpactCorrect I) : "web" ∈ I [chainEdge] "deploy" :=
@@ -1730,7 +1727,8 @@ expanding the canonical lists; the remaining Challenge proofs keep their stated 
 
 ### A5. The regenerated `replace=` line of `cheat_proofs_own_hole`
 
-The ten case edits are exact in the table under "Mutant migration". To write the one generated line after step 3, from the repository root:
+The edits are in the table under "Mutant migration". To write the generated line after step 3,
+run this from the repository root.
 
 ```bash
 python3 -I -c "
@@ -1739,7 +1737,7 @@ src = open('core/Mitos/Impl/Resolve.lean').read()
 new = 'replace=' + re.sub(r'[ \n]+', ' ', src).rstrip(' ').replace(' unresolved :=', ', unresolved :=')
 path = 'eval/mutants/cases/cheat_proofs_own_hole/mutant'
 lines = open(path).read().split('\n')
-lines = [new if l.startswith('replace=import Mitos.Core namespace') else l for l in lines]
+lines = [new if l.startswith('replace=import Mitos.Core.Spec namespace') else l for l in lines]
 open(path, 'w').write('\n'.join(lines))
 "
 ```
@@ -1748,14 +1746,14 @@ This prints nothing when the copy is current (`own-hole-copy-current`; it also p
 
 ```bash
 diff <(tr -s ' \n' ' ' < core/Mitos/Impl/Resolve.lean | sed 's/ *$//; s/ unresolved :=/, unresolved :=/'; echo) \
-     <(grep '^replace=import Mitos.Core namespace' eval/mutants/cases/cheat_proofs_own_hole/mutant | sed 's/^replace=//')
+     <(grep '^replace=import Mitos.Core.Spec namespace' eval/mutants/cases/cheat_proofs_own_hole/mutant | sed 's/^replace=//')
 ```
 
 
 To compile A5's exact flattened payload, in scratch only:
 
 ```bash
-sed -n 's/^replace=import Mitos.Core namespace/import Mitos.Core namespace/p' \
+sed -n 's/^replace=import Mitos.Core.Spec namespace/import Mitos.Core.Spec namespace/p' \
   eval/mutants/cases/cheat_proofs_own_hole/mutant > <scratch>/OwnHole.lean
 (cd core && lake env lean <scratch>/OwnHole.lean)
 ```

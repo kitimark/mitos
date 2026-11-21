@@ -4,3 +4,4 @@ import Mitos.Core.Spec.Derivations
 import Mitos.Core.Spec.Resolve
 import Mitos.Core.Spec.Adequacy
 import Mitos.Core.Spec.Repo
+import Mitos.Core.Spec.Chains

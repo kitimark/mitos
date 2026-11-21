@@ -8,6 +8,7 @@ theorem not_affects_nil {x y : String} : ¬ Affects [] x y := by
   intro hxy
   induction hxy with
   | step he => simp at he
+  | through he => simp at he
   | trans _ _ ih _ => exact ih
 
 theorem impact_correct : ¬ Spec.ImpactCorrect Impl.impact := by

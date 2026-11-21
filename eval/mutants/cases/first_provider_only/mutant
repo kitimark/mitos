@@ -1,5 +1,5 @@
 why=Keeps only the first provider, so the edges to the other candidates vanish.
 breaks=resolve_complete
 file=Mitos/Impl/Resolve.lean
-find=(providers fs r).map (mkEdge fs r)
-replace=((providers fs r).take 1).map (mkEdge fs r)
+find=direct.map (fun p => mkEdge fs r p (summary.accepts p.id))
+replace=(direct.take 1).map (fun p => mkEdge fs r p (summary.accepts p.id))
