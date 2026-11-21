@@ -2,7 +2,7 @@
 
 phase: 2
 goal: `lake --dir eval/score exe mitos-score --all eval/fixtures [<baseline>]` prints one nightly scorecard: for each fixture and edge type the precision, recall, confirmed precision, inferred precision and most derivations; the most derivations any repo-level edge has, checked against the D1 threshold of 8; what changed against `<baseline>`, which is what `mitos-score --numbers eval/fixtures` printed on an earlier run, such as `main`'s; then every fixture's card. `mitos-score <fixture-dir>` prints exactly what it prints on `main`.
-statement: none (tooling task, nothing in `statements.lock`). Four scorer theorems, not locked: `Score.Nightly.derivations_keys`, `Score.Nightly.le_most`, `Score.Nightly.most_mem`, `Score.Nightly.changed_eq_nil`. Also 18 build-time `#guard` pins in the same file (G1 to G18 under `statements`)
+statement: none (tooling task, nothing in `statements.lock`). Four scorer theorems, not locked: `Score.Nightly.derivations_keys`, `Score.Nightly.le_most`, `Score.Nightly.most_mem`, `Score.Nightly.changed_eq_nil`. Also 20 build-time `#guard` pins in the same file (G1 to G20 under `statements`)
 touches: eval/score/Main.lean, eval/score/Score/Nightly.lean (new), tasks/P2-010-nightly-scorecard.md, ops/runs/
 must_not_touch: statements.lock, models.lock, gate/, eval/cheats/, models, eval/fixtures/, eval/score/Score.lean, eval/score/Score/GoMod.lean, eval/score/Policy.lean (if #332 has merged), eval/score/lakefile.toml, eval/score/lake-manifest.json, eval/score/lean-toolchain, examples/acme/, core/, eval/diff/, eval/mutants/, .github/, docs/, plan/, .claude/
 checks: start checks (S1, S2), the scorer builds with no warning (check 1), axioms (check 2), single-fixture cards unchanged (check 3), `--numbers` is N2 (check 4), `--all` is N3 (check 5), own baseline is N4 (check 6), moved baseline is N5 (check 7), errors and usage are N6 (check 8), scratch roots N7 to N12 (check 9), the real fixtures after P2-009a, N13 (check 10), wrong variants (check 11), changed paths (check 12), the run-log check (check 13), `plan-tasks.test.sh` (check 14), `gate` green in CI (check 15)
@@ -30,7 +30,7 @@ depth: build, except the chain fixture's own numbers. Under `types` are the whol
 revisit_when: re-check after #210 (P2-009a) merges. That also covers #204 (P2-001b), which P2-009a waits for. The re-check is S1 to S3 and N13. #332 changes no output here, whichever order it merges in (measured at 856832b).
 
 modules:
-- `eval/score/Score/Nightly.lean` *(new)*, 276 lines. It owns one topic, the nightly scorecard on top of one card: the derivation count per repo-level edge, the per-type counts and their check against the card's own text, the numbers file (three line kinds, written and read back), the line-set diff, the D1 line and the report. It copies the layout of `eval/score/Score/GoMod.lean`: imports, one namespace, `open Mitos`, definitions, theorems, then pins. Its helpers are `private`, so another file cannot reach them (measured: `#check @Score.Nightly.consistent` from a scratch file is an unknown identifier). It imports `Score`, and `Score.lean` does not import it, so there is no cycle and no edit to `Score.lean`. `Main.lean` imports it, so the default target `mitos-score` builds it with no lakefile change.
+- `eval/score/Score/Nightly.lean` *(new)*. It owns one topic, the nightly scorecard on top of one card: the derivation count per repo-level edge, the per-type counts and their check against the card's own text, the numbers file (three line kinds, written and read back), the line-set diff, the D1 line and the report. It copies the layout of `eval/score/Score/GoMod.lean`: imports, one namespace, `open Mitos`, definitions, theorems, then pins. Its helpers are `private`, so another file cannot reach them (measured: `#check @Score.Nightly.consistent` from a scratch file is an unknown identifier). It imports `Score`, and `Score.lean` does not import it, so there is no cycle and no edit to `Score.lean`. `Main.lean` imports it, so the default target `mitos-score` builds it with no lakefile change.
 - `eval/score/Main.lean`, 35 → 78 lines. It gains `scoreDir`, `fixtureName`, `scoreAll` (the walker over a fixtures root) and two modes, `--numbers` and `--all`. A lone argument that starts with `-` prints the usage. `sortPaths` and `loadRepos` keep every byte, and the single-fixture mode prints the same bytes.
 
 ### How the scorer works on `main` (what this row builds on)
@@ -65,6 +65,7 @@ lake --dir eval/score exe mitos-score --all eval/fixtures [n-before.tsv]  # the 
   - `--numbers`: 0 with every line on stdout; 1 with nothing on stdout and one `<fixture>: <error>` line on stderr per failed fixture, so a broken run cannot become the next baseline.
   - `--all`: 0 when every fixture scored; 1 when one did not, with the whole report printed; 1 with nothing printed when the baseline file has a line of an unknown kind or the wrong field count (`baseline line N: …` on stderr); 2 on bad usage.
   - The numbers, the D1 line included, never change the exit code. A fixtures root or baseline path that cannot be read is an uncaught IO error and exits 1.
+- An empty root prints `0 fixtures, 0 scored.` and `No fixture has a repo-level edge, so no derivations were counted.` and exits 0.
 - The output holds no path, time or random value, so two runs on one tree are byte equal, and a scratch copy of a fixture prints the same bytes as the original.
 - P2-012 calls exactly the commands above (deferrals).
 
@@ -176,9 +177,12 @@ def parseNumbers (txt : String) : Except String (List String) := do
 
 private def problem (name : String) (c : Scorecard) : Option String :=
   if !consistent c (c.render name) then some "the nightly numbers disagree with the card"
-  else match parseNumbers ("\n".intercalate (numbers name c)) with
+  else
+    let ls := numbers name c
+    match parseNumbers ("\n".intercalate ls) with
     | .error e => some s!"a numbers line of this fixture would not read back ({e})"
-    | .ok _ => none
+    | .ok readBack =>
+      if readBack == ls then none else some "the numbers lines of this fixture changed on readback"
 
 structure Result where
   name : String
@@ -371,6 +375,13 @@ private def has (hay needle : String) : Bool := (hay.splitOn needle).length > 1
 
 #guard (numbersAll [{ name := "pin", card := .error "broken" }]) matches .error ["pin: broken"]
 
+#guard has (summary [] none) "No fixture has a repo-level edge, so no derivations were counted."
+
+#guard match (pin 2).head?.bind (·.card.toOption) with
+  | some c => has (summary [{ name := "pin", card := .ok { c with predicted := [] } }] none)
+      "in fixture `pin`, which that fixture's card leaves out."
+  | none => false
+
 end Score.Nightly
 ```
 
@@ -483,6 +494,8 @@ statements:
   - G15, G16: a fixture that failed in this run is "not scored in this run, so it is not compared", and no `none` row stands for it.
   - G17: the bold line names a failed fixture.
   - G18: `numbersAll` returns the error, not lines, when a fixture failed.
+  - G19: the report names the absence of repo-level edges.
+  - G20: the report identifies a maximum-count edge absent from the single-fixture card.
 - Not pinned in the build, and checked by the builder's runs: each card inside `--all` equals the single-mode card (check 5), and the walker's fixed messages (N6).
 
 reuse: `Score.score`, `Scorecard`, `Scorecard.render`, `Score.edgeType`, `Score.renderEdge`, `Score.ratio`, `Score.statusName`, `Score.parseLabels` and `Score.SourceFile` unchanged; `loadRepos` and `sortPaths` in `Main.lean` unchanged; `Mitos.Impl.resolve`, `Edge.repoKey`; `List.countP`, `List.eraseDups`, `List.lookup`, `List.contains_eq_mem`, `List.filter_eq_nil_iff`, `Except.isOk`. The layout of `Score/GoMod.lean`. No new fixture directory and no lakefile change.
@@ -674,7 +687,16 @@ printf 'rates\tchain\tenv/runtime\t1.00 (2/2)\t1.00 (2/2)\t1.00 (2/2)\tn/a\t2\n'
 
 ### Checks, in order
 From the repository root, at the head after the last rebase. `<scratch>` is a folder named for this agent.
-1. `lake --dir eval/score build 2>&1 | grep -E '^(warning|error)'` prints nothing, and the build ends with `Build completed successfully`. A failed pin is an `error:` line (`Expression … did not evaluate to true`). The job count moves with P2-009a's module and with #332's `Policy`.
+1. Save the full build output and require a successful exit, the success line, and no warning or error lines:
+
+   ```sh
+   lake --dir eval/score build > "$scratch/build.log" 2>&1 &&
+     rg '^Build completed successfully' "$scratch/build.log" &&
+     ! rg '^(warning|error):' "$scratch/build.log"
+   ```
+
+   Inspect the saved log on failure. A failed pin reports `Expression … did not evaluate to true`.
+   If `main` emits a warning too, compare the diagnostics and record the shared warning in the build notes.
 2. A scratch `Axioms.lean`, never committed, with `import Score.Nightly` and `#print axioms` for each of the four theorems. `cd eval/score && lake env lean <scratch>/Axioms.lean` prints the axiom lists under `statements`, each a subset of `[propext, Classical.choice, Quot.sound]`.
 3. N1. In a detached worktree of `origin/main` (`git worktree add --detach <scratch>/p2010-main origin/main`, then `lake --dir eval/score build` in it), run `mitos-score eval/fixtures/toy`, `…/gomod` and, after P2-009a, `…/chain`, then the same at the head. Each pair is byte equal. Compare with the worktree, not with the hashes above, if `origin/main` has moved the scorer or the fixtures.
 4. N2: `--numbers $r/two | sha256sum`.
@@ -688,7 +710,7 @@ From the repository root, at the head after the last rebase. `<scratch>` is a fo
 12. `git diff --name-only origin/main...HEAD` prints only `eval/score/Main.lean`, `eval/score/Score/Nightly.lean`, `tasks/P2-010-nightly-scorecard.md` and files under `ops/runs/`.
 13. `lake exe mitos-gate runlog --head ops/runs`, and `git diff --name-status --no-renames origin/main...HEAD -- ops/runs ':!ops/runs/README.md'` shows only `A` lines.
 14. `.claude/scripts/plan-tasks.test.sh`. It passes once `P2-010` has left `plan-tasks.pending`, which the design-landing PR does.
-15. In CI, `checks` and `gate` are green. `checks` builds `eval/score`, so it kernel-checks the four theorems and runs G1 to G18, and the toy card it posts must read as on `main`.
+15. In CI, `checks` and `gate` are green. `checks` builds `eval/score`, so it kernel-checks the four theorems and runs G1 to G20, and the toy card it posts must read as on `main`.
 
 ### Risks and stop conditions
 Risks:
@@ -700,7 +722,7 @@ Risks:
 - R6. `renderEdge` prints keys raw inside code spans, and the nightly will be posted. A backtick or a newline in a key, or `@` in an error message, reaches the post as it is. The PR comment of the toy card has the same exposure today. Escaping belongs in `Score.lean` (follow-up).
 - R7. The D1 line names the first edge that has the top count. Other edges with the same count are not listed.
 - R8. Fact and unresolved counts are not in the numbers file. A change that only moves unresolved requirements shows in the card but not in the diff.
-- R9. CI does not run `--all` or `--numbers` until P2-012. Until then, N1 to N13 are the builder's and the verifier's, and G1 to G18 are what CI runs.
+- R9. CI does not run `--all` or `--numbers` until P2-012. Until then, N1 to N13 are the builder's and the verifier's, and G1 to G20 are what CI runs.
 
 Stop conditions for the builder:
 - S1. After `git fetch origin main`, run `git diff --stat eac85d2 origin/main -- eval/score eval/fixtures core/Mitos/Core/Graph.lean core/Mitos/Impl/Resolve.lean lean-toolchain`.
@@ -715,7 +737,7 @@ Stop conditions for the builder:
 - S5. A check fails and the fix is outside `touches`: stop and report. Never edit a label or a fixture to move a number, and never delete a pin.
 - S6. Done: the PR is open on `main`, `gate` is green, checks 1 to 14 pass at the head, and every thread is answered. Report the head as merge-ready. No path here is the owner's, so an agent merges it.
 
-cut_line: this row ships `Score/Nightly.lean` with its four theorems and 18 pins, the `Main.lean` diff, the build notes in this file and the run log. It leaves these to other rows:
+cut_line: this row ships `Score/Nightly.lean` with its four theorems and 20 pins, the `Main.lean` diff, the build notes in this file and the run log. It leaves these to other rows:
 - the nightly run, the artifacts, the baseline download, the post and any CI use of `--all` or `--numbers` (P2-012);
 - the chain fixture and its numbers (P2-009a);
 - Q1 to Q3 (#325, #332);
@@ -759,13 +781,54 @@ owner_decisions:
   - D9. No CI change here. `.github/` is P2-012's.
 
 ## Build notes
-The builder fills this in: the base commit, S1's output, the hashes of checks 3 to 9, N13's `chain` lines and the hashes of `--numbers eval/fixtures` and `--all eval/fixtures`, the variants re-run in check 11, and the run-log path.
+- Base `5914856`. S1 reported 19 changed files since `eac85d2` across core, the chain fixture, and scorer internals. The CLI entry point and scorecard table rows match the design. S2 and S4 passed with `chain` present in the standard fixture layout.
+- Both scorer builds succeeded. They emitted the same existing `Mitos/Core/Graph.lean` warning about importing `Mathlib.Data.List.Nodup` without a module header. The scorer changes emitted no diagnostics. The four axiom lists matched the lists above.
+- N1–N13 passed with the merged scorer policy. N1 compared all three cards byte for byte against a detached `main` build. N3 preserved both fixture cards as the report tail. The optional pre-merge policy variants were omitted.
+- Scratch mutations W1, W5, W6, W7 and W11 each failed the expected theorem or guard. The plan-task self-test passed.
+- Local `lake check` and `lake comparator --paranoid` could not start their inner checks because bubblewrap could not set up its UID map in this environment.
+- Run log `ops/runs/2026-11-21/P2-010-builder-1.json`.
+
+| Output | SHA-256 |
+|---|---|
+| chain | `bfb0175368f5f5f1f77eae4da9bc0f5a83e6c08935d7806071557add1116e1c6` |
+| gomod | `889671a4d4c0eaed6b0680028ba965d63774aaaa48b7c070f860e3e5bade24cf` |
+| toy | `17c55e9cfa3a9db873c50c980cf2cbea62195fe2eebecde3edc0a13add38f21a` |
+| N2 | `1e767d18bbc39fed9389feac5f58b3bfd946889908bf9254a9937c53b8943000` |
+| N3 | `c1226aa886ddd42f80151a396a8e8de5c6c6cbc6aa336814f4a4a86939944ae0` |
+| N4 | `4fe81f4dbf784f4a6f7a4522f01e92b6aaed5fbf6eca40dda1db828072507924` |
+| N5 | `d7905796795257544ad2a496b092a631430dd7e20cf62702e57362747f07ed1e` |
+| N6-all | `8648b35a03e935db6774a6b03e77737e13384176d7c284ed7def13186097337b` |
+| N6-numbers | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| N7-8 | `c68c5d70c1f315bc41b8f6dddf6276f3cea183ea8ece970820dd648cb29939ec` |
+| N7-9 | `a6c12fd1d9a0bb9b570a6c1a80f34ce6b2454198609532fabb643dbccce8bd01` |
+| N9 | `4a263d358305de3146bc5bb1302463bf8690ba388100363ea1ed666ea877ff16` |
+| N10 | `f82928dbce0d457691bde030de022a3888407bc9262d73433b359048b39b198d` |
+| N11 | `68f8b4b846899ba5e31c2356f116119a6194863f54b54fc6c6b330416d07a96d` |
+| N12 | `59e697fecaef8ffe61d0bd708a41666cb1d58c92a7c49bf663d3fc76b5a813e6` |
+| N13-numbers | `bd04db61d7c633e69302d610f4bb9b491d45a53c5a9a89bfd09bd833583243d8` |
+| N13-all | `b0d59f2c7e4b5c0a07ed3b4524cc3315cdb84daf1b62b37a3c9eede58ef23315` |
+
+N13 chain rows:
+
+```tsv
+rates	chain	env/runtime	0.75 (3/4)	0.75 (3/4)	1.00 (1/1)	0.67 (2/3)	2
+edge	chain	`web` → `orders` (env/runtime `DATABASE_URL`)	confirmed	2
+edge	chain	`web` → `jobs` (env/runtime `QUEUE_URL`)	inferred	1
+edge	chain	`web` → `billing` (env/runtime `QUEUE_URL`)	inferred	1
+edge	chain	`web` → `mail` (env/runtime `SMTP_HOST`)	inferred	1
+label	chain	`web` → `orders` (env/runtime `DATABASE_URL`)
+label	chain	`web` → `jobs` (env/runtime `QUEUE_URL`)
+label	chain	`web` → `mail` (env/runtime `SMTP_HOST`)
+label	chain	`web` → `logs` (env/runtime `LOG_SINK`)
+```
+
+The nightly maximum is 2 for `web` → `orders` (env/runtime `DATABASE_URL`).
 
 ## Done when
 - [ ] all `checks` pass locally, and `gate` is green
-- [ ] N1 to N12 hold at the head, and N13's `chain` lines and hashes are in the build notes
-- [ ] no `sorry`, no new axioms (checks 1 and 2)
-- [ ] run-log record written (ops/runs/)
+- [x] N1 to N12 hold at the head, and N13's `chain` lines and hashes are in the build notes
+- [x] no `sorry`, no new axioms (checks 1 and 2)
+- [x] run-log record written (ops/runs/)
 
 ## Rationale
 
@@ -780,7 +843,7 @@ Exit criterion 5 needs three things on top of today's one-fixture card: every fi
 - what changed against a baseline: the two-sided set difference of those lines;
 - how the report reads.
 
-`Main` owns walking the fixtures root, reading the files and the exit code. Everything else is reused from `Score`. The baseline needs no parser beyond a kind and a field count, because lines are compared as strings, and the diff copies cells instead of recomputing them. The four theorems pin the places where a wrong answer would hide a signal: a count that skips an edge, a maximum that misses one or invents one, and a diff that misses a disappearance. The 18 pins hold the report's sentences and the build-time check against `render`.
+`Main` owns walking the fixtures root, reading the files and the exit code. Everything else is reused from `Score`. The baseline needs no parser beyond a kind and a field count, because lines are compared as strings, and the diff copies cells instead of recomputing them. The four theorems pin the places where a wrong answer would hide a signal: a count that skips an edge, a maximum that misses one or invents one, and a diff that misses a disappearance. The 20 pins hold the report's sentences and the build-time check against `render`.
 
 Interface depth: eleven names and four theorems, and callers see three commands. They hide the counting rule, the line format, the check against the card, the diff and the D1 rule.
 
