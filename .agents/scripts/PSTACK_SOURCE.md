@@ -6,9 +6,9 @@ Copied from [cursor/plugins](https://github.com/cursor/plugins), directory `psta
 - `pstack` tree: `4719e1c4b4c43bac85d4206a8b41dd2899769c1c`
 - Version: `0.15.36` (`pstack/plugin.json`)
 
-The upstream plugin loads `pstack/skills/` and `pstack/agents/` (`pstack/.cursor-plugin/plugin.json`). This repository copies those trees to `.agents/skills/<name>/` and `.agents/agents/`. Upstream ships no rules. `.cursor/` holds project rules only.
+The upstream plugin loads `pstack/skills/` and `pstack/agents/` (`pstack/.cursor-plugin/plugin.json`). This repository copies those trees to `.agents/skills/<name>/` and `.agents/agents/`. Upstream ships no rules. This repository has no `.cursor` files.
 
-Re-sync keeps every rewrite-class skill, `principle-type-system-discipline`, and `agents/poteto-agent.md`. `principle-type-system-discipline` stays because its `.agents` body is the Claude wording, which dropped the TypeScript pointer. Skill names come from `python3 .agents/scripts/agents-skills.py kept`, and `kept_agents` stays in the script. For each one that upstream changed, added or removed since the pinned commit, it prints a notice, the changed files and a compare link, so a person merges upstream's change by hand. The `.claude/` ports carry the same rules (`.cursor/README.md`).
+Re-sync keeps every rewrite-class skill, `principle-type-system-discipline`, and `agents/poteto-agent.md`. `principle-type-system-discipline` stays because its `.agents` body is the Claude wording, which dropped the TypeScript pointer. Skill names come from `python3 .agents/scripts/agents-skills.py kept`, and `kept_agents` stays in the script. For each one that upstream changed, added or removed since the pinned commit, it prints a notice, the changed files and a compare link, so a person merges upstream's change by hand. The Claude ports are under `.claude/`.
 
 Not copied. Cursor does not load these as project skills, rules, or agents:
 
