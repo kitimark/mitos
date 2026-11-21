@@ -354,7 +354,17 @@ jobs:
       - name: Every mutant case prepares as its manifest says, and a case claims every Challenge theorem (mitos-mutants --prepare)
         run: |
           lake --dir eval/mutants build
-          lake --dir eval/mutants exe mitos-mutants --prepare "$RUNNER_TEMP/mutants"
+          python3 - "$RUNNER_TEMP/mutants" <<'PYMEM'
+          import resource
+          import subprocess
+          import sys
+          import time
+
+          start = time.monotonic()
+          status = subprocess.call(["lake", "--dir", "eval/mutants", "exe", "mitos-mutants", "--prepare", sys.argv[1]])
+          print(f"prepare resources: {time.monotonic() - start:.2f}s, max child RSS {resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss} KiB", flush=True)
+          sys.exit(status if status >= 0 else 128 - status)
+          PYMEM
 
       - name: Scorecard on every fixture (precision and recall per edge type against hand labels)
         shell: bash
