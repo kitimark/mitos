@@ -1,0 +1,4 @@
+web	orders	env	DATABASE_URL	runtime
+web	jobs	env	QUEUE_URL	runtime
+web	mail	env	SMTP_HOST	runtime
+web	logs	env	LOG_SINK	runtime

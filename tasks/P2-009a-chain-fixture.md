@@ -2,15 +2,15 @@
 
 phase: 2
 goal: `lake --dir eval/score exe mitos-score eval/fixtures/chain` prints precision and recall for the chain edge type `env/runtime` against hand labels, a repo-level edge is `confirmed` when any of its records is, a chain file is read by the chain reader and by no other reader, and the toy and go.mod scorecards keep their bytes.
-statement: none (tooling task). The scorer's own theorems, not locked: `Score.collapse_union`, `Score.factsOf_chain`, `Score.chain_union_end_to_end`, `Score.Chain.reads_cases`, `Score.Chain.facts_line_forms`, `Score.Chain.facts_ai`, `Score.Chain.requires_env`
+statement: none (tooling task). The scorer's own theorems, not locked: `Score.collapse_union`, `Score.factsOf_chain`, `Score.chain_union_end_to_end`, `Score.Chain.reads_cases`, `Score.Chain.facts_line_forms`, `Score.Chain.facts_ai`, `Score.Chain.skips_incomplete_bindings`, `Score.Chain.requires_env`
 touches: eval/fixtures/chain/ (new), eval/score/Score/Chain.lean (new), eval/score/Score.lean (one import; one guard line in `factsOf` and `factsOf_chain`; one changed line of `collapse` with `collapse_union` and its two private helpers; the header line of `render`; `chain_union_end_to_end` and its private input at the end), this file, ops/runs/
 must_not_touch: statements.lock, models.lock, gate/, eval/cheats/, models, core/, examples/acme/, eval/fixtures/toy/, eval/fixtures/gomod/, eval/score/Main.lean, eval/score/lakefile.toml, eval/score/lake-manifest.json, eval/score/Score/GoMod.lean, eval/diff/, eval/mutants/, .github/, docs/, plan/, .claude/
-checks: S1 (P2-001b's contract on `main`), the scorer builds with no warning (check 1), axioms (check 2), toy scorecard unchanged (check 3), go.mod scorecard unchanged (check 4), the chain scorecard is F2 (check 5), fixture bytes and fact lines (check 6), labels against the labelling rules (check 7, local), changed paths (check 8), the run-log check (check 9), `plan-tasks.test.sh` (check 10), `gate` green in CI (check 11)
+checks: S1 (P2-001b's contract on `main`), the scorer builds with no new warning (check 1), axioms (check 2), toy scorecard unchanged (check 3), go.mod scorecard unchanged (check 4), the chain scorecard is F2 (check 5), fixture bytes and fact lines (check 6), labels against the labelling rules (check 7, local), changed paths (check 8), the run-log check (check 9), `plan-tasks.test.sh` (check 10), `gate` green in CI (check 11)
 budget: 6 iterations · 1h wall · 400k tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
 ## Context
-- This is plan row P2-009a in `plan/phase-2.md`, core track, wave W5, issue #210 (no comments).
+- This is plan row P2-009a in `plan/phase-2.md`, core track, wave W5, issue #210.
   It waits for P2-001b (#204), and P2-010 (#212) waits for it. An agent carries and merges it.
   Any builder (Claude, Codex or Grok Bot) can take it: every line of Lean is written below, and
   no proof is left to find. For a Claude builder the role is PR owner, routine, on `sonnet` at
@@ -19,8 +19,8 @@ escalation: hint → automation → stronger model → pair → split → revisi
   *(new)*, and `collapse` and one import in `eval/score/Score.lean`. Reads: the resolver as
   P2-001b leaves it. Also must not touch: `eval/fixtures/toy/`.
 - State at design time, 2026-11-15:
-  - `main` is at eac85d2. Since c384e70, where the two candidate designs were written, only
-    `tasks/P1-020-land-merge-workflow.md` changed.
+  - `main` is at eac85d2. Since c384e70, where the two candidate designs were written, the
+    P1-020 task file and its two architect run logs under `ops/runs/2026-11-15/` changed.
   - P2-001b's design is merged (#307), but its build is not. The branch `claude/p2-001b-chains`
     is at 3d939da with no PR, and #204 is open. The branch's base, 2277138, is on `main`. Between
     it and eac85d2 the only change under `core/`, `eval/` and `examples/` is the new `eval/diff/`
@@ -123,7 +123,7 @@ branch at 3d939da, and all but C2's O1 conjunct are in `tasks/P2-001b-chains.md`
 
 modules: one topic per file.
 - `eval/score/Score/Chain.lean` *(new)*: how the scorer reads the chain fixture's declaration
-  files, meaning which files are chain files and which facts and origin it takes from each. 73
+  files, meaning which files are chain files and which facts and origin it takes from each. 83
   lines. It copies the layout of `eval/score/Score/GoMod.lean` (imports, one namespace,
   `open Mitos`, the definitions, then the theorems), and its line parser copies the shape of
   `Score.declared`.
@@ -174,7 +174,8 @@ serves orders-db                provision    svc/orders-db
 - A file named `CHAIN` at a repo's root is human-declared, with origin
   `.humanDeclaredOutsideSource "<repo>/CHAIN"`.
 - A file named `CHAIN.ai` at a repo's root is AI-proposed, with origin `.ai "<repo>/CHAIN.ai"`.
-- Any other line gives no fact.
+- A binding line needs a key and a non-blank target. Incomplete binding lines and unrecognized
+  lines give no fact.
 - The span anchors the first key. For a binding that is the bound key, and the binding's target
   is not anchored (P2-001b, O2).
 
@@ -185,7 +186,7 @@ Call sites:
 - `Score.score` calls `collapse` unchanged. The card's header names bindings when there are some.
 - P2-010 runs the scorer on each fixture directory. `chain` is one more directory, and it calls
   nothing here.
-- The interface is `Score.Chain.reads`, `Score.Chain.facts` and four theorems. `origin`, the three
+- The interface is `Score.Chain.reads`, `Score.Chain.facts` and five theorems. `origin`, the three
   verb prefixes, `env`, `svc` and `ofLine` are `private`, and so are the inputs of the theorems in
   `Score.lean`.
 
@@ -212,7 +213,7 @@ Call sites:
 - Bindings counted as `c.facts.length - reqs - provs`. It is right today, but a fourth `FactKind`
   would print as bindings. The `matches .binds _` count leaves it out, so the header's parts stop
   adding up and a reader sees it.
-- `native_decide`, which adds `Lean.ofReduceBool`. `decide` and `decide +kernel` check all seven
+- `native_decide`, which adds `Lean.ofReduceBool`. `decide` and `decide +kernel` check all eight
   theorems in the kernel, and the `Score` module builds in a few seconds.
 - A `sorry`. The build still succeeds, with a warning that check 1 looks for.
 - Labels that follow the scorer: adding `web → billing` because it is predicted, or dropping
@@ -228,7 +229,8 @@ types:
 - `eval/score/Score/Chain.lean`, the file in full:
 
 ```lean
-import Mitos.Core
+import Mitos.Core.Graph
+import Mitos.Core.Lines
 
 namespace Score.Chain
 
@@ -257,8 +259,11 @@ private def ofLine (o : Nat) (l : List Char) : Option Fact :=
            span := { start := o + utf8Len needsChars, len := utf8Len key } }
   else if bindsChars.isPrefixOf l then
     let (key, rest) := (l.drop bindsChars.length).span (· != ' ')
-    some { kind := .binds (svc (rest.drop 1)), ident := env key,
-           span := { start := o + utf8Len bindsChars, len := utf8Len key } }
+    let target := rest.drop 1
+    if key.isEmpty || target.all Char.isWhitespace then none
+    else
+      some { kind := .binds (svc target), ident := env key,
+             span := { start := o + utf8Len bindsChars, len := utf8Len key } }
   else if servesChars.isPrefixOf l then
     let key := l.drop servesChars.length
     some { kind := .provides, ident := svc key,
@@ -286,6 +291,10 @@ theorem facts_ai :
       [({ kind := .binds ⟨"svc", "db"⟩, ident := ⟨"env", "A"⟩, span := ⟨6, 1⟩ },
           .ai "deploy/CHAIN.ai")] := by decide
 
+theorem skips_incomplete_bindings :
+    facts "deploy" "CHAIN" "binds A\nbinds A \nbinds A  \nbinds  db\n" = [] := by
+  decide
+
 theorem requires_env {repo path text : String} {p : Fact × Assumption}
     (h : p ∈ facts repo path text) (hk : p.1.kind = .requires) :
     p.1.ident.kind = "env" ∧ p.1.scope = .runtime := by
@@ -295,7 +304,9 @@ theorem requires_env {repo path text : String} {p : Fact × Assumption}
   split at hl
   · cases hl; exact ⟨rfl, rfl⟩
   · split at hl
-    · cases hl; cases hk
+    · split at hl
+      · cases hl
+      · cases hl; cases hk
     · split at hl
       · cases hl; cases hk
       · cases hl
@@ -423,6 +434,7 @@ statements:
   the byte spans, an ignored line, and the declared origin.
 - `Score.Chain.facts_ai`: a `CHAIN.ai` line carries `.ai "<repo>/CHAIN.ai"`, the origin the union
   rule needs to show at all.
+- `Score.Chain.skips_incomplete_bindings`: a missing key or missing or blank target yields no fact.
 - `Score.Chain.requires_env`: every requirement the chain reader gives has kind `env` and scope
   `.runtime`. A chain record's repo key takes both from its requirement (C2), so every chain
   repo-level edge has edge type `env/runtime`. This is the row's "scorer edge type for chain
@@ -586,15 +598,26 @@ Unresolved requirements:
 
 From the repository root, at the head after the last rebase.
 
-1. `lake --dir eval/score build 2>&1 | grep -E '^(warning|error)'` prints nothing, and the build
-   ends with `Build completed successfully`.
+1. Set `base_log` to the saved scorer build log from a checkout of `origin/main`. Save the
+   feature build output, check its exit status and success line, and compare diagnostics:
+
+   ```bash
+   log=$(mktemp)
+   test -r "$base_log" &&
+     lake --dir eval/score build >"$log" 2>&1 &&
+     grep -F 'Build completed successfully' "$log" &&
+     diff -u <(grep -E '^(warning|error):' "$base_log") <(grep -E '^(warning|error):' "$log")
+   ```
+
+   The merged P2-001b baseline emits the `Mitos/Core/Graph.lean` warning about importing a
+   Mathlib module from a file that does not use the module system. The diagnostics diff is empty.
 2. A scratch file `Axioms.lean`, never committed, holds `import Score` and then a `#print axioms`
    line for each of `Score.collapse_union`, `Score.factsOf_chain`, `Score.chain_union_end_to_end`,
-   `Score.Chain.reads_cases`, `Score.Chain.facts_line_forms`, `Score.Chain.facts_ai` and
-   `Score.Chain.requires_env`. `cd eval/score && lake env lean <scratch>/Axioms.lean` prints the
-   following, measured:
+   `Score.Chain.reads_cases`, `Score.Chain.facts_line_forms`, `Score.Chain.facts_ai`,
+   `Score.Chain.skips_incomplete_bindings` and `Score.Chain.requires_env`.
+   `cd eval/score && lake env lean <scratch>/Axioms.lean` prints the following, measured:
    - `collapse_union` and `reads_cases`: no axioms.
-   - the other five: `[propext, Classical.choice, Quot.sound]`.
+   - the other six: `[propext, Classical.choice, Quot.sound]`.
 
    None names `Lean.ofReduceBool` or `sorryAx`.
 3. `lake --dir eval/score exe mitos-score eval/fixtures/toy | sha256sum` prints F3's hash, before
@@ -638,16 +661,19 @@ done | LC_ALL=C sort -u | diff - <(LC_ALL=C sort eval/fixtures/chain/labels.tsv)
 10. `.claude/scripts/plan-tasks.test.sh` passes once `P2-009a` has left
     `.claude/scripts/plan-tasks.pending`, which the PR that lands this file does.
 11. In CI, the `checks` job and the PR's `gate` are green. `checks` builds `eval/score`, so the
-    kernel checks the seven theorems, and it runs the toy scorecard, which must read as on `main`.
+    kernel checks the eight theorems, and it runs the toy scorecard, which must read as on `main`.
 
 ### Risks and stop conditions
 
 Risks:
-- R1. P2-001b has no PR yet and may change before it merges. C1 to C4 name what this row reads,
-  and S1 checks them.
+- R1. At design time, P2-001b could still change before merging. C1 to C4 name what this row reads.
+  S1 checks that the dependency landed, that the binding constructor exists, and that scorer and
+  fixture changes stay within the expected diff. The build checks C3 through `unionRecord`.
+  Check 5 exercises C2's effect on the scorecard, and F5 records the resolver output. Inspect the
+  resolver's assumption construction for C2's `assumes` clause, which the card does not print.
 - R2. #332 may merge first. Measured: there is no conflict and no card moves (F8).
 - R3. CI never runs the chain card until P2-012, so a later PR can move F2 unnoticed. CI runs the
-  seven theorems through the build, and `chain_union_end_to_end` is the one that runs the whole
+  eight theorems through the build, and `chain_union_end_to_end` is the one that runs the whole
   pipeline.
 - R4. The toy reader still reads every file that is not a go.mod or chain file, including
   `deploy/mail.yaml`. That file has no `require ` line, so it gives no fact. A YAML file with such
@@ -687,7 +713,7 @@ Stop conditions for the builder:
 
 cut_line: this row ships:
 - the fixture;
-- `Score/Chain.lean` with its four theorems;
+- `Score/Chain.lean` with its five theorems;
 - the changes to `Score.lean`: `collapse` and `collapse_union`; the import, the guard and
   `factsOf_chain`; the header; `chain_union_end_to_end`;
 - the build notes, which the builder adds to this file, and the run log.
@@ -761,13 +787,32 @@ owner_decisions:
   code.
 
 ## Done when
-- [ ] S1 passes, or this file is amended first
-- [ ] `mitos-score eval/fixtures/chain` prints F2 at the head (check 5)
-- [ ] the toy and go.mod scorecards are unchanged (checks 3 and 4)
-- [ ] the labels agree with L1 to L4, and the fact count is the line count (checks 6 and 7)
+- [x] S1 passes, or this file is amended first
+- [x] `mitos-score eval/fixtures/chain` prints F2 at the head (check 5)
+- [x] the toy and go.mod scorecards are unchanged (checks 3 and 4)
+- [x] the labels agree with L1 to L4, and the fact count is the line count (checks 6 and 7)
 - [ ] all `checks` pass locally, and `gate` is green
-- [ ] no `sorry`, no new axioms (checks 1 and 2)
-- [ ] run-log record written (ops/runs/)
+- [x] incomplete binding lines give no facts
+- [x] no `sorry`, no new axioms (checks 1 and 2)
+- [x] run-log record written (ops/runs/)
+
+## Build notes
+
+P2-001b merged in #545 at `1770a97`. The scorer and fixture diff from `eac85d2`
+contains the expected #332 files. The merged core exports `Assumption` from
+`Mitos.Core.Graph`, so the chain reader imports that module and `Mitos.Core.Lines` directly.
+
+The scorer build succeeds with the same `Mitos/Core/Graph.lean` warning as the base.
+All eight scorer theorems use only the axioms listed in check 2. The 11 fixture file hashes
+and all three scorecard hashes match F1 to F4. The fixture has 14 fact lines. Independently
+deriving the labels from the human declarations matches `labels.tsv`.
+
+The resolver yields the five records in F5 and includes each binding's origin in that record's
+`assumes`. The two records for `web → orders` have one confirmed and one inferred status.
+The collapsed edge is confirmed.
+
+The local environment cannot start Bubblewrap for the sandboxed core checks. The hosted
+`checks` job runs those commands.
 
 ## Rationale
 
@@ -797,7 +842,7 @@ fixture puts each status case next to a labelling case: two derivations to one p
 competing derivations (`inferred`), an AI-only derivation of a real edge (`inferred`, the AI
 clause), an AI-only wrong edge (a false positive), and a binding no reader sees (a miss).
 
-Interface depth: two public names and four theorems in the new module, plus three theorems in
+Interface depth: two public names and five theorems in the new module, plus three theorems in
 `Score.lean`. They hide the file names, the verbs, the fixed kinds, the origins and the dispatch's
 one decision. The module is small on purpose, because the fixture is data.
 
@@ -859,15 +904,20 @@ one decision. The module is small on purpose, because the fixture is data.
 ### Open questions and risks
 - Q1. Should a label or the card be able to say which repo binds (`Edge.through`)? `RepoKey` has no
   such field, so neither can today, and R7 follows from that.
+  Default: keep the repo-level label and card schema. Revisit if a consumer needs binding-repo
+  evidence.
 - Q2. The plan's sentence that the `confirmed` numbers "move from the Phase 1 baseline" holds only
   for a fixture with an AI origin. Should the plan's text say so? The plan is the owner's.
+  Default: record the observed hashes here and leave plan wording for the owner's decision.
 - Q3. The plan says "a requirement with a direct and a bound derivation to the same provider is
   still `confirmed`". After the O1 ruling, no input has both ending at one provision fact, and
   through two provision facts in one repo both records are `inferred` (measured). Does "provider"
   there mean the provision fact or the repo? If the repo, P2-001b's `statusOf` compares fact ids
   and would need a change, which is spec. The plan and `core/` are the owner's, and this row's
   code is the same either way.
-- Not verified: the run on CI's machine, and the design against P2-001b's merged head (S1).
+  Default: use the resolver's provision-fact semantics and leave any change to the owner as a
+  spec decision.
+- At design time, neither CI nor the merged P2-001b head had been checked. See Build notes.
 
 ### Next implementation step
 Run S1, write the fixture with F1's `printf` lines, then `Score/Chain.lean` and the `Score.lean`

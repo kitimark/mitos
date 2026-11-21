@@ -1,0 +1,4 @@
+needs DATABASE_URL
+needs QUEUE_URL
+needs SMTP_HOST
+needs LOG_SINK
