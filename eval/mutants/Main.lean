@@ -4,13 +4,17 @@ import Mutants
 open Mutants Lean
 
 def usage : String := "usage: mitos-mutants [--paranoid] [--keep] [<case>...]
-       mitos-mutants --prepare <dir> <case>...
+       mitos-mutants --prepare <dir> [<case>...]
   Run from the repository root. Lints each case's Lean text, then judges every case in
   eval/mutants/cases/, or the named ones, with the sandboxed lake comparator. --paranoid also runs
   the external kernels. --keep keeps the workspaces. Logs go to .lake/mutants/. Exit 0: every case
-  as expected; 1: not; 2: could not run.
-  --prepare writes each named case's workspaces to <dir>/<case>/ (refutation or values run) and
-  <dir>/<case>.holes/ (hole run), and judges nothing; it writes none for a case the lint refuses.
+  as expected and, when no case is named, every Challenge theorem broken by a refuted case; 1: not;
+  2: could not run.
+  --prepare writes the workspaces of every case, or of the named ones, to <dir>/<case>/
+  (refutation or values run) and <dir>/<case>.holes/ (hole run), and judges nothing; it writes none
+  for a case the lint refuses. Exit 1 when a case does not prepare, when the lint refuses a case
+  whose manifest has no rejects=lint or does not refuse one whose manifest has it, or, when no case
+  is named, when no case with breaks= and no rejects= names a Challenge theorem.
   REFUSED BY LINT: the case's Lean text holds code that runs or declares syntax while Lean
   elaborates it, imports a module outside the approved core and the implementation, or declares,
   enters or opens a name outside the namespaces it may use.
@@ -588,20 +592,28 @@ def leanCheck (a : Approved) (gens : List Output.Gen) (log : System.FilePath)
     IO.FS.removeDirAll dir
 
 def writeWorkspaces (env : Environment) (a : Approved) (casesDir out : System.FilePath)
-    (cases : List String) (reuse : Option PackageReuse) : IO UInt32 := do
+    (cases : List String) (reuse : Option PackageReuse) : IO (UInt32 × List Mutant) := do
   let mut code := 0
+  let mut ms := #[]
   for name in cases do
     match ← (prepare env a casesDir name).run with
     | .error e => IO.eprintln s!"{clean name}: {clean e}"; code := 1
     | .ok p =>
-      unless p.lint.isEmpty do
+      ms := ms.push p.mutant
+      match prep p.mutant.rejects p.lint with
+      | .written =>
+        writeFiles a.toolchain (out / name) (p.approved ++ p.refutation.getD p.values) reuse
+        writeFiles a.toolchain (out / s!"{name}.holes") p.holes reuse
+        IO.println s!"{clean name}: {out / name}"
+      | .refusedAsExpected =>
+        IO.println s!"{clean name}: refused by the lint, as its manifest says ({p.lint.length} finding(s))"
+      | .refusedUnexpectedly =>
         for l in p.lint do IO.eprintln s!"{clean name}: lint: {clean l}"
         code := 1
-        continue
-      writeFiles a.toolchain (out / name) (p.approved ++ p.refutation.getD p.values) reuse
-      writeFiles a.toolchain (out / s!"{name}.holes") p.holes reuse
-      IO.println s!"{clean name}: {out / name}"
-  return code
+      | .notRefused =>
+        IO.eprintln s!"{clean name}: its manifest says rejects=lint, and the lint finds nothing"
+        code := 1
+  return (code, ms.toList)
 
 def expectText : Judged → String
   | .ran _ (some s) _ => s!"rejected at {s.name} (cheat case)"
@@ -677,7 +689,6 @@ def main (args : List String) : IO UInt32 := do
   let cfg ← match parseArgs args {} with
     | .ok c => pure c
     | .error e => IO.eprintln e; IO.eprintln usage; return 2
-  if cfg.prepare.isSome && cfg.cases.isEmpty then IO.eprintln usage; return 2
   let root : System.FilePath := "."
   let prepared ← try (prepareReuse (root / "core")).run catch e => pure (.error (toString e))
   let reuse ← match prepared with
@@ -723,8 +734,13 @@ def main (args : List String) : IO UInt32 := do
     return 2
   let env ← try Lint.syntaxEnv catch e =>
     IO.eprintln s!"mitos-mutants: cannot load Lean's syntax for the lint: {clean (toString e)}"; return 2
+  let scope := Scope.ofNamed cfg.cases
   if let some out := cfg.prepare then
-    return ← writeWorkspaces env a casesDir out cases reuse
+    let (code, ms) ← writeWorkspaces env a casesDir out cases reuse
+    let missing := scope.gaps (unclaimed a.theorems ms)
+    for t in missing do
+      IO.eprintln s!"{clean t}: no case with breaks= and no rejects= names this theorem"
+    return if code == 0 && missing.isEmpty then 0 else 1
   let start ← IO.monoMsNow
   let control ← judge cfg a.toolchain a.files none (logDir / "control.log") reuse
   let controlText := match control with
@@ -764,10 +780,14 @@ def main (args : List String) : IO UInt32 := do
   unless unexpected.isEmpty do
     IO.println "\nUNEXPECTED SURVIVORS (the approved Challenge still accepts the mutant: a theorem is too weak, or the mutant changes nothing the theorems state)"
     for (n, _) in unexpected do IO.println (clean n)
+  let unbrokenNow := scope.gaps (unbroken a.theorems rs)
+  unless unbrokenNow.isEmpty do
+    IO.println "\nUNBROKEN THEOREMS (no case refutes them: add a mutant case that breaks each)"
+    for t in unbrokenNow do IO.println (clean t)
   let total := ((← IO.monoMsNow) - start) / 1000
   let refuted := (rs.filter (·.outcome == .refuted)).length
   let cheats := (rs.filter fun r => r.ok && r.judged matches .ran _ (some _) _).length
-  if passes control cases rs then
+  if runPasses scope control cases rs a.theorems then
     IO.println s!"\nmutants: all {rs.length} cases as expected, {refuted} refuted, {gaps.length} known gap(s), {cheats} cheat case(s) rejected ({total}s)"
     return 0
   else
