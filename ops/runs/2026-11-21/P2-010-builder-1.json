@@ -1,0 +1,1 @@
+{"task":"P2-010","role":"builder","model":"gpt-6.2","attempt":1,"iterations":1,"wall_min":11,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Scorer built and N1–N13 passed for the live policy. Both cold builds showed the same pre-existing Core/Graph module warning. Mutation checks W1, W5, W6, W7 and W11 failed as intended."}
