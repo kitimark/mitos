@@ -1,0 +1,5 @@
+why=Appends the binding's origin without checking that it is already listed, so a requirement and a binding from one extractor name that extractor twice.
+breaks=resolve_assumptions_nodup
+file=Mitos/Impl/Resolve.lean
+find=(assumptionsOf r p).insert b.origin
+replace=assumptionsOf r p ++ [b.origin]

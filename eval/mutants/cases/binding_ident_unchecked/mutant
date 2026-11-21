@@ -1,0 +1,5 @@
+why=Applies a binding to every requirement, not only to a requirement of the identity it binds, so an unrelated requirement is reached through someone else's binding.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=| .binds _ => fs.filter (boundB r b)
+replace=| .binds i => fs.filter (fun p => r.fact.kind == .requires && p.fact.kind == .provides && p.fact.ident == i && p.fact.ident != r.fact.ident)

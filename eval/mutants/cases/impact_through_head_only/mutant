@@ -1,0 +1,5 @@
+why=Reads only the first repo a chain passes through, so a change in a later repo of a longer chain does not reach the requirement.
+breaks=impact_correct
+file=Mitos/Impl/Impact.lean
+find=e.through.any fun b => b == x || seen.contains b
+replace=(e.through.take 1).any fun b => b == x || seen.contains b

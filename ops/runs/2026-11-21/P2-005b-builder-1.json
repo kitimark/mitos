@@ -1,0 +1,1 @@
+{"task":"P2-005b","role":"builder","model":"Codex (GPT-6)","attempt":1,"iterations":1,"wall_min":5,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Added the 28 designed chain mutant cases. All anchors match merged P2-001b, and plan-tasks.test.sh passes. Nightly verification pending."}

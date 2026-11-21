@@ -1,0 +1,5 @@
+why=Judges a chain edge's status by the requirement's and the provision's origins only, so an AI-proposed binding leaves it confirmed.
+breaks=resolve_status_honest
+file=Mitos/Impl/Resolve.lean
+find=status := statusOf fs r p (assumptionsVia r b p) same }
+replace=status := statusOf fs r p (assumptionsOf r p) same }

@@ -1,0 +1,5 @@
+why=Writes the provision's id where the binding's belongs in a chain edge's key, so no edge carries the key of the chain it stands for.
+breaks=resolve_sound resolve_complete
+file=Mitos/Impl/Resolve.lean
+find=.bound r.id b.id p.id
+replace=.bound r.id p.id b.id

@@ -1,0 +1,5 @@
+why=Lists the origins of every binding of the requirement's identity under each chain edge, so retracting one binding removes the chain that goes through another.
+breaks=resolve_assumptions_exact resolve_retract_exact
+file=Mitos/Impl/Resolve.lean
+find=assumes := assumptionsVia r b p,
+replace=assumes := (assumptionsVia r b p ++ (fs.filter (fun c => c.fact.ident == r.fact.ident && c.fact.kind != .requires && c.fact.kind != .provides)).map (·.origin)).eraseDups,

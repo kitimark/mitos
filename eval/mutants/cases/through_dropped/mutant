@@ -1,0 +1,5 @@
+why=Leaves the binding's repo out of a chain edge, so the edge reads as a direct one and impact analysis loses the binding.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=through := [b.repo]
+replace=through := []

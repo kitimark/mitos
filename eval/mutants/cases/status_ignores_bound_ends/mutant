@@ -1,0 +1,5 @@
+why=Asks only the direct providers whether a requirement reaches one provider, so a requirement with a direct provider and a chain to another is confirmed.
+breaks=resolve_status_honest
+file=Mitos/Impl/Resolve.lean
+find=let summary := summarizeEnds allEnds;
+replace=let summary := summarizeEnds direct;

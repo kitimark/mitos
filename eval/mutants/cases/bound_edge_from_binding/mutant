@@ -1,0 +1,5 @@
+why=Builds the chain edge from the binding fact in place of the requirement, so the edge points from the binding's repo to the provider's.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find={ mkEdge fs r p same with
+replace={ mkEdge fs b p same with

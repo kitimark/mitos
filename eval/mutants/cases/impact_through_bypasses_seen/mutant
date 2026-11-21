@@ -1,0 +1,5 @@
+why=Lets an edge fire on its binding's repo even when its requirer is already listed, so a repo reached by a provider and by a binding appears twice.
+breaks=impact_nodup
+file=Mitos/Impl/Impact.lean
+find=!seen.contains e.requiringRepo
+replace=(!seen.contains e.requiringRepo || e.through.any fun b => b == x)

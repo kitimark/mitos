@@ -1,0 +1,5 @@
+why=Lets a binding from an identity to itself give a requirement a second chain to the provider it already reaches directly, against the owner's ruling on #204.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=| .binds _ => fs.filter (boundB r b)
+replace=| .binds i => fs.filter (fun p => r.fact.kind == .requires && b.fact.ident == r.fact.ident && p.fact.kind == .provides && p.fact.ident == i)

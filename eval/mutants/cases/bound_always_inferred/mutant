@@ -1,0 +1,5 @@
+why=Marks every chain edge inferred, so a chain of confirmed facts that reaches one provider is never confirmed.
+breaks=resolve_status_honest
+file=Mitos/Impl/Resolve.lean
+find=status := statusOf fs r p (assumptionsVia r b p) same }
+replace=status := .inferred }
