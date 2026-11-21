@@ -1,4 +1,5 @@
 import Score
+import Lean.Data.Json
 
 namespace Score.Nightly
 
@@ -46,6 +47,9 @@ private def TypeCounts.cardLines (t : TypeCounts) : List String :=
 private def consistent (c : Scorecard) (card : String) : Bool :=
   (typeCounts c).all fun t => t.cardLines.all (card.splitOn "\n").contains
 
+private def edgeIdentity (k : RepoKey) : String :=
+  (Lean.toJson #[k.requiringRepo, k.providingRepo, k.ident.kind, k.ident.key, scopeName k.scope]).compress
+
 def numbers (name : String) (c : Scorecard) : List String :=
   let ds := derivations c
   let line (fs : List String) := "\t".intercalate fs
@@ -53,13 +57,13 @@ def numbers (name : String) (c : Scorecard) : List String :=
       ratio t.tp t.labelled, ratio t.confirmedTp t.confirmed, ratio t.inferredTp t.inferred,
       toString (most (ds.filter (edgeType ·.1 == t.edgeType)))]) ++
     ds.map (fun (k, n) => line ["edge", name, renderEdge k,
-      ((c.predicted.lookup k).map statusName).getD "not in the card", toString n]) ++
-    c.labels.map fun k => line ["label", name, renderEdge k]
+      ((c.predicted.lookup k).map statusName).getD "not in the card", toString n, edgeIdentity k]) ++
+    c.labels.map fun k => line ["label", name, renderEdge k, edgeIdentity k]
 
 private def arity : String → Option Nat
   | "rates" => some 8
-  | "edge" => some 5
-  | "label" => some 3
+  | "edge" => some 6
+  | "label" => some 4
   | _ => none
 
 def parseNumbers (txt : String) : Except String (List String) := do
@@ -119,8 +123,8 @@ private def header : String :=
 
 private def item (side : String) (line : String) : String :=
   match fields line with
-  | ["edge", n, e, s, d] => s!"- `{n}`, {side}: {e}, {s}, derivations {d}\n"
-  | ["label", n, e] => s!"- `{n}`, {side}: {e}\n"
+  | ["edge", n, e, s, d, _] => s!"- `{n}`, {side}: {e}, {s}, derivations {d}\n"
+  | ["label", n, e, _] => s!"- `{n}`, {side}: {e}\n"
   | _ => s!"- {side}: {line}\n"
 
 private def diff (cur base : List String) : String := Id.run do
@@ -236,8 +240,8 @@ private def has (hay needle : String) : Bool := (hay.splitOn needle).length > 1
 
 #guard pinNumbers 2 ==
   ["rates\tpin\ttoy/runtime\t1.00 (1/1)\t1.00 (1/1)\t1.00 (1/1)\tn/a\t2",
-   "edge\tpin\t`a` → `b` (toy/runtime `x`)\tconfirmed\t2",
-   "label\tpin\t`a` → `b` (toy/runtime `x`)"]
+   "edge\tpin\t`a` → `b` (toy/runtime `x`)\tconfirmed\t2\t[\"a\",\"b\",\"toy\",\"x\",\"runtime\"]",
+   "label\tpin\t`a` → `b` (toy/runtime `x`)\t[\"a\",\"b\",\"toy\",\"x\",\"runtime\"]"]
 
 #guard (parseNumbers ("\n".intercalate (pinNumbers 2))).toOption == some (pinNumbers 2)
 
@@ -282,5 +286,19 @@ private def has (hay needle : String) : Bool := (hay.splitOn needle).length > 1
   | some c => has (summary [{ name := "pin", card := .ok { c with predicted := [] } }] none)
       "in fixture `pin`, which that fixture's card leaves out."
   | none => false
+
+private def collisionLabel (src dst : String) : RepoKey :=
+  { pinKey with requiringRepo := src, providingRepo := dst }
+
+#guard
+  let old := collisionLabel "a` → `b" "c"
+  let new := collisionLabel "a" "b` → `c"
+  match numbersAll (pin 1 [old]), numbersAll (pin 1 [new]) with
+  | .ok before, .ok after =>
+    let report := summary (pin 1 [new]) (some before)
+    renderEdge old == renderEdge new &&
+      (before.filter (kind · != "label")) == (after.filter (kind · != "label")) &&
+      has report "label only in the baseline" && has report "label only in this run"
+  | _, _ => false
 
 end Score.Nightly

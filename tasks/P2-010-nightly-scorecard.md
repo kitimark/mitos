@@ -2,7 +2,7 @@
 
 phase: 2
 goal: `lake --dir eval/score exe mitos-score --all eval/fixtures [<baseline>]` prints one nightly scorecard: for each fixture and edge type the precision, recall, confirmed precision, inferred precision and most derivations; the most derivations any repo-level edge has, checked against the D1 threshold of 8; what changed against `<baseline>`, which is what `mitos-score --numbers eval/fixtures` printed on an earlier run, such as `main`'s; then every fixture's card. `mitos-score <fixture-dir>` prints exactly what it prints on `main`.
-statement: none (tooling task, nothing in `statements.lock`). Four scorer theorems, not locked: `Score.Nightly.derivations_keys`, `Score.Nightly.le_most`, `Score.Nightly.most_mem`, `Score.Nightly.changed_eq_nil`. Also 20 build-time `#guard` pins in the same file (G1 to G20 under `statements`)
+statement: none (tooling task, nothing in `statements.lock`). Four scorer theorems, not locked: `Score.Nightly.derivations_keys`, `Score.Nightly.le_most`, `Score.Nightly.most_mem`, `Score.Nightly.changed_eq_nil`. Also 21 build-time `#guard` pins in the same file (G1 to G21 under `statements`)
 touches: eval/score/Main.lean, eval/score/Score/Nightly.lean (new), tasks/P2-010-nightly-scorecard.md, ops/runs/
 must_not_touch: statements.lock, models.lock, gate/, eval/cheats/, models, eval/fixtures/, eval/score/Score.lean, eval/score/Score/GoMod.lean, eval/score/Policy.lean (if #332 has merged), eval/score/lakefile.toml, eval/score/lake-manifest.json, eval/score/lean-toolchain, examples/acme/, core/, eval/diff/, eval/mutants/, .github/, docs/, plan/, .claude/
 checks: start checks (S1, S2), the scorer builds with no warning (check 1), axioms (check 2), single-fixture cards unchanged (check 3), `--numbers` is N2 (check 4), `--all` is N3 (check 5), own baseline is N4 (check 6), moved baseline is N5 (check 7), errors and usage are N6 (check 8), scratch roots N7 to N12 (check 9), the real fixtures after P2-009a, N13 (check 10), wrong variants (check 11), changed paths (check 12), the run-log check (check 13), `plan-tasks.test.sh` (check 14), `gate` green in CI (check 15)
@@ -55,10 +55,12 @@ lake --dir eval/score exe mitos-score --all eval/fixtures [n-before.tsv]  # the 
 | Kind | Fields after the kind | One line per |
 |---|---|---|
 | `rates` | fixture, edge type, precision, recall, confirmed precision, inferred precision, most derivations | edge type of the card, in the card's order |
-| `edge` | fixture, the edge as the card prints it, `confirmed`, `inferred` or `not in the card`, derivations | repo-level edge the resolver made, in its order |
-| `label` | fixture, the label as the card prints an edge | label, in `labels.tsv` order |
+| `edge` | fixture, the edge as the card prints it, `confirmed`, `inferred` or `not in the card`, derivations, edge identity | repo-level edge the resolver made, in its order |
+| `label` | fixture, the label as the card prints an edge, edge identity | label, in `labels.tsv` order |
 
-  The ratio fields are `Score.ratio` strings such as `0.83 (5/6)` or `n/a`, so a count that moves shows even when the rounded ratio does not. `parseNumbers` reads only these kinds, each with its own field count, and `Nightly.checked` reads every line the run writes, so the writer and the reader cannot drift apart.
+  The edge identity is a compact JSON array of the requiring repo, providing repo, kind, key and scope. Its strings are escaped so distinct keys stay distinct even when their card text is identical. The report shows the card text.
+
+  The ratio fields are `Score.ratio` strings such as `0.83 (5/6)` or `n/a`, so a count that moves shows even when the rounded ratio does not. `parseNumbers` reads only these kinds, each with its own field count, and `Nightly.checked` reads every line the run writes, so the writer must reproduce the exact list of lines after parsing.
 - "Against the baseline" is one of: `No baseline given, so nothing was compared.`; `No change against the baseline.` exactly when this run's lines and the baseline's, less the lines of any fixture that failed in this run, are the same set (`changed_eq_nil` applied to that filtered baseline); or the changes. For each fixture and edge type whose `rates` line changed, the baseline row and this run's row, with `none` on a side that has no such line. Then `**The hand labels changed.**` and each `label` line on one side only. Then each `edge` line on one side only. A fixture that failed in this run is left out of the comparison and, when the baseline holds lines for it, gets the line `` `<name>` was not scored in this run, so it is not compared. ``
 - Exit codes:
   - `<fixture-dir>`: as on `main`, and 2 for a lone argument that starts with `-`.
@@ -98,6 +100,7 @@ types:
 
 ```lean
 import Score
+import Lean.Data.Json
 
 namespace Score.Nightly
 
@@ -145,6 +148,9 @@ private def TypeCounts.cardLines (t : TypeCounts) : List String :=
 private def consistent (c : Scorecard) (card : String) : Bool :=
   (typeCounts c).all fun t => t.cardLines.all (card.splitOn "\n").contains
 
+private def edgeIdentity (k : RepoKey) : String :=
+  (Lean.toJson #[k.requiringRepo, k.providingRepo, k.ident.kind, k.ident.key, scopeName k.scope]).compress
+
 def numbers (name : String) (c : Scorecard) : List String :=
   let ds := derivations c
   let line (fs : List String) := "\t".intercalate fs
@@ -152,13 +158,13 @@ def numbers (name : String) (c : Scorecard) : List String :=
       ratio t.tp t.labelled, ratio t.confirmedTp t.confirmed, ratio t.inferredTp t.inferred,
       toString (most (ds.filter (edgeType ·.1 == t.edgeType)))]) ++
     ds.map (fun (k, n) => line ["edge", name, renderEdge k,
-      ((c.predicted.lookup k).map statusName).getD "not in the card", toString n]) ++
-    c.labels.map fun k => line ["label", name, renderEdge k]
+      ((c.predicted.lookup k).map statusName).getD "not in the card", toString n, edgeIdentity k]) ++
+    c.labels.map fun k => line ["label", name, renderEdge k, edgeIdentity k]
 
 private def arity : String → Option Nat
   | "rates" => some 8
-  | "edge" => some 5
-  | "label" => some 3
+  | "edge" => some 6
+  | "label" => some 4
   | _ => none
 
 def parseNumbers (txt : String) : Except String (List String) := do
@@ -218,8 +224,8 @@ private def header : String :=
 
 private def item (side : String) (line : String) : String :=
   match fields line with
-  | ["edge", n, e, s, d] => s!"- `{n}`, {side}: {e}, {s}, derivations {d}\n"
-  | ["label", n, e] => s!"- `{n}`, {side}: {e}\n"
+  | ["edge", n, e, s, d, _] => s!"- `{n}`, {side}: {e}, {s}, derivations {d}\n"
+  | ["label", n, e, _] => s!"- `{n}`, {side}: {e}\n"
   | _ => s!"- {side}: {line}\n"
 
 private def diff (cur base : List String) : String := Id.run do
@@ -335,8 +341,8 @@ private def has (hay needle : String) : Bool := (hay.splitOn needle).length > 1
 
 #guard pinNumbers 2 ==
   ["rates\tpin\ttoy/runtime\t1.00 (1/1)\t1.00 (1/1)\t1.00 (1/1)\tn/a\t2",
-   "edge\tpin\t`a` → `b` (toy/runtime `x`)\tconfirmed\t2",
-   "label\tpin\t`a` → `b` (toy/runtime `x`)"]
+   "edge\tpin\t`a` → `b` (toy/runtime `x`)\tconfirmed\t2\t[\"a\",\"b\",\"toy\",\"x\",\"runtime\"]",
+   "label\tpin\t`a` → `b` (toy/runtime `x`)\t[\"a\",\"b\",\"toy\",\"x\",\"runtime\"]"]
 
 #guard (parseNumbers ("\n".intercalate (pinNumbers 2))).toOption == some (pinNumbers 2)
 
@@ -381,6 +387,20 @@ private def has (hay needle : String) : Bool := (hay.splitOn needle).length > 1
   | some c => has (summary [{ name := "pin", card := .ok { c with predicted := [] } }] none)
       "in fixture `pin`, which that fixture's card leaves out."
   | none => false
+
+private def collisionLabel (src dst : String) : RepoKey :=
+  { pinKey with requiringRepo := src, providingRepo := dst }
+
+#guard
+  let old := collisionLabel "a` → `b" "c"
+  let new := collisionLabel "a" "b` → `c"
+  match numbersAll (pin 1 [old]), numbersAll (pin 1 [new]) with
+  | .ok before, .ok after =>
+    let report := summary (pin 1 [new]) (some before)
+    renderEdge old == renderEdge new &&
+      (before.filter (kind · != "label")) == (after.filter (kind · != "label")) &&
+      has report "label only in the baseline" && has report "label only in this run"
+  | _, _ => false
 
 end Score.Nightly
 ```
@@ -496,42 +516,43 @@ statements:
   - G18: `numbersAll` returns the error, not lines, when a fixture failed.
   - G19: the report names the absence of repo-level edges.
   - G20: the report identifies a maximum-count edge absent from the single-fixture card.
+  - G21: a label swap between two different repo keys with identical display text is reported on both sides while rates and predictions stay equal.
 - Not pinned in the build, and checked by the builder's runs: each card inside `--all` equals the single-mode card (check 5), and the walker's fixed messages (N6).
 
 reuse: `Score.score`, `Scorecard`, `Scorecard.render`, `Score.edgeType`, `Score.renderEdge`, `Score.ratio`, `Score.statusName`, `Score.parseLabels` and `Score.SourceFile` unchanged; `loadRepos` and `sortPaths` in `Main.lean` unchanged; `Mitos.Impl.resolve`, `Edge.repoKey`; `List.countP`, `List.eraseDups`, `List.lookup`, `List.contains_eq_mem`, `List.filter_eq_nil_iff`, `Except.isOk`. The layout of `Score/GoMod.lean`. No new fixture directory and no lakefile change.
 
 fixtures: build and run everything at the head. Outputs are compared by sha256. Scratch roots live under `<scratch>/p2010-fx`, never in the repository. The root `two` is a copy of `eval/fixtures/gomod` and `eval/fixtures/toy` only, so N2 to N5 and N10 stay checkable after P2-009a adds `chain`.
 - N1, the single-fixture cards are unchanged. `mitos-score eval/fixtures/toy` hashes to `17c55e9cfa3a9db873c50c980cf2cbea62195fe2eebecde3edc0a13add38f21a` (P2-009b's F3) and `mitos-score eval/fixtures/gomod` to `889671a4d4c0eaed6b0680028ba965d63774aaaa48b7c070f860e3e5bade24cf` (F2), before and after the change, on all three bases.
-- N2, `mitos-score --numbers <r>/two` prints these 27 lines and exits 0 (sha256 `1e767d18bbc39fed9389feac5f58b3bfd946889908bf9254a9937c53b8943000`):
+- N2, `mitos-score --numbers <r>/two` prints these 27 lines and exits 0 (sha256 `bb6f3e4d31015590ee88fb4eb2be92c3be7bcf387df7d910c9793962cd158dec`):
 
 ```
 rates	gomod	go-module/runtime	0.83 (5/6)	0.83 (5/6)	1.00 (4/4)	0.50 (1/2)	2
-edge	gomod	`app` → `lib` (go-module/runtime `example.com/lib`)	confirmed	1
-edge	gomod	`app` → `log` (go-module/runtime `example.com/log`)	inferred	1
-edge	gomod	`app` → `log-fork` (go-module/runtime `example.com/log`)	inferred	1
-edge	gomod	`lib` → `util` (go-module/runtime `example.com/util`)	confirmed	1
-edge	gomod	`mono` → `lib` (go-module/runtime `example.com/lib`)	confirmed	2
-edge	gomod	`mono` → `util` (go-module/runtime `example.com/util`)	confirmed	1
-label	gomod	`app` → `lib` (go-module/runtime `example.com/lib`)
-label	gomod	`app` → `log-fork` (go-module/runtime `example.com/log`)
-label	gomod	`app` → `cli` (go-module/runtime `example.com/cli`)
-label	gomod	`lib` → `util` (go-module/runtime `example.com/util`)
-label	gomod	`mono` → `lib` (go-module/runtime `example.com/lib`)
-label	gomod	`mono` → `util` (go-module/runtime `example.com/util`)
+edge	gomod	`app` → `lib` (go-module/runtime `example.com/lib`)	confirmed	1	["app","lib","go-module","example.com/lib","runtime"]
+edge	gomod	`app` → `log` (go-module/runtime `example.com/log`)	inferred	1	["app","log","go-module","example.com/log","runtime"]
+edge	gomod	`app` → `log-fork` (go-module/runtime `example.com/log`)	inferred	1	["app","log-fork","go-module","example.com/log","runtime"]
+edge	gomod	`lib` → `util` (go-module/runtime `example.com/util`)	confirmed	1	["lib","util","go-module","example.com/util","runtime"]
+edge	gomod	`mono` → `lib` (go-module/runtime `example.com/lib`)	confirmed	2	["mono","lib","go-module","example.com/lib","runtime"]
+edge	gomod	`mono` → `util` (go-module/runtime `example.com/util`)	confirmed	1	["mono","util","go-module","example.com/util","runtime"]
+label	gomod	`app` → `lib` (go-module/runtime `example.com/lib`)	["app","lib","go-module","example.com/lib","runtime"]
+label	gomod	`app` → `log-fork` (go-module/runtime `example.com/log`)	["app","log-fork","go-module","example.com/log","runtime"]
+label	gomod	`app` → `cli` (go-module/runtime `example.com/cli`)	["app","cli","go-module","example.com/cli","runtime"]
+label	gomod	`lib` → `util` (go-module/runtime `example.com/util`)	["lib","util","go-module","example.com/util","runtime"]
+label	gomod	`mono` → `lib` (go-module/runtime `example.com/lib`)	["mono","lib","go-module","example.com/lib","runtime"]
+label	gomod	`mono` → `util` (go-module/runtime `example.com/util`)	["mono","util","go-module","example.com/util","runtime"]
 rates	toy	toy/runtime	0.71 (5/7)	0.83 (5/6)	1.00 (3/3)	0.50 (2/4)	1
-edge	toy	`app` → `lib-pad` (toy/runtime `left-pad`)	inferred	1
-edge	toy	`app` → `pad-fork` (toy/runtime `left-pad`)	inferred	1
-edge	toy	`app` → `ui-kit` (toy/runtime `ui-kit`)	confirmed	1
-edge	toy	`app` → `date-lib` (toy/runtime `naïve-date`)	confirmed	1
-edge	toy	`ui-kit` → `lib-pad` (toy/runtime `left-pad`)	inferred	1
-edge	toy	`ui-kit` → `pad-fork` (toy/runtime `left-pad`)	inferred	1
-edge	toy	`web` → `date-lib` (toy/runtime `naïve-date`)	confirmed	1
-label	toy	`app` → `lib-pad` (toy/runtime `left-pad`)
-label	toy	`app` → `ui-kit` (toy/runtime `ui-kit`)
-label	toy	`app` → `date-lib` (toy/runtime `naïve-date`)
-label	toy	`ui-kit` → `lib-pad` (toy/runtime `left-pad`)
-label	toy	`web` → `date-lib` (toy/runtime `naïve-date`)
-label	toy	`web` → `ui-kit` (toy/runtime `ui-kit`)
+edge	toy	`app` → `lib-pad` (toy/runtime `left-pad`)	inferred	1	["app","lib-pad","toy","left-pad","runtime"]
+edge	toy	`app` → `pad-fork` (toy/runtime `left-pad`)	inferred	1	["app","pad-fork","toy","left-pad","runtime"]
+edge	toy	`app` → `ui-kit` (toy/runtime `ui-kit`)	confirmed	1	["app","ui-kit","toy","ui-kit","runtime"]
+edge	toy	`app` → `date-lib` (toy/runtime `naïve-date`)	confirmed	1	["app","date-lib","toy","naïve-date","runtime"]
+edge	toy	`ui-kit` → `lib-pad` (toy/runtime `left-pad`)	inferred	1	["ui-kit","lib-pad","toy","left-pad","runtime"]
+edge	toy	`ui-kit` → `pad-fork` (toy/runtime `left-pad`)	inferred	1	["ui-kit","pad-fork","toy","left-pad","runtime"]
+edge	toy	`web` → `date-lib` (toy/runtime `naïve-date`)	confirmed	1	["web","date-lib","toy","naïve-date","runtime"]
+label	toy	`app` → `lib-pad` (toy/runtime `left-pad`)	["app","lib-pad","toy","left-pad","runtime"]
+label	toy	`app` → `ui-kit` (toy/runtime `ui-kit`)	["app","ui-kit","toy","ui-kit","runtime"]
+label	toy	`app` → `date-lib` (toy/runtime `naïve-date`)	["app","date-lib","toy","naïve-date","runtime"]
+label	toy	`ui-kit` → `lib-pad` (toy/runtime `left-pad`)	["ui-kit","lib-pad","toy","left-pad","runtime"]
+label	toy	`web` → `date-lib` (toy/runtime `naïve-date`)	["web","date-lib","toy","naïve-date","runtime"]
+label	toy	`web` → `ui-kit` (toy/runtime `ui-kit`)	["web","ui-kit","toy","ui-kit","runtime"]
 ```
 
   Each number in a `rates` line is the one F2 or F3 prints, and `mono` → `lib` with 2 is P2-009b's F6.
@@ -557,7 +578,7 @@ No baseline given, so nothing was compared.
 ```
 
 - N4, a run against its own numbers. `--all <r>/two <r>/n.tsv`, where `n.tsv` is N2's output, prints N3 with `No change against the baseline.` in place of `No baseline given, so nothing was compared.`, and exits 0 (sha256 `4fe81f4dbf784f4a6f7a4522f01e92b6aaed5fbf6eca40dda1db828072507924`). This is the command-line form of `changed_eq_nil`.
-- N5, a moved baseline. `moved.tsv` is N2 with the gomod recall at `1.00 (6/6)`, `app` → `log` as `confirmed`, and a `chain` line that this tree lacks, as a baseline from after P2-009a would have against a tree before it (sha256 `ace695e2473a861c0ff85898b0ea0ef345f1b440c30fc55406fbc2bdc8a0692a`, command below). `--all <r>/two <r>/moved.tsv` exits 0 (sha256 `d7905796795257544ad2a496b092a631430dd7e20cf62702e57362747f07ed1e`), and its last section reads:
+- N5, a moved baseline. `moved.tsv` is N2 with the gomod recall at `1.00 (6/6)`, `app` → `log` as `confirmed`, and a `chain` line that this tree lacks, as a baseline from after P2-009a would have against a tree before it (sha256 `43062bf21b671aece74bc63ca785f64e0d44373ad6fb4f451c28746a0071fda9`, command below). `--all <r>/two <r>/moved.tsv` exits 0 (sha256 `d7905796795257544ad2a496b092a631430dd7e20cf62702e57362747f07ed1e`), and its last section reads:
 
 ```
 ### Against the baseline
@@ -609,7 +630,7 @@ Scorer error: labels.tsv:1: unknown scope "prod"
   - A baseline whose `rates` line has 7 fields makes `--all` print ``baseline line 1: a line of kind `rates` has 8 tab-separated fields, found 7`` and exit 1. A baseline line of kind `card` prints `baseline line 1: unknown line kind "card"` and exits 1.
   - `mitos-score --all`, `--all <root> a b`, `--numbers` and `-x` print the usage and exit 2. Without the guard, `-x` would try to read `-x/labels.tsv`.
 - N7, the D1 boundary. Fixture `many` has `a/deps.toy` with n lines `require x` and `b/PROVIDES` with `provide x`, which gives n records under one repo-level edge. With n = 8 (`<r>/d1-8`) the run prints ``Most derivations any repo-level edge has: 8, `a` → `b` (toy/runtime `x`) in fixture `many`. D1 reopens above 8.`` and no bold line (sha256 `c68c5d70c1f315bc41b8f6dddf6276f3cea183ea8ece970820dd648cb29939ec`). With n = 9 (`<r>/d1-9`) it prints the line with 9 and then ``**Above 8: D1 reopens (`plan/phase-2.md`, Scope decisions).**`` (sha256 `a6c12fd1d9a0bb9b570a6c1a80f34ce6b2454198609532fabb643dbccce8bd01`). Both exit 0.
-- N8, P2-009b's F6 reproduced: N2's `edge` line for `mono` → `lib` in `gomod` ends with `confirmed` and `2`, and the `gomod` `rates` line ends with `2`. P2-001b's bound records count under the same rule (`countP` over every record with the key).
+- N8, P2-009b's F6 reproduced: N2's `edge` line for `mono` → `lib` in `gomod` has status `confirmed` and derivation count `2`, and the `gomod` `rates` line ends with `2`. P2-001b's bound records count under the same rule (`countP` over every record with the key).
 - N9, Q1 both ways. Fixture `self`: `mono/deps.toy` has `require m` three times and `require x` once, `mono/PROVIDES` has `provide m`, `b/PROVIDES` has `provide x`. The labels are `mono` → `b` (`x`) and `mono` → `mono` (`m`).
   - On `main`, the row reads `| self | toy/runtime | this run | 1.00 (2/2) | 1.00 (2/2) | 1.00 (2/2) | n/a | 3 |` and the D1 line names `mono` → `mono` with 3 (sha256 `4a263d358305de3146bc5bb1302463bf8690ba388100363ea1ed666ea877ff16`).
   - With `score`'s `predicted := collapse (r.edges.filter fun e => e.requiringRepo != e.providingRepo)` in a scratch copy only, the row reads `1.00 (1/1) | 0.50 (1/2) | 1.00 (1/1) | n/a | 3`, the D1 line still names `mono` → `mono` with 3 and adds ", which that fixture's card leaves out", and `--numbers` prints the `edge` line for `mono` → `mono` with the status `not in the card` and `3` (sha256 of `--all` `e2089bdaae18eea75588d710ca5d80e47dfa57db485634e8506cbef938e623eb`). The D1 number does not move with Q1. The card's numbers do.
@@ -628,8 +649,8 @@ Scorer error: labels.tsv:1: unknown scope "prod"
 ```
 
   The recall that went up came from a label, and the report says which.
-- N11, a tab inside a key. Fixture `t` has `a/deps.toy` with `require p<TAB>q` and `b/PROVIDES` with `provide p<TAB>q`. `--all <r>/tab` exits 1 with ``Scorer error: a numbers line of this fixture would not read back (line 2: a line of kind `edge` has 5 tab-separated fields, found 6)`` (sha256 `68f8b4b846899ba5e31c2356f116119a6194863f54b54fc6c6b330416d07a96d`). `mitos-score <r>/tab/t` still prints its card and exits 0.
-- N12, Q2 both ways. `<r>/typo/ok` is `err/ok` with a second label of kind `go-mod`. On `main`, `--all <r>/typo` exits 0 (sha256 `4239227eeeebdf4acfa3b31a150bcbc9f2e8e665b3f98ba04e476be1bf4ff41d`), and `--numbers` prints one more `rates` line, for `go-mod/runtime` with the fields `n/a`, `0.00 (0/1)`, `n/a`, `n/a` and `0`, and one more `label` line, ``label<TAB>ok<TAB>`a` → `b` (go-mod/runtime `x`)``. With #332's files it exits 1 with `Scorer error: label kind "go-mod" is not among the extracted facts` and the bold line ``**Not every fixture scored (`ok`), …`` (sha256 `59e697fecaef8ffe61d0bd708a41666cb1d58c92a7c49bf663d3fc76b5a813e6`).
+- N11, a tab inside a key. Fixture `t` has `a/deps.toy` with `require p<TAB>q` and `b/PROVIDES` with `provide p<TAB>q`. `--all <r>/tab` exits 1 with ``Scorer error: a numbers line of this fixture would not read back (line 2: a line of kind `edge` has 6 tab-separated fields, found 7)`` (sha256 `9439a16b42fcf66fae9be3425f208d010b576b0a74e9fef3e9679f2a396da3b6`). `mitos-score <r>/tab/t` still prints its card and exits 0.
+- N12, Q2 both ways. `<r>/typo/ok` is `err/ok` with a second label of kind `go-mod`. On `main`, `--all <r>/typo` exits 0 (sha256 `4239227eeeebdf4acfa3b31a150bcbc9f2e8e665b3f98ba04e476be1bf4ff41d`), and `--numbers` prints one more `rates` line, for `go-mod/runtime` with the fields `n/a`, `0.00 (0/1)`, `n/a`, `n/a` and `0`, and one more `label` line, ``label<TAB>ok<TAB>`a` → `b` (go-mod/runtime `x`)<TAB>["a","b","go-mod","x","runtime"]``. With #332's files it exits 1 with `Scorer error: label kind "go-mod" is not among the extracted facts` and the bold line ``**Not every fixture scored (`ok`), …`` (sha256 `59e697fecaef8ffe61d0bd708a41666cb1d58c92a7c49bf663d3fc76b5a813e6`).
 - N13, contract only, after P2-009a. `--numbers eval/fixtures` prints the `chain` lines first, with edge type `env/runtime` (P2-001b's deferral) and a `chain` `rates` line whose most derivations is at least 2 (the row's "a requirement that has two derivations"; P2-001b's `twoBindings`). The `gomod` and `toy` lines are N2's bytes, because P2-009a's `collapse` change cannot move them: each `toy` repo-level edge has one record, and `mono` → `lib`'s two records are both `confirmed` (P2-009b F6). `--all eval/fixtures` exits 0. The builder records the `chain` lines and the hashes of both commands in the build notes. A `chain` most of 1 means the count or the fixture lost a derivation: stop and report.
 - Commands for the scratch roots, from the repository root:
 
@@ -664,7 +685,7 @@ printf 'a\tb\ttoy\tx\truntime\na\tb\tgo-mod\tx\truntime\n' > $r/typo/ok/labels.t
 lake --dir eval/score exe mitos-score --numbers $r/two > $r/n.tsv
 cp -r $r/two $r/lab && sed -i '/example.com\/cli/d' $r/lab/gomod/labels.tsv
 sed -e 's/^\(rates\tgomod\tgo-module\/runtime\t0.83 (5\/6)\t\)0.83 (5\/6)/\11.00 (6\/6)/' \
-    -e 's/^\(edge\tgomod\t`app` → `log` \)\(.*\)\tinferred\t1$/\1\2\tconfirmed\t1/' $r/n.tsv > $r/moved.tsv
+    -e 's/^\(edge\tgomod\t`app` → `log` \)\(.*\)\tinferred\t1\t/\1\2\tconfirmed\t1\t/' $r/n.tsv > $r/moved.tsv
 printf 'rates\tchain\tenv/runtime\t1.00 (2/2)\t1.00 (2/2)\t1.00 (2/2)\tn/a\t2\n' >> $r/moved.tsv
 ```
 
@@ -710,7 +731,7 @@ From the repository root, at the head after the last rebase. `<scratch>` is a fo
 12. `git diff --name-only origin/main...HEAD` prints only `eval/score/Main.lean`, `eval/score/Score/Nightly.lean`, `tasks/P2-010-nightly-scorecard.md` and files under `ops/runs/`.
 13. `lake exe mitos-gate runlog --head ops/runs`, and `git diff --name-status --no-renames origin/main...HEAD -- ops/runs ':!ops/runs/README.md'` shows only `A` lines.
 14. `.claude/scripts/plan-tasks.test.sh`. It passes once `P2-010` has left `plan-tasks.pending`, which the design-landing PR does.
-15. In CI, `checks` and `gate` are green. `checks` builds `eval/score`, so it kernel-checks the four theorems and runs G1 to G20, and the toy card it posts must read as on `main`.
+15. In CI, `checks` and `gate` are green. `checks` builds `eval/score`, so it kernel-checks the four theorems and runs G1 to G21, and the toy card it posts must read as on `main`.
 
 ### Risks and stop conditions
 Risks:
@@ -722,7 +743,7 @@ Risks:
 - R6. `renderEdge` prints keys raw inside code spans, and the nightly will be posted. A backtick or a newline in a key, or `@` in an error message, reaches the post as it is. The PR comment of the toy card has the same exposure today. Escaping belongs in `Score.lean` (follow-up).
 - R7. The D1 line names the first edge that has the top count. Other edges with the same count are not listed.
 - R8. Fact and unresolved counts are not in the numbers file. A change that only moves unresolved requirements shows in the card but not in the diff.
-- R9. CI does not run `--all` or `--numbers` until P2-012. Until then, N1 to N13 are the builder's and the verifier's, and G1 to G20 are what CI runs.
+- R9. CI does not run `--all` or `--numbers` until P2-012. Until then, N1 to N13 are the builder's and the verifier's, and G1 to G21 are what CI runs.
 
 Stop conditions for the builder:
 - S1. After `git fetch origin main`, run `git diff --stat eac85d2 origin/main -- eval/score eval/fixtures core/Mitos/Core/Graph.lean core/Mitos/Impl/Resolve.lean lean-toolchain`.
@@ -737,7 +758,7 @@ Stop conditions for the builder:
 - S5. A check fails and the fix is outside `touches`: stop and report. Never edit a label or a fixture to move a number, and never delete a pin.
 - S6. Done: the PR is open on `main`, `gate` is green, checks 1 to 14 pass at the head, and every thread is answered. Report the head as merge-ready. No path here is the owner's, so an agent merges it.
 
-cut_line: this row ships `Score/Nightly.lean` with its four theorems and 20 pins, the `Main.lean` diff, the build notes in this file and the run log. It leaves these to other rows:
+cut_line: this row ships `Score/Nightly.lean` with its four theorems and 21 pins, the `Main.lean` diff, the build notes in this file and the run log. It leaves these to other rows:
 - the nightly run, the artifacts, the baseline download, the post and any CI use of `--all` or `--numbers` (P2-012);
 - the chain fixture and its numbers (P2-009a);
 - Q1 to Q3 (#325, #332);
@@ -747,7 +768,7 @@ It adds no fixture, no CI step and no change to the single-fixture card.
 
 deferrals:
 - To P2-012 (#213), as the contract:
-  - Nightly: `lake --dir eval/score build`, then `mitos-score --numbers eval/fixtures > numbers.tsv`, uploaded as an artifact (for example `scorecard-numbers`), then `mitos-score --all eval/fixtures <baseline> > scorecard.md`, posted. Pass `<baseline>` only when the earlier file exists (R4). Keep each exit code: exit 1 fails the job, and the numbers never do. `--numbers` prints nothing when a fixture fails, so a broken run leaves no baseline even if the upload runs anyway.
+  - Nightly: build the scorer and write the Markdown report with `--all`, passing the prior baseline only when available. Write `--numbers` to a temporary path. If scoring fails, remove the temporary output and preserve the failure status. Move the temporary file to the artifact path `numbers.tsv` only after a successful exit, then upload it as `scorecard-numbers`. A successful run over an empty root may publish an empty baseline. P2-012's scorecard step already stages its numbers this way before moving them into the upload path.
   - "`main`'s" baseline. The root's default (owner_decisions, Q-a): the `numbers.tsv` in the `scorecard-numbers` artifact of `main`'s newest nightly that uploaded it, chosen by the artifact and not by a successful run. P2-012 owns the fetch, as its C1 specifies (`actions: read`), and decides whether a PR job compares against it; the owner merges P2-012.
   - `ci.yml`'s scorecard step (`:296-301`) may switch from `eval/fixtures/toy` to `--all eval/fixtures`, so the PR comment covers every fixture. That also lands P2-009b's deferral of running the go.mod card in CI, and it runs `Nightly.checked` on the real fixtures in every PR.
   - When the D1 line is bold, D1 is the owner's to reopen (plan, Scope decisions). The post makes that line visible.
@@ -786,14 +807,15 @@ owner_decisions:
 - N1–N13 passed with the merged scorer policy. N1 compared all three cards byte for byte against a detached `main` build. N3 preserved both fixture cards as the report tail. The optional pre-merge policy variants were omitted.
 - Scratch mutations W1, W5, W6, W7 and W11 each failed the expected theorem or guard. The plan-task self-test passed.
 - Local `lake check` and `lake comparator --paranoid` could not start their inner checks because bubblewrap could not set up its UID map in this environment.
-- Run log `ops/runs/2026-11-21/P2-010-builder-1.json`.
+- CodeRabbit review added G21 and the lossless edge identity, and clarified how P2-012 publishes the baseline. Re-ran N1–N13 and the five scratch variants on the revised format.
+- Run logs `ops/runs/2026-11-21/P2-010-builder-1.json` and `ops/runs/2026-11-21/P2-010-builder-2.json`.
 
 | Output | SHA-256 |
 |---|---|
 | chain | `bfb0175368f5f5f1f77eae4da9bc0f5a83e6c08935d7806071557add1116e1c6` |
 | gomod | `889671a4d4c0eaed6b0680028ba965d63774aaaa48b7c070f860e3e5bade24cf` |
 | toy | `17c55e9cfa3a9db873c50c980cf2cbea62195fe2eebecde3edc0a13add38f21a` |
-| N2 | `1e767d18bbc39fed9389feac5f58b3bfd946889908bf9254a9937c53b8943000` |
+| N2 | `bb6f3e4d31015590ee88fb4eb2be92c3be7bcf387df7d910c9793962cd158dec` |
 | N3 | `c1226aa886ddd42f80151a396a8e8de5c6c6cbc6aa336814f4a4a86939944ae0` |
 | N4 | `4fe81f4dbf784f4a6f7a4522f01e92b6aaed5fbf6eca40dda1db828072507924` |
 | N5 | `d7905796795257544ad2a496b092a631430dd7e20cf62702e57362747f07ed1e` |
@@ -803,23 +825,23 @@ owner_decisions:
 | N7-9 | `a6c12fd1d9a0bb9b570a6c1a80f34ce6b2454198609532fabb643dbccce8bd01` |
 | N9 | `4a263d358305de3146bc5bb1302463bf8690ba388100363ea1ed666ea877ff16` |
 | N10 | `f82928dbce0d457691bde030de022a3888407bc9262d73433b359048b39b198d` |
-| N11 | `68f8b4b846899ba5e31c2356f116119a6194863f54b54fc6c6b330416d07a96d` |
+| N11 | `9439a16b42fcf66fae9be3425f208d010b576b0a74e9fef3e9679f2a396da3b6` |
 | N12 | `59e697fecaef8ffe61d0bd708a41666cb1d58c92a7c49bf663d3fc76b5a813e6` |
-| N13-numbers | `bd04db61d7c633e69302d610f4bb9b491d45a53c5a9a89bfd09bd833583243d8` |
+| N13-numbers | `decac0064d68dd72da77b27606e60138e3147f3a1719b6254a2e4ccf51228228` |
 | N13-all | `b0d59f2c7e4b5c0a07ed3b4524cc3315cdb84daf1b62b37a3c9eede58ef23315` |
 
 N13 chain rows:
 
 ```tsv
 rates	chain	env/runtime	0.75 (3/4)	0.75 (3/4)	1.00 (1/1)	0.67 (2/3)	2
-edge	chain	`web` → `orders` (env/runtime `DATABASE_URL`)	confirmed	2
-edge	chain	`web` → `jobs` (env/runtime `QUEUE_URL`)	inferred	1
-edge	chain	`web` → `billing` (env/runtime `QUEUE_URL`)	inferred	1
-edge	chain	`web` → `mail` (env/runtime `SMTP_HOST`)	inferred	1
-label	chain	`web` → `orders` (env/runtime `DATABASE_URL`)
-label	chain	`web` → `jobs` (env/runtime `QUEUE_URL`)
-label	chain	`web` → `mail` (env/runtime `SMTP_HOST`)
-label	chain	`web` → `logs` (env/runtime `LOG_SINK`)
+edge	chain	`web` → `orders` (env/runtime `DATABASE_URL`)	confirmed	2	["web","orders","env","DATABASE_URL","runtime"]
+edge	chain	`web` → `jobs` (env/runtime `QUEUE_URL`)	inferred	1	["web","jobs","env","QUEUE_URL","runtime"]
+edge	chain	`web` → `billing` (env/runtime `QUEUE_URL`)	inferred	1	["web","billing","env","QUEUE_URL","runtime"]
+edge	chain	`web` → `mail` (env/runtime `SMTP_HOST`)	inferred	1	["web","mail","env","SMTP_HOST","runtime"]
+label	chain	`web` → `orders` (env/runtime `DATABASE_URL`)	["web","orders","env","DATABASE_URL","runtime"]
+label	chain	`web` → `jobs` (env/runtime `QUEUE_URL`)	["web","jobs","env","QUEUE_URL","runtime"]
+label	chain	`web` → `mail` (env/runtime `SMTP_HOST`)	["web","mail","env","SMTP_HOST","runtime"]
+label	chain	`web` → `logs` (env/runtime `LOG_SINK`)	["web","logs","env","LOG_SINK","runtime"]
 ```
 
 The nightly maximum is 2 for `web` → `orders` (env/runtime `DATABASE_URL`).
@@ -843,7 +865,7 @@ Exit criterion 5 needs three things on top of today's one-fixture card: every fi
 - what changed against a baseline: the two-sided set difference of those lines;
 - how the report reads.
 
-`Main` owns walking the fixtures root, reading the files and the exit code. Everything else is reused from `Score`. The baseline needs no parser beyond a kind and a field count, because lines are compared as strings, and the diff copies cells instead of recomputing them. The four theorems pin the places where a wrong answer would hide a signal: a count that skips an edge, a maximum that misses one or invents one, and a diff that misses a disappearance. The 20 pins hold the report's sentences and the build-time check against `render`.
+`Main` owns walking the fixtures root, reading the files and the exit code. Everything else is reused from `Score`. The baseline needs no parser beyond a kind and a field count, because lines are compared as strings, and the diff copies cells instead of recomputing them. The four theorems pin the places where a wrong answer would hide a signal: a count that skips an edge, a maximum that misses one or invents one, and a diff that misses a disappearance. The 21 pins hold the report's sentences and the build-time check against `render`.
 
 Interface depth: eleven names and four theorems, and callers see three commands. They hide the counting rule, the line format, the check against the card, the diff and the D1 rule.
 
