@@ -868,6 +868,36 @@ memory cap):
 - Each case's name, result, expectation and evidence line are identical between the batches and
   each run after (TIME left out), and so are the leanCheck lines and the control.
 
+### Lean v4.36.0's findOLean cache (#539)
+
+Lean v4.36.0 caches, for `findOLean`, the search path entry of each root package, keyed by the
+package's `Name` and paired with the search path it was resolved against. The module names
+`importModules` looks up come from the import lists of the `.olean` files, so most keys live in an
+import's regions, and the cache is replaced only when the search path changes. After `withImport`
+freed an import, the next `importModules` compared a root with a freed `Name`, and the v4.36.0
+canary stopped with exit 139 in the first step. Keeping the regions is no way out: on v4.36.0,
+`main` before #536 and #536 without the free were both killed in the first step under an 11 GiB
+cap (max RSS 11,788,092 and 12,283,836 KiB).
+
+`withImport` calls `resetFindOLeanCache` before each free. It looks up `Init` under the search path
+with one more entry, which starts a new cache holding only the static `Init` key while the regions
+are still mapped, and then restores the search path. A change of the search path after the free
+crashes as well, because dropping the stale cache reads the freed keys. If the lookup fails, the
+error stops the run (exit 2) before the free. v4.35.0 has no such cache and v4.37.0-rc1 copies the
+keys out of the regions (`Runtime.deepCopy`), so the helper goes once the pin is past v4.36.
+
+**Evidence** (local, 4 cores and 16 GB, under `/usr/bin/time -v` and an 11 GiB cgroup memory cap,
+one run each):
+- A Mathlib-free repro (import `Lean`, `freeRegions`, three times in one process) exits 139 on
+  v4.36.0 and 0 on v4.35.0 and v4.37.0-rc1. With `resetFindOLeanCache` before each free it exits 0
+  on all three, and with the search path emptied first, the helper's message and exit 1 on all three.
+- v4.35.0, the nightly's `lake --dir eval/mutants exe mitos-mutants --paranoid`, 44 cases: all as
+  expected (2054 s), max RSS 4,974,688 KiB, cgroup peak 4,998 MiB. The case lines are those of
+  round 2 of #536 (sha256 0cb551e6), and so are the leanCheck lines and the control.
+- v4.36.0, the canary's `lake --dir eval/mutants exe mitos-mutants`, 44 cases: all as expected
+  (1719 s), max RSS 5,089,792 KiB, cgroup peak 5,098 MiB, with the same lines as the v4.35.0 run.
+  Without the helper, the same tree exits 139 a minute into the first step.
+
 ## Done when
 - [x] every `breaks=` case is refuted, every `survives=` case survives and every cheat case is
       rejected at its run, locally, default and `--paranoid`
