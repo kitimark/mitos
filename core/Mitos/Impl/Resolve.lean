@@ -13,21 +13,17 @@ def boundProviders (fs : List Located) (r b : Located) : List Located :=
 def ends (fs : List Located) (r : Located) : List Located :=
   providers fs r ++ fs.flatMap (boundProviders fs r)
 
-inductive EndSummary where
-  | empty
-  | same (id : Nat)
-  | mixed
+abbrev EndSummary := Bool ⊕ Nat
 
 def summarizeEnds (ps : List Located) : EndSummary :=
   match ps with
-  | [] => .empty
-  | p :: rest => if rest.all (·.id == p.id) then .same p.id else .mixed
+  | [] => .inl true
+  | p :: rest => if rest.all (·.id == p.id) then .inr p.id else .inl false
 
 def EndSummary.accepts (s : EndSummary) (id : Nat) : Bool :=
   match s with
-  | .empty => true
-  | .same candidate => candidate == id
-  | .mixed => false
+  | .inl acceptsAll => acceptsAll
+  | .inr candidate => candidate == id
 
 def assumptionsOf (r p : Located) : List Assumption :=
   if r.origin = p.origin then [r.origin] else [r.origin, p.origin]

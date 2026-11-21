@@ -1,0 +1,1 @@
+{"task":"P2-001b","role":"builder","model":"Codex (GPT-6)","attempt":2,"iterations":1,"wall_min":5,"tokens":null,"errors_by_kind":{},"lint_hits":["mutant command allowlist rejected inductive"],"escalations":[],"outcome":"in-review","note":"Use a sum type for the cached provider summary, preserving the required mutant lint checks."}
