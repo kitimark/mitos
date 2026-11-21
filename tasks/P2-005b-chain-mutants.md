@@ -77,7 +77,7 @@ escalation: hint → automation → stronger model → pair → split → revisi
    | T7 | A resolver wrong in a way no theorem sees | A hole in the spec | The matrix under Rationale: every clause a chain extends has a chain breaker. The one theorem without one, `resolve_unresolved_nodup`, has no chain source of duplicates (`unresolved` holds one entry per requirement), and Phase 1's `unresolved_duplicated` keeps it |
    | T8 | A plugin that emits facts a resolver mishandles: a binding with no provision, a binding of someone else's identity, a binding to a requirement, a binding held in the requirer's repo, a binding to itself, two bindings that reach one provider, an AI-proposed binding, a test-scoped requirement under a runtime binding | Each is a valid input, and the resolver must answer it by the spec | The cases named in the table under `statements` |
    | T9 | A refutation that elaborates in Lean but that a replay kernel rejects | The case ends `REJECTED, NOT REFUTED`. Measured: runner B's first `StatusHonest` texts over `chain`, `chainAI` and `fork` were rejected by the Lean default kernel, and `decide +kernel` did not help. Runner B's `impact_through_head_only`, over `{ chainEdge with through := ... }`, is `REFUTED` by default but rejected by lean4lean under `--paranoid` (`unknown constant 'Char.ofNat'` at `Mitos.Spec.Adequacy.needDb`). A local edge with string literals failed the same way at `Mitos.Refute.edge`. The nightly runs only `--paranoid`, so that text would have turned it red | The five cases named in Context 2 use `String.ofList` inputs. Every case is judged by the real runner, default and `--paranoid`, never by `lake env lean` alone (fixture `new-cases-refuted`) |
-   | T10 | A case set the nightly host cannot hold | The nightly dies mid-run and every case reads as failed | The runner's own process grows about 0.37 GB for each distinct `breaks=` set, which is one generated Challenge (measured, Design, fixture `runner-peak`). This row adds four sets. Fixture `nightly-dispatch` runs the whole suite on GitHub's runner before merge, and `cut_line` says what gives first |
+   | T10 | A case set the nightly host cannot hold | The nightly dies mid-run and every case reads as failed | Fixtures `runner-peak` and `nightly-dispatch` measure the current runner with all 72 cases |
    | T11 | An edit that injects two faults while its `why=` names one | A case that seems to pin one clause and pins two | Each inlined `boundB` keeps every conjunct except the one it names. Runner B's three texts also dropped O1's conjunct and broke `Sound` on `selfBound`. The texts below do not (measured, Design) |
 
 5. **Where this design and its inputs disagree.** None blocks the row.
@@ -114,10 +114,9 @@ escalation: hint → automation → stronger model → pair → split → revisi
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file
 lists.
 
-depth: contract only. P2-001b is unmerged, so `find=` texts, fixture names and the `open` line can
-still move. The 28 case texts in the Appendix are not a sketch. Each was built against the pushed head
-and refuted by the real runner, default and `--paranoid` (Context 3). When #204 merges, the Architect
-re-runs them on the merged text and sets the depth to build.
+depth: build. P2-001b merged on 2026-11-21. All 28 anchors occur exactly once on merged
+`main` at `1770a97`, and the self-binding guard remains. The 12 chain fixtures moved to
+`Spec.Chains`; the four Phase 1 fixtures remain in `Spec.Adequacy`. The Appendix opens both.
 
 revisit_when: re-check after P2-001b merges (#204). At branch time, from the repository root:
 1. `git fetch origin main`, then `git diff --stat 3d939da origin/main -- core eval/mutants`. It
@@ -185,6 +184,7 @@ import Mitos.Impl.Impact
 namespace Mitos.Refute
 open Mitos
 open Mitos.Spec.Adequacy
+open Mitos.Spec.Chains
 
 example : (Impl.resolve [Spec.Adequacy.req, Spec.Adequacy.prov]).edges = [Spec.Adequacy.goodEdge] ∧
     (Impl.resolve [Spec.Adequacy.req]).unresolved = [0] := by decide
@@ -280,32 +280,19 @@ A `breaks=` line that names a theorem the Refute does not prove does not come ou
 claim cannot be inflated. A Refute that proves a theorem false which `breaks=` omits loses only a
 cell in the breakers table.
 
-**`breaks=` sets and memory (the root's default rule).** Each distinct `breaks=` set is one generated
-Challenge. The runner checks all of them in its first step and keeps about 0.37 GB per set in its own
-process. This was measured with `--prepare`: the `mitos-mutants` process's peak (`VmHWM`), one run
-each, at `3d939da`:
+**`breaks=` sets and memory.** Each distinct `breaks=` set is one generated Challenge.
+The design-time runner retained imports and reached 10.8 GB at 72 cases. The #521 runner fix
+(`a046630`, see #537) frees each Lean import after its check. Its follow-up measurements were
+4,992,568 KiB for one case and 5,001,472 KiB for 44. Recheck the peak with this corpus.
 
-| Cases | Generated Challenges | Runner peak |
-|---|---|---|
-| 1 | 2 | 4.6 GB |
-| 22 | 6 | 6.0 GB |
-| 44 (`main`'s) | 15 | 9.35 GB |
-| 48 | 16 | 9.6 GB |
-| 72, as 48 plus 24 copies of a `resolve_sound` case | 16 | 9.6 GB |
-| 72, this row's | 19 | 10.8 GB |
-
-So the peak follows the number of distinct sets, not the number of cases. A case's `breaks=` names
-the theorems of the clause it pins. This row adds four sets that `main` does not have:
+These four new sets each name two refuted theorems:
 - `resolve_sound resolve_complete` (`bound_key_legs_swapped`);
 - `resolve_sound resolve_retract_exact` (`chain_also_direct`);
 - `resolve_complete resolve_total` (`bound_edges_dropped`);
 - `resolve_complete resolve_retract_exact` (`edges_one_per_repo_key`).
 
-They stay because each names the two theorems its fault breaks. `cut_line` narrows them first if the
-nightly host cannot hold them.
-
 reuse:
-- The chain fixtures the branch appends to `Spec/Adequacy.lean`: the twelve names in Context 2, plus
+- The chain fixtures in `Spec/Chains.lean`: the twelve names in Context 2, plus
   Phase 1's `req`, `prov`, `goodEdge` and `twoProvisions`.
 - The runner, unchanged: `--prepare`, the logs in `.lake/mutants/`, the breakers table.
 - Phase 1's refutation pattern (`intro h; have := h fs wf; revert this; decide`). For impact, it uses
@@ -350,7 +337,7 @@ Run-level fixtures:
   is re-anchored on live text, never relabelled. Measured: nothing printed.
 - `runner-peak`: run `--prepare` over every case directory while reading the `mitos-mutants`
   process's `VmHWM` from `/proc/<pid>/status`. The run prints `generated Challenges (as Lean built
-  them): 19`. Report the peak beside the 10.8 GB measured here. The exit is 1, because the 15
+  them): 19`. Report the peak with the #537 measurements as a baseline. The exit is 1, because the 15
   `rejects=lint` cheat cases print their `lint:` lines by design.
 - `nightly-dispatch`: at the head the PR owner reports, run
   `gh workflow run nightly.yml --ref <branch>`. Job `full`, step "Mutation testing (paranoid)", ends
@@ -394,31 +381,10 @@ cut_line: ships the 28 cases, this file's measured lines and the run log. It shi
 runner, the lint or an existing case, no `survives=` case and no `rejects=` case. P2-001b adds no
 cheat surface that the lint's allow-list does not already close: no syntax, attribute, instance or
 import, and the cases name only `Mitos` namespaces. The PR says `Closes #206`.
-- If `nightly-dispatch` dies for memory (exit 137, or the runner is lost), first narrow the four new
-  sets. Use `breaks=resolve_sound` for `bound_key_legs_swapped` and `chain_also_direct`, and
-  `breaks=resolve_complete` for `bound_edges_dropped` and `edges_one_per_repo_key`, and delete the
-  matching theorem from each Refute. That removes four generated Challenges, about 1.5 GB on the
-  slope above. Each dropped theorem keeps a chain breaker elsewhere:
-  - `resolve_complete` keeps `binding_same_repo_skipped`;
-  - `resolve_retract_exact` keeps `binding_origin_forgotten` and `assumes_pool_all_bindings`;
-  - `resolve_total` keeps `dangling_binding_hides_unresolved`.
-- If it still dies, the new cases add no generated Challenge any more. Then the cause is the
-  runner's memory, not this row. The PR holds, and the runner fix goes first (deferrals). Cutting
-  cases does not help.
-- If the budget bites, cut from the end of this list, in order: `impact_through_bypasses_seen`,
-  `impact_through_head_only`, `bound_scope_from_binding`, `provision_kind_unchecked`,
-  `binding_target_unchecked`. That leaves 23 cases and loses these table cells:
-  - the chain `impact_nodup` breaker (Phase 1's stays);
-  - one of the four chain `impact_correct` breakers;
-  - three of the ten chain `resolve_sound` breakers.
-- Never cut a case that is the only one on its clause: `through_dropped`, `direct_edge_through_set`,
-  `bound_edge_from_binding`, `bound_key_legs_swapped`, `binding_ident_unchecked`,
-  `self_binding_allowed`, `chain_also_direct`, `bound_edges_dropped`, `binding_same_repo_skipped`,
-  `edges_one_per_repo_key`, `unresolved_ignores_bound_ends`, `dangling_binding_hides_unresolved`,
-  `binding_origin_forgotten`, `assumes_pool_all_bindings`, `binding_origin_duplicated`,
-  `bound_status_ignores_binding`, `bound_always_inferred`, `status_counts_derivations`,
-  `status_ignores_bound_ends`, `bound_edges_duplicated`, `impact_through_ignored`,
-  `impact_through_not_transitive`, `impact_binding_repo_affected`.
+- Keep all 28 cases and their declared theorems. A memory failure blocks completion until
+  the runner's new peak and the reason for the failure are established. This keeps the expected
+  counts in `runner-peak`, `nightly-dispatch`, `breakers-table` and `new-files-only` tied to
+  one corpus and preserves the sole chain `impact_nodup` breaker.
 
 deferrals:
 - **From P2-001b (#204), its contract.**
@@ -430,18 +396,14 @@ deferrals:
 - **To P2-001b's PR, before it merges.** Keep the anchors this design names (D4), or say in its PR
   body which moved. `revisit_when` step 2 finds each one either way.
 - **To P2-012 (#213).**
-  - The nightly runs every case in one invocation, and the runner's peak grows with each new
-    `breaks=` set (Design). #276 V4 measured 5.7 to 8.4 GB RSS on full runs before this row.
-    P2-012 decides the shards, if any, for the nightly and for #107 item 2: `--prepare` on PRs that
-    touch `core/` reaches about 10.8 GB at 72 cases.
+  - P2-012 decides the shards, if any, for the nightly and for #107 item 2 using measurements
+    from the current runner after the #521 fix.
   - The 28 cases add about 7 min to the nightly's mutation step, at the 15 s per case it averaged at
     `beed5eb`.
 - **To a later chain row (longer chains, or a second binding constructor).** `impact_through_head_only`
   becomes load-bearing then. Each new premise conjunct of `boundB` adds one case of the
   `binding_*_unchecked` kind. No row exists yet.
 - **To this PR's follow-up issue (no row, all minor).**
-  - The runner's own process keeps about 0.37 GB per generated Challenge (measured). Where it is held
-    was not measured. A fix in `eval/mutants/`, an agent path, removes the reason to count sets.
   - A mutant that drops the changed repo from its own impact
     (`impactGo x es []` → `(impactGo x es []).filter (· != x)`) has no case. It is the inverse of
     Phase 1's `impact_includes_self`. A same-repo direct edge refutes it as well as a binding held at
@@ -470,7 +432,6 @@ owner_decisions: none new. The row is class A.
 - Settled and followed: O1 on #204, "rule out", which `self_binding_allowed` pins.
 - The root's defaults, which the owner can overrule, and none blocks:
   - the base, the grafts and the cuts in the Synthesis decision;
-  - the `breaks=` set rule (Design), because of the measured memory slope;
   - running the nightly by dispatch before merge, because only that run has the nightly's shape and
     host;
   - a survivor, should one appear, goes to the owner (exit criterion 3), and none is predicted;
@@ -501,6 +462,7 @@ import Mitos.Impl.Impact
 namespace Mitos.Refute
 open Mitos
 open Mitos.Spec.Adequacy
+open Mitos.Spec.Chains
 ```
 
 The resolver pin goes on every resolver case except `edges_one_per_repo_key` and
@@ -1282,6 +1244,7 @@ import Mitos.Impl.Resolve
 import Mitos.Impl.Impact
 open Mitos
 open Mitos.Spec.Adequacy
+open Mitos.Spec.Chains
 def show' (fs : List Located) : String :=
   s!"{repr (Impl.resolve fs).edges}|{(Impl.resolve fs).unresolved}"
 #eval show' [req, prov]
@@ -1367,8 +1330,7 @@ A plain reading, "add mutants until each breaks a theorem", falls short in six p
 4. A case counts only when the real runner says `REFUTED` in the nightly's mode. `lake env lean`
    accepted every first text. The Lean default kernel rejected three status texts, and lean4lean
    rejected one impact text under `--paranoid` only (T9).
-5. Memory is part of the case set's cost. The runner's peak follows the distinct `breaks=` sets
-   (Design), so the row names its four new sets and the fallback that removes them.
+5. Memory is measured on the full corpus using the current runner (Design).
 6. The two traps P2-001b's build found the hard way are made fixtures, so the next edit to
    `EndSummary` or `fires` cannot repeat them unseen: the lint refuses `inductive` in `Impl/`, and
    #311 moved two anchors.
@@ -1403,8 +1365,7 @@ A plain reading, "add mutants until each breaks a theorem", falls short in six p
   the fixtures, and their derivations pins and the review of `Spec.Adequacy` keep them honest.
 - Two cases are not chain-only (`edges_one_per_repo_key`, `direct_edge_through_set`). P2-001a's
   deferral and Sound's new `through` conjunct hand them to this row.
-- The 28 cases add about 7 min to the nightly. The four new `breaks=` sets add about 1.5 GB to the
-  runner's peak.
+- The 28 cases were estimated to add about 7 min to the nightly.
 
 ### Alternatives considered
 - **Design A's eight cases (smallest surface).** Fewer files, two new `breaks=` sets, and a
@@ -1460,8 +1421,7 @@ The judge's changes, each measured at `3d939da`:
 - `impact_through_head_only` is rewritten literal-free. B's text fails lean4lean under
   `--paranoid`, which would have turned the nightly red (T9).
 - `impact_self_through_dropped` moves to the follow-up issue as a Phase 1 gap.
-- The `breaks=` set rule and fixtures `runner-peak` and `nightly-dispatch` cover the memory risk:
-  the runner keeps about 0.37 GB per distinct set, and this row adds four.
+- The `runner-peak` and `nightly-dispatch` fixtures check the current runner on the full corpus.
 
 All 28 final texts were refuted one case per invocation, default and `--paranoid`, and each fails
 against the unmutated core. The red-flag screen leaves one forced copy, the scope pin, which the

@@ -1,0 +1,5 @@
+why=Adds the repos of a binding to the affected list whenever its edge fires, so a change in a provider reports the repo that holds the binding too.
+breaks=impact_correct
+file=Mitos/Impl/Impact.lean
+find=impactGo x (rest.erase e) (e.requiringRepo :: seen)
+replace=impactGo x (rest.erase e) (e.requiringRepo :: e.through ++ seen)

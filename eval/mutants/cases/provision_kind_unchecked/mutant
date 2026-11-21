@@ -1,0 +1,5 @@
+why=Accepts any fact of the bound identity as the end of a chain, so a requirement of that identity, or another binding, is reached as a provider.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=| .binds _ => fs.filter (boundB r b)
+replace=| .binds i => fs.filter (fun p => r.fact.kind == .requires && b.fact.ident == r.fact.ident && p.fact.ident == i && p.fact.ident != r.fact.ident)

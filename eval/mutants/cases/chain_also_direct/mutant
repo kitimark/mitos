@@ -1,0 +1,5 @@
+why=Writes a direct record for every end of a requirement, so a provision reached only through a binding also gets a record under a direct key that no derivation has, which AssumptionsExact and StatusHonest do not look at.
+breaks=resolve_sound resolve_retract_exact
+file=Mitos/Impl/Resolve.lean
+find=direct.map (fun p => mkEdge fs r p (summary.accepts p.id))
+replace=allEnds.map (fun p => mkEdge fs r p (summary.accepts p.id))

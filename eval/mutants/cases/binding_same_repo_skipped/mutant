@@ -1,0 +1,5 @@
+why=Skips a binding that lives in the requirement's own repo, so a chain through it has no edge and its requirement is listed as unresolved.
+breaks=resolve_complete resolve_unresolved_exact
+file=Mitos/Impl/Resolve.lean
+find=let groups := fs.map fun b => (b, boundProviders fs r b);
+replace=let groups := fs.map fun b => (b, if b.repo == r.repo then [] else boundProviders fs r b);

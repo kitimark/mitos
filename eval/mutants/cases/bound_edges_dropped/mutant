@@ -1,0 +1,5 @@
+why=Resolves a requirement's direct providers only, so a requirement met through a binding has no edge and is not listed as unresolved.
+breaks=resolve_complete resolve_total
+file=Mitos/Impl/Resolve.lean
+find=groups.flatMap (fun (b, ps) => ps.map fun p => mkBoundEdge fs r b p (summary.accepts p.id))
+replace=[]

@@ -1,0 +1,5 @@
+why=Confirms an edge only when its requirement has exactly one derivation, so two bindings that reach the same provider leave both edges inferred.
+breaks=resolve_status_honest
+file=Mitos/Impl/Resolve.lean
+find=rest.all (·.id == p.id)
+replace=rest.isEmpty

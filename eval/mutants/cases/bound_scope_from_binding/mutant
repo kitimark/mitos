@@ -1,0 +1,5 @@
+why=Takes a chain edge's scope from the binding instead of the requirement, so a test-only requirement bound by a runtime binding reads as a runtime dependency.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=through := [b.repo],
+replace=through := [b.repo], scope := b.fact.scope,

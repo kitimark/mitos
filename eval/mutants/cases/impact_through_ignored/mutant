@@ -1,0 +1,5 @@
+why=Fires an edge only on its provider's repo, so a change in the repo that holds a binding does not reach the requirement that uses it.
+breaks=impact_correct
+file=Mitos/Impl/Impact.lean
+find=e.through.any fun b => b == x || seen.contains b
+replace=false

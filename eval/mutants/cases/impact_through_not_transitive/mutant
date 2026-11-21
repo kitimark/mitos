@@ -1,0 +1,5 @@
+why=Lets a binding's repo start a chain edge but not continue one, so a requirement behind a binding is missed when the change reaches the binding's repo through other edges.
+breaks=impact_correct
+file=Mitos/Impl/Impact.lean
+find=e.through.any fun b => b == x || seen.contains b
+replace=e.through.any fun b => b == x

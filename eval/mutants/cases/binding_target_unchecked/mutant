@@ -1,0 +1,5 @@
+why=Ignores the identity a binding binds to, so a requirement is reached through its binding at every provision, not only the one it names.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=| .binds _ => fs.filter (boundB r b)
+replace=| .binds _ => fs.filter (fun p => r.fact.kind == .requires && b.fact.ident == r.fact.ident && p.fact.kind == .provides && p.fact.ident != r.fact.ident)

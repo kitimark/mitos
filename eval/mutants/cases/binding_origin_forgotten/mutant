@@ -1,0 +1,5 @@
+why=Leaves the binding's origin out of a chain edge's assumptions, so an AI-proposed binding is not listed, and retracting a binding leaves its edge in place.
+breaks=resolve_assumptions_exact resolve_retract_exact
+file=Mitos/Impl/Resolve.lean
+find=(assumptionsOf r p).insert b.origin
+replace=assumptionsOf r p

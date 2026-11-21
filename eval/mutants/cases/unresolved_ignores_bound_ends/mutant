@@ -1,0 +1,5 @@
+why=Lists a requirement as unresolved when it has no direct provider, even if a chain reaches one.
+breaks=resolve_unresolved_exact
+file=Mitos/Impl/Resolve.lean
+find=if isRequirement r && allEnds.isEmpty then [r.id] else []
+replace=if isRequirement r && direct.isEmpty then [r.id] else []

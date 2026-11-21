@@ -1,0 +1,5 @@
+why=Gives every direct edge the requirer's repo as a chain repo, so an edge with no binding reads as passing through one.
+breaks=resolve_sound
+file=Mitos/Impl/Resolve.lean
+find=key := .direct r.id p.id,
+replace=key := .direct r.id p.id, through := [r.repo],

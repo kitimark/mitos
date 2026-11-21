@@ -1,0 +1,5 @@
+why=Keeps one edge for each pair of repos, identity and scope, so two bindings that reach one provider in different repos leave a single edge.
+breaks=resolve_complete resolve_retract_exact
+file=Mitos/Impl/Resolve.lean
+find=edges := rows.flatMap Prod.fst
+replace=edges := (rows.flatMap Prod.fst).foldl (fun acc e => if acc.any (fun a => a.repoKey == e.repoKey) then acc else acc ++ [e]) []

@@ -1,0 +1,5 @@
+why=Treats a binding of a requirement's identity as handling it, so a requirement whose binding reaches no provision is not listed as unresolved.
+breaks=resolve_unresolved_exact resolve_total
+file=Mitos/Impl/Resolve.lean
+find=if isRequirement r && allEnds.isEmpty then [r.id] else []
+replace=if isRequirement r && allEnds.isEmpty && !(fs.any fun b => b.fact.ident == r.fact.ident && b.fact.kind != .requires && b.fact.kind != .provides) then [r.id] else []

@@ -1,0 +1,5 @@
+why=Scans the facts twice for bindings, so every chain edge is emitted twice.
+breaks=resolve_edges_nodup
+file=Mitos/Impl/Resolve.lean
+find=let groups := fs.map fun b => (b, boundProviders fs r b);
+replace=let groups := (fs ++ fs).map fun b => (b, boundProviders fs r b);
