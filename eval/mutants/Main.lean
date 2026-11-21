@@ -478,6 +478,13 @@ instance : Detach Nat := ⟨fun n => n.repr.toNat!⟩
 instance {α β : Type} [Detach α] [Detach β] : Detach (α × β) :=
   ⟨fun (a, b) => (Detach.detach a, Detach.detach b)⟩
 
+def resetFindOLeanCache : IO Unit := do
+  let sp ← searchPathRef.get
+  searchPathRef.set (sp ++ [System.FilePath.mk "/nonexistent/mitos-mutants"])
+  try discard <| findOLean `Init
+  catch e => throw <| IO.userError s!"cannot reset findOLean's cache before freeing an import: {e}"
+  finally searchPathRef.set sp
+
 unsafe def withImportUnsafe {α : Type} [Detach α] (m : String)
     (act : Environment → ExceptT String IO α) : ExceptT String IO α := ExceptT.mk do
   let env ← importModules #[{ module := m.toName }] {}
@@ -486,7 +493,9 @@ unsafe def withImportUnsafe {α : Type} [Detach α] (m : String)
     | .ok a => return .ok (Detach.detach a)
     | .error e => return .error (Detach.detach e)
   catch e => return .error (Detach.detach (toString e))
-  finally env.freeRegions
+  finally
+    resetFindOLeanCache
+    env.freeRegions
 
 @[implemented_by withImportUnsafe]
 opaque withImport {α : Type} [Detach α] (m : String) (act : Environment → ExceptT String IO α) :
