@@ -72,4 +72,8 @@ for f in ci.yml nightly.yml; do
 done
 grep -q 'accept-plugins.sh --no-record' "$root/.github/workflows/nightly.yml" || fail "A10 the canary does not run accept-plugins.sh --no-record"
 ok "A10 every workflow accepts through accept-plugins.sh"
+mode=--record
+fresh; ln -s GoMod.lean "$work/repo/examples/acme/Plugins/Evil.lean"; run env
+expect 1 "A11 an extra symlink plugin is red before any accept" "nonregular Lean entry"
+[ ! -s "$work/lake.log" ] || fail "A11: an accept ran"
 echo "accept-plugins: done"

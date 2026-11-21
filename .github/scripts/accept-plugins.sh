@@ -16,6 +16,8 @@ ws=examples/acme
 fail() { echo "::error::accept-plugins.sh: $*" >&2; exit 1; }
 names() { LC_ALL=C sort | tr '\n' ' '; }
 
+stray=$(find "$ws/Plugins" -mindepth 1 -maxdepth 1 -name '*.lean' ! -type f -print)
+[ -z "$stray" ] || fail "Plugins/ holds a nonregular Lean entry: $stray"
 listed=$(printf '%s\n' "${PLUGINS[@]%%:*}" | names)
 plugins=$(find "$ws/Plugins" -maxdepth 1 -type f -name '*.lean' -printf '%f\n' | sed 's/\.lean$//' | names)
 [ "$listed" = "$plugins" ] || fail "Plugins/ holds [$plugins] and this script accepts [$listed]"

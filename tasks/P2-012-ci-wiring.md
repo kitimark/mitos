@@ -74,8 +74,8 @@ revisit_when:
 - re-check after P2-011 PR B (#147) merges: its re-recorded records must pass the accept step. If P2-012 merges first, tell PR B's owner that CI now checks both records at its head.
 
 modules: each existing file is edited in place, and each new file owns one topic.
-- `.github/scripts/accept-plugins.sh` (new, 38 lines): the one list of plugins and their models, the check that `Plugins/`, the list and `accepted/` agree, and the record check. It copies `install-elan.sh`'s style.
-- `.github/scripts/accept-plugins.test.sh` (new, 75 lines): A1 to A10, with a stub `lake` in a scratch git repo. It copies `cancel-superseded.test.sh` (a stub tool, no network).
+- `.github/scripts/accept-plugins.sh` (new, 40 lines): the one list of plugins and their models, the check that `Plugins/`, the list and `accepted/` agree, and the record check. It copies `install-elan.sh`'s style.
+- `.github/scripts/accept-plugins.test.sh` (new, 79 lines): A1 to A10, with a stub `lake` in a scratch git repo. It copies `cancel-superseded.test.sh` (a stub tool, no network).
 - `.github/scripts/install-go.sh` (new, 34 lines): Go from `eval/diff/.go-version`, SHA256 pinned, retried, and its version read back. It copies `install-elan.sh`.
 - `.github/workflows/ci.yml`, job `checks`, about +30 lines. It adds three steps: the accept test, the `eval/diff` step and the `--prepare` step. It changes two: the scorecard loops over every fixture, and the accept step calls the script. There is no new job, checkout or timeout.
 - `.github/workflows/nightly.yml`, about +100 lines:
@@ -127,6 +127,8 @@ ws=examples/acme
 fail() { echo "::error::accept-plugins.sh: $*" >&2; exit 1; }
 names() { LC_ALL=C sort | tr '\n' ' '; }
 
+stray=$(find "$ws/Plugins" -mindepth 1 -maxdepth 1 -name '*.lean' ! -type f -print)
+[ -z "$stray" ] || fail "Plugins/ holds a nonregular Lean entry: $stray"
 listed=$(printf '%s\n' "${PLUGINS[@]%%:*}" | names)
 plugins=$(find "$ws/Plugins" -maxdepth 1 -type f -name '*.lean' -printf '%f\n' | sed 's/\.lean$//' | names)
 [ "$listed" = "$plugins" ] || fail "Plugins/ holds [$plugins] and this script accepts [$listed]"
@@ -228,6 +230,10 @@ for f in ci.yml nightly.yml; do
 done
 grep -q 'accept-plugins.sh --no-record' "$root/.github/workflows/nightly.yml" || fail "A10 the canary does not run accept-plugins.sh --no-record"
 ok "A10 every workflow accepts through accept-plugins.sh"
+mode=--record
+fresh; ln -s GoMod.lean "$work/repo/examples/acme/Plugins/Evil.lean"; run env
+expect 1 "A11 an extra symlink plugin is red before any accept" "nonregular Lean entry"
+[ ! -s "$work/lake.log" ] || fail "A11: an accept ran"
 echo "accept-plugins: done"
 ```
 
@@ -689,10 +695,10 @@ RUNNER_TEMP=$(mktemp -d) GITHUB_STEP_SUMMARY=/dev/null bash -eo pipefail <(step 
 
 Run the fixtures at the head, and the variants in a scratch worktree of the head. The results marked "judge" were measured at `eac85d2`.
 - F1 `prepare-corpus`: `--prepare` with no case named exits 0. At the implementation base it must write 57 cases (114 workspaces) and print 15 `refused by the lint, as its manifest says`; measure peak RSS again. The earlier design run wrote 29 cases in 28 s.
-- F2 `prepare-moved-anchor`: add a space inside `edges := fs.flatMap fun r =>` in `core/Mitos/Impl/Resolve.lean`. Exit 1, with `edges_duplicated: … does not occur exactly once` and `resolve_edges_nodup: no case … names this theorem` (judge). This pins #107 item 2.
+- F2 `prepare-moved-anchor`: add a space inside `edges := rows.flatMap Prod.fst` in `core/Mitos/Impl/Resolve.lean`. Exit 1, with `edges_duplicated: … does not occur exactly once` and `resolve_edges_nodup: no case … names this theorem` (judge). This pins #107 item 2.
 - F3 `prepare-lint-gone`: set `cheat_impl_macro`'s `replace=` to `def mitosNoop : Nat := 0 end Mitos.Impl`. Exit 1: `its manifest says rejects=lint, and the lint finds nothing` (judge).
 - F4 `prepare-lint-unexpected`: delete `rejects=lint` from `cheat_impl_macro`. Exit 1, with its three `lint:` lines (judge).
-- F5 `prepare-unclaimed`: move `impact_repeats_repo` out, or add `rejects=refutation` to it. Exit 1: `impact_nodup: no case with breaks= and no rejects= names this theorem` (judge, both variants).
+- F5 `prepare-unclaimed`: move both `impact_repeats_repo` and `impact_through_bypasses_seen` out, or add `rejects=refutation` to both. The older 44-case fixture needed only the first case. Exit 1: `impact_nodup: no case with breaks= and no rejects= names this theorem` (judge, both variants).
 - F6 `prepare-stray`: add `eval/mutants/cases/stray.txt`. Exit 1: `stray.txt: no such case directory` (judge).
 - F7 `prepare-named`: `--prepare <dir> edges_duplicated cheat_impl_macro cheat_hide_gap` exits 0, with no coverage line (judge).
 - F8 `prepare-spec-shape`: parenthesize one Challenge statement's type in `core/Challenge/Resolver.lean`. `--prepare` exits 2 (#107 item 12, now on PRs).
@@ -992,5 +998,48 @@ eval/diff remains cold. Package reuse and all environment/cache lifetime fixes i
 
 Validation is in progress. Actionlint and shellcheck pass. Accept harness A1–A10 passes.
 The baseline harness checks source selection, failed-run eligibility, pagination, absent/expired
-artifacts, API errors and malformed archives. The Lake-cache check passes 7 jobs and rejects
-27 mutations. Real Lean checks, accept runs and resource measurements follow in this attempt.
+artifacts, API errors and malformed/extra/duplicate/symlink archives. A separate independent
+verifier exercised a true multi-page artifact stream. The Lake-cache check passes 7 jobs and
+rejects 27 mutations. A11 now rejects an extra nonregular `.lean` plugin before any accept.
+The CI prepare wrapper invokes the same command once, streams its output, preserves its status
+(including 128 plus signal for a signal failure), and prints wall time and maximum child RSS.
+
+Validation receipts for this attempt:
+- Independent GPT verification passed at `7c6fc911707bcaf905a6aed57f57c6f9cb45ef26`, whose tree
+  exactly matched the locally reviewed head: actionlint, shellcheck, acceptance/baseline tests,
+  Lake-cache mutation checks, direct warningAsError Verdict build, seven standard-axiom reports,
+  fourteen additional Lean behavior guards and D1 shell success/error/warning cases.
+- `lake --dir eval/mutants build` succeeded (1050 jobs); diff and score builds succeeded (36
+  and 1046 jobs). Main's existing Graph import warning is replayed; new runner code passes
+  warningAsError. Initial linking failed because this host has no `/tmp`; retry with a scratch
+  TMPDIR succeeded.
+- Offline pins, all 28 differential selftests and the plain comparison passed. Real pinned
+  Go 1.24.7 installation, online pins and refresh passed, leaving eval/diff clean. Scratch F15
+  mismatch/unreadable cases returned 1/2, and F18's whitespace edit passed plain comparison
+  before refresh restored the exact original bytes.
+- PR cards and nightly `--all`/`--numbers` scored all three fixtures. D1 maximum is 2; no
+  baseline was given. Plan-task and the 11 gate-suite inventory tests passed.
+- The real GitHub workflow-list route returned 19 completed main nightlies. The helper's
+  no-baseline path read all of them successfully through a public curl transport for `gh api`.
+  A positive-selection scratch variant chose the newest night's mutant-logs artifact; that
+  artifact was also downloaded successfully with the authenticated GitHub connector. This
+  proves API selection and download separately; it is not a completed new nightly run.
+- Production local `--prepare` exits 2 at the existing package-visibility sandbox probe:
+  bubblewrap cannot create NETLINK_ROUTE on this host. A scratch #eval harness using the real
+  leanCheck/writeWorkspaces calls but omitting that probe was killed (137) after 255 s while
+  a source gate build also ran; maximum child RSS was 5,607,012 KiB. It is no success receipt
+  and is not a production memory measurement. Hosted CI successfully prepared all cases at
+  the first PR head; the final wrapper records production RSS before the sharding decision.
+- S3's pre-existing corpus is verified by the successful 72-case judged run in
+  https://github.com/kitimark/mitos/actions/runs/44892073901: 52 refuted, 0 gaps, 20 cheats.
+  That receipt predates this PR's coverage reporting.
+- Documentation follow-up is #553. Full local acceptance/judging cannot bypass the sandbox;
+  hosted checks supply that evidence. F22 remains unavailable here because gh is unauthenticated,
+  the browser is signed out and the connector exposes no workflow dispatch operation. No new
+  nightly dispatch, required Claude/Opus verifier admission or owner merge is claimed.
+
+The first hosted CI run at `7c6fc91` passed gate, prove and every shard. Its checks job took
+8 min 50 s: differential 14 s, mutants build plus full preparation 93 s, three fixture cards
+3 s, both paranoid record accepts 136 s. Its log has exactly 57 written cases, 15 expected
+lint refusals and two ACCEPTED verdicts, with the record checks clean. No timeout increase
+is needed. The final batch retains one full-corpus prepare and adds its RSS receipt.
