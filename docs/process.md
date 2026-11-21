@@ -599,15 +599,15 @@ At the end of each phase the owner reviews the scorecard trend and the run logs:
 | Merge readiness and fresh rules | `.claude/hooks/pr-state.sh` before every prompt: each owner PR's `gate`, shared structured-provenance admission result, unanswered owner comments and user-kept paths, a merge command pinned to the head only when native provenance admission passes, and the rule files that changed on `main` since the session loaded its rules. It reads every comment and review of a PR with source verdict events and only the newest 100 repository comments for the rest, and a footer post anywhere on a PR counts as the answer to an earlier owner comment, so the merge rule's own read of the owner's comments still decides |
 | Public posts | `.claude/hooks/check-no-session-link.sh` refuses a session link or a `Claude-Session:` line in a commit or GitHub write; `.claude/scripts/open-pr.sh` opens each PR, refuses a session link in its title or body file, and cleans the link the session proxy adds at create. The first revision of each PR body still holds that link in the edit history, which anyone who can read the repository can open; only the owner can delete it, in the browser |
 
-A Cursor session loads `.cursor/rules/kitimark-mode.mdc` and `.cursor/rules/process-pointers.mdc`
-on every chat, and `.cursor/rules/lean-trust.mdc` when a `.lean` file is in context.
-That rule points at `.claude/skills/kitimark-mode/SKILL.md` and this document, which stay canonical.
-The skills themselves are under `.agents/skills/`, the agents under `.agents/agents/`, and the
-roster checker is `python3 .agents/scripts/agents-skills.py check`. pstack is
-installed in Cursor as a plugin (`/add-plugin pstack`,
+This repository has no `.cursor` files. Cursor loads skills from `.agents/skills/` and also
+discovers `.claude/skills/`. The canonical instructions are `.claude/skills/kitimark-mode/SKILL.md`
+and this document. The agents are under `.agents/agents/`, and the roster checker is
+`python3 .agents/scripts/agents-skills.py check`. pstack is installed in Cursor as a plugin
+(`/add-plugin pstack`,
 [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack)), and `.claude/` is the port
 this repository maintains. #100 leaves `AGENTS.md` out of the repository, because outside
-reviewers read instructions from the head.
+reviewers read instructions from the head. `.agents/` has no `rules/` directory and no README,
+because those would be a second always-on copy.
 
 ## 6. Local setup
 

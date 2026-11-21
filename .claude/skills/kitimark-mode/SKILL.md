@@ -508,6 +508,8 @@ of its posts. The watcher's echo filter and the merge rule below rely on both.
   stated as a theorem.
 - When you are stuck on a proof, follow the task file's escalation order. If the statement looks
   false, write the counterexample and open a spec PR. Do not bend the implementation.
+- A file under `eval/cheats/` may contain `sorry` or `admit` when that is the attack its `expect`
+  file says the gate rejects.
 
 ## What stays with the user
 

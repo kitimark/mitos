@@ -14,7 +14,7 @@ in-your-own-words	mirror	claude	explicit	vendored	-	-
 interrogate	rewrite	none	explicit	kept	-	f7e5884acc2af686455006804e8588201f21a18213fe7772c1b1670902432190
 ketchup	rewrite	none	explicit	kept	-	2284d34c60fec9c18477c59d61db48ced1061d42c1225c627a460082e2d24364
 ketchup-video	mirror	agents	explicit	vendored	-	-
-kitimark-mode	rewrite	none	named	kept	-	0803e8bca96a03b73c85795069bbf164e8b8184110052f9f4e4fd363884d2774
+kitimark-mode	rewrite	none	named	kept	-	b1e12430f128389a3190363ae47ab5ca6aaf2058db8b3f44710126d9fc263a09
 maintain-formal-verification-skill	mirror	agents	explicit	vendored	-	-
 maintain-verification-skill	rewrite	none	explicit	kept	-	-
 make-bot-ui	mirror	agents	explicit	vendored	-	-
