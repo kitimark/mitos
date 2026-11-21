@@ -333,21 +333,17 @@ def boundProviders (fs : List Located) (r b : Located) : List Located :=
 def ends (fs : List Located) (r : Located) : List Located :=
   providers fs r ++ fs.flatMap (boundProviders fs r)
 
-inductive EndSummary where
-  | empty
-  | same (id : Nat)
-  | mixed
+abbrev EndSummary := Bool ⊕ Nat
 
 def summarizeEnds (ps : List Located) : EndSummary :=
   match ps with
-  | [] => .empty
-  | p :: rest => if rest.all (·.id == p.id) then .same p.id else .mixed
+  | [] => .inl true
+  | p :: rest => if rest.all (·.id == p.id) then .inr p.id else .inl false
 
 def EndSummary.accepts (s : EndSummary) (id : Nat) : Bool :=
   match s with
-  | .empty => true
-  | .same candidate => candidate == id
-  | .mixed => false
+  | .inl acceptsAll => acceptsAll
+  | .inr candidate => candidate == id
 
 def assumptionsOf (r p : Located) : List Assumption :=
   if r.origin = p.origin then [r.origin] else [r.origin, p.origin]
@@ -1088,6 +1084,11 @@ build, and show `fact-step`.
   accounts for the count difference from the design, which counted the generated
   `Affects.below.through` constructor and used the old auxiliary hash for the `Fact` equality
   instance.
+  The fact-only lock check on current main shows the new constructor and two changed
+  `FactKind` instances.
+- The endpoint summary uses `Bool ⊕ Nat` to stay within the mutant lint's command set. A
+  Boolean supplies the result for all IDs, and a natural number supplies the single matching
+  ID. The resolver still computes the summary once per requirement.
 - The resolver proof uses the current Mathlib no-duplicates lemmas. The GoMod scratch example
   handles the new constructor and reports bindings if one appears.
 
