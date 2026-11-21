@@ -1,0 +1,1 @@
+{"task":"P2-001b","role":"builder","model":"Codex (GPT-6)","attempt":3,"iterations":1,"wall_min":4,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Addressed the verifier's two lock probes and migration rows. All ten lock-meaning tests passed."}

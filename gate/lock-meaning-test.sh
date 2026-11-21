@@ -8,13 +8,14 @@ bin="$root/.lake/build/bin/mitos-gate"
 LEAN_PATH=$(lake env printenv LEAN_PATH) || { echo "FAIL lake env printenv LEAN_PATH"; exit 1; }
 PATH=$(lake env printenv PATH) || { echo "FAIL lake env printenv PATH"; exit 1; }
 export LEAN_PATH PATH
-tmp=$(mktemp -d)
-trap 'cp "$tmp/Graph.lean" "$root/core/Mitos/Core/Graph.lean"; cp "$tmp/Lines.lean" "$root/core/Mitos/Core/Lines.lean"; cp "$tmp/Adequacy.lean" "$root/core/Mitos/Core/Spec/Adequacy.lean"; cp "$tmp/Derivations.lean" "$root/core/Mitos/Core/Spec/Derivations.lean"; cp "$tmp/lock" "$root/statements.lock"; rm -rf "$tmp"' EXIT
-cp "$root/core/Mitos/Core/Graph.lean" "$tmp/Graph.lean"
-cp "$root/core/Mitos/Core/Lines.lean" "$tmp/Lines.lean"
-cp "$root/core/Mitos/Core/Spec/Adequacy.lean" "$tmp/Adequacy.lean"
-cp "$root/core/Mitos/Core/Spec/Derivations.lean" "$tmp/Derivations.lean"
-cp "$root/statements.lock" "$tmp/lock"
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT
+cp "$root/core/Mitos/Core/Graph.lean" "$tmp/Graph.lean" || exit 1
+cp "$root/core/Mitos/Core/Lines.lean" "$tmp/Lines.lean" || exit 1
+cp "$root/core/Mitos/Core/Spec/Adequacy.lean" "$tmp/Adequacy.lean" || exit 1
+cp "$root/core/Mitos/Core/Spec/Derivations.lean" "$tmp/Derivations.lean" || exit 1
+cp "$root/core/Mitos/Core/Spec/Chains.lean" "$tmp/Chains.lean" || exit 1
+cp "$root/statements.lock" "$tmp/lock" || exit 1
 
 pass=0
 fail=0
@@ -24,8 +25,10 @@ restore_sources() {
   cp "$tmp/Lines.lean" "$root/core/Mitos/Core/Lines.lean"
   cp "$tmp/Adequacy.lean" "$root/core/Mitos/Core/Spec/Adequacy.lean"
   cp "$tmp/Derivations.lean" "$root/core/Mitos/Core/Spec/Derivations.lean"
+  cp "$tmp/Chains.lean" "$root/core/Mitos/Core/Spec/Chains.lean"
   cp "$tmp/lock" "$root/statements.lock"
 }
+trap 'restore_sources; rm -rf "$tmp"' EXIT
 
 rebuild() {
   if ! lake build mitos-gate >"$tmp/build.out" 2>&1; then
@@ -173,7 +176,7 @@ PY
 fi
 restore_sources
 
-python3 - <<'PY'
+python3 - <<'PY' || exit 1
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
 old = "  | .ai _ => true\n"
@@ -198,6 +201,20 @@ src = a.read_text()
 if proof not in src:
     raise SystemExit("missing trusting_ai_not_honest proof")
 a.write_text(src.replace(proof, sorry_proof, 1))
+
+chains = Path("core/Mitos/Core/Spec/Chains.lean")
+source = chains.read_text()
+statement = """theorem status_honest_ai_binding_inferred {R : Resolver} (hs : Sound R)
+    (ha : AssumptionsExact R) (hh : StatusHonest R) :
+    ∀ e ∈ (R chainAI).edges, e.status = .inferred := by
+"""
+if source.count(statement) != 1:
+    raise SystemExit("expected one status_honest_ai_binding_inferred statement")
+proof_start = source.index(statement) + len(statement)
+proof_end = source.find("\ndef bindStaging ", proof_start)
+if proof_end < 0:
+    raise SystemExit("missing bindStaging after status_honest_ai_binding_inferred")
+chains.write_text(source[:proof_start] + "  sorry\n" + source[proof_end:])
 PY
 
 if rebuild "isAI arm"; then
@@ -247,7 +264,7 @@ if rebuild "lines.go body"; then
 fi
 restore_sources
 
-python3 - <<'PY'
+python3 - <<'PY' || exit 1
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
 old = (
@@ -264,12 +281,15 @@ if old not in text:
 p.write_text(text.replace(old, new, 1))
 d = Path("core/Mitos/Core/Spec/Derivations.lean")
 src = d.read_text()
-src = src.replace(
-    "exact wf.eq_of_id hq hp\n        (H (Chain.direct r q) (mem_derivations.mpr ⟨r, hr, q, hq, hqm, rfl⟩) rfl)",
-    "exact Eq.symm (wf.eq_of_id hq hp\n        (H (Chain.direct r q) (mem_derivations.mpr ⟨r, hr, q, hq, hqm, rfl⟩) rfl))",
-    1)
-src = src.replace("have hrr : r' = r := wf.eq_of_id hr' hr hid",
-                  "have hrr : r' = r := Eq.symm (wf.eq_of_id hr' hr hid)", 1)
+for original, replacement in [
+    ("exact wf.eq_of_id hq hp\n        (H (Chain.direct r q) (hdirect.mpr ⟨r, hr, q, hq, hqm, rfl⟩) rfl)",
+     "exact Eq.symm (wf.eq_of_id hq hp\n        (H (Chain.direct r q) (hdirect.mpr ⟨r, hr, q, hq, hqm, rfl⟩) rfl))"),
+    ("have hrr : r' = r := wf.eq_of_id hr' hr hid",
+     "have hrr : r' = r := Eq.symm (wf.eq_of_id hr' hr hid)"),
+]:
+    if src.count(original) != 1:
+        raise SystemExit("expected one eq_of_id use: " + original.splitlines()[0])
+    src = src.replace(original, replacement, 1)
 d.write_text(src)
 PY
 

@@ -19,13 +19,14 @@ touches: core/Mitos/Core/Fact.lean, core/Mitos/Core/Graph.lean,
   core/Mitos/Proofs/Resolve/{Basic,Edges,Assumptions,Nodup}.lean, core/Mitos/Proofs/Impact.lean,
   the mutant files in the table under "Mutant migration", statements.lock and
   examples/acme/accepted/ToyRequire.json and examples/acme/accepted/GoMod.json (all three
-  generated), this file, the scratch example in tasks/P2-007-gomod-plugin.md, ops/runs/
+  generated), this file, the scratch example in tasks/P2-007-gomod-plugin.md, ops/runs/,
+  gate/lock-meaning-test.sh (review deviation below)
 must_not_touch: core/Challenge/, core/comparator.json, core/lakefile.toml,
   core/Mitos/Core/Lines.lean, core/Mitos/Core/Obligations.lean, core/Mitos/Core/ModelExamples.lean,
   core/Mitos/Proofs/Impact/Nodup.lean, core/Mitos/Proofs/Resolver.lean, every other file in
   eval/mutants/ (eval/mutants/Mutants/Implied.lean included), new mutant cases (P2-005b),
   eval/score/, eval/fixtures/, examples/acme/Models/, examples/acme/Plugins/, models.lock,
-  examples/acme/models.lock, gate/, eval/cheats/, .github/, docs/, plan/, .claude/
+  examples/acme/models.lock, the rest of gate/, eval/cheats/, .github/, docs/, plan/, .claude/
 checks: build, imports, lock, core lake check, comparator --paranoid, acme build, accept-toy and
   accept-gomod (both recorded again with --record --paranoid at the head), mitos-lint-test and
   cheats (in ci), the scorer on eval/fixtures/toy, eval/mutants build, the full mutant run (default
@@ -696,8 +697,8 @@ new implementation, and the expectation fields keep their text.
 | `edges_duplicated` | `find=edges := rows.flatMap Prod.fst`, `replace=edges := rows.flatMap Prod.fst ++ rows.flatMap Prod.fst` |
 | `first_fact_skipped` | `find=edges := rows.flatMap Prod.fst`, `replace=edges := rows.tail.flatMap Prod.fst` |
 | `unresolved_lists_provisions` | `find=if isRequirement r && allEnds.isEmpty then [r.id] else []`, `replace=if allEnds.isEmpty then [r.id] else []` |
-| `unresolved_duplicated` | `find=rows.flatMap Prod.snd`, `replace=rows.flatMap Prod.snd ++ rows.flatMap Prod.snd` |
-| `impact_repeats_repo` | Extend the `fires` anchor through the binding-repo branch and keep the mutant's repeated-output behavior. |
+| `unresolved_duplicated` | `find=unresolved := rows.flatMap Prod.snd`, `replace=unresolved := (rows ++ rows).flatMap Prod.snd` |
+| `impact_repeats_repo` | Narrow the anchor to `find=!seen.contains e.requiringRepo`, `replace=true` |
 | `cheat_proofs_own_hole` | the `replace=` copy of the implementation takes the same change as `Impl/Resolve.lean` (P2-005a, rule R6): it becomes the new file on one line. Appendix A5 has a command that regenerates it (whitespace runs become one space, `, ` goes before `unresolved :=`) and a check that it is current; the flattened payload must also compile before its mutant is run |
 | `impact_includes_self` | `Refute.lean`: `not_affects_nil`'s `induction` gains `\| through he => simp at he` after its `step` line |
 
@@ -1058,8 +1059,6 @@ runs it), `mitos-lint-test`, and `--record` (it would edit the records).
   into a locked statement, so two places list it.
 
 ### Open questions and risks
-- D1 and D2: does the owner widen the Owns cell, or take the fallbacks? The `replace=` copy has no
-  fallback.
 - The mutant runner was killed by the container's memory limit with several cases in one
   invocation. Is one case per invocation acceptable evidence, as here, until #276's V4 is looked at?
 - A binding in the requirer's own repo makes `x ∈ impact es x`. Is that the impact the owner wants
@@ -1075,10 +1074,15 @@ build, and show `fact-step`.
 
 ## Implementation on current main
 
-- D1 carries the existing faults into the row-based resolver and binding-aware impact. The
-  `unresolved_duplicated` and `impact_repeats_repo` cases added after the design also use new
-  anchors. The original mutant expectations still apply.
-- D2 adds the fixture import to `Mitos.Core.Spec` after the plugin surface split.
+- D1 extends the plan's Owns cell to the paired replacements, the regenerated resolver copy and
+  the new impact induction case. Those changes preserve the existing mutant expectations.
+- D2 extends the Owns cell by one import in `Mitos.Core.Spec`, the lock entry point after the
+  plugin surface split. This puts the chain fixtures under the lock.
+- The [verifier review](https://github.com/kitimark/mitos/pull/545#issuecomment-7059763924)
+  adds a deviation for `gate/lock-meaning-test.sh`. The test landed through #524 after this
+  design. Its scratch `isAI` probe restores the chain fixture after substituting its proof,
+  and its `eq_of_id` probe checks both updated anchors before rebuilding. Each probe still
+  verifies that exactly its intended lock entry changes.
 - The lock grows from 203 to 248 declarations. The current format records 19 changed entries and
   45 new ones, including all 36 chain fixture declarations. The source-declaration lock in #524
   accounts for the count difference from the design, which counted the generated
