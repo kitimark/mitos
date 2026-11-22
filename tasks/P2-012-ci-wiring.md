@@ -45,7 +45,7 @@ escalation: hint → automation → stronger model → pair → split → revisi
 - **What the judge checked**, in a scratch copy of `origin/main` at `eac85d2`, on Lean v4.35.0. These are single runs on a machine other agents shared, so the times are indicative:
   - `lake --dir eval/mutants build` passed with the Verdict and Main text below (warningAsError). The axioms are `propext`, `Classical.choice` and `Quot.sound` only.
   - `--prepare` with no case named exited 0 in 28 s. It wrote 29 cases (58 directories) and printed 15 `refused by the lint, as its manifest says`. Sampled peak RSS was 9.3 GB.
-  - F2 to F7, F9 and F10 gave the results stated under fixtures.
+  - F3 to F7, F9 and F10 gave the results stated under fixtures. F2's historical run used `edges := fs.flatMap fun r =>`; the current-anchor receipt under F2 is from the independent verifier at `4857ba7`.
   - `install-go.sh` ran for real in 7.8 s. `check-pins.sh --online` passed in 6 s. `lake --dir eval/diff build` took 11 s with acme warm. `selftest.sh` printed 28 `ok` lines in 3.9 s. The plain run exited 0 in 0.28 s. `--refresh` with Go 1.24.7 exited 0 and left `git status --porcelain eval/diff` empty.
   - A whitespace edit of `cases/zap/module.json` passed the plain run (exit 0). After `--refresh` the tree showed ` M eval/diff/cases/zap/module.json`.
   - The PR diff step: exit 0 on `main`; a `::warning::` and exit 0 with one triage line removed; exit 2 and red with one `module.json` removed.
@@ -455,7 +455,7 @@ private def refusedAtLint (n : String) (ts : List String) : Result :=
 +  if runPasses scope control cases rs a.theorems then
 ```
 
-`claimed` counts only the cases that prepared, so a case that fails to prepare also leaves its theorems unclaimed (F2 prints both lines). A run of named cases checks no coverage, because a partial list cannot meet it. The CI step and the nightly name no case.
+`claimed` counts only prepared cases with `breaks=` and no `rejects=`. A failed preparation contributes no claim; a theorem is unclaimed only when no other qualifying prepared case names it. In F2, `bound_edges_duplicated` still claims `resolve_edges_nodup`, so the moved `edges_duplicated` anchor does not create that coverage gap. A run of named cases checks no coverage, because a partial list cannot meet it. The CI step and the nightly name no case.
 
 `ci.yml`, job `checks`, final text (actionlint clean). After the `land-protection.test.sh` step:
 
@@ -693,7 +693,7 @@ step() { python3 -I -c 'import sys,yaml; w=yaml.safe_load(open(sys.argv[1])); pr
 RUNNER_TEMP=$(mktemp -d) GITHUB_STEP_SUMMARY=/dev/null bash -eo pipefail <(step .github/workflows/ci.yml 'Every mutant case')
 ```
 
-Run the fixtures at the head, and the variants in a scratch worktree of the head. The results marked "judge" were measured at `eac85d2`.
+Run the fixtures at the head, and the variants in a scratch worktree of the head. The historical results marked "judge" were measured at `eac85d2`. F2 separately identifies its earlier anchor and the independent verifier's current-anchor run at `4857ba7`.
 - F1 `prepare-corpus`: `--prepare` with no case named exits 0. At the implementation base it must write 57 cases (114 workspaces) and print 15 `refused by the lint, as its manifest says`; measure peak RSS again. The earlier design run wrote 29 cases in 28 s.
 - F2 `prepare-moved-anchor`: add a space inside `edges := rows.flatMap Prod.fst` in `core/Mitos/Impl/Resolve.lean`. Exit 1, including `edges_duplicated: … does not occur exactly once`; `bound_edges_duplicated` still claims `resolve_edges_nodup`, so no unclaimed-theorem diagnostic for it is expected. The [independent verifier's run at `4857ba7`](https://github.com/kitimark/mitos/pull/554#issuecomment-7069062704) reported exit 1 with `the text to find does not occur exactly once` and no coverage line. The historical `eac85d2` judge result used the earlier `edges := fs.flatMap fun r =>` variant; the current anchor was added in `a717614`. This pins #107 item 2.
 - F3 `prepare-lint-gone`: set `cheat_impl_macro`'s `replace=` to `def mitosNoop : Nat := 0 end Mitos.Impl`. Exit 1: `its manifest says rejects=lint, and the lint finds nothing` (judge).
@@ -973,7 +973,7 @@ Root's default, not the owner's ruling. **Design A (opus) is the base**, for its
 - canary parity by default (P2-011 hands it over only if the owner adds it).
 
 **The judge's own work** settled the base and the grafts:
-- built the final Lean (seven statements, standard axioms) and ran `--prepare` on the corpus with the F2 to F7 variants;
+- built the final Lean (seven statements, standard axioms) and ran `--prepare` on the corpus at `eac85d2` with F2's earlier `edges := fs.flatMap fun r =>` anchor variant and the F3 to F7 variants;
 - ran the named and one-case corpus judged runs;
 - ran the real Go install, the online pins and the refresh, and caught the hand edit;
 - ran the PR diff step's three exit paths and the scorecard loop;
