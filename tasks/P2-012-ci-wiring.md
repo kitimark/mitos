@@ -455,7 +455,7 @@ private def refusedAtLint (n : String) (ts : List String) : Result :=
 +  if runPasses scope control cases rs a.theorems then
 ```
 
-`claimed` counts only prepared cases with `breaks=` and no `rejects=`. A failed preparation contributes no claim; a theorem is unclaimed only when no other qualifying prepared case names it. In F2, `bound_edges_duplicated` still claims `resolve_edges_nodup`, so the moved `edges_duplicated` anchor does not create that coverage gap. A run of named cases checks no coverage, because a partial list cannot meet it. The CI step and the nightly name no case.
+`claimed` counts only prepared cases with `breaks=` and no `rejects=`, where prepared means that `prepare` returned `.ok`, before lint classification. A `prepare` `.error` contributes no mutant and no claim. An `.ok` case with `breaks=`, no `rejects=` and unexpected lint findings still claims its theorems: a theorem named only there is not reported as unclaimed, although `.refusedUnexpectedly` fails the run. A theorem is unclaimed only when no qualifying prepared case names it. In F2, `bound_edges_duplicated` still claims `resolve_edges_nodup`, so the moved `edges_duplicated` anchor does not create that coverage gap. A run of named cases checks no coverage, because a partial list cannot meet it. The CI step and the nightly name no case.
 
 `ci.yml`, job `checks`, final text (actionlint clean). After the `land-protection.test.sh` step:
 
