@@ -1,0 +1,83 @@
+--- a/.claude/hooks/pr-state.sh
++++ b/.claude/hooks/pr-state.sh
+@@ -290,13 +290,19 @@
+         def num: if type == "number" and . >= 0 and . == floor then . else error("bad number") end;
+         def items: if type == "array" then .[] | if type == "array" then .[] else error("not a page") end
+                    else error("not an array") end;
+-        def post($t): select(type == "object" and .user.login == $owner)
+-          | {id: (.id | num), t: ($t | ts), agent: (.body // "" | if type == "string" then footer else error("bad body") end)};
+-        [($ic[0] | items | post(.created_at)), ($rc[0] | items | post(.created_at)),
++        def fb: .body // "" | if type == "string" then footer else error("bad body") end;
++        def via: if has("performed_via_github_app") then (if .performed_via_github_app == null then "typed" else "app" end) else "absent" end;
++        def answer_app: (.performed_via_github_app.slug? // "") | IN("claude", "cursor");
++        def post($t): select(type == "object" and .user.login == $owner) | fb as $f
++          | {id: (.id | num), t: ($t | ts), w: ($f | not), a: $f};
++        def icpost($t): select(type == "object" and .user.login == $owner) | fb as $f | via as $v
++          | {id: (.id | num), t: ($t | ts), w: ($v == "typed" or ($v == "absent" and ($f | not))),
++             a: ($v != "typed" and (($v == "app" and answer_app) or $f))};
++        [($ic[0] | items | icpost(.created_at)), ($rc[0] | items | post(.created_at)),
+          ($rv[0] | items | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or (.body // "") != "")
+                  | post(.submitted_at))]
+-        | (map(select(.agent) | .t) | max) as $f
+-        | [.[] | select((.agent | not) and ($f == null or .t > $f)) | .id] | unique' 2>/dev/null) || full_thread_unanswered='"?"'
++        | (map(select(.a) | .t) | max) as $f
++        | [.[] | select(.w and ($f == null or .t > $f)) | .id] | unique' 2>/dev/null) || full_thread_unanswered='"?"'
+       [ -n "$full_thread_unanswered" ] || full_thread_unanswered='"?"'
+     fi
+   fi
+@@ -314,13 +320,19 @@
+     def thread: if type == "string" then ((split("/") | last | tonumber?) // error("bad url"))
+                 else error("bad url") end;
+     def arr: if type == "array" then .[] else error("not an array") end;
+-    def post($u): {n: ($u | thread), id: (.id | num), t: (.created_at | ts), who: .user.login,
+-                   agent: (.body // "" | if type == "string" then footer else error("bad body") end)};
+-    [($ic[0] | arr | post(.issue_url)), ($rc[0] | arr | post(.pull_request_url))]
++    def fb: .body // "" | if type == "string" then footer else error("bad body") end;
++    def via: if has("performed_via_github_app") then (if .performed_via_github_app == null then "typed" else "app" end) else "absent" end;
++    def answer_app: (.performed_via_github_app.slug? // "") | IN("claude", "cursor");
++    def post($u): fb as $f | {n: ($u | thread), id: (.id | num), t: (.created_at | ts), who: .user.login,
++                   w: ($f | not), a: $f};
++    def icpost($u): fb as $f | via as $v | {n: ($u | thread), id: (.id | num), t: (.created_at | ts), who: .user.login,
++                   w: ($v == "typed" or ($v == "absent" and ($f | not))),
++                   a: ($v != "typed" and (($v == "app" and answer_app) or $f))};
++    [($ic[0] | arr | icpost(.issue_url)), ($rc[0] | arr | post(.pull_request_url))]
+     | map(select(.who == $owner)) | group_by(.n)
+-    | map((map(select(.agent) | .t) | max) as $f
++    | map((map(select(.a) | .t) | max) as $f
+           | {key: (.[0].n | tostring),
+-             value: ([.[] | select((.agent | not) and ($f == null or .t > $f)) | .id] | sort)})
++             value: ([.[] | select(.w and ($f == null or .t > $f)) | .id] | sort)})
+     | map(select(.value != [])) | from_entries' 2>/dev/null) || owner_unanswered_by_thread=null
+   [ -n "$owner_unanswered_by_thread" ] || owner_unanswered_by_thread=null
+ fi
+--- a/.claude/hooks/pr-state.test.sh
++++ b/.claude/hooks/pr-state.test.sh
+@@ -880,6 +880,28 @@
+ thread45
+ run ok
+ expect "a later footer comment answers it" "$(mline 45 "$H45" "$userkeeps")"
++jq -n --arg u "$U" --arg f "$footer" '[
++  {id: 510, user: {login: "kitimark"}, performed_via_github_app: null, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:05:00Z", body: ("> Renamed in abc." + $f)},
++  {id: 501, user: {login: "kitimark"}, performed_via_github_app: null, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:00:00Z", body: "please rename it"}]' >"$work/icomments.json"
++thread45
++run ok
++expect "#501: a typed comment that ends with the footer is words and answers nothing" "owner-unanswered=501,510 user-kept=yes"
++jq -n --arg u "$U" --arg f "$footer" '[
++  {id: 511, user: {login: "kitimark"}, performed_via_github_app: {slug: "chatgpt-codex-connector"}, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:05:00Z", body: ("Renamed in abc." + $f)},
++  {id: 512, user: {login: "kitimark"}, performed_via_github_app: {slug: "chatgpt-codex-connector"}, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:06:00Z", body: "and a note"},
++  {id: 501, user: {login: "kitimark"}, performed_via_github_app: null, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:00:00Z", body: "please rename it"}]' >"$work/icomments.json"
++thread45
++run ok
++expect "a codex comment with the footer answers; one without it is not words" "$(mline 45 "$H45" "$userkeeps")"
++jq -n --arg u "$U" '[
++  {id: 513, user: {login: "kitimark"}, performed_via_github_app: {slug: "claude"}, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:05:00Z", body: "Renamed in abc."},
++  {id: 501, user: {login: "kitimark"}, performed_via_github_app: null, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:00:00Z", body: "please rename it"}]' >"$work/icomments.json"
++thread45
++run ok
++expect "a claude-app comment without the footer answers" "$(mline 45 "$H45" "$userkeeps")"
++jq -n --arg u "$U" --arg f "$footer" '[
++  {id: 503, user: {login: "kitimark"}, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:05:00Z", body: ("Renamed in abc." + $f)},
++  {id: 501, user: {login: "kitimark"}, issue_url: "\($u)/issues/45", created_at: "2026-11-09T09:00:00Z", body: "please rename it"}]' >"$work/icomments.json"
+ jq -n --arg u "$U" '[
+   {id: 601, user: {login: "kitimark"}, pull_request_url: "\($u)/pulls/45", created_at: "2026-11-09T09:06:00Z", body: "nit: this line"}]' >"$work/rcomments.json"
+ thread45
