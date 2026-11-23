@@ -25,7 +25,7 @@ escalation: hint → automation → stronger model → pair → split → revisi
 ## Design
 Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file lists.
 
-depth: build, except the chain fixture's own numbers. Under `types` are the whole of `eval/score/Score/Nightly.lean` and the whole diff of `eval/score/Main.lean`, as final text with every proof and pin written in. In a scratch copy of `main` at eac85d2, `lake --dir eval/score build` ends with `Build completed successfully (44 jobs).` and prints no `warning:` line; that build kernel-checks the four theorems and runs the 18 `#guard`s. N1 to N12 are as stated. The chain fixture's rows are contract only (N13): the code needs no change for them, but they cannot be measured before P2-009a merges.
+depth: build. Under `types` are the whole of `eval/score/Score/Nightly.lean` and the whole diff of `eval/score/Main.lean`, with every proof and pin written in. The plan-time scratch build at `eac85d2` finished in 44 jobs without warnings. The merged scorer build kernel-checks the four theorems and evaluates all 21 `#guard`s. The build notes record N1 to N13 with the chain fixture present.
 
 revisit_when: re-check after #210 (P2-009a) merges. That also covers #204 (P2-001b), which P2-009a waits for. The re-check is S1 to S3 and N13. #332 changes no output here, whichever order it merges in (measured at 856832b).
 
@@ -807,6 +807,7 @@ owner_decisions:
 - N1–N13 passed with the merged scorer policy. N1 compared all three cards byte for byte against a detached `main` build. N3 preserved both fixture cards as the report tail. The optional pre-merge policy variants were omitted.
 - Scratch mutations W1, W5, W6, W7 and W11 each failed the expected theorem or guard. The plan-task self-test passed.
 - Local `lake check` and `lake comparator --paranoid` could not start their inner checks because bubblewrap could not set up its UID map in this environment.
+- The verifier passed both sandboxed core checks, and the hosted `gate` passed at `e133cbc`. [Verification findings](https://github.com/kitimark/mitos/issues/552) [Gate run](https://github.com/kitimark/mitos/actions/runs/44910456966/job/136864955296)
 - CodeRabbit review added G21 and the lossless edge identity, and clarified how P2-012 publishes the baseline. Re-ran N1–N13 and the five scratch variants on the revised format.
 - Run logs `ops/runs/2026-11-21/P2-010-builder-1.json` and `ops/runs/2026-11-21/P2-010-builder-2.json`.
 
@@ -847,7 +848,7 @@ label	chain	`web` → `logs` (env/runtime `LOG_SINK`)	["web","logs","env","LOG_S
 The nightly maximum is 2 for `web` → `orders` (env/runtime `DATABASE_URL`).
 
 ## Done when
-- [ ] all `checks` pass locally, and `gate` is green
+- [x] the builder's local checks and the verifier's sandboxed core checks passed, and `gate` is green
 - [x] N1 to N12 hold at the head, and N13's `chain` lines and hashes are in the build notes
 - [x] no `sorry`, no new axioms (checks 1 and 2)
 - [x] run-log record written (ops/runs/)
@@ -884,7 +885,7 @@ Interface depth: eleven names and four theorems, and callers see three commands.
 - A4. A JSON summary with a schema, decoded into structures, and a per-edge delta type (Design B). The line set gives the same edge and label changes with no schema, no decoder and one theorem for "no change".
 - A5. Numbers only in the baseline (Design A). A label swap keeps every count, and the diff would not say which label moved.
 - A6. A floor of required fixture names in code (Design B). It is one more list to keep in step with `eval/fixtures/`, it blocks the build until `chain` exists, and a removed fixture already shows against the baseline.
-- A7. Three modules and a `selftest.sh` (Design B). That is outside the cell, so the plan would need an owner edit. Its cases are here as pins on the pure functions (G9 to G18) and as the builder's runs (N6 to N12).
+- A7. Three modules and a `selftest.sh` (Design B). That is outside the cell, so the plan would need an owner edit. The pure-function pins now cover G9 to G21, and the builder's runs cover N6 to N12.
 - A8. Refuse a fixture whose text would break Markdown, and blank `@` and backticks in error text (Design B). The renderer is in `Score.lean`, and a policy that refuses fixtures belongs with it (follow-up).
 - A9. Diff the Markdown with `diff -u` in the workflow. That puts this row's code in `.github/`, and a line diff of cards is noisy.
 - A10. A baseline made by running this head's scorer on `main`'s fixtures. It measures changes to the fixtures, not to the code.

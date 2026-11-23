@@ -74,12 +74,12 @@ revisit_when:
 - re-check after P2-011 PR B (#147) merges: its re-recorded records must pass the accept step. If P2-012 merges first, tell PR B's owner that CI now checks both records at its head.
 
 modules: each existing file is edited in place, and each new file owns one topic.
-- `.github/scripts/accept-plugins.sh` (new, 40 lines): the one list of plugins and their models, the check that `Plugins/` holds only regular files and no subdirectory, the check that `Plugins/`, the list and `accepted/` agree, and the record check. It copies `install-elan.sh`'s style.
+- `.github/scripts/accept-plugins.sh` (new, 40 lines): the one list of plugins and their models, the check that every `Plugins/` entry is a regular file directly in it, the check that `Plugins/`, the list and `accepted/` agree, and the record check. The flat-directory rule deliberately rejects empty subdirectories and symlinks of any name, including names without `.lean`. With its default symlink handling, `find` reports directories and symlinks through `! -type f`. Keep `-path` so the diagnostic also lists nested regular files, including the path that A12 checks.
 - `.github/scripts/accept-plugins.test.sh` (new, 86 lines): A1 to A13, with a stub `lake` in a scratch git repo. It copies `cancel-superseded.test.sh` (a stub tool, no network).
 - `.github/scripts/install-go.sh` (new, 34 lines): Go from `eval/diff/.go-version`, SHA256 pinned, retried, and its version read back. It copies `install-elan.sh`.
 - `.github/workflows/ci.yml`, job `checks`, about +30 lines. It adds three steps: the accept test, the `eval/diff` step and the `--prepare` step. It changes two: the scorecard loops over every fixture, and the accept step calls the script. There is no new job, checkout or timeout.
 - `.github/workflows/nightly.yml`, about +100 lines:
-  - `full`: the accept step calls the script; `if: ${{ !cancelled() }}` goes on both mutant steps (#107 item 4); `actions: read` is added to its permissions, and the baseline fetch, the scorecard step and its two artifacts are added (C1).
+  - `full`: checkout sets `persist-credentials: false`. The accept step calls the script and sets `id: accept`. If the job is still active, the cheat step runs when all earlier steps passed or when the accept step itself failed. Both mutant steps use `if: ${{ !cancelled() }}` (#107 item 4). The job gains `actions: read`, the baseline fetch, the scorecard step and its two artifacts (C1).
   - New job `diff`.
   - `canary`: one line.
 - `eval/mutants/Mutants/Verdict.lean`, +104 lines appended: `unbroken`, `claimed`, `unclaimed`, `Scope`, `runPasses`, `Prep` and `prep`, with their statements and `#guard`s, beside `breakers` and `passes`.
@@ -571,14 +571,14 @@ Its steps:
           fi
 
       - if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: scorecard
           path: ${{ runner.temp }}/scorecard.md
           if-no-files-found: error
 
       - if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: scorecard-numbers
           path: ${{ runner.temp }}/numbers/numbers.tsv
@@ -713,7 +713,7 @@ Run the fixtures at the head, and the variants in a scratch worktree of the head
 - F8 `prepare-spec-shape`: parenthesize one Challenge statement's type in `core/Challenge/Resolver.lean`. `--prepare` exits 2 (#107 item 12, now on PRs).
 - F9 `unbroken-named`: `mitos-mutants edges_duplicated` exits 0 with no UNBROKEN section (judge, 43 s).
 - F10 `unbroken-corpus`: reduce `cases/` to `edges_duplicated` and run with no case named. Exit 1; UNBROKEN lists the other 11 theorems (judge, 33 s).
-- F11 `accept-script`: `accept-plugins.test.sh` passes A1 to A10 (judge).
+- F11 `accept-script`: `accept-plugins.test.sh` passes A1 to A13. [Verifier run at `fc76ae2`](https://github.com/kitimark/mitos/pull/556#issuecomment-7101203735)
 - F12 `records-head`: `accept-plugins.sh --record` at the head prints two `VERDICT: ACCEPTED`, and `git status --porcelain examples/acme/accepted` is empty (after S1).
 - F13 `record-stale-real`: in scratch, set `"paranoid": false` in `GoMod.json` and commit. The script exits 1, and its diff shows that line.
 - F14 `diff-pr`: with no `go` on `PATH`, the PR diff step exits 0; the selftest prints 28 `ok` lines (judge).

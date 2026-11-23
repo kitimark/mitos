@@ -127,7 +127,7 @@ modules: one topic per file.
   lines. It copies the layout of `eval/score/Score/GoMod.lean` (imports, one namespace,
   `open Mitos`, the definitions, then the theorems), and its line parser copies the shape of
   `Score.declared`.
-- `eval/score/Score.lean`: the dispatch, the repo-level view and the card. 143 → 180 lines.
+- `eval/score/Score.lean`: the dispatch, the repo-level view and the card. 153 → 190 lines.
   Changes: one import; one guard line in `factsOf`, with `factsOf_chain` below the function (7
   lines); one changed line in `collapse`, with `collapse_union` and its two private helpers (14
   lines); two `let`s and one changed line in `render`, plus one new line (4 lines);
@@ -791,16 +791,17 @@ owner_decisions:
 - [x] `mitos-score eval/fixtures/chain` prints F2 at the head (check 5)
 - [x] the toy and go.mod scorecards are unchanged (checks 3 and 4)
 - [x] the labels agree with L1 to L4, and the fact count is the line count (checks 6 and 7)
-- [ ] all `checks` pass locally, and `gate` is green
+- [x] the builder's local checks, the hosted sandboxed core checks and `gate` passed
 - [x] incomplete binding lines give no facts
 - [x] no `sorry`, no new axioms (checks 1 and 2)
 - [x] run-log record written (ops/runs/)
 
 ## Build notes
 
-P2-001b merged in #545 at `1770a97`. The scorer and fixture diff from `eac85d2`
-contains the expected #332 files. The merged core exports `Assumption` from
-`Mitos.Core.Graph`, so the chain reader imports that module and `Mitos.Core.Lines` directly.
+P2-001b merged in #545 at `1770a97`. The scorer and fixture diff from `eac85d2` includes
+#332, the Mathlib pin (`f3d6c954`) and the plugin-surface imports (`885094ca`). The merged core
+exports `Assumption` from `Mitos.Core.Graph`, so the chain reader imports that module and
+`Mitos.Core.Lines` directly.
 
 The scorer build succeeds with the same `Mitos/Core/Graph.lean` warning as the base.
 All eight scorer theorems use only the axioms listed in check 2. The 11 fixture file hashes
@@ -811,8 +812,11 @@ The resolver yields the five records in F5 and includes each binding's origin in
 `assumes`. The two records for `web → orders` have one confirmed and one inferred status.
 The collapsed edge is confirmed.
 
-The local environment cannot start Bubblewrap for the sandboxed core checks. The hosted
-`checks` job runs those commands.
+[The verifier confirmed the task checks](https://github.com/kitimark/mitos/issues/549).
+Bubblewrap could not start in the builder's local environment. The hosted `checks` job passed
+both `lake check` and `lake comparator --paranoid`, and `gate` passed at `31762eb`.
+[Hosted checks](https://github.com/kitimark/mitos/actions/runs/44893884955/job/136815288192)
+[Gate run](https://github.com/kitimark/mitos/actions/runs/44893884955/job/136815288491)
 
 ## Rationale
 
