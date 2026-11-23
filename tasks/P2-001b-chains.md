@@ -633,8 +633,8 @@ Run-level fixtures the builder reports. "Measured" means the judged sketch produ
 - `fact-step`: after step 1, `lake exe mitos-gate lock --check` prints `+ ctor Mitos.FactKind.binds`
   and `-`/`+` pairs for `instDecidableEqFact`, `instDecidableEqFactKind` and `instReprFactKind`,
   and no other line: three `-` and four `+`. Measured on `main` with only `Fact.lean` changed.
-- `lock`: at the head `lake exe mitos-gate lock` writes 252 declarations (206 on `main`), and the
-  diff is exactly the list under "Lock prediction". Measured.
+- `lock`: regenerate with `lake exe mitos-gate lock`. The merged diff records 248 declarations
+  from a base of 203. See "Lock prediction" for the merged counts and the judged sketch.
 - `lock-lists-chains`: `grep -c 'Spec.Chains' statements.lock` prints 36.
 - `imports`: `lake exe mitos-gate imports` prints `0 import violation(s) in core/`. Measured.
 - `scorecard-unchanged`: `lake --dir eval/score exe mitos-score eval/fixtures/toy` prints the same
@@ -660,8 +660,14 @@ Run-level fixtures the builder reports. "Measured" means the judged sketch produ
 
 ### Lock prediction
 
-Measured on the judged sketch: 206 → 252 declarations; 20 lines change, none leaves, 46 arrive. The
-PR body lists the regenerated diff against this list.
+The merged lock in #545 grew from 203 to 248 declarations, with 19 entries changed and 45 added
+(19 removed diff lines and 64 added diff lines). The source-declaration lock from #524 changed
+the base. It omits the generated `Affects.below.through` constructor, and the
+`instDecidableEqFact` entry kept its prior value. All 36 `Spec.Chains` declarations were added.
+[Merged lock diff](https://github.com/kitimark/mitos/commit/a717614)
+
+The judged sketch measured 206 → 252 declarations, with 20 entries changed and 46 added. Its
+prediction was as follows.
 - Changed, a change of meaning: `Spec.Sound` (value); `derivations` (value); `mem_derivations`,
   `derivations_single_provider` (type); `ctor Edge.mk` (type, one more field);
   `Derivation.requiringFactId`, `Derivation.providingFactId` (value, the new arm).
@@ -1083,13 +1089,8 @@ build, and show `fact-step`.
   design. Its scratch `isAI` probe restores the chain fixture after substituting its proof,
   and its `eq_of_id` probe checks both updated anchors before rebuilding. Each probe still
   verifies that exactly its intended lock entry changes.
-- The lock grows from 203 to 248 declarations. The current format records 19 changed entries and
-  45 new ones, including all 36 chain fixture declarations. The source-declaration lock in #524
-  accounts for the count difference from the design, which counted the generated
-  `Affects.below.through` constructor and used the old auxiliary hash for the `Fact` equality
-  instance.
-  The fact-only lock check on current main shows the new constructor and two changed
-  `FactKind` instances.
+- See "Lock prediction" for the merged diff and the sketch measurements. The fact-only lock
+  check on current main shows the new constructor and two changed `FactKind` instances.
 - The endpoint summary uses `Bool ⊕ Nat` to stay within the mutant lint's command set. A
   Boolean supplies the result for all IDs, and a natural number supplies the single matching
   ID. The resolver still computes the summary once per requirement.
@@ -1100,7 +1101,7 @@ build, and show `fact-step`.
 - [ ] all `checks` pass locally at the head except `mitos-lint-test` and the cheat corpus, which
       run in CI (read the `cheat-logs` artifact); one Lean build at a time
 - [ ] every run-level fixture under Design holds
-- [ ] the PR body lists the lock diff against the prediction (206 → 252, 20 `-`, 66 `+`), says
+- [ ] the PR body compares the merged lock diff with the sketch under "Lock prediction", says
       `Closes #204`, names D1 and D2 and how each was settled, and says both records changed in
       `core_sha256` only
 - [ ] no `sorry`, no new axioms

@@ -21,26 +21,20 @@ budget: 10 iterations · 3h wall · 800k tokens (every case text below was built
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
 ## Context
-1. **The row.** Plan row P2-005b in `plan/phase-2.md` (wave W5), issue #206 (no comments). An agent
-   carries and merges it (class A). It waits for P2-001b (#204), which is open and unmerged. Its work
-   is pushed on branch `claude/p2-001b-chains`, head `3d939da`, with no PR yet (read over REST).
-   The task file on `main` is P2-001b's plan-time design, and the branch amends and
-   builds it. Every case below was built and run against `3d939da`. Because the row waits for a
-   merge, the depth is "contract only" and `revisit_when` is set. Brief role for the build: PR owner,
-   routine (`sonnet`, `high`). Every file's text is given and was run, so the work is to copy, run and
-   report. A re-anchor that needs a new refutation goes to `opus`.
+1. **The row.** Plan row P2-005b in `plan/phase-2.md` (wave W5), issue #206. Its design was tested
+   against P2-001b's branch at `3d939da`. P2-001b (#204) merged in #545 at `1770a97`, and
+   P2-005b merged in #547 at `5914856`.
 2. **Inputs that settle things.**
    - The owner ruled O1 on #204 ("go 'rule out'", recorded in
      [this comment](https://github.com/kitimark/mitos/issues/204#issuecomment-6898646864)): `boundB`
-     rules out a binding from an identity to itself (`&& p.fact.ident != r.fact.ident`). The branch
-     applies it, so `self_binding_allowed` exists and the three cases that inline `boundB` keep that
-     conjunct.
-   - The branch took P2-001b's D2 fallback. The chain fixtures are the end of `Spec/Adequacy.lean`,
-     named `Spec.Adequacy.*`, not `Spec/Chains.lean`. These cases `open Mitos.Spec.Adequacy` and use
-     twelve of them as refutation inputs (`needDb`, `bindDb`, `provDb`, `chain`, `wfChain`,
-     `chainEdge`, `chainAI`, `bindStaging`, `twoBindings`, `wfTwoBindings`, `selfBound`,
-     `wfSelfBound`), with Phase 1's `req`, `prov`, `goodEdge` and `twoProvisions`. So a locked fixture
-     is the case's input, and a locked `decide` theorem already pins its `derivations`.
+     rules out a binding from an identity to itself (`&& p.fact.ident != r.fact.ident`).
+     `self_binding_allowed` pins that ruling, and the three other cases that inline `boundB` keep
+     the conjunct.
+   - The merged cases open `Mitos.Spec.Chains` for twelve refutation inputs (`needDb`, `bindDb`,
+     `provDb`, `chain`, `wfChain`, `chainEdge`, `chainAI`, `bindStaging`, `twoBindings`,
+     `wfTwoBindings`, `selfBound`, `wfSelfBound`). They use Phase 1's `req`, `prov`, `goodEdge` and
+     `twoProvisions` from `Mitos.Spec.Adequacy`. Locked `decide` theorems pin the fixtures'
+     `derivations`.
    - The exceptions are the five cases whose refutation the replay kernels reject over string
      literals (T9). Four `StatusHonest` cases and `impact_through_head_only` build their input with
      `String.ofList`, as Phase 1's four status cases do.
@@ -70,9 +64,9 @@ escalation: hint → automation → stronger model → pair → split → revisi
    |---|---|---|---|
    | T1 | A mutant that breaks everything (an edit that empties `edges`) | It breaks a theorem, so it counts, but it says nothing about chains | The scope pin in 26 of the 28 cases. The mutated `resolve` still returns `Spec.Adequacy.goodEdge` on Phase 1's own fixture, and `impact` still answers on `goodEdge`. The two cases without the pin are not chain-only on purpose (their `why=` and the table say so) |
    | T2 | An anchor the cached resolver never runs: `ends`, or the default `same` arguments of `statusOf`, `mkEdge` and `mkBoundEdge` | An equivalent mutant. No refutation can be proved, so the case ends `REJECTED, NOT REFUTED`. It cannot be relabelled `survives=`, which needs an accepted gate run | Every anchor lies in text that `resolveOne`, `mkEdge`, `mkBoundEdge`, `boundProviders`, `summarizeEnds` or `fires` runs. P2-001b's candidate (c), `providers fs r ++ fs.flatMap (boundProviders fs r)` → `providers fs r`, is the `ends` line and is dead. All ten resolver statements hold on nine inputs under it (measured). It is replaced by `unresolved_ignores_bound_ends` and `status_ignores_bound_ends` (fixture `anchors-live`) |
-   | T3 | A refutation input with no binding in it | A Phase 1 case in disguise | Inputs are locked `Spec.Adequacy` fixtures whose `derivations` a locked theorem pins, or local inputs with an `example` that pins `derivations` |
+   | T3 | A refutation input with no binding in it | A Phase 1 case in disguise | Inputs are locked `Spec.Chains` fixtures whose `derivations` a locked theorem pins, or local inputs with an `example` that pins `derivations` |
    | T4 | Anchor or edit text the runner's lint refuses | A case `REFUSED BY LINT`. The plan-time `inductive EndSummary` did this to every `Impl/Resolve.lean` case, and the branch made it an `abbrev`. A later edit that brings back a `structure` or `inductive` repeats it, and the 15 `rejects=lint` cheat cases would still read as rejected, for the wrong reason | `--prepare` over the cases before any run (fixture `prepare-lint-clean`), and P2-005a's `cheat-evidence-unchanged` |
-   | T5 | A refutation that is true of the unmutated resolver | Impossible for a checked proof, but a stale input can make a proof elaborate for another reason, or the case pin nothing | Fixture `control-fails`: each Refute, built against the unmutated core, fails on the theorem it names |
+   | T5 | A refutation that is true of the unmutated resolver | Impossible for a checked proof, but a stale input can make a proof elaborate for another reason, or the case pin nothing | Fixture `control-fails`: every Refute file fails to build against the unmutated core |
    | T6 | Relabelling a stubborn case `survives=` | A spec gap hidden | A case that cannot be refuted is re-anchored or cut and reported, never relabelled. A real survivor (the gate accepts it and the values check accepts it) goes to the owner (exit criterion 3). None is predicted |
    | T7 | A resolver wrong in a way no theorem sees | A hole in the spec | The matrix under Rationale: every clause a chain extends has a chain breaker. The one theorem without one, `resolve_unresolved_nodup`, has no chain source of duplicates (`unresolved` holds one entry per requirement), and Phase 1's `unresolved_duplicated` keeps it |
    | T8 | A plugin that emits facts a resolver mishandles: a binding with no provision, a binding of someone else's identity, a binding to a requirement, a binding held in the requirer's repo, a binding to itself, two bindings that reach one provider, an AI-proposed binding, a test-scoped requirement under a runtime binding | Each is a valid input, and the resolver must answer it by the spec | The cases named in the table under `statements` |
@@ -81,9 +75,8 @@ escalation: hint → automation → stronger model → pair → split → revisi
    | T11 | An edit that injects two faults while its `why=` names one | A case that seems to pin one clause and pins two | Each inlined `boundB` keeps every conjunct except the one it names. Runner B's three texts also dropped O1's conjunct and broke `Sound` on `selfBound`. The texts below do not (measured, Design) |
 
 5. **Where this design and its inputs disagree.** None blocks the row.
-   - **D1. Fixture namespace.** The plan-time text says `Spec.Chains`, and the branch says
-     `Spec.Adequacy`. The `open` line and four qualified Phase 1 names in each Refute are the only
-     places that name it.
+   - **D1. Fixture namespace.** The judged branch put the chain fixtures in `Spec.Adequacy`.
+     The merged implementation uses the plan-time `Spec.Chains` namespace.
    - **D2. P2-001b's candidate list.** It hands this row seven candidates.
      - Six are cases here: `through_dropped`, `binding_origin_forgotten`, `bound_edges_dropped`,
        `impact_through_ignored`, `bound_key_legs_swapped` and `edges_one_per_repo_key`.
@@ -151,8 +144,9 @@ modules: one directory per case, two files each. Nothing else is written.
     `breaks=`;
   - `end Mitos.Refute`.
 
-  It is 15 to 45 lines. It copies `eval/mutants/cases/requirer_origin_forgotten/Refute.lean`, which
-  has several theorems in one file. The five `String.ofList` cases copy `status_any_not_all/Refute.lean`.
+  The merged files are 15 to 44 lines each. They follow
+  `eval/mutants/cases/requirer_origin_forgotten/Refute.lean`, which has several theorems in one file.
+  The five `String.ofList` cases follow `status_any_not_all/Refute.lean`.
 - The 28 directories, 23 on `Impl/Resolve.lean` and 5 on `Impl/Impact.lean`: `assumes_pool_all_bindings`,
   `binding_ident_unchecked`, `binding_origin_duplicated`, `binding_origin_forgotten`,
   `binding_same_repo_skipped`, `binding_target_unchecked`, `bound_always_inferred`,
@@ -292,8 +286,7 @@ These four new sets each name two refuted theorems:
 - `resolve_complete resolve_retract_exact` (`edges_one_per_repo_key`).
 
 reuse:
-- The chain fixtures in `Spec/Chains.lean`: the twelve names in Context 2, plus
-  Phase 1's `req`, `prov`, `goodEdge` and `twoProvisions`.
+- The chain and Phase 1 fixtures listed in Context 2.
 - The runner, unchanged: `--prepare`, the logs in `.lake/mutants/`, the breakers table.
 - Phase 1's refutation pattern (`intro h; have := h fs wf; revert this; decide`). For impact, it uses
   `decide +kernel`, as `impact_direct_only` does. For `StatusHonest`, it uses Phase 1's
@@ -314,6 +307,9 @@ In-file pins, in the Refute of the cases they fit:
   from counting as a chain mutant (T1). `edges_one_per_repo_key` and `direct_edge_through_set` do not
   carry it.
 - **Derivations pin.** An `example` on the local input's `derivations` (T3).
+- **Impact helper.** In `impact_binding_repo_affected`, `affects_chainEdge` proves that the only
+  affected destination from this edge is `web`. The refutation uses it to rule out the mutant's
+  report that a change in `orders` affects `deploy`.
 - **Consequence pin.**
   - `binding_origin_forgotten` carries `(Impl.resolve chainAI).edges.map Edge.status = [.confirmed]`.
     It shows what the missing origin does: an AI-proposed binding turns into a confirmed edge.
@@ -331,7 +327,9 @@ Run-level fixtures:
   Measured at `3d939da`: 28 of 28 in both modes. Case TIME was 22 to 31 s default and 31 to 62 s with
   `--paranoid`, one run each, on the shared host.
 - `control-fails`: from `core/` of the P2-001b head, `lake env lean <Refute.lean>` fails for every
-  new Refute, on the proposition it names. Measured at `3d939da`: 28 of 28 exit 1.
+  new Refute. `binding_origin_forgotten` and `edges_one_per_repo_key` first fail their consequence
+  pins. The five impact cases report `decide failed to reduce`. Measured at `3d939da`: 28 of 28
+  exit 1.
 - `anchors-live`: `grep -lE '^find=.*(def ends|\(ends fs r\)|providers fs r \+\+ fs\.flatMap)'` over
   the 28 `mutant` files prints nothing (T2), and no case ends `REJECTED, NOT REFUTED`. A case that does
   is re-anchored on live text, never relabelled. Measured: nothing printed.
@@ -388,7 +386,7 @@ import, and the cases name only `Mitos` namespaces. The PR says `Closes #206`.
 
 deferrals:
 - **From P2-001b (#204), its contract.**
-  - Taken: six of the seven candidate mutants (D2), the `Spec.Adequacy` fixtures as inputs, and the
+  - Taken: six of the seven candidate mutants (D2), the chain fixtures as inputs, and the
     status rule's two halves (`status_counts_derivations`, `status_ignores_bound_ends`).
   - Not taken as written: candidate (c) (T2).
 - **From P2-001a (#203):** a mutant that keeps one edge per repo-level key (`edges_one_per_repo_key`).
@@ -443,8 +441,9 @@ owner_decisions: none new. The row is class A.
 - [ ] all `checks` pass at the head: locally one Lean build at a time and one case per invocation,
       both modes; and the nightly dispatch run
 - [ ] every run-level fixture under Design holds, and its measured line is in the PR body
-- [ ] the PR body lists the breakers table against the one under `breakers-table`, names each cut
-      case or narrowed `breaks=` set, says `Closes #206`, and says no existing file changed
+- [ ] the PR body compares the breakers table with `breakers-table`, records all 28 cases and
+      all 36 declared refutation claims, says `Closes #206`, and confirms that the corpus diff
+      adds 56 files
 - [ ] no `sorry`, no new axioms, no `survives=` case
 - [ ] run-log record written (`ops/runs/<UTC date>/P2-005b-builder-<attempt>.json`)
 
@@ -1388,21 +1387,23 @@ A plain reading, "add mutants until each breaks a theorem", falls short in six p
   nightly's shape and memory.
 
 ### Open questions and risks
-- If #204 merges with a `resolveOne` shaped differently from the branch's, six to ten anchors move
-  (D4). `revisit_when` step 2 finds them in one `--prepare` run.
-- The nightly's memory headroom on GitHub's runner with 72 cases is not measured yet.
-  `nightly-dispatch` measures it before merge, and `cut_line` says what gives.
+- Changes to the shared lines in D4 can move several anchors. `revisit_when` step 2 finds them in
+  one `--prepare` run.
+- The verifier measured a runner peak of about 4.8 GiB (VmHWM 5,029,100 KiB) in one run over all
+  72 cases. The [nightly dispatch at `13ec624`](https://github.com/kitimark/mitos/actions/runs/44892073901)
+  passed with `--paranoid`. [Verification findings](https://github.com/kitimark/mitos/issues/550)
 - lean4lean's treatment of string literals is measured per form, not understood. Every new text
   runs `--paranoid` before it counts.
 
-### Next implementation step
-After #204 merges, run `revisit_when`. Then write the 56 files from the Appendix, run the two
-local fixtures for each case in both modes, dispatch the nightly at the head, and report.
+### Implementation
+#547 merged all 28 cases and their 36 declared refutation claims. Its review recorded that each
+of the 28 refutation files passed against its mutant and failed against the unmutated control.
+[Review catch-up](https://github.com/kitimark/mitos/pull/547#issuecomment-7061038947)
 
 ### Synthesis decision
 The root's default, recorded here with its reasons. The base is Design B (adversarial).
-- B was built against the real branch head `3d939da` and the real runner. It uses the namespace
-  the branch has (`Spec.Adequacy`, P2-001b's D2 fallback).
+- B was built against the branch head `3d939da` and the real runner. It used the branch's
+  `Spec.Adequacy` namespace (P2-001b's D2 fallback).
 - B pins every clause a chain extends, with data files only and no runner change. Design A was built
   on the plan-time text with `Spec.Chains` names and a hand-laid comparator workspace, and covers
   eight clauses.
