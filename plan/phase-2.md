@@ -279,3 +279,56 @@ Stop and report when: an edit falls outside Owns; a statement looks false (count
 Budget: <iterations> iterations, <hours> h wall; when it runs out, a stuck report.
 Report: PR, head, each check and result, resolved conflicts, post ids. No session link or ID.
 ```
+
+## Watch track (#502, milestone 6)
+
+One Lean waiter, `.claude/scripts/watch.sh wait`, backed by `mitos-gate`, replaces the bash
+watcher `.claude/scripts/watch-github.sh` under `Monitor`. Every agent waits through it: the root,
+PR owners and Codex. It decides who wrote a post from the app GitHub names or from an id the agent
+recorded, never from the footer (#501), and it lets Codex and the root hear each other (#336). The
+tracker is [#502](https://github.com/kitimark/mitos/issues/502). The design is
+`tasks/502-watch.md` (the Design block) and `tasks/502-watch/`: `DESIGN.md` (why, usage and the
+owner's questions), `PR-SEQUENCE.md` (one row per PR, with its files, gate and check),
+`HANDOVER.md`, `REVIEW-LOG.md` and an unchecked `sketch/`.
+
+These rows have their own milestone,
+[Watch: one Lean waiter for GitHub (#502)](https://github.com/kitimark/mitos/milestone/6), and no
+Phase 2 exit criteria; the milestone lists PR 15's gates as its exit criteria. They run outside the
+Phase 2 waves and the Paths table above. "PR N" is the design's numbering in `PR-SEQUENCE.md`, not
+a GitHub number. That file's Files column is each row's Owns cell, and its Gate column says what
+each row waits for.
+
+| # | Task | Kind | Issue |
+|---|---|---|---|
+| P2-013 | PR 2. First Lean module: `Watch/Voice.lean` (who spoke in a post; pr-state's unanswered rule, land's classes plus #501), the three post readers in `Watch/Observe.lean`, `Epoch` and `ofIso?` in `Watch/Time.lean`, and `mitos-gate watch unanswered`; the 8 Voice statements and the `posts-336` fixtures. Starts with the Architect's upgrade of its slice to build depth (owner-gated: `gate/`, `docs/process.md`) | gate | [#562](https://github.com/kitimark/mitos/issues/562) |
+| P2-014 | PR 3. `pr-state.sh` asks `mitos-gate watch unanswered` for its unanswered column and fails closed with `?`; its fixtures re-authored with the app key as the live API gives it. Waits for P2-013, P2-025 and PR 3a (owner-gated: `.claude/`) | tooling | [#563](https://github.com/kitimark/mitos/issues/563) |
+| P2-015 | PR 3c, optional (owner question 8b). Land's merge admission takes Voice's typed rule: a place field on `Snapshot.Post`, set by `posts` and by every constructor, so `SpeaksAsLandUnlessTyped` and `AnswersAsLandUnlessTyped` become equalities. Waits for P2-013 and a yes to 8b (owner-gated: `gate/`) | gate | [#564](https://github.com/kitimark/mitos/issues/564) |
+| P2-016 | PR 4. `Watch/Time.lean` (`isoChars`, `ofHttpDate?`, IsoReadsBack), `Watch/Route.lean`, the rest of the readers and `Plan.heads` in `Watch/Observe.lean`, the pure `Date` header framing in `Watch/Gh.lean`; the test-only `watch read`; one live read of each route with `gate/watch-fetch.sh`. Waits for P2-013 (owner-gated: `gate/`) | gate | [#565](https://github.com/kitimark/mitos/issues/565) |
+| P2-017 | PR 5. `Watch/KeyMap.lean` and `Watch/View.lean`: the level view, the checks, `ci` health and its alarms; 19 statements. Waits for P2-016 (owner-gated: `gate/`) | gate | [#566](https://github.com/kitimark/mitos/issues/566) |
+| P2-018 | PR 6. `Watch/Feed.lean` and `Watch/Shared.lean`: posts and closes keyed by GitHub's time, the cursor, one poll's step and head ages; the test-only `watch replay` and the `history-84` fixture; 24 statements. Waits for P2-017 (owner-gated: `gate/`) | gate | [#567](https://github.com/kitimark/mitos/issues/567) |
+| P2-019 | PR 7a. `Watch/Wake.lean`: identity, quiet posts, echoes of one's own writes, what wakes; 13 statements. Waits for P2-018 and owner question 5a (owner-gated: `gate/`) | gate | [#568](https://github.com/kitimark/mitos/issues/568) |
+| P2-020 | PR 7b. `Watch/Deliver.lean` up to `waking`: what each consumer is told, the offer and the ack; 17 statements, NoNewsStaysQuiet and EveryNotableChangeIsTold among them. Waits for P2-019 (owner-gated: `gate/`) | gate | [#569](https://github.com/kitimark/mitos/issues/569) |
+| P2-021 | PR 7c. The rest of `Watch/Deliver.lean` (the cut, `Moment`, `nextMove`, `finish`) and `Watch/Render.lean`: when a wait ends, and the text of every line; 24 statements. Waits for P2-020 (owner-gated: `gate/`) | gate | [#570](https://github.com/kitimark/mitos/issues/570) |
+| P2-022 | PR 8. The IO shell: `Watch/Gh.lean` (the one `gh` process), `Watch/Store.lean` (the state files, the lease and the locks) and `mitos-gate watch wait`, `own` and `status`, with fault-injection cases and one real `wait --max 0`. Waits for P2-021 (owner-gated: `gate/`) | gate | [#571](https://github.com/kitimark/mitos/issues/571) |
+| P2-023 | PR 9. The shim `.claude/scripts/watch.sh` and `watch.test.sh`; `watch.sh` joins the REST-only and sourced-bash checks. Waits for P2-022 (owner-gated: `.claude/`) | tooling | [#572](https://github.com/kitimark/mitos/issues/572) |
+| P2-024 | PR 10. Differential replay: every `watch-github.test.sh` fixture through both watchers, each difference listed with its reason in `watch-diff.intended`. Waits for P2-023 (owner-gated: `.claude/`) | tooling | [#573](https://github.com/kitimark/mitos/issues/573) |
+| P2-025 | PR 11. Bootstrap: main's `mitos-gate` where the root runs, on the route of owner question 3a (recommended: an attested release asset built on each push to `main`, installed by `watch.sh build --fetch`). Waits for P2-023 and question 3a (owner-gated: `.github/`, `.claude/`, `docs/process.md`) | ci | [#574](https://github.com/kitimark/mitos/issues/574) |
+| P2-026 | PR 12. Canary and A/B, measurement only: arm A is the bash watcher under `Monitor`, arm B is `Monitor` running `watch.sh wait`; tokens per idle 2 hours and wake latency, with run counts and spread, in `ops/runs/` and a public summary. Waits for P2-025 and owner questions 2b and 2c | measurement | [#575](https://github.com/kitimark/mitos/issues/575) |
+| P2-027 | PR 13. Rules switch: the Watchers text in both `kitimark-mode` copies, the four waiting playbooks, `.claude/README.md` and `docs/process.md` name `watch.sh`, with the caller protocol for each exit code. Waits for P2-025, P2-026 and its A/B pass (owner-gated: `.claude/`, `docs/process.md`) | process | [#576](https://github.com/kitimark/mitos/issues/576) |
+| P2-028 | PR 14, optional. Lift the background-shell ban in the Watchers text, only if P2-026's numbers show the remaining re-arm cost is worth it and the owner says yes (owner question 2a) (owner-gated: `.claude/`) | process | [#577](https://github.com/kitimark/mitos/issues/577) |
+| P2-029 | PR 15. Delete the bash watcher: `watch-github.sh`, its test suite and `watch-own.sh`, their lines in the REST-only and sourced-bash checks, and the fallback paragraph in both `kitimark-mode` copies. Waits for the gates in `PR-SEQUENCE.md` (Gates before PR 15) and the owner's sign-off (question 9) (owner-gated: `.claude/`, `docs/process.md`) | tooling, process | [#578](https://github.com/kitimark/mitos/issues/578) |
+
+Three PRs of the sequence have no row and may start now: PR 1 and PR 3a, the #501 stopgaps in
+`watch-github.sh` and `pr-state.sh` ([#501](https://github.com/kitimark/mitos/issues/501)), and
+PR 3b, after PR 3a, the `pr-state.sh` hang on a stdin pipe that never closes
+([#579](https://github.com/kitimark/mitos/issues/579)).
+
+P2-013 starts once this plan merges. The owner merges it after answering questions 1 and 8a of
+`tasks/502-watch/DESIGN.md` (part A), and that merge accepts the root's defaults in part B. The
+Lean rows (P2-013 and P2-015 to P2-022) are at contract depth: the sketch was never type-checked.
+Before each one's PR owner starts, the Architect type-checks its slice, writes the stub bodies its
+statements are stated over and upgrades its task file to build depth. P2-016 to P2-023 run in
+series after P2-013. P2-024 and P2-025 follow P2-023. P2-014 follows P2-013, P2-025 and PR 3a.
+P2-015 follows P2-013 on a yes to 8b. P2-026 follows P2-025, and P2-027 follows P2-026's A/B
+pass. P2-028 and P2-029 come last. A row that touches `gate/` or `.github/` is trust-critical: it
+needs an `opus` verifier at `xhigh` or above, and the owner merges it.
