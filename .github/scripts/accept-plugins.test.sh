@@ -76,4 +76,11 @@ mode=--record
 fresh; ln -s GoMod.lean "$work/repo/examples/acme/Plugins/Evil.lean"; run env
 expect 1 "A11 an extra symlink plugin is red before any accept" "nonregular Lean entry"
 [ ! -s "$work/lake.log" ] || fail "A11: an accept ran"
+fresh; mkdir "$work/repo/examples/acme/Plugins/Evil"; : > "$work/repo/examples/acme/Plugins/Evil/X.lean"; run env
+expect 1 "A12 a plugin in a subdirectory of Plugins/ is red before any accept" "examples/acme/Plugins/Evil/X.lean"
+[ ! -s "$work/lake.log" ] || fail "A12: an accept ran"
+fresh; mkdir -p "$work/repo/examples/acme/Models"; : > "$work/repo/examples/acme/Models/X.lean"
+ln -s ../Models "$work/repo/examples/acme/Plugins/Evil"; run env
+expect 1 "A13 a symlink to a directory in Plugins/ is red before any accept" "examples/acme/Plugins/Evil"
+[ ! -s "$work/lake.log" ] || fail "A13: an accept ran"
 echo "accept-plugins: done"

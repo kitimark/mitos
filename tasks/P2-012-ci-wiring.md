@@ -74,8 +74,8 @@ revisit_when:
 - re-check after P2-011 PR B (#147) merges: its re-recorded records must pass the accept step. If P2-012 merges first, tell PR B's owner that CI now checks both records at its head.
 
 modules: each existing file is edited in place, and each new file owns one topic.
-- `.github/scripts/accept-plugins.sh` (new, 40 lines): the one list of plugins and their models, the check that `Plugins/`, the list and `accepted/` agree, and the record check. It copies `install-elan.sh`'s style.
-- `.github/scripts/accept-plugins.test.sh` (new, 79 lines): A1 to A10, with a stub `lake` in a scratch git repo. It copies `cancel-superseded.test.sh` (a stub tool, no network).
+- `.github/scripts/accept-plugins.sh` (new, 40 lines): the one list of plugins and their models, the check that `Plugins/` holds only regular files and no subdirectory, the check that `Plugins/`, the list and `accepted/` agree, and the record check. It copies `install-elan.sh`'s style.
+- `.github/scripts/accept-plugins.test.sh` (new, 86 lines): A1 to A13, with a stub `lake` in a scratch git repo. It copies `cancel-superseded.test.sh` (a stub tool, no network).
 - `.github/scripts/install-go.sh` (new, 34 lines): Go from `eval/diff/.go-version`, SHA256 pinned, retried, and its version read back. It copies `install-elan.sh`.
 - `.github/workflows/ci.yml`, job `checks`, about +30 lines. It adds three steps: the accept test, the `eval/diff` step and the `--prepare` step. It changes two: the scorecard loops over every fixture, and the accept step calls the script. There is no new job, checkout or timeout.
 - `.github/workflows/nightly.yml`, about +100 lines:
@@ -89,7 +89,7 @@ modules: each existing file is edited in place, and each new file owns one topic
 
 | # | The move | What stops it | Fixture |
 |---|---|---|---|
-| X1 | Add `Plugins/Evil.lean` with no CI line | `accept-plugins.sh` compares `Plugins/*.lean`, its list and `accepted/*.json` before any accept | A4, A5 |
+| X1 | Add `Plugins/Evil.lean`, `Plugins/Evil/X.lean`, or a symlink in `Plugins/`, with no CI line. Lake's `Plugins.+` glob builds every `.lean` file under `Plugins/`, through subdirectories and symlinked directories | Before any accept, `accept-plugins.sh` rejects every entry of `Plugins/` that is not a regular file directly in it, then compares `Plugins/*.lean`, its list and `accepted/*.json` | A4, A5, A11, A12, A13 |
 | X2 | A stale record (GoMod today), a deleted record, an orphan record, or a temp file in `accepted/` | `git diff --exit-code`, the name checks, the stray check and the untracked check | A2, A3, A5, A6, F13 |
 | X3 | Accept without `--paranoid` | The script always passes it, and the stub fails a call without it | A1 |
 | X4 | A second way to accept: a workflow that calls `mitos-gate accept` itself | A10 greps every workflow | A10 |
@@ -101,12 +101,12 @@ modules: each existing file is edited in place, and each new file owns one topic
 | X10 | Edit `module.mod` and its `pins.tsv` hash together | The nightly `check-pins.sh --online` | F17 |
 | X11 | A swapped Go archive, or a `.go-version` bump with no hash | SHA256 checked before extraction; `go env GOVERSION` checked after; an unknown version fails closed | F16 |
 | X12 | A fixture directory with no labels is skipped | The loop scores every directory, and `mitos-score` fails without a `labels.tsv` | F19 |
-| X13 | `continue-on-error`, `\|\| true`, or `if: always()` on a check step | None in this design. `!cancelled()` only on evaluation steps. The verifiers read the diff | review |
+| X13 | `continue-on-error`, `\|\| true`, or `if: always()` on a check step | None in this design. `!cancelled()` alone only on evaluation steps. The nightly cheat step also runs when the accept step before it failed, but not after an earlier failure, and the failed accept still fails the job. The verifiers read the diff | review |
 | X14 | Reword the scorer's D1 line, so the nightly step reads no number and the report still looks fine | The step fails when the report has neither the D1 line nor P2-010's no-edge line (C1) | F23 |
 
 types:
 
-`.github/scripts/accept-plugins.sh`, final text (shellcheck clean; A1 to A10 pass):
+`.github/scripts/accept-plugins.sh`, final text (shellcheck clean; A1 to A13 pass):
 
 ```bash
 #!/usr/bin/env bash
@@ -127,8 +127,8 @@ ws=examples/acme
 fail() { echo "::error::accept-plugins.sh: $*" >&2; exit 1; }
 names() { LC_ALL=C sort | tr '\n' ' '; }
 
-stray=$(find "$ws/Plugins" -mindepth 1 -maxdepth 1 -name '*.lean' ! -type f -print)
-[ -z "$stray" ] || fail "Plugins/ holds a nonregular Lean entry: $stray"
+stray=$(find "$ws/Plugins" -mindepth 1 \( ! -type f -o -path "$ws/Plugins/*/*" \) -print)
+[ -z "$stray" ] || fail "Plugins/ holds a nonregular Lean entry or a subdirectory, which Lake's Plugins.+ glob can build and the gate cannot accept: $stray"
 listed=$(printf '%s\n' "${PLUGINS[@]%%:*}" | names)
 plugins=$(find "$ws/Plugins" -maxdepth 1 -type f -name '*.lean' -printf '%f\n' | sed 's/\.lean$//' | names)
 [ "$listed" = "$plugins" ] || fail "Plugins/ holds [$plugins] and this script accepts [$listed]"
@@ -234,6 +234,13 @@ mode=--record
 fresh; ln -s GoMod.lean "$work/repo/examples/acme/Plugins/Evil.lean"; run env
 expect 1 "A11 an extra symlink plugin is red before any accept" "nonregular Lean entry"
 [ ! -s "$work/lake.log" ] || fail "A11: an accept ran"
+fresh; mkdir "$work/repo/examples/acme/Plugins/Evil"; : > "$work/repo/examples/acme/Plugins/Evil/X.lean"; run env
+expect 1 "A12 a plugin in a subdirectory of Plugins/ is red before any accept" "examples/acme/Plugins/Evil/X.lean"
+[ ! -s "$work/lake.log" ] || fail "A12: an accept ran"
+fresh; mkdir -p "$work/repo/examples/acme/Models"; : > "$work/repo/examples/acme/Models/X.lean"
+ln -s ../Models "$work/repo/examples/acme/Plugins/Evil"; run env
+expect 1 "A13 a symlink to a directory in Plugins/ is red before any accept" "examples/acme/Plugins/Evil"
+[ ! -s "$work/lake.log" ] || fail "A13: an accept ran"
 echo "accept-plugins: done"
 ```
 
@@ -518,8 +525,10 @@ Its steps:
 ```yaml
       - run: cd examples/acme && lake build
       - name: Every plugin in examples/acme/Plugins is accepted, and its committed record is the one the gate writes
+        id: accept
         run: .github/scripts/accept-plugins.sh --record
-      - run: lake exe mitos-gate cheats --jobs 4
+      - if: ${{ !cancelled() && (success() || steps.accept.outcome == 'failure') }}
+        run: lake exe mitos-gate cheats --jobs 4
 
       - name: Build the mutant runner
         if: ${{ !cancelled() }}
@@ -695,7 +704,7 @@ RUNNER_TEMP=$(mktemp -d) GITHUB_STEP_SUMMARY=/dev/null bash -eo pipefail <(step 
 
 Run the fixtures at the head, and the variants in a scratch worktree of the head. The historical results marked "judge" were measured at `eac85d2`. F2 separately identifies its earlier anchor and the independent verifier's current-anchor run at `4857ba7`.
 - F1 `prepare-corpus`: `--prepare` with no case named exits 0. At the implementation base it must write 57 cases (114 workspaces) and print 15 `refused by the lint, as its manifest says`; measure peak RSS again. The earlier design run wrote 29 cases in 28 s.
-- F2 `prepare-moved-anchor`: add a space inside `edges := rows.flatMap Prod.fst` in `core/Mitos/Impl/Resolve.lean`. Exit 1, including `edges_duplicated: … does not occur exactly once`; `bound_edges_duplicated` still claims `resolve_edges_nodup`, so no unclaimed-theorem diagnostic for it is expected. The [independent verifier's run at `4857ba7`](https://github.com/kitimark/mitos/pull/554#issuecomment-7069062704) reported exit 1 with `the text to find does not occur exactly once` and no coverage line. The historical `eac85d2` judge result used the earlier `edges := fs.flatMap fun r =>` variant; the current anchor was added in `a717614`. This pins #107 item 2.
+- F2 `prepare-moved-anchor`: add a space inside `edges := rows.flatMap Prod.fst` in `core/Mitos/Impl/Resolve.lean`. Exit 1, including `<case>: … does not occur exactly once` for each of the three cases whose `find=` is that anchor: `edges_duplicated`, `edges_one_per_repo_key` and `first_fact_skipped`. Other cases with `breaks=` and no `rejects=` still claim every theorem those three name (`bound_edges_duplicated` claims `resolve_edges_nodup`, and `resolve_complete`, `resolve_total` and `resolve_retract_exact` each have other claimants), so no unclaimed-theorem diagnostic is expected. The [independent verifier's run at `4857ba7`](https://github.com/kitimark/mitos/pull/554#issuecomment-7069062704) reported exit 1 with `the text to find does not occur exactly once` and no coverage line. The historical `eac85d2` judge result used the earlier `edges := fs.flatMap fun r =>` variant; the current anchor was added in `a717614`. This pins #107 item 2.
 - F3 `prepare-lint-gone`: set `cheat_impl_macro`'s `replace=` to `def mitosNoop : Nat := 0 end Mitos.Impl`. Exit 1: `its manifest says rejects=lint, and the lint finds nothing` (judge).
 - F4 `prepare-lint-unexpected`: delete `rejects=lint` from `cheat_impl_macro`. Exit 1, with its three `lint:` lines (judge).
 - F5 `prepare-unclaimed`: move both `impact_repeats_repo` and `impact_through_bypasses_seen` out, or add `rejects=refutation` to both. The older 44-case fixture needed only the first case. Exit 1: `impact_nodup: no case with breaks= and no rejects= names this theorem` (judge, both variants).
@@ -827,7 +836,7 @@ owner_decisions:
   - one accept script;
   - Go from a pinned archive, not `actions/setup-go`;
   - `diff` is its own job, without a cache save;
-  - `!cancelled()` only on evaluation steps;
+  - `!cancelled()` only on evaluation steps, and the nightly cheat step also runs when the accept step before it failed (#555 item 6);
   - the `checks` timeout stays at 20 unless S6 applies;
   - the Go refresh and the online pins run nightly only.
 
@@ -847,7 +856,7 @@ Risks:
 - **R6, the canary.** On an rc it can now fail on GoMod's proofs. That is an early warning, as intended.
 
 Stop conditions for the builder:
-- **S0, resolved for this implementation.** The user explicitly requested implementation of #213; that authorizes this task's concrete design scope. The stale Owns-cell prerequisite is superseded for this request; plan/ remains unchanged.
+- **S0, resolved for this implementation.** The user explicitly requested implementation of #213; that authorizes this task's concrete design scope. The stale Owns-cell prerequisite is superseded for this request. The P2-012 PR left plan/ unchanged; the Owns cell got O1's wording afterwards, in the follow-up for #555.
 - **S1.** Before writing, after `git fetch origin main`, run `accept-plugins.sh --record` (a draft is enough) on a clean `origin/main` worktree. If it is red on a stale record (`GoMod.json` today), stop. P2-001b's merge re-records it; otherwise the root has a PR owner re-record it with the gate, never by hand, in its own small PR that an agent merges (`examples/acme/accepted/` is not a kept path). This PR never edits a record to get green.
 - **S2.** `--prepare` of every case is red on clean `main` with the Lean edit, for a reason other than F2 to F6 (an invalid case, an unclaimed theorem): stop. It is a corpus or spec issue. Never relax the check or add a vacuous case.
 - **S3.** The newest nightly, or one judged run of every case on `main`, shows a `none` row: stop. A mutant case comes first.
@@ -905,7 +914,7 @@ The plan makes the differential run evaluation, so the PR side may block only on
 - **Deep surfaces.**
   - `accept-plugins.sh --record` hides the list, the set check, `--paranoid` and the record check behind one call that all three workflow call sites use.
   - `--prepare <dir>` hides case discovery, the lint expectation and coverage.
-- **Two levels of failure.** Evaluation steps take `!cancelled()`, so a red cheat corpus no longer skips them (#107 item 4); check steps keep the default. The differential evaluation sits in its own job, so its network and its downloaded binary stay out of `full`. That job has no persisted token and saves no cache.
+- **Two levels of failure.** Evaluation steps take `!cancelled()`, so a red cheat corpus no longer skips them (#107 item 4); check steps keep the default. The one exception is the nightly cheat step: it also runs when the accept step just before it failed, but not after an earlier failure, so a red accept does not hide whether the cheat corpus is rejected that night, and the failed accept still fails the job (#555 item 6). The differential evaluation sits in its own job, so its network and its downloaded binary stay out of `full`. That job has no persisted token and saves no cache.
 - **`git status --porcelain --untracked-files=all`** beside `git diff --exit-code`, so an untracked record or output fails too.
 
 ### Tradeoffs accepted
@@ -1002,7 +1011,9 @@ artifacts, API errors and malformed/extra/duplicate/symlink archives. A separate
 verifier exercised a true multi-page artifact stream. The Lake-cache check passes 7 jobs and
 rejects 27 mutations. A11 now rejects an extra nonregular `.lean` plugin before any accept.
 The CI prepare wrapper invokes the same command once, streams its output, preserves its status
-(including 128 plus signal for a signal failure), and prints wall time and maximum child RSS.
+(including 128 plus signal for a signal failure), and prints wall time and the peak RSS of the
+largest single process. That figure is `ru_maxrss` of `RUSAGE_CHILDREN`, the largest one
+descendant that was waited for, not the sum over the process tree, and the log line says so.
 
 Validation receipts for this attempt:
 - Independent GPT verification passed at `7c6fc911707bcaf905a6aed57f57c6f9cb45ef26`, whose tree

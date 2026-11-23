@@ -28,7 +28,7 @@ while :; do
     [ -n "$artifact" ] || continue
     [[ $artifact =~ ^[0-9]+$ ]] || exit 1
     gh api "repos/$repo/actions/artifacts/$artifact/zip" > "$tmp/base.zip"
-    python3 - "$tmp/base.zip" "$tmp/numbers.tsv" <<'PYZIP'
+    python3 -I - "$tmp/base.zip" "$tmp/numbers.tsv" <<'PYZIP'
 import stat
 import sys
 import zipfile
