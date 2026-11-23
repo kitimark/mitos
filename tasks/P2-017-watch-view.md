@@ -3,7 +3,7 @@
 phase: 2 (Watch track, #502; milestone 6)
 goal: The level view of open pulls and the owner's heads, with their checks and the `ci` health alarms, is one function `View.of`, and its 19 KeyMap and View statements are proved, the alarms both ways.
 statement: none locked. Named and audited: the 6 statements of `Watch/KeyMap.lean` and the 13 of `Watch/View.lean`.
-touches: gate/MitosGate/Watch/KeyMap.lean, gate/MitosGate/Watch/View.lean (split into `View.lean` and `View/Health.lean` past 400 lines, as planned), gate/MitosGate/Watch.lean (imports), tasks/P2-017-watch-view.md, ops/runs/
+touches: gate/MitosGate/Watch/KeyMap.lean, gate/MitosGate/Watch/View.lean, gate/MitosGate/Watch/View/Health.lean (the split of `View.lean` past 400 lines, as planned), gate/MitosGate/Watch.lean (imports), tasks/P2-017-watch-view.md, ops/runs/
 must_not_touch: statements.lock, models.lock, core/, eval/cheats/, .github/, every existing gate/ module outside `touches` (imported, never moved or edited), and every path outside `touches` (`tasks/502-watch.md`, must_not_touch)
 checks: build, imports, lock (`lake build && lake exe mitos-gate imports && lake exe mitos-gate lock --check`), lint-test (`lake exe mitos-lint-test`), cheats (`lake exe mitos-gate cheats`, locally since the row touches `gate/`), `bash gate/watch-test.sh`, `python3 -I .github/scripts/gate-tests.test.py`, the run-log check (`lake exe mitos-gate runlog --head ops/runs`); the View fixtures
 budget: 100 iterations · 5h wall · 4M tokens (`tasks/502-watch.md`, budget)

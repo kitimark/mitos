@@ -25,6 +25,7 @@ statements: none (tooling task)
 reuse: the fixtures and fake `gh` of `.claude/scripts/watch-github.test.sh`
 fixtures: every `watch-github.test.sh` fixture, re-authored with the app key
 cut_line: row 10 of `tasks/502-watch/PR-SEQUENCE.md`
+retirement: P2-029 (PR 15) removes `watch-diff.test.sh` and `watch-diff.intended` together with the bash watcher, because they replay through `watch-github.sh` and have no other subject; the owner's Q9 sign-off covers it
 deferrals: from `tasks/502-watch.md` (deferrals): the bash watcher's first-poll scan is not carried over, and `watch-diff.intended` lists that difference
 owner_decisions: default 6 (outside-account lines ride along, a listed difference)
 
