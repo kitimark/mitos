@@ -10,7 +10,7 @@ budget: 10 iterations · 3h wall · 1M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
 ## Context
-- Plan row P1-021 in `plan/phase-1.md` (Land track), row A4 of the auto-merge amendment (#178,
+- Plan row P1-021 in `plan/land.md` (Land track), row A4 of the auto-merge amendment (#178,
   comment 6890739593, accepted by the owner on 15 Nov in #179, comment 6890996353); issue none
   yet; tracker #179. It closes #270.
 - Needs P1-020 (A3) and its real runs. It lands right after them.

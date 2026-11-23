@@ -10,7 +10,7 @@ budget: 15 iterations · 4h wall · 1.5M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
 ## Context
-- Plan row P1-018 in `plan/phase-1.md` (Land track), row A1 of the auto-merge amendment; issue none
+- Plan row P1-018 in `plan/land.md` (Land track), row A1 of the auto-merge amendment; issue none
   yet; tracker #179.
 - The amendment: #178, comment 6890739593. The owner accepted it on 15 Nov (#179, comment
   6890996353, recorded in 6891010165): call 2 of #179 flips to one owner action, `/land <commit>`,

@@ -7,7 +7,7 @@ graph in which every edge carries its evidence and the assumptions it rests on. 
 is written in Lean 4, and extractors, including ones AI agents write for your own conventions,
 are accepted only with machine-checked proofs of Mitos-owned obligations.
 
-**Status:** Phase 0 complete (`plan/phase-0.md`); Phase 1, the trusted resolver, in progress (`plan/phase-1.md`).
+**Status:** Phases 0 and 1 complete (`plan/phase-0.md`, `plan/phase-1.md`); Phase 2, chains and the first real extractor, has every task merged and follow-ups open (`plan/phase-2.md`); the land track is in `plan/land.md`.
 
 | Path | What it is |
 |---|---|

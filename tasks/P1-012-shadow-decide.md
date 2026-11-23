@@ -10,7 +10,7 @@ budget: PR 1 10 iterations · 3h wall · 1M tokens; PR 2 20 iterations · 6h wal
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
 ## Context
-- Plan row P1-012 in `plan/phase-1.md` (Land track), issue #191: step 3 of the land / auto-rebase
+- Plan row P1-012 in `plan/land.md` (Land track), issue #191: step 3 of the land / auto-rebase
   migration, tracker #179. Proof it works: its plan compared with what merged, and its run time.
 - The migration's design: #178, comment 6821317899 and its amendment 6832011164. The planner
   pushes only the pull request that lands next, so rebase churn stops costing CI runs, paid bot

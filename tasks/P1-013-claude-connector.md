@@ -10,7 +10,7 @@ budget: PR 1 8 iterations · 3h wall · 1M tokens; PR 2 6 iterations · 2h wall 
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
 ## Context
-- Plan row P1-013 in `plan/phase-1.md` (Land track), issue #192: step 4 of the land / auto-rebase
+- Plan row P1-013 in `plan/land.md` (Land track), issue #192: step 4 of the land / auto-rebase
   migration, tracker #179. Proof it works: tests, and one real agent landing.
 - The design: #178, comment 6821317899 (Decision 5: callers repeat one intent, `land`, until it
   answers `merged` or `stopped`; Decision 3: the wake table; the connector table: `merge`, `wake`

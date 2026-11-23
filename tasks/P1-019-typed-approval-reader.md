@@ -10,7 +10,7 @@ budget: 20 iterations · 6h wall · 2M tokens
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
 ## Context
-- Plan row P1-019 in `plan/phase-1.md` (Land track), row A2 of the auto-merge amendment (#178,
+- Plan row P1-019 in `plan/land.md` (Land track), row A2 of the auto-merge amendment (#178,
   comment 6890739593, accepted by the owner on 15 Nov in #179, comment 6890996353); issue #296;
   tracker #179.
 - Needs P1-018 (A1), which adds `Mark.approves`, `Word.ownerSpoke`, the `merge` plan and statements
