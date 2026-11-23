@@ -7,7 +7,7 @@ pending_rel=.claude/scripts/plan-tasks.pending
 
 linked_rows() {
   local f
-  for f in "$1"/plan/phase-*.md; do
+  for f in "$1"/plan/*.md; do
     [ -f "$f" ] || continue
     awk '
       /^\|/ {
@@ -270,5 +270,26 @@ expect "a duplicate listing" fail
 fresh
 mv "$t/tasks/P9-003-b.md" "$t/tasks/P9-0030-b.md"
 expect "a file of another id with the same prefix" fail
+
+fresh
+cat >"$t/plan/track-x.md" <<'PLAN'
+# Track X
+
+| # | Task | Kind | Issue |
+|---|---|---|---|
+| P9-010 | A row outside a phase file | impl | [#10](https://github.com/o/r/issues/10) |
+PLAN
+expect "a linked row in a non-phase plan file with no file" fail
+
+fresh
+cat >"$t/plan/track-x.md" <<'PLAN'
+# Track X
+
+| # | Task | Kind | Issue |
+|---|---|---|---|
+| P9-010 | A row outside a phase file | impl | [#10](https://github.com/o/r/issues/10) |
+PLAN
+printf '# tasks/P9-010-x.md\n\n## Design\nA real design.\n\n## Done when\n' >"$t/tasks/P9-010-x.md"
+expect "a linked row in a non-phase plan file with a valid file" ok
 
 exit "$failed"

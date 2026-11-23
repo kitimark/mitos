@@ -10,7 +10,7 @@ budget: 30 iterations · 10h wall · 3M tokens, the real runs included (was 25 �
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
 ## Context
-- Plan row P1-020 in `plan/phase-1.md` (Land track), row A3 of the auto-merge amendment (#178,
+- Plan row P1-020 in `plan/land.md` (Land track), row A3 of the auto-merge amendment (#178,
   comment 6890739593, accepted by the owner on 15 Nov in #179, comment 6890996353); issue #297;
   tracker #179.
 - Needs P1-018 (A1: the `merge` plan, `OwnerWord`, #301), P1-019 (A2: the reader that approves,
