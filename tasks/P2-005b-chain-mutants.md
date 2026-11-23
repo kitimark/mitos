@@ -441,9 +441,9 @@ owner_decisions: none new. The row is class A.
 - [ ] all `checks` pass at the head: locally one Lean build at a time and one case per invocation,
       both modes; and the nightly dispatch run
 - [ ] every run-level fixture under Design holds, and its measured line is in the PR body
-- [ ] the PR body compares the breakers table with `breakers-table`, records all 28 cases and
-      all 36 declared refutation claims, says `Closes #206`, and confirms that the corpus diff
-      adds 56 files
+- [ ] the PR body compares the breakers table with `breakers-table` and accounts for each design
+      case and its exact `breaks=` set against the merged corpus. It names any omitted cases or
+      changed `breaks=` sets, says `Closes #206`, and confirms that the corpus diff adds 56 files
 - [ ] no `sorry`, no new axioms, no `survives=` case
 - [ ] run-log record written (`ops/runs/<UTC date>/P2-005b-builder-<attempt>.json`)
 
@@ -1396,8 +1396,9 @@ A plain reading, "add mutants until each breaks a theorem", falls short in six p
   runs `--paranoid` before it counts.
 
 ### Implementation
-#547 merged all 28 cases and their 36 declared refutation claims. Its review recorded that each
-of the 28 refutation files passed against its mutant and failed against the unmutated control.
+#547 merged all 28 cases with the exact `breaks=` sets from Appendix A2, retaining all 36 declared
+refutation claims. Its review recorded that each of the 28 refutation files passed against its
+mutant and failed against the unmutated control.
 [Review catch-up](https://github.com/kitimark/mitos/pull/547#issuecomment-7061038947)
 
 ### Synthesis decision
