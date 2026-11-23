@@ -4,7 +4,7 @@ phase: 2 (Watch track, #502; milestone 6)
 goal: Each consumer is told exactly what changed since its acked mark, and a batch counts only once its exact offer number is taken; the 17 statements on offers, acks and what is told are proved, the two EXPENSIVE ones by their proof plans.
 statement: none locked. Named and audited: the offer, ack and what-is-told statements of `Watch/Deliver.lean`, NoNewsStaysQuiet and EveryNotableChangeIsTold (both EXPENSIVE) among them.
 touches: gate/MitosGate/Watch/Deliver.lean up to `waking` (marks, offers, acks, `report`, and the statements on them), gate/MitosGate/Watch.lean (imports), tasks/P2-020-watch-deliver-report.md, ops/runs/
-must_not_touch: statements.lock, models.lock, core/, eval/cheats/, .github/, every existing gate/ module (imported, never moved or edited), and every path outside `touches` (`tasks/502-watch.md`, must_not_touch)
+must_not_touch: statements.lock, models.lock, core/, eval/cheats/, .github/, every existing gate/ module outside `touches` (imported, never moved or edited), and every path outside `touches` (`tasks/502-watch.md`, must_not_touch)
 checks: build, imports, lock (`lake build && lake exe mitos-gate imports && lake exe mitos-gate lock --check`), lint-test (`lake exe mitos-lint-test`), cheats (`lake exe mitos-gate cheats`, locally since the row touches `gate/`), `bash gate/watch-test.sh`, `python3 -I .github/scripts/gate-tests.test.py`, the run-log check (`lake exe mitos-gate runlog --head ops/runs`); the Deliver fixtures on `report`
 budget: 130 iterations · 7h wall · 5M tokens (`tasks/502-watch.md`, budget)
 escalation: hint → automation → stronger model → pair → split → revisit statement (a statement that looks false gets its counterexample written here and goes to the owner)
