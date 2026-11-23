@@ -1,0 +1,1 @@
+{"task":"plan-land-split","role":"builder","model":"claude-sonnet-5-5","attempt":2,"iterations":1,"wall_min":10,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"Round 2 fix of B1: README status line said Phase 2 has every task merged, but P2-011 (#147, toolchain bump) is still open."}
