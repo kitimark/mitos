@@ -219,7 +219,7 @@ where its cell names it, and then the owner merges. "Shared files" orders a path
 | P2-009b | `eval/fixtures/gomod/` *(new)*, a go.mod module in `eval/score/Score/`, one import and one call in `eval/score/Score.lean` | `examples/acme/Plugins/GoMod.lean` | `eval/diff/` |
 | P2-010 | `eval/score/Main.lean`, a scorecard module in `eval/score/Score/` | every fixture | `eval/fixtures/` |
 | P2-011 | `eval/mutants/Mutants/CrossCheck.lean`, `gate/MitosGate/ContentId.lean`; for the bump, every `lean-toolchain`, `lake-manifest.json` and `examples/acme/accepted/*.json` | | |
-| P2-012 | `.github/workflows/ci.yml`, `.github/workflows/nightly.yml`, the lines of `eval/mutants/Main.lean` that #107 item 3 needs | every row | |
+| P2-012 | `.github/workflows/ci.yml`, `.github/workflows/nightly.yml`, `.github/scripts/accept-plugins.sh`, `.github/scripts/accept-plugins.test.sh`, `.github/scripts/install-go.sh`, the appended block in `eval/mutants/Mutants/Verdict.lean`, the lines of `eval/mutants/Main.lean` that #107 items 2 and 3 need | every row | |
 
 **Shared files.** These rules keep parallel rows apart with no change outside `plan/`.
 

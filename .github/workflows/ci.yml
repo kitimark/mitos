@@ -354,7 +354,7 @@ jobs:
       - name: Every mutant case prepares as its manifest says, and a case claims every Challenge theorem (mitos-mutants --prepare)
         run: |
           lake --dir eval/mutants build
-          python3 - "$RUNNER_TEMP/mutants" <<'PYMEM'
+          python3 -I - "$RUNNER_TEMP/mutants" <<'PYMEM'
           import resource
           import subprocess
           import sys
@@ -362,7 +362,7 @@ jobs:
 
           start = time.monotonic()
           status = subprocess.call(["lake", "--dir", "eval/mutants", "exe", "mitos-mutants", "--prepare", sys.argv[1]])
-          print(f"prepare resources: {time.monotonic() - start:.2f}s, max child RSS {resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss} KiB", flush=True)
+          print(f"prepare resources: {time.monotonic() - start:.2f}s, peak RSS of the largest single process {resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss} KiB (not the tree total)", flush=True)
           sys.exit(status if status >= 0 else 128 - status)
           PYMEM
 
