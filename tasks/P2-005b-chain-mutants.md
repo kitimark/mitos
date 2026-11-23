@@ -375,6 +375,12 @@ Run-level fixtures:
 - `run-log`: `lake exe mitos-gate runlog --head ops/runs` passes, and the `ops/runs` diff shows only
   `A` lines.
 
+Measurements from #547's verifier: one run refuted all 28 new cases in 2324 s. The full run
+reported "all 72 cases as expected, 52 refuted, 0 known gaps, 20 cheat cases rejected". The
+measured runner peak for 72 cases was about 4.8 GiB (VmHWM 5,029,100 KiB). The nightly dispatch at `13ec624`
+passed with `--paranoid` in 3861 s. [Verification findings](https://github.com/kitimark/mitos/issues/550)
+[Nightly dispatch](https://github.com/kitimark/mitos/actions/runs/44892073901)
+
 cut_line: ships the 28 cases, this file's measured lines and the run log. It ships no change to the
 runner, the lint or an existing case, no `survives=` case and no `rejects=` case. P2-001b adds no
 cheat surface that the lint's allow-list does not already close: no syntax, attribute, instance or
@@ -444,6 +450,7 @@ owner_decisions: none new. The row is class A.
 - [ ] the PR body compares the breakers table with `breakers-table` and accounts for each design
       case and its exact `breaks=` set against the merged corpus. It names any omitted cases or
       changed `breaks=` sets, says `Closes #206`, and confirms that the corpus diff adds 56 files
+      and that no existing corpus case files changed
 - [ ] no `sorry`, no new axioms, no `survives=` case
 - [ ] run-log record written (`ops/runs/<UTC date>/P2-005b-builder-<attempt>.json`)
 
@@ -1389,9 +1396,6 @@ A plain reading, "add mutants until each breaks a theorem", falls short in six p
 ### Open questions and risks
 - Changes to the shared lines in D4 can move several anchors. `revisit_when` step 2 finds them in
   one `--prepare` run.
-- The verifier measured a runner peak of about 4.8 GiB (VmHWM 5,029,100 KiB) in one run over all
-  72 cases. The [nightly dispatch at `13ec624`](https://github.com/kitimark/mitos/actions/runs/44892073901)
-  passed with `--paranoid`. [Verification findings](https://github.com/kitimark/mitos/issues/550)
 - lean4lean's treatment of string literals is measured per form, not understood. Every new text
   runs `--paranoid` before it counts.
 
