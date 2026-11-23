@@ -1,11 +1,11 @@
 # tasks/P2-029-watch-delete-bash.md
 
 phase: 2 (Watch track, #502; milestone 6)
-goal: The bash watcher is gone: `watch-github.sh`, its test suite and `watch-own.sh` are removed, and no file outside `tasks/`, `ops/runs/` and one `ci.yml` step name names a removed script.
+goal: The bash watcher is gone: `watch-github.sh`, its test suite and `watch-own.sh` are removed, and no file outside `tasks/`, `ops/runs/`, `plan/` (its rows are history) and one `ci.yml` step name names a removed script.
 statement: none (tooling task)
 touches: remove .claude/scripts/watch-github.sh, .claude/scripts/watch-github.test.sh and .claude/scripts/watch-own.sh; .claude/scripts/gh-api-rest.test.sh (their `NAMED` and `EXPECTED` lines); .claude/scripts/sourced-bash.test.sh (`watch-github.sh` leaves its `shellcheck -x` list); the fallback paragraph P2-027 kept, in both `kitimark-mode` copies, with the roster stamps; docs/process.md (the gh-only row's text); tasks/P2-029-watch-delete-bash.md, ops/runs/
 must_not_touch: statements.lock, models.lock, core/, eval/cheats/, gate/, .github/, and every path outside `touches` (`tasks/502-watch.md`, must_not_touch)
-checks: the gates in `tasks/502-watch/PR-SEQUENCE.md` (Gates before PR 15) and the owner's sign-off first; then `bash .claude/scripts/gh-api-rest.test.sh`, `bash .claude/scripts/sourced-bash.test.sh`, `python3 .agents/scripts/agents-skills.py check`, and a grep that shows no file outside `tasks/`, `ops/runs/` and that `ci.yml` step name naming a removed script; the run-log check
+checks: the gates in `tasks/502-watch/PR-SEQUENCE.md` (Gates before PR 15) and the owner's sign-off first; then `bash .claude/scripts/gh-api-rest.test.sh`, `bash .claude/scripts/sourced-bash.test.sh`, `python3 .agents/scripts/agents-skills.py check`, and a grep that shows no file outside `tasks/`, `ops/runs/`, `plan/` (its rows are history, and only PR 0 edits `plan/`) and that `ci.yml` step name naming a removed script; the run-log check
 budget: 20 iterations · 2h wall · 1M tokens (`tasks/502-watch.md`, budget: script and rules PRs)
 escalation: hint → automation → stronger model → pair → split → revisit statement
 

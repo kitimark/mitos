@@ -3,7 +3,7 @@
 phase: 2 (Watch track, #502; milestone 6)
 goal: The rules make `watch.sh` the way every agent waits on GitHub, and they carry the caller protocol that the no-spin and no-livelock guarantees depend on.
 statement: none (rules change)
-touches: the Watchers text in both `kitimark-mode` SKILL.md copies; autonomous-run.md, babysit.md, orchestrate.md and shipping.md in both `poteto-mode/playbooks` copies; .claude/README.md; docs/process.md (the gh-only row and the "Waiting on GitHub" row); .agents/scripts/agents-roster.tsv (stamps for `kitimark-mode` and `poteto-mode`); tasks/P2-027-watch-rules-switch.md, ops/runs/
+touches: the Watchers text and the `#224` line of "Catching the user up" (it names `watch-github.sh`) in both `kitimark-mode` SKILL.md copies; autonomous-run.md, babysit.md, orchestrate.md and shipping.md in both `poteto-mode/playbooks` copies; .claude/README.md; docs/process.md (the gh-only row and the "Waiting on GitHub" row); .agents/scripts/agents-roster.tsv (stamps for `kitimark-mode` and `poteto-mode`); tasks/P2-027-watch-rules-switch.md, ops/runs/
 must_not_touch: statements.lock, models.lock, core/, eval/cheats/, gate/, .github/, and every path outside `touches` (`tasks/502-watch.md`, must_not_touch)
 checks: `python3 .agents/scripts/agents-skills.py stamp` then `check`; the greps of row 13 (no rule still names `watch-github.sh` or `watch-own.sh` except the fallback paragraph; each of the four caller rules in both `kitimark-mode` copies); the run-log check
 budget: 20 iterations · 2h wall · 1M tokens (`tasks/502-watch.md`, budget: script and rules PRs)

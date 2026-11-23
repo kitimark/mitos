@@ -3,9 +3,9 @@
 phase: 2 (Watch track, #502; milestone 6)
 goal: Optional: the background-shell ban is lifted only if P2-026's numbers show the remaining re-arm cost is worth it and the owner says yes.
 statement: none (rules change)
-touches: the Watchers text (row 14's Files column), tasks/P2-028-watch-lift-ban.md, ops/runs/
+touches: the Watchers text and .agents/scripts/agents-roster.tsv (the `kitimark-mode` stamp) (row 14's Files column), tasks/P2-028-watch-lift-ban.md, ops/runs/
 must_not_touch: statements.lock, models.lock, core/, eval/cheats/, gate/, .github/, and every path outside `touches` (`tasks/502-watch.md`, must_not_touch)
-checks: only if P2-026 shows the remaining re-arm cost is worth it and the owner says yes; then the checks of a rules change (`agents-skills.py stamp` then `check` when a mirrored skill changes) and the run-log check
+checks: only if P2-026 shows the remaining re-arm cost is worth it and the owner says yes; then the checks of a rules change (`agents-skills.py stamp` then `check`, because the Watchers text of `kitimark-mode` changes) and the run-log check
 budget: 20 iterations · 2h wall · 1M tokens (`tasks/502-watch.md`, budget: script and rules PRs)
 escalation: hint → automation → stronger model → pair → split → revisit statement
 
