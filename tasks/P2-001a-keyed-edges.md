@@ -640,7 +640,9 @@ deferrals:
   without being locked. Since #317, `mitos-gate lock` fails on such a module under
   `core/Mitos/Core/`. Since #594, it also fails on `core/Mitos/Core.lean`, which
   `Mitos.Core.Spec` need not import now that the lock reads from it (#419).
-  `gate/lock-reach-test.sh` pins both.
+  `gate/lock-reach-test.sh` pins both. Since #601, the hint does not offer to delete
+  `core/Mitos/Core.lean`, the pass line names that file only when it exists, and the toy core
+  pins `lock --check` too.
 
 owner_decisions:
 

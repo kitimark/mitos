@@ -36,9 +36,16 @@ expect() {
 
 reached='every spec module is reached from Mitos.Core.Spec'
 missed='not reached from Mitos.Core.Spec'
+spec='core/Mitos/Core/Spec\.lean'
 
 tree main
-expect "lock --check passes on a copy of the tree" main 0 "$reached" "$missed" lock --check
+expect "lock --check passes on a copy of the tree" main 0 \
+  "$reached \([0-9]+ modules in core/Mitos/Core\.lean and core/Mitos/Core/\)$" "$missed" lock --check
+
+tree noroot
+rm "$tmp/noroot/core/Mitos/Core.lean"
+expect "the pass line names the folder alone where core/Mitos/Core.lean is absent" noroot 0 \
+  "$reached \([0-9]+ modules in core/Mitos/Core/\)$" 'core/Mitos/Core\.lean' lock --check
 
 tree top
 printf 'namespace Mitos\n\ndef unreachedSpec : Nat := 1\n\nend Mitos\n' >"$tmp/top/core/Mitos/Core/Unreached.lean"
@@ -47,13 +54,15 @@ expect "lock --check fails on an unreached module" top 1 \
 expect "the lock lines alone still match, so the reach check is what fails" top 1 \
   'statements\.lock up to date' 'statements\.lock is out of date' lock --check
 expect "lock --check names how many modules it missed" top 1 \
-  '^1 spec module is not reached from Mitos\.Core\.Spec' '' lock --check
+  "^1 spec module is not reached from Mitos\.Core\.Spec: import it from $spec, which is a spec change, or delete it$" \
+  '' lock --check
 
 tree nested
 printf 'def nestedSpec : Nat := 1\n' >"$tmp/nested/core/Mitos/Core/Spec/Nested.lean"
 printf 'def otherSpec : Nat := 1\n' >"$tmp/nested/core/Mitos/Core/Other.lean"
 expect "lock --check fails on unreached modules in a subfolder and at the top" nested 1 \
-  '^2 spec modules are not reached from Mitos\.Core\.Spec' "$reached" lock --check
+  "^2 spec modules are not reached from Mitos\.Core\.Spec: import each from $spec, which is a spec change, or delete it$" \
+  "$reached" lock --check
 expect "the nested module is named" nested 1 \
   '^core/Mitos/Core/Spec/Nested\.lean: Mitos\.Core\.Spec does not import Mitos\.Core\.Spec\.Nested' '' lock --check
 
@@ -112,8 +121,21 @@ if toy_build '' && [ -f "$toy/core/.lake/build/lib/lean/Mitos/Core.olean" ]; the
   else
     bad "the lock it wrote has a line for Spec's declaration and none for the root file's"
   fi
+  expect "lock --check fails on that lock too, and names the root file" toy 1 \
+    '^core/Mitos/Core\.lean: Mitos\.Core\.Spec does not import Mitos\.Core,' "$reached" lock --check
+  expect "the lock lines match there, so the reach check is what fails" toy 1 \
+    'statements\.lock up to date' 'statements\.lock is out of date' lock --check
+  expect "the hint for the root file alone does not offer to delete it" toy 1 \
+    "^1 spec module is not reached from Mitos\.Core\.Spec: import it from $spec, which is a spec change$" \
+    'delete' lock --check
+  printf 'def extraSpec : Nat := 1\n' >"$toy/core/Mitos/Core/Extra.lean"
+  expect "with a folder module unreached too, the hint offers to delete only a module under the folder" toy 1 \
+    "^2 spec modules are not reached from Mitos\.Core\.Spec: import each from $spec, which is a spec change, or delete it if it is under core/Mitos/Core/$" \
+    'delete it$' lock --check
+  rm "$toy/core/Mitos/Core/Extra.lean"
   if toy_build $'import Mitos.Core\n'; then
     expect "lock passes on the same toy core once Spec imports the root file" toy 0 "$reached" "$missed" lock
+    expect "lock --check passes there too" toy 0 "$reached" "$missed" lock --check
     cp "$toy/statements.lock" "$out"
     if grep -q '^def Mitos\.rootOnly ' "$out"; then
       ok "the root file's declaration then has a line"
