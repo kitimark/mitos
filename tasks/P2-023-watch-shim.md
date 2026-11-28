@@ -29,6 +29,11 @@ cut_line: row 9 of `tasks/502-watch/PR-SEQUENCE.md`; `build --fetch` and the hos
 deferrals: from `tasks/502-watch.md` (deferrals): one owner default shared by `watch.sh`, `watch-github.sh` and `pr-state.sh` is a follow-up issue, not part of this row
 owner_decisions: default 3c (an outside agent gets the tool through `watch.sh build --fetch`, and one that can read GitHub but cannot get the tool keeps a bounded `gh` loop; under Codex's defaults the agent phase reads nothing on GitHub, so a Codex task does not wait until it has agent-phase GET and a read-only token)
 
+### reshape
+Inputs for this row, from the `/no-comments` pass over the sketch at 588dc1a (`tasks/502-watch/REVIEW-LOG.md`, Amendment 1). The row's PR owner settles each one. None is fixed in the sketch.
+- reshape (no-comments): `owner_login=${MITOS_OWNER:-kitimark}` (`watch.sh`): the pass flagged the shared owner default that `deferrals` above already leaves to a follow-up issue (`.claude/hooks/pr-state.sh` and `.claude/scripts/watch-github.sh` hold the same default). Nothing is added here.
+- reshape (no-comments): the private-copy block of `watch.sh` (`private=$state/bin/mitos-gate` to `exec {MAIN_TOOL_FD}>&-`): it copies main's tool under `main-tool.sh`'s shared lock and closes that lock before the exec. Extract it into a named function in `lib/main-tool.sh`, which `touches` does not list yet.
+
 ## Done when
 - [ ] row 9's Check column in `tasks/502-watch/PR-SEQUENCE.md` holds, and all `checks` pass locally
 - [ ] run-log record written (ops/runs/)

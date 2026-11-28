@@ -28,6 +28,13 @@ cut_line: row 4 of `tasks/502-watch/PR-SEQUENCE.md`
 deferrals: from `tasks/502-watch.md` (deferrals): the reviews reader's refused items join the feed as `Refused` (with P2-018), and a pull that left the open list with no close read gets one `pulls/N` read before `gone` is told (with P2-018 and P2-020)
 owner_decisions: default 4 (placement in `gate/`)
 
+### reshape
+Inputs for this row's build-depth upgrade, from the `/no-comments` pass over the sketch at 588dc1a (`tasks/502-watch/REVIEW-LOG.md`, Amendment 1). The Architect settles each one before the build. None is fixed in the sketch.
+- reshape (no-comments): `OwnedHead` (`Route.lean`): the constructor is public and `login` repeats `owner`, so "only `OwnedHead.of?` makes one" is not enforced. Make the constructor private, or drop `login`.
+- reshape (no-comments): `Route.closedSince`: it reads the issues route. Rename it so that the name says so.
+- reshape (no-comments): `Plan.fixed` and `Plan.clock` (`Route.lean`): "`main` first" (its `Date` is `serverNow`) and "`openPulls` before `closedSince`" (a pull request closed between the two reads is then in both answers) exist only as list order. Put the order in the types, or make them separate phases.
+- reshape (no-comments): `civil` (`Time.lean`): rename it `civilFromDays`. It is the inverse of `Shadow.days`, Hinnant's `civil_from_days`.
+
 ## Done when
 - [ ] row 4's Check column in `tasks/502-watch/PR-SEQUENCE.md` holds, and all `checks` pass locally
 - [ ] no `sorry`, no new axioms: `Watch.lean`'s audit ran and found a theorem for every statement

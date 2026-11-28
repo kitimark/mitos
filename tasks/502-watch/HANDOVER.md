@@ -287,8 +287,8 @@ with a fake `gh`. Paste the command and its output, with nothing secret in it, i
 - **Checks.** `pr-state.test.sh`, `gh-api-rest.test.sh`, `sourced-bash.test.sh`,
   `shellcheck -x .claude/hooks/pr-state.sh`.
 - **PR body.** `Closes #501` if PR 1 has merged, else `Part of #501`; `Part of #502`; the changed
-  classes (`Voice.lean` lists them: typed words with a footer, a Claude- or Cursor-app post without
-  one, another app's post without one).
+  classes (`tasks/502-watch.md` lists them in the Voice note under modules: typed words with a
+  footer, a Claude- or Cursor-app post without one, another app's post without one).
 
 ## PR 3b brief: pr-state hangs on a piped stdin
 
@@ -343,9 +343,10 @@ slice to build depth.
   does):
   - `posts-336`: #336's public posts (typed, Claude-app and Codex-app, with and without the
     footer), read with `watch-fetch.sh`-style `gh api` reads, plus edited copies that add one post
-    of each class `Voice.lean` lists. The file `posts-336/expected.json` gives the ids
-    `unanswered` must print, and `posts-336/classes.tsv` names, per post id, its class and what
-    today's jq gave. The test checks both.
+    of each class the Voice note of `tasks/502-watch.md` lists (modules). The file
+    `posts-336/expected.json` gives the ids `unanswered` must print, and
+    `posts-336/classes.tsv` names, per post id, its class and what today's jq gave. The test
+    checks both.
   - an owner item without the app key makes `unanswered` exit 1, since it would answer from a
     partial read; an item of another login without the key does not.
   - a non-UTF-8 file refuses with exit 1.

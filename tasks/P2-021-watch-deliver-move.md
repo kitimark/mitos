@@ -29,6 +29,11 @@ cut_line: row 7c of `tasks/502-watch/PR-SEQUENCE.md`
 deferrals: from `tasks/502-watch.md` (deferrals): an owned close or `gone` ranks with the notes in `cut`, never cut, with a statement that says so
 owner_decisions: defaults 2a (a wait that exits on the first event) and 6 (`outside` rides to the deadline)
 
+### reshape
+Inputs for this row's build-depth upgrade, from the `/no-comments` pass over the sketch at 588dc1a (`tasks/502-watch/REVIEW-LOG.md`, Amendment 1). The Architect settles each one before the build. None is fixed in the sketch.
+- reshape (no-comments): `Deliver.cut`: the pass flagged the defect that `deferrals` above already gives this row (an owned close or `gone` can be cut behind head lines). Nothing is added here.
+- reshape (no-comments): `freshSlack` and the `.sleep 2000` literal in `nextMove` (`Deliver.lean`): the slack (10) is worked out by hand as room for the 2-second steps after the last poll a wait may start, and the step has no name. Name the step and derive the slack from it.
+
 ## Done when
 - [ ] row 7c's Check column in `tasks/502-watch/PR-SEQUENCE.md` holds, and all `checks` pass locally
 - [ ] no `sorry`, no new axioms: `Watch.lean`'s audit ran and found a theorem for every statement

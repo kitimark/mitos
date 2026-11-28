@@ -28,6 +28,14 @@ cut_line: row 2 of `tasks/502-watch/PR-SEQUENCE.md`; `ofHttpDate?`, `isoChars` a
 deferrals: none of `tasks/502-watch.md`'s deferrals moves to or from this row
 owner_decisions: questions 1 and 8a (answered yes on 27 November), default 4 (all of it in `gate/`, in `mitos-gate`) and default 8c (no app besides `claude` and `cursor` answers without its footer)
 
+### reshape
+Inputs for this row's build-depth upgrade, from the `/no-comments` pass over the sketch at 588dc1a (`tasks/502-watch/REVIEW-LOG.md`, Amendment 1). The Architect settles each one before the build. None is fixed in the sketch.
+- reshape (no-comments): `Watch.lean`, the `statements` fold of the axiom audit (`d.type == .sort .zero`): it finds a statement only outside a `variable` section. Find the statements another way, such as an attribute.
+- reshape (no-comments): `WatchCli.lean`, `import MitosGate.Watch`: it is the only thing that puts the audit in the build. Give the audit its own build root or target. A target is in `lakefile.toml`, which this row must not touch, so the upgrade settles how.
+- reshape (no-comments): `Via.none` and `Via.absent` (`Voice.lean`): `none` clashes with `Option.none`, and it means "the key is there and null". Rename both, for example `null` and `noKey`.
+- reshape (no-comments): `insertId` and `sortIds` (`Voice.lean`): a second hand-written sort beside `DecideList.sortStrings`. Move it into `DecideList`. That module is outside `touches`, so the upgrade settles how.
+- reshape (no-comments): `Epoch` (`Time.lean`): the local clock (`Poll.ok now`, which P2-018 writes) and GitHub's clock (`Fixed.serverNow`, which P2-016 writes) share one type. Give them distinct types.
+
 ## Done when
 - [ ] row 2's Check column in `tasks/502-watch/PR-SEQUENCE.md` holds, and all `checks` pass locally
 - [ ] no `sorry`, no new axioms: `Watch.lean`'s audit ran and found a theorem for every statement

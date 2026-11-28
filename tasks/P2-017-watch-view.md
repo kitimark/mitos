@@ -28,6 +28,10 @@ cut_line: row 5 of `tasks/502-watch/PR-SEQUENCE.md`; the row is not split, becau
 deferrals: none of `tasks/502-watch.md`'s deferrals moves to or from this row
 owner_decisions: default 4
 
+### reshape
+Inputs for this row's build-depth upgrade, from the `/no-comments` pass over the sketch at 588dc1a (`tasks/502-watch/REVIEW-LOG.md`, Amendment 1). The Architect settles each one before the build. None is fixed in the sketch.
+- reshape (no-comments): `View.health : KeyMap Health Epoch`: the value means "when the condition began", and `View.of` keeps it from the previous view. Give it a named type.
+
 ## Done when
 - [ ] row 5's Check column in `tasks/502-watch/PR-SEQUENCE.md` holds, and all `checks` pass locally
 - [ ] no `sorry`, no new axioms: `Watch.lean`'s audit ran and found a theorem for every statement

@@ -1,11 +1,3 @@
-/-! UNCHECKED SKETCH (#502). A keyed map as an association list, and the change between two maps.
-
-Every level the watcher compares (pull facts, head facts, health conditions) is a `KeyMap`, and
-every change it reports is a `Delta` from `diff`. The statements below hold for any key order, so
-no caller needs a sort that `decide` cannot reduce (`List.mergeSort` does not; see `DecideList`).
-Two maps that list the same pairs in another order are `Equiv`, and `diff` sees no change between
-them. Layout copies `DecideList.lean`: the definitions, then the named statements. -/
-
 namespace MitosGate.Watch
 
 abbrev KeyMap (α β : Type) := List (α × β)
@@ -25,7 +17,6 @@ def get? (m : KeyMap α β) (k : α) : Option β :=
 
 def keys (m : KeyMap α β) : List α := m.map Prod.fst
 
-/-- Each key once. `set` keeps it; `View.of` builds only maps that have it. -/
 def WF (m : KeyMap α β) : Prop := m.keys.Nodup
 
 def Equiv (m n : KeyMap α β) : Prop := ∀ k, m.get? k = n.get? k
@@ -36,7 +27,6 @@ def set (m : KeyMap α β) (k : α) (v : β) : KeyMap α β :=
 def erase (m : KeyMap α β) (k : α) : KeyMap α β :=
   m.filter fun p => p.1 != k
 
-/-- One delta for each key whose value differs, keys of `m` first, then keys only `n` has. -/
 def diff (m n : KeyMap α β) : List (Delta α β) :=
   let ks := m.keys ++ n.keys.filter fun k => !m.keys.contains k
   ks.filterMap fun k =>
@@ -69,8 +59,5 @@ def DiffSeesOnlyLookups : Prop :=
 def SetKeepsWF : Prop :=
   ∀ {α β : Type} [DecidableEq α] [DecidableEq β] (m : KeyMap α β) (k : α) (v : β),
     m.WF → (m.set k v).WF
-
--- PR 5 proves each: `theorem diffNamesEveryChange : DiffNamesEveryChange`, and so on.
--- All are short inductions over `ks`; none needs a key order.
 
 end MitosGate.Watch

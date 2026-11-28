@@ -1,27 +1,6 @@
 import MitosGate.Base.Text
 import MitosGate.Shadow.Types
 
-/-! UNCHECKED SKETCH (#502). Epoch seconds, the one ISO form GitHub writes and reads, and the HTTP
-`Date` header GitHub stamps on every answer.
-
-Two clocks, kept apart on purpose:
-* GitHub's clock orders facts and decides what the feed asks for. Every poll reads the `Date`
-  header of its first answer (`branches/main`, read with `--include`), and the feed's cursor is
-  that time. The next poll asks from `cursor - overlap`. The local clock never reaches the feed:
-  `Feed.add` and `Feed.sinceAt` take no local time (`TheFeedIgnoresTheLocalClock`). How long a run
-  has been queued is also measured on GitHub's clock (`View.ciHealth`), because GitHub stamps it.
-* The local wall clock times the wait: the deadline, the poll interval, how long a head has had no
-  `ci` run (its first sighting is local too). `WatchCli` reads it at every step with
-  `Std.Time.Timestamp.now`. `--now` exists only for tests, and a step back of the clock makes a
-  poll due (`pollDue`), never a wait without end.
-
-Reading reuses `Speech.stamp?` (exactly `YYYY-MM-DDTHH:MM:SSZ`) and `Shadow.days` (Hinnant's
-`days_from_civil`). Neither module moves. Everything a `decide +kernel` fixture evaluates works on
-`List Char` with `Base.Text` (`split`, `parseNat`) and `Nat.toDigits`: `String.splitOn`,
-`String.toNat?`, `String.all` and `toString` are taken to go through loops the kernel does not
-reduce, unverified until PR 2's elaboration. `String` appends do reduce: `Snapshot/Fixtures.lean`
-proves fixtures over `"Why." ++ footer` by `decide +kernel` on v4.35.0. -/
-
 namespace MitosGate.Watch
 
 abbrev Epoch := Nat
@@ -34,26 +13,20 @@ def months : List (List Char) :=
   ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map
     String.toList
 
-/-- The month number of a three-letter English month name. -/
 def monthOf? (m : List Char) : Option Nat := go months 1
 where
   go : List (List Char) → Nat → Option Nat
     | [], _ => none
     | x :: xs, i => if x = m then some i else go xs (i + 1)
 
-/-- Exactly two decimal digits. -/
 def two? : List Char → Option Nat
   | [a, b] => Base.Text.parseNat [a, b]
   | _ => none
 
-/-- Exactly four decimal digits. -/
 def four? : List Char → Option Nat
   | [a, b, c, d] => Base.Text.parseNat [a, b, c, d]
   | _ => none
 
-/-- The IMF-fixdate form of an HTTP `Date` header value, `Mon, 23 Nov 2026 10:12:08 GMT`, with no
-trailing carriage return (`Gh` strips it from each header line). The weekday is not checked.
-Anything else refuses, and the poll fails with the route named (PR 4 confirms the form live). -/
 def ofHttpDate? (s : List Char) : Option Epoch :=
   match Base.Text.split ' ' s with
   | [_, dd, mon, yyyy, hms, ['G', 'M', 'T']] =>
@@ -71,12 +44,10 @@ def ofHttpDate? (s : List Char) : Option Epoch :=
     | _ => none
   | _ => none
 
-/-- `n` in decimal, zero padded to `width` digits. -/
 def padChars (width n : Nat) : List Char :=
   let d := Nat.toDigits 10 n
   List.replicate (width - d.length) '0' ++ d
 
-/-- The civil date of a day count, the inverse of `Shadow.days` (Hinnant's `civil_from_days`). -/
 def civil (z : Nat) : Nat × Nat × Nat :=
   let z := z + 719468
   let era := z / 146097
@@ -96,11 +67,6 @@ def isoChars (e : Epoch) : List Char :=
 
 def iso (e : Epoch) : String := String.ofList (isoChars e)
 
-/-- Up to 2100-01-01. EXPENSIVE: it needs `days (civil z) = z` over the range, a division
-argument on Hinnant's eras. It is the one statement with a weaker fallback: if it does not land in
-PR 4, `WatchCli` checks `ofIso? (iso e)` at run time before it asks GitHub with `iso e`, and
-refuses with exit 1; the fixtures stay. Taking the fallback also deletes this `def`, since the
-audit fails on a statement with no theorem: a deviation the PR body records, never a silent one. -/
 def IsoReadsBack : Prop :=
   ∀ e : Epoch, e < 4102444800 → ofIso? (iso e) = some e
 

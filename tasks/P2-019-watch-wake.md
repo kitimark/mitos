@@ -29,6 +29,11 @@ cut_line: row 7a of `tasks/502-watch/PR-SEQUENCE.md`; the lens (`Subscription.le
 deferrals: from `tasks/502-watch.md` (deferrals): selecting on labels, milestones, issue versus pull request, one check or one app is left out on purpose
 owner_decisions: question 5a (answered: each agent's own topics) and question 11 (`peers` off by default, open on PR 0b); defaults 5b (agents record review-thread reply ids with `watch.sh own`) and 6 (a wait with no `--ride` lets `outside` ride, `Rides.byDefault`)
 
+### reshape
+Inputs for this row's build-depth upgrade, from the `/no-comments` pass over the sketch at 588dc1a (`tasks/502-watch/REVIEW-LOG.md`, Amendment 1). The Architect settles each one before the build. None is fixed in the sketch.
+- reshape (no-comments): `Wake.passingConclusions`: a list of strings, so "`cancelled` fails, and a conclusion never seen fails" is policy kept in prose. Use a closed `Conclusion` type.
+- reshape (no-comments): `Change.kinds` (`Wake.lean`): the `[.passed]` results for a head change with nothing newly finished, or with no head after it, are fillers that nothing reads. Make the result non-empty by its type, or an `Option`.
+
 ## Done when
 - [ ] row 7a's Check column in `tasks/502-watch/PR-SEQUENCE.md` holds, and all `checks` pass locally
 - [ ] no `sorry`, no new axioms: `Watch.lean`'s audit ran and found a theorem for every statement

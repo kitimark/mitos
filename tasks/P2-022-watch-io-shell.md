@@ -29,6 +29,12 @@ cut_line: row 8 of `tasks/502-watch/PR-SEQUENCE.md`
 deferrals: from `tasks/502-watch.md` (deferrals): `own comment|review-comment|review` reads the id back over REST before it records it; a view of callers across containers for `status` stays deferred
 owner_decisions: defaults 4, 5b and 6 (`outside` rides when no `--ride` is given)
 
+### reshape
+Inputs for this row's build-depth upgrade, from the `/no-comments` pass over the sketch at 588dc1a (`tasks/502-watch/REVIEW-LOG.md`, Amendment 1). The Architect settles each one before the build. None is fixed in the sketch.
+- reshape (no-comments): `Store.withLease`: its parameter `k` must read `observed.json` again itself and decide again whether a poll is due. Pass the re-read state to `k` (`k : Shared → IO α`).
+- reshape (no-comments): `Store.holdRunning`: the shared lock stays held only because `WatchCli.wait` remembers to unlock the handle as its last act. Make it a bracket, such as `withRunning`.
+- reshape (no-comments): `WatchCli.flags?`: one `none` covers all three flags, so `wait` reads them again one at a time to name the bad flag in `waitUsage`'s `why`. Return an error that names the flag. The Final check of Amendment 1 (item 8) kept the name and type, because `?` returns `Option` and a rename reaches six files, so the upgrade weighs both.
+
 ## Done when
 - [ ] row 8's Check column in `tasks/502-watch/PR-SEQUENCE.md` holds, and all `checks` pass locally
 - [ ] no `sorry`, no new axioms: `Watch.lean`'s audit ran and found a theorem for every statement
