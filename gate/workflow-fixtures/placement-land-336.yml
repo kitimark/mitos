@@ -37,7 +37,7 @@ jobs:
       checks: read
       actions: read
     env:
-      LAND_DASHBOARD: 43
+      LAND_PROVENANCE_ISSUE: 586
     outputs:
       pr: ${{ steps.decide.outputs.pr }}
       head: ${{ steps.decide.outputs.head }}
@@ -73,7 +73,7 @@ jobs:
           LAND_EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           LAND_EVENT_PR: ${{ github.event.issue.number }}
           LAND_EVENT_COMMENT: ${{ github.event.comment.id }}
-        run: .github/scripts/land-decide.sh "$GITHUB_REPOSITORY" "$LAND_DASHBOARD" "$RUNNER_TEMP/land"
+        run: .github/scripts/land-decide.sh "$GITHUB_REPOSITORY" "$LAND_PROVENANCE_ISSUE" "$RUNNER_TEMP/land"
       - if: always()
         uses: actions/upload-artifact@v4
         with:

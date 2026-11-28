@@ -13,8 +13,8 @@ private def read (dir : System.FilePath) (name : String) : IO (Option Json) := d
 
 private def inputs (dir : System.FilePath) (repo owner : String) :
     IO (Except String (List Snapshot.Pull × List Provenance.PullFact)) := do
-  let some dash ← read dir "dash" | return .error "dashboard unavailable"
-  let some body := SnapshotCli.dashboardOf owner dash | return .error "dashboard refused"
+  let some issue ← read dir "dash" | return .error "provenance issue unavailable"
+  let some body := SnapshotCli.provenanceIssueOf owner issue | return .error "provenance issue refused"
   let .ok facts := Provenance.decode repo body | return .error "source refused"
   let some openJ ← read dir "open" | return .error "open pulls unavailable"
   let some all := arr openJ | return .error "open pulls malformed"

@@ -82,8 +82,8 @@ private def topology (d : Doc) : Bool :=
 private def decideJob (d : Doc) : Bool :=
   host d "decide" "15" &&
   nodeAt d (jp "decide" [.key "if"]) (.text decideIf) &&
-  keysAt d (jp "decide" [.key "env"]) ["LAND_DASHBOARD", "LAKE_NO_CACHE"] &&
-  (match textAt? d (jp "decide" [.key "env", .key "LAND_DASHBOARD"]) with
+  keysAt d (jp "decide" [.key "env"]) ["LAND_PROVENANCE_ISSUE", "LAKE_NO_CACHE"] &&
+  (match textAt? d (jp "decide" [.key "env", .key "LAND_PROVENANCE_ISSUE"]) with
     | some value => !has "${{" value
     | none => false) &&
   nodeAt d (jp "decide" [.key "env", .key "LAKE_NO_CACHE"]) (.text "1") &&
@@ -117,7 +117,7 @@ private def decideJob (d : Doc) : Bool :=
       ("LAND_EVENT_CONCLUSION", .text "${{ github.event.workflow_run.conclusion }}"),
       ("LAND_EVENT_PR", .text "${{ github.event.issue.number }}"),
       ("LAND_EVENT_COMMENT", .text "${{ github.event.comment.id }}")]),
-    ("run", .text ".github/scripts/land-decide.sh \"$GITHUB_REPOSITORY\" \"$LAND_DASHBOARD\" \"$RUNNER_TEMP/land\"")]) &&
+    ("run", .text ".github/scripts/land-decide.sh \"$GITHUB_REPOSITORY\" \"$LAND_PROVENANCE_ISSUE\" \"$RUNNER_TEMP/land\"")]) &&
   nodeAt d (sp "decide" 7) (.map [
     ("if", .text "always()"),
     ("uses", .text "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"),

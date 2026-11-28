@@ -98,8 +98,8 @@ case "$2" in
   repos/acme/widgets/actions/workflows/ci.yml/runs*) name=ci ;;
   repos/acme/widgets/issues/comments\?*) name=icomments; empty='[]' ;;
   repos/acme/widgets/pulls/comments\?*) name=rcomments; empty='[]' ;;
-  repos/acme/widgets/issues/43) name=dash; empty='null' ;;
-  repos/acme/widgets/issues/44) name=dash; empty='null' ;;
+  repos/acme/widgets/issues/586) name=dash; empty='null' ;;
+  repos/acme/widgets/issues/587) name=dash; empty='null' ;;
   repos/acme/widgets/issues\?state=open*) name=issues; empty='[]' ;;
   repos/acme/widgets/commits/*/check-runs*)
     s=${2#repos/acme/widgets/commits/}; name=checks-${s%%/*}; empty='{"check_runs":[]}' ;;
@@ -233,7 +233,7 @@ for route in \
   'repos/acme/widgets/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=1' \
   'repos/acme/widgets/issues/comments?sort=created&direction=desc&per_page=100' \
   'repos/acme/widgets/pulls/comments?sort=created&direction=desc&per_page=100' \
-  'repos/acme/widgets/issues/43'; do
+  'repos/acme/widgets/issues/586'; do
   if grep -qxF "api $route" "$work/calls"; then pass "route $route"; else fail "route $route not called"; fi
 done
 if grep -q graphql "$work/calls"; then fail "used graphql"; else pass "no graphql"; fi
@@ -513,8 +513,8 @@ JSON
 | #21 other | \`2222222\` | green | PASS opus-xhigh at \`1111111\`, author sonnet, an earlier head |"
 }
 dash() {
-  jq -n --arg rows "$1" --arg who "${DASH_WHO:-kitimark}" --arg title "${DASH_TITLE:-Owner dashboard}" '
-    {number: 43, title: $title, user: {login: $who}, state: "open",
+  jq -n --arg rows "$1" --arg who "${DASH_WHO:-kitimark}" --arg title "${DASH_TITLE:-Provenance record}" '
+    {number: 586, title: $title, user: {login: $who}, state: "open",
      body: ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n" + $rows + "\n\n## Next up\n")}' >"$work/dash.json"
 }
 mline() {
@@ -537,17 +537,23 @@ expect "native eligibility with green gate: a command pinned to the head" "$(mli
 expect "an old or negative verdict stays ineligible" "open #21 head 2222222 ready labels=- assignees=- gate=success provenance=provenance-incomplete"
 
 ready_reset
-jq '.number = 44' "$work/dash.json" >"$work/dash.new"
+jq '.number = 587' "$work/dash.json" >"$work/dash.new"
 mv "$work/dash.new" "$work/dash.json"
 : >"$work/calls"
-MITOS_DASHBOARD=44 run ok
+MITOS_PROVENANCE_ISSUE=587 run ok
 expect "a configured numbered dashboard preserves native admission" "$(mline 45 "$H45" "$userkeeps")"
-if grep -qxF 'api repos/acme/widgets/issues/44' "$work/calls"; then pass "the configured issue number selects its REST route"
+if grep -qxF 'api repos/acme/widgets/issues/587' "$work/calls"; then pass "the configured issue number selects its REST route"
 else fail "the configured issue number was not read"; fi
+ready_reset
+: >"$work/calls"
+MITOS_DASHBOARD=587 run ok
+if grep -qxF 'api repos/acme/widgets/issues/586' "$work/calls" && ! grep -qF 'issues/587' "$work/calls"; then
+  pass "the retired MITOS_DASHBOARD variable selects no issue"
+else fail "the retired MITOS_DASHBOARD variable changed the issue read"; fi
 for invalid in 0 043 1/../43 10000000; do
   : >"$work/calls"
-  MITOS_DASHBOARD=$invalid run ok
-  unavail "invalid dashboard number $invalid" "MITOS_DASHBOARD is not an issue number"
+  MITOS_PROVENANCE_ISSUE=$invalid run ok
+  unavail "invalid dashboard number $invalid" "MITOS_PROVENANCE_ISSUE is not an issue number"
   if [ ! -s "$work/calls" ]; then pass "invalid dashboard number $invalid makes no API call"
   else fail "invalid dashboard number $invalid reached gh"; fi
 done

@@ -61,7 +61,7 @@ with tempfile.TemporaryDirectory() as directory:
     (work / "open.json").write_text("[]")
 
     def decode(body):
-        (work / "dash.json").write_text(compact({"title": "Owner dashboard", "state": "open",
+        (work / "dash.json").write_text(compact({"title": "Provenance record", "state": "open",
                                                "user": {"login": "owner"}, "body": body}))
         result = subprocess.run([binary, "provenance", "candidates", directory, "owner/mitos", "owner"],
                                 capture_output=True, timeout=30)

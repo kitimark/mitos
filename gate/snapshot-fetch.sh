@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: gate/snapshot-fetch.sh <owner/name> <dashboard-issue> <dir>
+# Usage: gate/snapshot-fetch.sh <owner/name> <provenance-issue> <dir>
 #
 # Saves the REST reads that `mitos-gate snapshot <dir>` turns into the landing snapshot, one file
 # per read, `<dir>/<read>.json`, through `gh api` only: REST, never GraphQL. A read that fails
@@ -9,11 +9,11 @@
 set -u
 
 die() { printf 'snapshot-fetch: %s\n' "$1" >&2; exit 2; }
-[ $# = 3 ] || die "usage: gate/snapshot-fetch.sh <owner/name> <dashboard-issue> <dir>"
-repo=$1 dash=$2 out=$3
+[ $# = 3 ] || die "usage: gate/snapshot-fetch.sh <owner/name> <provenance-issue> <dir>"
+repo=$1 issue=$2 out=$3
 [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && $repo != */. && $repo != */.. ]] \
   || die "<owner/name> is not a repository name"
-[[ $dash =~ ^[1-9][0-9]{0,6}$ ]] || die "<dashboard-issue> is not an issue number"
+[[ $issue =~ ^[1-9][0-9]{0,6}$ ]] || die "<provenance-issue> is not an issue number"
 for tool in gh jq timeout unzip mktemp sleep; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"
 done
@@ -130,7 +130,7 @@ pages_to open "repos/$repo/pulls?state=open&per_page=100"
 read_to main "repos/$repo/branches/main"
 protection
 pages_to stacks -H "X-GitHub-Api-Version: 2026-03-10" "repos/$repo/stacks?per_page=100"
-read_to dashboard "repos/$repo/issues/$dash"
+read_to dashboard "repos/$repo/issues/$issue"
 
 [ -e "$out/open.json" ] || exit 0
 prs=$(jq -r '.[][] | [.number, .head.sha, .head.ref] | @tsv' "$out/open.json" 2>/dev/null) || exit 0
