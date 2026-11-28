@@ -6,6 +6,7 @@ import MitosGate.Watch.Observe
 import MitosGate.Watch.View
 import MitosGate.Watch.Feed
 import MitosGate.Watch.Shared
+import MitosGate.Watch.Topic
 import MitosGate.Watch.Wake
 import MitosGate.Watch.Deliver
 import MitosGate.Watch.Render

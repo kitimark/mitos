@@ -1,7 +1,8 @@
 # Handover: building the #502 watcher
 
-This brief is for an implementor outside Claude Code: Codex, Cursor, Antigravity or another tool.
-It assumes no context beyond this repository and this package.
+This brief is for an implementor outside Claude Code: Codex, Cursor, Antigravity or another tool,
+in that provider's cloud container or on another host. It assumes no context beyond this
+repository and this package.
 
 Words used below:
 - **Orchestrator**: the Claude session the owner talks to. It assigns rows, starts verifiers,
@@ -14,6 +15,9 @@ Words used below:
 - **Architect**: the design agent the orchestrator runs before a Lean row starts. It type-checks
   that row's slice of the sketch, writes the stub bodies its statements are stated over, and
   upgrades the row's task file to build depth. You do not run it; you start from its result.
+- **Topic and handler**: a wait names with flags what its caller hears, its topic (`DESIGN.md`,
+  Usage). The handler of a topic is the one agent whose brief names it; any other agent that hears
+  the same line only observes it.
 
 ## What you are building
 
@@ -22,8 +26,10 @@ orchestrating agent can use. It decides "the owner wrote this" by a footer that 
 (#501), and `.claude/hooks/pr-state.sh` makes the same mistake when it lists the owner's
 unanswered comments. The redesign (#502) moves the logic into Lean inside the repository's own tool
 `mitos-gate`, as `mitos-gate watch`. One shell entry, `.claude/scripts/watch.sh`, serves every
-agent, you included. This package holds the design:
+agent, you included, in any provider's cloud container. This package holds the design:
 - `DESIGN.md`: why, and how it is used.
+- `AMENDMENT-1.md`: amendment 1, from the owner's answers of 27 November: each agent's own
+  topics, and a provider's cloud container as the baseline host.
 - `tasks/502-watch.md`, the Design block (one folder up): modules, types, statements and fixtures.
 - `PR-SEQUENCE.md`: the PRs, one concern each, with the gate each one waits for.
 - `REVIEW-LOG.md`: what the first two review rounds found and how the design changed (round 3 is
@@ -46,9 +52,10 @@ statements are stated over, and upgrades the row's task file to build depth.
 
 **What you may start now:** PR 1, PR 3a and PR 3b (3b after 3a, once its issue exists). They need no
 answer from the owner. PR 2 and every later PR wait for PR 0 to merge (the plan rows and their
-issues; the owner merges it after answering questions 1 and 8a, which also accepts the defaults in
-`DESIGN.md`, part B) and for any other owner answer named in the Gate column of `PR-SEQUENCE.md`.
-Do not start one before the orchestrator assigns it to you.
+issues; the owner answered its questions on 27 November, so it merges as it is, which also accepts
+the defaults in `DESIGN.md`, part B). Rows 7a to 13 also wait for PR 0b, which lands amendment 1
+after the owner answers questions 10 to 13. Each row waits too for what the Gate column of
+`PR-SEQUENCE.md` names. Do not start one before the orchestrator assigns it to you.
 
 ## Your role and its limits
 
@@ -63,8 +70,8 @@ You may write:
 - your run-log record
 
 You must not (this list is the default; a row's Files column in `PR-SEQUENCE.md` overrides it
-for that PR only: PR 3c edits existing `gate/MitosGate/Snapshot/` modules, and PR 11 may add a
-workflow under `.github/` on the route the owner picks):
+for that PR only: PR 3c edits existing `gate/MitosGate/Snapshot/` modules, and PR 11 adds a
+workflow and the pinned trusted root under `.github/`, on the route the owner chose in 3a):
 - merge anything, approve a PR or give a verdict on your own PR. A check you run is evidence for
   the verifier, not a verdict.
 - add or remove labels. A label change starts CI and some labels are owner-only, such as
@@ -102,7 +109,7 @@ Until a rules PR the owner merges says otherwise, the tools still read it:
 - On review threads GitHub names no app. `pr-state.sh` and the bash watcher tell your reply from
   the owner's words only by that footer, so a review-thread reply without it is listed as the
   owner's unanswered words and blocks the merge line. The Lean watcher (`watch.sh`, from PR 9)
-  does not read the footer there: it shows such a reply as `no app key` and wakes every waiting agent unless its
+  does not read the footer there: it shows such a reply as `no app key` and wakes every waiting agent that hears `words` unless its
   id was recorded with `watch.sh own` (below).
 - Post through your tool's own GitHub app integration, not with the owner's token from a shell.
   GitHub then names your app on every issue comment (`performed_via_github_app.slug`), which is how
@@ -114,9 +121,13 @@ Until a rules PR the owner merges says otherwise, the tools still read it:
 - List the id of every comment and reply you post in your report.
 - Once `watch.sh` exists (PR 9), also record each review-thread reply you post:
   `.claude/scripts/watch.sh own --as <your-app>/<your-name> review-comment <id>`. An unrecorded
-  reply on a review thread wakes every waiting agent, you included.
+  reply on a review thread wakes every waiting agent that hears `words`, you included. Record the
+  id your post call returned, never an id read from a list: a wrong id hides that post, which may
+  be the owner's, from every agent of your app for a day.
 
 ## Setup
+
+To build and check (every Lean row):
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
@@ -124,8 +135,31 @@ sudo apt-get install -y bubblewrap shellcheck jq
 lake build && lake exe mitos-gate imports && lake exe mitos-gate lock --check
 ```
 
-The toolchain comes from `lean-toolchain`, so do not change it. Branch from the latest `main`.
-Keep current by rebasing (`git rebase origin/main`), never by merging `main` in.
+The toolchain comes from `lean-toolchain`, so do not change it. These lines need internet: on
+Codex, run them in the setup phase, since its agent phase has none by default. Branch from the
+latest `main`. Keep current by rebasing (`git rebase origin/main`), never by merging `main` in.
+
+To wait (from PR 9), at the start of every session. A container's disk is only a cache: a copy of
+the tool from a setup snapshot may be days old, while `main` moves on every merge.
+
+```bash
+gh --version && gh api -i rate_limit | grep -i '^x-ratelimit-limit'
+.claude/scripts/watch.sh build --fetch    # from PR 11; before it, watch.sh build (needs lake)
+```
+
+- `gh` must be installed and hold a read-only credential: your host's proxy, or a read-only token
+  in an environment variable. Never write the token to a file or print it. The first command prints
+  the `x-ratelimit-limit` header, your REST limit an hour (GitHub documents 5,000 for a user
+  token). Without a token it is 60, which a few minutes of waiting spend.
+- `build --fetch` fetches main's attested release asset, verifies it offline against the pinned
+  trusted root `.github/attest/trusted_root.jsonl`, installs it, and checks the host: one
+  `watch: host: <row>: <what failed>` line per failed row of the Cloud host profile in `DESIGN.md`.
+  The asset is one x86_64 Linux binary, and another host is refused with one line.
+- If it refuses, or a row fails that you cannot fix, keep the bounded `gh` loop (Waiting on GitHub)
+  and put the lines in your report.
+- A new container has none of your `own` records: they never cross containers. Your earlier
+  review-thread replies then read as `no app key` again, so read the thread over REST before you
+  answer one (Waiting on GitHub).
 
 ## Checks
 
@@ -186,6 +220,8 @@ with a fake `gh`. Paste the command and its output, with nothing secret in it, i
   Known fixes are already in it (`squeeze` uses a top-level recursive helper, `SafeSegment` is an
   `abbrev`, the footer test is `Speech.footer` over `List Char`, Time parses `List Char`). Fix any
   other elaboration error the smallest way and list it in your PR body.
+- If `on`, a field of `Topic` and a constructor of `Flag`, does not parse as a name, rename both to
+  `scope`. The `--on` flag keeps its text.
 - If a statement in `tasks/502-watch.md` looks false, do not bend the code to fit it. Write the
   counterexample in the task file and in your PR body, then stop and report. Only `IsoReadsBack`
   has a weaker fallback; the other EXPENSIVE statements name a proof plan, not a weaker statement.
@@ -327,29 +363,57 @@ Take the row in `PR-SEQUENCE.md`, the slice of `tasks/502-watch.md` it names and
 State in your PR body what differs from them and why. Do not start a PR whose row depends on one
 that has not merged, or whose gate is not met.
 
-## Waiting on CI
+## Waiting on GitHub
 
 Wait in bounded calls. Never run an unbounded background loop.
 - Until `watch.sh` exists (PR 9), poll with `gh run list --commit <head>` or your tool's own
   checks view.
 - `watch.sh` runs `main`'s `mitos-gate`, which it builds or fetches (`DESIGN.md`, default 3c).
-  If your environment can do neither (no Lean toolchain and no route to the release asset), keep
-  the bounded `gh` loop above. You then do not hear the root's posts through the watcher.
-- After it exists, run one wait before your first `watch.sh own`, then wait with
-  `.claude/scripts/watch.sh wait --as <your-app>/<your-name> --pr <n> --max <m>`. Then run the
-  command after `next: ` on the last line it prints, copying its `--seen <n>` exactly: any other
-  number takes nothing, and the same batch comes back. A run with no stdin is fine: the tool
-  closes it. Exit 3 (no stdout) means a newer wait of yours took over: do nothing. Exit 1 means do
-  not re-run at once: check CI yourself, then wait again after 10 minutes. Exit 4 means GitHub is
-  failing: run the `next: ` command, and check CI yourself meanwhile.
+  If your environment can read GitHub but can do neither (no Lean toolchain and no route to the
+  release asset), or Setup's host checks fail, keep the bounded `gh` loop above. You then do not
+  hear the root's posts through the watcher.
+- If your agent phase cannot read GitHub at all (Codex's default: no internet and no secrets),
+  neither `watch.sh` nor a `gh` loop works there. Do not wait: report your head as "pushed,
+  waiting on CI" and stop. The orchestrator hears your pull request, and the owner or the
+  orchestrator starts a new session with your report.
+- After `watch.sh` exists, run one wait before your first `watch.sh own`. Wait on what your brief names:
+  your PR, and its issue if the brief names one (`--on` replaced `--pr`). Add `--topics <kind>,...`
+  only when your brief names a topic; the kinds are in `DESIGN.md` (Usage):
+  `timeout <bound> .claude/scripts/watch.sh wait --as <your-app>/<your-name> --on <n>[,<n>] --max <m>`,
+  with the bound and `--max` from the table below. Then run the command after `next: ` on the last
+  line it prints, exactly, with `timeout <bound>` in front: it carries your flags and `--seen <n>`,
+  but not the bound. Any other number takes nothing, and the same batch comes back. A run with no
+  stdin is fine: the tool closes it. Exit 2 prints one `watch: usage:` line and the usage text on
+  stderr: fix the command. Exit 3 (no stdout) means a newer wait of yours took over: do nothing.
+  Exit 1 means do not re-run at once: check CI yourself, then wait again after 10 minutes. Exit 4
+  means GitHub is failing: run the `next: ` command, and check CI yourself meanwhile.
+- Act only on the lines about what your brief names. Any other line is for its own handler or the
+  orchestrator: list it in your report, and do not act on it. Your own PR's red checks are yours,
+  even when a CI-failures agent hears them too: that agent handles only failures no PR owner
+  holds, and the orchestrator resumes you for yours once you have returned. Before you write in
+  answer to a line, read the item over REST, and stop if a post or a commit already answers it.
+  Record what you post (How to post).
+- While you wait with `watch.sh`, turn off your tool's own wake source for this repository (a CI
+  or pull request subscription), so one change does not wake you twice.
 
-Suggested `--max` values, to tune to your tool's command timeout (not measured):
+`--max` follows from your command's time bound: `--max` × 60 + 90 + 30 must not pass the bound in
+seconds, because one poll of up to 90 seconds may run past the deadline, and 30 seconds is the
+margin, a starting value that PR 12 re-checks. Pick the bound first, at most your host's own
+command limit, then the largest `--max` it allows, and run each wait under `timeout <bound>`. A
+wait that `timeout` stops prints no `next:` line: run your last command again. Nothing is lost,
+because a stopped wait saved no offer. A wait with no `--max` runs up to 27 minutes, so under a
+shorter bound it is always stopped: always give `--max`.
 
-| Host | `--max` | Note |
-|---|---|---|
-| Codex | 4 | below its command timeout |
-| Cursor | 8 | |
-| Antigravity | 5 | run with stdin closed (`</dev/null`) |
+| Host | Its command limit | `--max` | It needs |
+|---|---|---|---|
+| Claude Code cloud (the baseline) | 2 minutes for a foreground command by default, 10 at most: pass the Bash `timeout` parameter of 600000 ms on every wait call. A command past its timeout is moved to the background, not stopped, so `timeout 590` inside the command is what ends the wait | 7 | the Claude GitHub App connection, so posts name `claude` |
+| Codex cloud | not stated on its pages; start with `timeout 360` | 4, a starting value | agent-phase GET to `api.github.com` and a read-only token (default 3c); until then no wait is possible in the agent phase, so do not wait. `build --fetch` in the agent phase also needs the release-asset host; the setup phase can fetch the tool, a cache of up to 12 hours |
+| Cursor cloud agents | not stated; start with `timeout 590` | 7, a starting value | its CI subscription off beside a wait |
+| Antigravity remote agents | not stated; start with `timeout 420` | 5, a starting value | stdin closed (`</dev/null`); the slug check before you post, since an OAuth post may name no app |
+| another host | its own | the largest the rule allows, a starting value | Setup's host checks |
+
+A starting value is not measured. If a wait is ever stopped at its bound, lower `--max` and say so
+in your report.
 
 Your app name is the `performed_via_github_app.slug` GitHub shows on your issue comments. Codex's
 is `chatgpt-codex-connector`; for Cursor, Antigravity or another tool, read it off your first
@@ -388,6 +452,7 @@ End with:
 - the checks you ran with their results
 - the statements proved
 - any deviation from this package, with its reason
+- the `watch: host:` lines `build --fetch` printed, if any, and the `--max` you waited with
 - the PR number and the ids of every comment and reply you posted
 - your provider (`openai`, `google`, or another), your exact model ID as your tool reports it (or
   `unknown`), and your effort setting. The orchestrator records the author of every PR in the

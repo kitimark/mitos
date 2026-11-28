@@ -6,7 +6,9 @@ Every line is one line of printable characters: each piece that came from GitHub
 login, an app slug, a check conclusion, an error) goes through `oneLine`, and an excerpt carries its
 own proof. A body is always after a fixed prefix, so it can never begin a line. Every end of a wait
 ends with `next: ` and the exact next command, so any caller (the root's Monitor, a PR owner,
-Codex) re-arms by running the text after `next: ` on the last line.
+Codex) re-arms by running the text after `next: ` on the last line. The command carries the wait's
+subscription flags, each only when it is not at its default (`Subscription.flags`), so the
+catch-all's command names none and a copied command keeps its topic.
 
 The formats keep the bash watcher's where the meaning did not change, so the root's habits stay
 valid:
@@ -31,9 +33,11 @@ valid:
   watch: some facts this consumer should see are older than the feed keeps; read GitHub over REST
   watch: starting over from the current state and the feed's last day; read anything older over REST
   watch: redelivering offer <n>; pass the last line's --seen to take it
+  watch: topic changed: now <kinds> on <items>, was <kinds> on <items>; newly heard: <kinds>; newly hidden: <kinds>; taking this batch passes <n> facts since your last taken batch that the new topic hides, and the old flags do not bring them back: read REST, or use a new name with --since
   watch: main's tool is stale at abc1234; run .claude/scripts/watch.sh build
   watch: N more changes are not shown; read them over REST
   watch: next: .claude/scripts/watch.sh wait --as claude/root --seen 183467
+  watch: next: .claude/scripts/watch.sh wait --as claude/ci --topics failed,alarms --seen 183467
 
 `owner comment` is used only for typed words: an issue comment from the owner's login whose app key
 GitHub gives as null. That is the owner's own typing, or an agent that posts with the owner's token
@@ -49,31 +53,59 @@ The `starting over` line is the reset note: a consumer whose state was set aside
 generation, and one whose mark is ahead of the shared state hear it. A new consumer starts the same
 way (the current state and the feed from its floor or `--since`) without the note.
 
-A quiet end is one line, `watch: no change for claude/root in 29 min; next: <command>`. A blind
-end is one line, `watch: blind for 29 min, GitHub failing since <time>: <why>; next: <command>`.
+The `topic changed` line is the `newTopic` note (`Topic.text` for each side). The newly heard kinds
+are those `now` hears and `was` did not, the newly hidden ones the reverse, and `none` when there
+are none; a change of items alone shows in the two `on` parts. `<n>` is the note's count
+(`hiddenBy`): the facts since the acked place that `was` tells and `now` does not. Taking the
+batch moves the place past them, so after a narrowing they are lost to this name; 0 says nothing
+was. A post through the caller's own app (`peers`) prints as an agent's post, with its slug.
+
+A quiet end is one line, `watch: no change for claude/root in 27 min; next: <command>`. A blind
+end is one line, `watch: blind for 27 min, GitHub failing since <time>: <why>; next: <command>`.
 Both happen only over an empty report (`QuietEndAcksNothingUnshown`). The stale-tool note goes
 inside a batch (`batchLines`); at a quiet or blind end `WatchCli` writes it to stderr, so the stdout
 end stays one line. A wait that cannot run prints `watch: cannot run: <why>; next: <step>`, where
-the step is prose (`WatchCli`, `watch.sh`). -/
+the step is prose (`WatchCli`, `watch.sh`). A usage error of `wait` prints `watch: usage: <why>;
+next: <step>` the same way, before the usage text on stderr (`WatchCli.waitUsage`). -/
 
 namespace MitosGate.Watch
 
 open Land (Pr)
 
+/-- Kind names joined by commas, or `none`: the text `--topics` and `--ride` read back. -/
+def kindsText (ks : List Kind) : String :=
+  if ks.isEmpty then "none" else String.intercalate "," (ks.map Kind.name)
+
+/-- Digits through `Nat.toDigits`, not `toString`, so a `decide +kernel` fixture can evaluate it
+(`tasks/502-watch.md`, Lean lens fixes). -/
+def decimal (n : Nat) : String := String.ofList (Nat.toDigits 10 n)
+
+def Scope.text : Scope → String
+  | .repo => "the repository"
+  | .items ns => String.intercalate "," (ns.map fun n => "#" ++ decimal n)
+
+def Topic.text (t : Topic) : String := s!"{kindsText t.hears.items} on {t.on.text}"
+
+/-- One flag as the trailer prints it. An empty `ride` is `--ride none`. -/
+def Flag.text : Flag → String
+  | .topics ks => " --topics " ++ kindsText ks
+  | .on ns => " --on " ++ String.intercalate "," (ns.map decimal)
+  | .ride ks => " --ride " ++ kindsText ks
+
+def Subscription.text (sub : Subscription) : String := String.join (sub.flags.map Flag.text)
+
 /-- The flags a wait was started with, enough to rebuild its command. -/
 structure Invocation where
   consumer : Consumer
+  sub : Subscription
   max : Option Nat
   deriving DecidableEq, Repr
 
 def Invocation.next (i : Invocation) (seen : Nat) : String :=
-  let pulls := match i.consumer.scope with
-    | .repo => ""
-    | .pulls ns => String.join (ns.map fun n => s!" --pr {n}")
   let max := match i.max with
     | some m => s!" --max {m}"
     | none => ""
-  s!".claude/scripts/watch.sh wait --as {oneLine i.consumer.app}/{oneLine i.consumer.name}{pulls}{max} --seen {seen}"
+  s!".claude/scripts/watch.sh wait --as {oneLine i.consumer.app}/{oneLine i.consumer.name}{i.sub.text}{max} --seen {seen}"
 
 def Place.word : Place → String
   | .issueComment => "comment"
@@ -102,9 +134,10 @@ def sinceText (lastOk : Epoch) : String :=
 def blindLine (i : Invocation) (minutes offer : Nat) (since : Epoch) (why : Excerpt) : String :=
   s!"watch: blind for {minutes} min, GitHub failing since {sinceText since}: {why.text}; next: {i.next offer}"
 
-/-- Moderate: every piece is a decimal, a fixed word, `iso`, `oneLine` output or an excerpt, so
-every character is printable or the escape backslash: no newline, carriage return, line or
-paragraph separator, NEL or escape. It covers every end of a wait, not only a batch. -/
+/-- Moderate: every piece is a decimal, a fixed word (a kind's name included), `iso`, `oneLine`
+output or an excerpt, so every character is printable or the escape backslash: no newline,
+carriage return, line or paragraph separator, NEL or escape. It covers every end of a wait, not
+only a batch. -/
 def EveryLineIsOneLine : Prop :=
   (∀ i b offer note, ∀ l ∈ batchLines i b offer note, ∀ c ∈ l.toList,
     printable c = true ∨ c = '\\') ∧
@@ -127,5 +160,24 @@ def TheLastLineIsTheNextCommand : Prop :=
   (∀ i minutes offer, (quietLine i minutes offer).endsWith s!"; next: {i.next offer}" = true) ∧
   (∀ i minutes offer since why,
     (blindLine i minutes offer since why).endsWith s!"; next: {i.next offer}" = true)
+
+namespace Fixture
+
+/-- The wait with no flags prints none, so the root's trailer is as before. -/
+theorem theDefaultPrintsNoFlag : ({} : Subscription).text = "" := by decide +kernel
+
+theorem aFailuresAgentsFlags :
+    ({ topic := { hears := { failed := true, alarms := true } } } : Subscription).text =
+      " --topics failed,alarms" := by decide +kernel
+
+theorem aRidingRootsFlags :
+    ({ rides := { failed := true, outside := true, alarms := true } } : Subscription).text =
+      " --ride failed,outside,alarms" := by decide +kernel
+
+theorem aPrOwnersFlags :
+    ({ topic := { on := .items [502, 571] } } : Subscription).text = " --on 502,571" := by
+  decide +kernel
+
+end Fixture
 
 end MitosGate.Watch

@@ -11,14 +11,14 @@ escalation: hint → automation → stronger model → pair → split → revisi
 
 ## Context
 - Plan row P2-013 in `plan/phase-2.md` (Watch track), issue [#562](https://github.com/kitimark/mitos/issues/562). It is PR 2 of `tasks/502-watch/PR-SEQUENCE.md` (Rows). Tracker [#502](https://github.com/kitimark/mitos/issues/502), milestone [Watch: one Lean waiter for GitHub (#502)](https://github.com/kitimark/mitos/milestone/6).
-- Waits for: the merge of the #502 plan PR (PR 0), which waits for the owner's answers to questions 1 and 8a.
+- Waits for: the merge of the #502 plan PR (PR 0). The owner answered questions 1 and 8a on 27 November, so PR 0 merges as it is.
 - Role: PR owner, hard (`opus`, `xhigh`). The row touches `gate/`, so it is trust-critical: it also needs an `opus` verifier at `xhigh` or above, and the owner merges it. `docs/process.md` is owner-kept too.
 - The design: `tasks/502-watch.md` (the Design block) and `tasks/502-watch/` (`DESIGN.md` with the owner's questions, `PR-SEQUENCE.md`, `HANDOVER.md`, `REVIEW-LOG.md` and `sketch/`). This file names the slice and does not restate it.
 
 ## Design
 PR 2's slice of `tasks/502-watch.md`; its row in `tasks/502-watch/PR-SEQUENCE.md` sets the files, the gate and the check.
 depth: contract only. This row is PR 2 of `tasks/502-watch/PR-SEQUENCE.md`, and its sketch under `tasks/502-watch/sketch/` was never type-checked. Before a PR owner starts, the Architect type-checks this slice with the repository's toolchain, writes the stub bodies its statements are stated over, checks the statements against them, and upgrades this file to build depth (`tasks/502-watch.md`, Design).
-revisit_when: re-check after PR 0 (the #502 plan PR) merges: the Architect's upgrade to build depth is this row's first step. Re-check `Voice` if the owner answers 8a or 8b otherwise, or refuses default 8c on PR 0.
+revisit_when: re-check after PR 0 (the #502 plan PR) merges: the Architect's upgrade to build depth is this row's first step. Re-check `Voice` only if the owner refuses default 8c on PR 0b (8a and 8b are answered yes).
 modules: the rows of `tasks/502-watch.md` (modules) for `Watch/Voice.lean`, PR 2's part of `Watch/Time.lean` and `Watch/Observe.lean`, `WatchCli.lean` (`unanswered`) and `Watch.lean`
 types: `Place`, `Via`, `Speaker`, `Said`, `Excerpt`, `Refused`, `Reading`, and the signatures of the post readers and `unanswered` in `tasks/502-watch.md` (types)
 statements: `Watch/Voice.lean` in `tasks/502-watch.md` (statements): TypedOnlyFromAnIssueCommentWithNoApp, ReviewRoutesAreNeverTyped, TypedIsAlwaysWords, AnAppPostIsNeverWords, SpeaksAsLandUnlessTyped, AnswersAsLandUnlessTyped, TypedWordsAreListedUntilAnswered, ExcerptIsOneLine
@@ -26,7 +26,7 @@ reuse: `tasks/502-watch.md` (reuse): `Speech.footer`, `Speech.apps`, the classes
 fixtures: the `Voice` decide fixtures and `gate/watch-fixtures/posts-336/` (`expected.json`, `classes.tsv`) in `tasks/502-watch.md` (fixtures)
 cut_line: row 2 of `tasks/502-watch/PR-SEQUENCE.md`; `ofHttpDate?`, `isoChars` and the other readers wait for P2-016
 deferrals: none of `tasks/502-watch.md`'s deferrals moves to or from this row
-owner_decisions: questions 1 and 8a (answered before PR 0 merges), default 4 (all of it in `gate/`, in `mitos-gate`) and default 8c (no app besides `claude` and `cursor` answers without its footer)
+owner_decisions: questions 1 and 8a (answered yes on 27 November), default 4 (all of it in `gate/`, in `mitos-gate`) and default 8c (no app besides `claude` and `cursor` answers without its footer)
 
 ## Done when
 - [ ] row 2's Check column in `tasks/502-watch/PR-SEQUENCE.md` holds, and all `checks` pass locally

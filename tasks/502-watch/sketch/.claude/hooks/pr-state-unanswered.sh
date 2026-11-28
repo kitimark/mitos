@@ -1,7 +1,8 @@
 # UNCHECKED SKETCH (#502, PR 3). A fragment, not a file: what replaces pr-state.sh's two jq
 # classifiers (`full_thread_unanswered` per PR and `owner_unanswered_by_thread`), as PR 3a left
 # them. PR 3 starts only after PR 11, so main's tool runs where the root runs and this path does
-# not turn every line to `?` there; question 3a and default 3b decide how pr-state finds that tool. The
+# not turn every line to `?` there; question 3a (answered: the attested release asset) and
+# default 3b decide how pr-state finds that tool. The
 # hook already finds main's tool for provenance (`MAIN_TOOL_READY_WAIT=0 main_tool ready ...`,
 # `tool_bin`). The fetches stay as they are; only the deciding moves to `mitos-gate watch
 # unanswered`, which classifies a post as land does except that typed words stay words (#501), and

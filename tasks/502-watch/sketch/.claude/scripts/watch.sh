@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # UNCHECKED SKETCH (#502, PR 9). The one way any caller waits on GitHub or records its own writes.
 #
-#   watch.sh wait   --as <app>/<name> [--seen <n>] [--pr <n>]... [--max <min>] [--since <UTC>]
+#   watch.sh wait   --as <app>/<name> [--seen <n>] [--topics <kind>[,<kind>]...]
+#                   [--on <n>[,<n>]...] [--ride none|<kind>[,<kind>]...] [--max <min>]
+#                   [--since <UTC>]
 #   watch.sh own    --as <app>/<name> label|unlabel|assign|unassign <pr> <value>
 #   watch.sh own    --as <app>/<name> merge|close <pr>
 #   watch.sh own    --as <app>/<name> comment|review-comment|review <id>
-#   watch.sh status --as <app>/<name>
-#   watch.sh build            (PR 11 adds --fetch, question 3a)
+#   watch.sh status [--as <app>/<name>]
+#   watch.sh build            (PR 11 adds --fetch and the host checks, question 3a)
 #
 # The logic is in `mitos-gate watch` (gate/MitosGate/WatchCli.lean). This shim only finds the
 # clone, the repository, the owner and main's tool, then execs the tool. What it guarantees:
@@ -18,14 +20,19 @@
 #   under a running wait, and a running wait never holds a lock a rebuild needs.
 # * stdin is /dev/null for the tool (a hook or an agent's harness may leave it open).
 # * A wait that cannot run prints one stdout line, so a Monitor wakes on it, and exits 1.
+#   A usage error of `wait` (a mistyped kind, `--ride words`, a bad `--on`) prints one stdout
+#   line too, `watch: usage: <why>; next: <what>`, then the usage text on stderr, and exits 2.
+#   The tool prints both (`WatchCli.waitUsage`); this shim passes the flags through unchanged.
+#   A missing or unknown verb below prints the usage text on stderr only.
 #   `own` never fails the caller's `<write> && watch.sh own ...`: it warns on stderr, exits 0.
 #   A record needs the clone's shared state, so run one wait before your first write; an `own`
 #   before any wait warns that its record is dead, and the echo wakes you once.
 # * Copy the last line's `--seen <n>` exactly: any other number takes nothing and the batch replays.
+#   The line also carries your subscription flags, so copying it keeps your topic.
 set -u
 started=$(date -u +%s)
 here=$(dirname "${BASH_SOURCE[0]}")
-usage='usage: watch.sh wait|own|status --as <app>/<name> ..., or watch.sh build'
+usage='usage: watch.sh wait|own|status [--as <app>/<name>] ..., or watch.sh build'
 
 [ $# -ge 1 ] || { printf '%s\n' "$usage" >&2; exit 2; }
 cmd=$1
