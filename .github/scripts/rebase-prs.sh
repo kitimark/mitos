@@ -1,21 +1,36 @@
 #!/usr/bin/env bash
+# Rebases the one pull request that PR_NUMBER names onto $BASE. Exit 0 means the head this run read
+# contains $BASE, already or after this run's push. Every other outcome exits 1, so the run's
+# conclusion answers the dispatch that asked. A refusal puts its reason on an `::error::` line.
 set -euo pipefail
 BASE="${BASE:-main}"
+n=${PR_NUMBER:-}
+# PR_NUMBER is a workflow_dispatch input. A refusal never prints it: the runner reads an output
+# line that starts with `::` as a workflow command.
+if ! [[ $n =~ ^[1-9][0-9]{0,6}$ ]]; then
+  echo "::error::PR_NUMBER is not a pull request number; nothing was rebased"
+  exit 1
+fi
 git config user.name "mitos-pr-updater"
 git config user.email "mitos-pr-updater@users.noreply.github.com"
 git fetch -q origin "$BASE"
 gh label create needs-rebase --color FBCA04 \
   --description "Could not be rebased onto $BASE automatically" >/dev/null 2>&1 || true
 
+refuse() {
+  echo "::error::#$n $1; it was not rebased"
+  exit 1
+}
+
 # A GitHub stack of pull requests is rebased as a whole, and a push from here to one of its
 # branches would break its linear history. GitHub rebases a stack only when its bottom PR merges;
 # when `$BASE` moves ahead, the stack's owner rebases it (Rebase stack, or `gh stack rebase` and
 # `gh stack push`). So no PR in a stack is rebased or labelled `needs-rebase` here.
 # `GET repos/{owner}/{repo}/stacks` lists every stack with its `pull_requests`. A pull request
-# object also carries a `stack` field, but only for members and `gh pr list --json` cannot select
-# it, so the stack list is the source. Every PR number in any stack is skipped, whatever the
-# stack's `open` or the PR's `state` say: `gh pr list --state open` already keeps only open PRs,
-# and a filter on those fields would skip nothing if they changed.
+# object also carries a `stack` field, but only for members, so a missing field cannot be told
+# from a renamed one, and the stack list is the source. Every PR number in any stack is refused,
+# whatever the stack's `open` or the PR's `state` say: a filter on those fields would refuse
+# nothing if they changed.
 stack_numbers_on_well_formed_pages() {
   jq -s -c 'def int: type == "number" and . == floor;
       def pr: type == "object" and (.number | int);
@@ -26,19 +41,36 @@ stack_numbers_on_well_formed_pages() {
 }
 if ! stacked=$(gh api --paginate --slurp -H "X-GitHub-Api-Version: 2026-03-10" \
     "repos/{owner}/{repo}/stacks?per_page=100" | stack_numbers_on_well_formed_pages); then
-  echo "::error::could not read the stack list; no PR was rebased"
+  echo "::error::could not read the stack list; #$n was not rebased"
   exit 1
 fi
-echo "PRs in a stack, skipped: $stacked"
+echo "PRs in a stack: $stacked"
 
-prs=$(gh pr list --base "$BASE" --state open --limit 100 \
-  --json number,headRefName,headRefOid,isCrossRepository,isDraft,labels \
-  | jq -c --argjson stacked "$stacked" \
-      '.[] | select((.isCrossRepository or .isDraft) | not)
-           | select([.number] | inside($stacked) | not)
-           | select([.labels[].name] | index("no-auto-rebase") | not)
-           | {number, ref: .headRefName, oid: .headRefOid,
-              flagged: ([.labels[].name] | index("needs-rebase") != null)}')
+# A fork whose repository was deleted has no `head.repo`, and it reads as a fork here.
+pull_request_fields() {
+  jq -c --argjson n "$n" 'def text: type == "string" and length > 0;
+      if type == "object" and .number == $n and (.state | text) and (.draft | type == "boolean")
+          and (.base.ref | text) and (.base.repo.full_name | text) and (.head.ref | text)
+          and (.head.sha | type == "string" and test("^[0-9a-f]{40}$"))
+          and (.labels | type == "array" and all(.[]; type == "object" and (.name | text)))
+      then {state, draft, base: .base.ref, ref: .head.ref, oid: .head.sha,
+            fork: (.head.repo.full_name != .base.repo.full_name),
+            labels: [.labels[].name]}
+      else error("unexpected pull request") end'
+}
+if ! pr=$(gh api "repos/{owner}/{repo}/pulls/$n" | pull_request_fields); then
+  echo "::error::could not read #$n; it was not rebased"
+  exit 1
+fi
+has() { jq -e "$1" <<<"$pr" >/dev/null; }
+has '.state == "open"' || refuse "is not open"
+[ "$(jq -r .base <<<"$pr")" = "$BASE" ] || refuse "is not based on $BASE"
+has '.fork | not' || refuse "comes from a fork"
+has '.draft | not' || refuse "is a draft"
+jq -e --argjson n "$n" 'all(.[]; . != $n)' <<<"$stacked" >/dev/null || refuse "is in a stack"
+has '.labels | index("no-auto-rebase") | not' || refuse "has the no-auto-rebase label"
+ref=$(jq -r .ref <<<"$pr"); oid=$(jq -r .oid <<<"$pr")
+flagged=$(jq -r '.labels | index("needs-rebase") != null' <<<"$pr")
 
 status=0
 flag() {
@@ -61,45 +93,42 @@ unflag_or_absent() {
   echo "  could not remove needs-rebase from #$1"; status=1
 }
 
-while read -r pr; do
-  [ -n "$pr" ] || continue
-  n=$(jq -r .number <<<"$pr"); ref=$(jq -r .ref <<<"$pr"); oid=$(jq -r .oid <<<"$pr")
-  flagged=$(jq -r .flagged <<<"$pr")
-  git fetch -q origin "$oid"
-  if git merge-base --is-ancestor "origin/$BASE" "$oid"; then
-    echo "#$n ($ref): up to date"
-    if [ "$flagged" = true ]; then
-      live=$(gh pr list --base "$BASE" --state open --limit 100 \
-        --json number,headRefOid \
-        | jq -r --argjson n "$n" '.[] | select(.number == $n) | .headRefOid')
-      if [ "$live" = "$oid" ]; then
-        unflag_or_absent "$n"
-      else
-        echo "#$n ($ref): head moved during this run; left for the next run"
-      fi
+git fetch -q origin "$oid"
+if git merge-base --is-ancestor "origin/$BASE" "$oid"; then
+  echo "#$n ($ref): up to date"
+  if [ "$flagged" = true ]; then
+    if ! live=$(gh api "repos/{owner}/{repo}/pulls/$n" --jq .head.sha); then
+      echo "::error::could not read #$n again; needs-rebase was kept"
+      exit 1
     fi
-    continue
-  fi
-  git checkout -q --detach "$oid"
-  if git rebase -q "origin/$BASE" >/dev/null 2>&1; then
-    if ! out=$(git push -q --force-with-lease="refs/heads/$ref:$oid" origin "HEAD:refs/heads/$ref" 2>&1); then
-      if grep -q "stale info" <<<"$out"; then
-        echo "#$n ($ref): branch moved during this run; left for the next run"
-      else
-        echo "#$n ($ref): push refused; labelled needs-rebase"
-        echo "$out"
-        [ "$flagged" = true ] || flag "$n" "The rebase onto \`$BASE\` succeeded but the push was refused, so this branch was left unchanged and labelled \`needs-rebase\`. The run log of \`update-prs.yml\` has the reason."
-      fi
-      continue
-    fi
-    echo "#$n ($ref): rebased $oid -> $(git rev-parse HEAD)"
-    if [ "$flagged" = true ]; then
+    if [ "$live" = "$oid" ]; then
       unflag_or_absent "$n"
+    else
+      echo "#$n ($ref): head moved during this run; needs-rebase was kept"
     fi
-  else
-    git rebase --abort
-    echo "#$n ($ref): conflicts with $BASE; labelled needs-rebase"
-    [ "$flagged" = true ] || flag "$n" "This branch no longer rebases cleanly onto \`$BASE\`. It was left unchanged and labelled \`needs-rebase\`."
   fi
-done <<<"$prs"
+  exit "$status"
+fi
+git checkout -q --detach "$oid"
+if git rebase -q "origin/$BASE" >/dev/null 2>&1; then
+  if ! out=$(git push -q --force-with-lease="refs/heads/$ref:$oid" origin "HEAD:refs/heads/$ref" 2>&1); then
+    if grep -q "stale info" <<<"$out"; then
+      echo "::error::#$n ($ref): branch moved during this run; it was not rebased"
+    else
+      echo "::error::#$n ($ref): push refused; labelled needs-rebase"
+      echo "$out"
+      [ "$flagged" = true ] || flag "$n" "The rebase onto \`$BASE\` succeeded but the push was refused, so this branch was left unchanged and labelled \`needs-rebase\`. The run log of \`update-prs.yml\` has the reason."
+    fi
+    exit 1
+  fi
+  echo "#$n ($ref): rebased $oid -> $(git rev-parse HEAD)"
+  if [ "$flagged" = true ]; then
+    unflag_or_absent "$n"
+  fi
+else
+  git rebase --abort
+  echo "::error::#$n ($ref): conflicts with $BASE; labelled needs-rebase"
+  [ "$flagged" = true ] || flag "$n" "This branch no longer rebases cleanly onto \`$BASE\`. It was left unchanged and labelled \`needs-rebase\`."
+  exit 1
+fi
 exit "$status"

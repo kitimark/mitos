@@ -3,7 +3,7 @@ import MitosGate.ContentId
 /-!
 # Whether a verdict carries to a later head (`mitos-gate carry`)
 
-A verdict covers one head. When `main` moves, `update-prs.yml` rebases every open PR, and a head
+A verdict covers one head. `update-prs.yml` rebases a PR onto `main` when it is asked to, and a head
 that only rebases keeps the verdict. The content id (`ContentId`) says whether two heads hold the
 same change, but it binds where a hunk applies only within one merge-base: its marker counts the
 copies of a hunk's old side in each head's own merge-base file. So a PR owner's push on top of the

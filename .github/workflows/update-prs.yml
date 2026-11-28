@@ -1,9 +1,14 @@
 name: Keep PR branches up to date
 
+# A move of main starts no run. Each rebase push starts a full ci run, and a merge used to start one
+# for every open PR at once (#596).
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      pr:
+        description: Number of the one pull request to rebase onto main
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,10 +21,10 @@ jobs:
   rebase:
     runs-on: ubuntu-24.04
     # The app's private key is a secret of the `trusted` environment, whose deployment branch rule
-    # admits only `main` (GitHub matches it against GITHUB_REF). So this job gets the key on a push
-    # to main or a dispatch on main. GitHub refuses the job before its first step anywhere else: a
-    # dispatch on another branch, and the same job in a PR's own workflow (refs/pull/N/merge) or
-    # on a pushed branch. Each run leaves a deployment record in `trusted` with its ref and commit.
+    # admits only `main` (GitHub matches it against GITHUB_REF). So this job gets the key on a
+    # dispatch on main. GitHub refuses the job before its first step anywhere else: a dispatch on
+    # another branch, and the same job in a PR's own workflow (refs/pull/N/merge) or on a pushed
+    # branch. Each run leaves a deployment record in `trusted` with its ref and commit.
     environment: trusted
     steps:
       # Pushes made with GITHUB_TOKEN do not start CI, so rebased PRs would never get a `gate`
@@ -54,8 +59,9 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app.outputs.token }}
 
-      - name: Rebase open PRs onto main
+      - name: Rebase the named PR onto main
         if: steps.cfg.outputs.ok == 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_NUMBER: ${{ inputs.pr }}
         run: .github/scripts/rebase-prs.sh
