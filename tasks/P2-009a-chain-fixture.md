@@ -2,7 +2,7 @@
 
 phase: 2
 goal: `lake --dir eval/score exe mitos-score eval/fixtures/chain` prints precision and recall for the chain edge type `env/runtime` against hand labels, a repo-level edge is `confirmed` when any of its records is, a chain file is read by the chain reader and by no other reader, and the toy and go.mod scorecards keep their bytes.
-statement: none (tooling task). The scorer's own theorems, not locked: `Score.collapse_union`, `Score.factsOf_chain`, `Score.chain_union_end_to_end`, `Score.Chain.reads_cases`, `Score.Chain.facts_line_forms`, `Score.Chain.facts_ai`, `Score.Chain.skips_incomplete_bindings`, `Score.Chain.requires_env`
+statement: none (tooling task). The scorer's own theorems, not locked: `Score.collapse_union`, `Score.factsOf_chain`, `Score.chain_union_end_to_end`, `Score.Chain.reads_cases`, `Score.Chain.facts_line_forms`, `Score.Chain.facts_ai`, `Score.Chain.skips_incomplete_bindings`, `Score.Chain.requires_env`. The follow-up for #549 items 2 and 3 (Build notes) adds `Score.Chain.skips_blank_keys`, `Score.Chain.trims_binding_target`, `Score.readsToy_cases`, `Score.factsOf_unclaimed` and `Score.factsOf_unclaimed_yaml`
 touches: eval/fixtures/chain/ (new), eval/score/Score/Chain.lean (new), eval/score/Score.lean (one import; one guard line in `factsOf` and `factsOf_chain`; one changed line of `collapse` with `collapse_union` and its two private helpers; the header line of `render`; `chain_union_end_to_end` and its private input at the end), this file, ops/runs/
 must_not_touch: statements.lock, models.lock, gate/, eval/cheats/, models, core/, examples/acme/, eval/fixtures/toy/, eval/fixtures/gomod/, eval/score/Main.lean, eval/score/lakefile.toml, eval/score/lake-manifest.json, eval/score/Score/GoMod.lean, eval/diff/, eval/mutants/, .github/, docs/, plan/, .claude/
 checks: S1 (P2-001b's contract on `main`), the scorer builds with no new warning (check 1), axioms (check 2), toy scorecard unchanged (check 3), go.mod scorecard unchanged (check 4), the chain scorecard is F2 (check 5), fixture bytes and fact lines (check 6), labels against the labelling rules (check 7, local), changed paths (check 8), the run-log check (check 9), `plan-tasks.test.sh` (check 10), `gate` green in CI (check 11)
@@ -175,20 +175,23 @@ serves orders-db                provision    svc/orders-db
   `.humanDeclaredOutsideSource "<repo>/CHAIN"`.
 - A file named `CHAIN.ai` at a repo's root is AI-proposed, with origin `.ai "<repo>/CHAIN.ai"`.
 - A binding line needs a key and a non-blank target. Incomplete binding lines and unrecognized
-  lines give no fact.
+  lines give no fact. Since the follow-up for #549 item 3, a `needs` or `serves` line with a
+  blank key gives no fact either, and a binding's target loses the whitespace around it.
 - The span anchors the first key. For a binding that is the bound key, and the binding's target
   is not anchored (P2-001b, O2).
 
 Call sites:
 - `Score.factsOf` reads `if Chain.reads f.path then Chain.facts f.repo f.path f.text else` on its
   second line, after the go.mod guard. A chain file gets the chain reader's facts and nothing
-  else (`factsOf_chain`). Every other file keeps its reader.
+  else (`factsOf_chain`). Every other file keeps its reader. Since the follow-up for #549 item 2,
+  the toy reader has a guard of its own, `readsToy` (a path that ends in `.toy`), and a file no
+  guard claims gives no fact (`factsOf_unclaimed`).
 - `Score.score` calls `collapse` unchanged. The card's header names bindings when there are some.
 - P2-010 runs the scorer on each fixture directory. `chain` is one more directory, and it calls
   nothing here.
-- The interface is `Score.Chain.reads`, `Score.Chain.facts` and five theorems. `origin`, the three
-  verb prefixes, `env`, `svc` and `ofLine` are `private`, and so are the inputs of the theorems in
-  `Score.lean`.
+- The interface is `Score.Chain.reads`, `Score.Chain.facts` and five theorems, seven since the
+  follow-up for #549 item 3. `origin`, the three verb prefixes, `env`, `svc`, `ofLine` and that
+  follow-up's `trim` are `private`, and so are the inputs of the theorems in `Score.lean`.
 
 ### How a builder goes wrong here
 - Taking the cell literally, with no call in `factsOf`. `factsOf_chain` and
@@ -226,7 +229,8 @@ types:
 - Inputs. From P2-001b, as on 3d939da: `FactKind.binds (to : Identity)` and `Mitos.Impl.resolve`
   (C1 to C4). From `main`: `Mitos.lines`, `Mitos.utf8Len`, and `Score.SourceFile`, `GoMod.reads`,
   `ingest`, `edgeType`, `parseLabels` and `score`, all unchanged.
-- `eval/score/Score/Chain.lean`, the file in full:
+- `eval/score/Score/Chain.lean`, the file in full as this row merged it. Build notes lists what
+  the follow-up for #549 item 3 changed in `ofLine`:
 
 ```lean
 import Mitos.Core.Graph
@@ -435,6 +439,17 @@ statements:
 - `Score.Chain.facts_ai`: a `CHAIN.ai` line carries `.ai "<repo>/CHAIN.ai"`, the origin the union
   rule needs to show at all.
 - `Score.Chain.skips_incomplete_bindings`: a missing key or missing or blank target yields no fact.
+- From the follow-up for #549 items 2 and 3 (Build notes):
+  - `Score.Chain.skips_blank_keys`: `needs ` and `serves ` with no key, or with only spaces or a
+    tab after the verb, yield no fact.
+  - `Score.Chain.trims_binding_target`: `binds A db ` and `binds A  db` both bind `A` to `svc/db`,
+    with the span on `A`.
+  - `Score.readsToy_cases`: the toy reader's files are the paths that end in `.toy`. `PROVIDES`,
+    `mail.yaml`, `deps.toy.bak` and `toy` are not.
+  - `Score.factsOf_unclaimed`: a file that no guard claims, and that is not `PROVIDES`, gives no
+    fact. General, by `simp`.
+  - `Score.factsOf_unclaimed_yaml`: `deploy/mail.yaml` with a `require ` and a `provide ` line
+    gives no fact. This is R4's case.
 - `Score.Chain.requires_env`: every requirement the chain reader gives has kind `env` and scope
   `.runtime`. A chain record's repo key takes both from its requirement (C2), so every chain
   repo-level edge has edge type `env/runtime`. This is the row's "scorer edge type for chain
@@ -618,6 +633,8 @@ From the repository root, at the head after the last rebase.
    `cd eval/score && lake env lean <scratch>/Axioms.lean` prints the following, measured:
    - `collapse_union` and `reads_cases`: no axioms.
    - the other six: `[propext, Classical.choice, Quot.sound]`.
+   - the five theorems of the follow-up for #549 items 2 and 3, measured the same way:
+     `[propext, Classical.choice, Quot.sound]`.
 
    None names `Lean.ofReduceBool` or `sorryAx`.
 3. `lake --dir eval/score exe mitos-score eval/fixtures/toy | sha256sum` prints F3's hash, before
@@ -677,7 +694,8 @@ Risks:
   pipeline.
 - R4. The toy reader still reads every file that is not a go.mod or chain file, including
   `deploy/mail.yaml`. That file has no `require ` line, so it gives no fact. A YAML file with such
-  a line would give a toy requirement (P2-009b, R4).
+  a line would give a toy requirement (P2-009b, R4). Settled by the follow-up for #549 item 2: the
+  toy reader reads only `*.toy` files (`readsToy_cases`, `factsOf_unclaimed_yaml`).
 - R5. A reader for YAML or for real deployments, in a later phase, moves F2: `LOG_SINK` becomes a
   hit, and `web → mail` gains a declared record and turns `confirmed`. The labels stay. That is
   the card doing its job.
@@ -751,8 +769,10 @@ deferrals:
 - To the PR's follow-up issue, no row (all minor):
   - a binding's target is not anchored, so a typo in it gives an unresolved requirement and not an
     `ingest` error (P2-001b's follow-up, seen from the scorer);
-  - the toy reader still reads every unguarded file (R4);
   - Q1 and Q2.
+- Settled since, by the follow-up for #549 items 2 and 3 (Build notes): the toy reader read every
+  unguarded file (R4), and `ofLine` took a `needs ` or `serves ` line with no key and kept the
+  space after a binding's target.
 
 owner_decisions:
 - Settled by the plan:
@@ -817,6 +837,25 @@ Bubblewrap could not start in the builder's local environment. The hosted `check
 both `lake check` and `lake comparator --paranoid`, and `gate` passed at `31762eb`.
 [Hosted checks](https://github.com/kitimark/mitos/actions/runs/44893884955/job/136815288192)
 [Gate run](https://github.com/kitimark/mitos/actions/runs/44893884955/job/136815288491)
+
+The follow-up for #549 items 2 and 3, built on `main` at `00fae4d` (run log
+`ops/runs/2026-11-28/P2-scorecard-hardening-builder-1.json`):
+
+- Item 2, R4. `Score.factsOf` is four guards in a row: go.mod, chain, `readsToy` (a path that ends
+  in `.toy`) and `PROVIDES`. A file none of them claims gives no fact. On `main` the toy reader
+  ran on every file the first two did not claim, `PROVIDES` included.
+- Item 3. In `Score.Chain.ofLine`, a `needs` or `serves` line whose key is empty or all
+  whitespace gives no fact, where `main` gave a fact with the key `""`. A binding's target is
+  what stands after the key with the whitespace around it removed (`trim`, private), where `main`
+  kept `"db "` for `binds A db ` and `" db"` for `binds A  db`. `requires_env`'s proof has one
+  more case split per verb, and its statement keeps its text.
+- No fixture has such a file or line. The cards of `toy`, `gomod` and `chain` are byte for byte
+  F3, F4 and F2, measured against a build of `main`.
+- Four wrong variants, each one edit built in the worktree and then put back, failed the build:
+  the toy reader running on every unclaimed file (`factsOf_unclaimed`,
+  `factsOf_unclaimed_yaml`); `needs ` with a blank key giving a fact (`skips_blank_keys`);
+  `serves ` the same (`skips_blank_keys`); the target untrimmed (`trims_binding_target`).
+- The build prints the one warning `main` prints, and check 2 lists the new theorems' axioms.
 
 ## Rationale
 
