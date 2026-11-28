@@ -692,10 +692,10 @@ die "the decision names a step this script does not know"
 
 land_snapshot() {
   local repo=$1 out=$2 tool_dir=$3 tool_bin=$4 dash
-  dash=$(sed -n 's/^ *LAND_DASHBOARD: \([1-9][0-9]\{0,6\}\)$/\1/p' \
+  dash=$(sed -n 's/^ *LAND_PROVENANCE_ISSUE: \([1-9][0-9]\{0,6\}\)$/\1/p' \
     "$tool_dir/.github/workflows/land.yml" 2>/dev/null)
   [[ $dash =~ ^[1-9][0-9]{0,6}$ ]] \
-    || { echo "main's land.yml does not name one LAND_DASHBOARD" >&2; return 1; }
+    || { echo "main's land.yml does not name one LAND_PROVENANCE_ISSUE" >&2; return 1; }
   "$tool_dir/gate/snapshot-fetch.sh" "$repo" "$dash" "$out/reads" 2>"$out/fetch.err" </dev/null \
     || { echo "the fetch refused: $(tail -n 1 "$out/fetch.err")" >&2; return 1; }
   (cd "$tool_dir" && "$tool_bin" snapshot "$out/reads") >"$out/snapshot.json" \
@@ -1135,7 +1135,7 @@ fixtures: the names are the cases that passed here on the sketches, unless a lin
     missing from the snapshot is an error;
   - errors: a refused fetch, a refused snapshot, a refused decision, an unknown step and an
     unknown stop are each an error; usage is an error with no answer line; a second run for the
-    same pull request is refused; zero or two `LAND_DASHBOARD` lines are an error;
+    same pull request is refused; zero or two `LAND_PROVENANCE_ISSUE` lines are an error;
   - pins: every `gh` call is `gh api`; `holds-no-rule`; `three-writes-only`.
   - To add: `the-caller-is-the-delegate` (the one teammate of `Speech.delegates` in the tree is
     the one `land.sh` names; added by the later of PR 2 and PR 3); a list with a second page holds

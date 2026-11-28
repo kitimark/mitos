@@ -28,7 +28,7 @@ this repository. Most are adapted from pstack (MIT); see `THIRD_PARTY_NOTICES.md
 | `/in-your-own-words` | skill | you type it, or `/interrogate` follows it | restates the user's goal |
 | `/benchmark-checklist` | skill | you type it, or a playbook follows it | vets a perf number before you report or act on it |
 | `/figure-it-out` | skill | you type it, or poteto-mode routes to it | designs a bespoke playbook for large or unattended work |
-| `/ketchup` | skill | you type it; the Autopilot playbooks name it, but here their catch-ups go to the Owner dashboard issue (`kitimark-mode`) | catches the user up in chat and lists the calls waiting on them |
+| `/ketchup` | skill | you type it; the Autopilot playbooks name it, but here their catch-ups go on the issue or PR they are about (`kitimark-mode`) | catches the user up in chat and lists the calls waiting on them |
 | `/bro` | skill | you type it; `/ketchup` borrows its voice | restates the last message in plain words |
 | `/tdd` | skill | you type it, or the Bug fix playbook follows it | failing regression test first, then the fix |
 | `/show-me-your-work` | skill | you type it, or poteto-mode follows it on long or unattended work | a TSV decision trail plus a cross-model review of it |
