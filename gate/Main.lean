@@ -151,10 +151,11 @@ def lockReach (core : Lock.ImportedRoot) : IO UInt32 := do
     IO.println (ciLine s!"{Lean.modToFilePath coreSrcDir m "lean"}: {root} does not import {m}, directly or transitively, so statements.lock has no line for its declarations")
   let n := missed.length
   let (noun, verb, it) := if n == 1 then ("module", "is", "it") else ("modules", "are", "each")
-  -- Lake's `Mitos.Core` glob and every plugin name the root file, so no hint offers to delete it.
+  let libraryRoot := scan
+  let (deletable, mustStay) := missed.partition (· != libraryRoot)
   let delete :=
-    if !missed.contains scan then ", or delete it"
-    else if n == 1 then ""
+    if mustStay.isEmpty then ", or delete it"
+    else if deletable.isEmpty then ""
     else s!", or delete it if it is under {dir}/"
   IO.println (ciLine s!"{n} spec {noun} {verb} not reached from {root}: import {it} from {Lean.modToFilePath coreSrcDir root "lean"}, which is a spec change{delete}")
   return 1
