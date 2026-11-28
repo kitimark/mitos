@@ -740,9 +740,9 @@ The sketches went in as written, with these differences.
 - **A failed read again is an error**, `land: cannot read #<pr> again`, exit 2. The sketch
   answered `waiting: #<pr> changed since the read`. That tells the caller to call again at once,
   and it names a change nobody saw.
-- **Deadlines (#290, item 3).** `land_snapshot` gives the fetch and the snapshot 240 s each
-  (`LAND_SNAPSHOT_WAIT`, so a test can shorten it) and says `timed out`. `land.sh` gives
-  `mitos-gate land` 120 s.
+- **Deadlines (#290, item 3).** `land_snapshot` gives the fetch and the snapshot 240 s each, so
+  up to 480 s in all (`LAND_SNAPSHOT_STEP_SECONDS`, so a test can shorten it), and says
+  `timed out`. `land.sh` gives `mitos-gate land` 120 s.
 - **`land_snapshot` takes an absolute folder (#290, s1)** and refuses any other, because it runs
   the snapshot from main's checkout.
 - **No stray line on the first `enter` (#290, s2).** `land.sh` reads the record file only when it
@@ -1127,7 +1127,7 @@ types: shell, no new Lean type.
   `main_tool`, with what `main_tool_dir` and `main_tool_bin` printed. `<dir>` is an absolute
   path. It writes `<dir>/reads/`, `<dir>/snapshot.json`, `<dir>/fetch.err` and
   `<dir>/snapshot.err`, and returns 1 with the reason as the last line on standard error. The
-  fetch and the snapshot each get `LAND_SNAPSHOT_WAIT` seconds, 240 unless it is set. The
+  fetch and the snapshot each get `LAND_SNAPSHOT_STEP_SECONDS` seconds, 240 unless it is set. The
   dashboard issue is the one main's `land.yml` names.
 - `lib/wake.sh`: `wake_filter <state-dir> <poll-dir> <owner/name>`, called by `watch-github.sh` as
   `wake_filter "$dir" "$w" "$repo"`. It rewrites `<poll-dir>/lines` (`<tier>\t<line>`). It calls

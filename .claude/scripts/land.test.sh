@@ -98,8 +98,8 @@ if [ "${1:-}" = --mutants ]; then
   mutant land.sh "held prints no fetch or snapshot line" 's/^        held_lines$/        :/'
   mutant land.sh "held prints the lines of every pull request" 's/grep -hEv "\$named"/grep -hE ""/'
   mutant land.sh "the read line shows a word the tool did not say" 's/\.word | strings/"stands"/'
-  mutant lib/land-snapshot.sh "the fetch has no deadline" 's/^  timeout -k 5 "\$wait" "\$tool_dir/  "$tool_dir/'
-  mutant lib/land-snapshot.sh "the snapshot has no deadline" 's/timeout -k 5 "\$wait" "\$tool_bin" snapshot/"$tool_bin" snapshot/'
+  mutant lib/land-snapshot.sh "the fetch has no deadline" 's/^  timeout -k 5 "\$step_seconds" "\$tool_dir/  "$tool_dir/'
+  mutant lib/land-snapshot.sh "the snapshot has no deadline" 's/timeout -k 5 "\$step_seconds" "\$tool_bin" snapshot/"$tool_bin" snapshot/'
   mutant lib/land-snapshot.sh "the fetch is the one in the tree of the caller" 's/"\$tool_dir\/gate\/snapshot-fetch.sh"/gate\/snapshot-fetch.sh/'
   mutant lib/land-snapshot.sh "the dashboard number is the one in the tree of the caller" 's/"\$tool_dir\/.github\/workflows\/land.yml"/.github\/workflows\/land.yml/'
   mutant lib/land-snapshot.sh "the snapshot runs in the tree of the caller" 's/(cd "\$tool_dir" && timeout/(timeout/'
@@ -287,7 +287,7 @@ fresh() {
 now() { jq "$2" "$work/now/$1.json" >"$work/now/$1.part" && mv "$work/now/$1.part" "$work/now/$1.json"; }
 
 envs() {
-  env -u GH_HOST -u GITHUB_TOKEN -u MITOS_MAIN_TOOL LAND_SNAPSHOT_WAIT="${SNAPSHOT_WAIT:-}" PATH="$path" \
+  env -u GH_HOST -u GITHUB_TOKEN -u MITOS_MAIN_TOOL LAND_SNAPSHOT_STEP_SECONDS="${SNAPSHOT_STEP_SECONDS:-}" PATH="$path" \
     FAKE_DIR="$work" REAL_GATE="$real" CLAUDE_PROJECT_DIR="$work/clone" GH_TOKEN=dummy \
     HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 "$@"
 }
@@ -580,9 +580,9 @@ FETCH_EXIT=2 FETCH_SAYS="snapshot-fetch: gh is not installed" run 7
 is "a refused fetch is an error" "" "land: the fetch refused: snapshot-fetch: gh is not installed" 2
 SNAPSHOT_EXIT=1 SNAPSHOT_SAYS="snapshot: the read of main is missing or not JSON" run 7
 is "a refused snapshot is an error" "" "land: the snapshot refused: snapshot: the read of main is missing or not JSON" 2
-SNAPSHOT_WAIT=1 FETCH_SLEEP=3 run 7
+SNAPSHOT_STEP_SECONDS=1 FETCH_SLEEP=3 run 7
 is "a fetch that does not end is an error" "" "land: the fetch timed out" 2
-SNAPSHOT_WAIT=1 SNAPSHOT_SLEEP=3 run 7
+SNAPSHOT_STEP_SECONDS=1 SNAPSHOT_SLEEP=3 run 7
 is "a snapshot that does not end is an error" "" "land: the snapshot timed out" 2
 echo '{"prs":[{"pr":7}]}' >"$work/snapshot.json"
 run 7
@@ -653,7 +653,7 @@ check "every call has a timeout: gh" "$(code "$script" | grep 'gh api')" \
   'api() { timeout -k 5 60 gh api "$@" 2>"$w/api.err" </dev/null; }'
 check "every call has a timeout: main's tool" "$(code "$script" | grep '"$tool_bin" [a-z]' | grep -vc 'timeout -k 5 120 "$tool_bin" ')" 0
 check "every call has a timeout: the fetch and the snapshot" \
-  "$(code "$lib" | grep -E 'snapshot-fetch\.sh|"\$tool_bin"' | grep -c 'timeout -k 5 "$wait" ')" 2
+  "$(code "$lib" | grep -E 'snapshot-fetch\.sh|"\$tool_bin"' | grep -c 'timeout -k 5 "$step_seconds" ')" 2
 check "holds-no-rule: land.sh names no kept path, label, verdict or model" "$(code "$script" | grep -ciE \
   'spec-approved|needs-rebase|kept|critical|opus|sonnet|fable|haiku|wordingOnly|"pass"|"fail"|\.claude/|\.cursor/|\.github/|gate/|core/|plan/|eval/|CLAUDE\.md|process\.md|statements|models\.lock|lakefile|toolchain')" 0
 check "holds-no-rule: land.sh reads the decision only at .step, and at .word for the read line" \
