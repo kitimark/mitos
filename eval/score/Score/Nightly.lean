@@ -99,7 +99,7 @@ private def kind (line : String) : String := (fields line).headD ""
 private def fixtureOf (line : String) : String := ((fields line).drop 1).headD ""
 
 private def row (keys : Nat) (run : String) (line : String) : String :=
-  let fs := ((fields line).drop 1).map inert
+  let fs := ((fields line).drop 1).map plain
   "| " ++ " | ".intercalate (fs.take keys ++ [run] ++ fs.drop keys) ++ " |\n"
 
 private def header : String :=
@@ -117,7 +117,7 @@ private def shown (identity : String) : String :=
 
 private def item (side : String) (line : String) : String :=
   match fields line with
-  | ["edge", n, _, s, d, i] => s!"- {code n}, {side}: {shown i}, {inert s}, derivations {inert d}\n"
+  | ["edge", n, _, s, d, i] => s!"- {code n}, {side}: {shown i}, {plain s}, derivations {plain d}\n"
   | ["label", n, _, i] => s!"- {code n}, {side}: {shown i}\n"
   | _ => s!"- {side}: {code line}\n"
 
@@ -382,5 +382,35 @@ private def stressReport (t u : String) : String :=
   "- `a\\x60b\\x7cc\\x40d\\x0de\\\\f\\na\\x60b\\x7cc\\x40d\\x0de\\\\f/deps.toy` bytes "
 
 #guard keyOf (edgeIdentity (stressKey evil evilLines)) == some (stressKey evil evilLines)
+
+private def spite : String := "a[b&c<d*e_f~g\x1bh\x00i\x7fj"
+
+private def spiteLines : String := spite ++ "\n" ++ spite
+
+private def controlShape (s : String) : List Nat :=
+  ["[", "\x1b", "\x00", "\x7f"].map fun c => (s.splitOn c).length
+
+private def outsideCode (s : String) : String :=
+  String.join (((s.splitOn "`").zipIdx.filter (·.2 % 2 == 0)).map (·.1))
+
+private def markupShape (s : String) : List Nat :=
+  ["&", "<", "*", "_", "~"].map fun c => ((outsideCode s).splitOn c).length
+
+#guard shape (stressReport spite spiteLines) == shape (stressReport "x" "y") &&
+  controlShape (stressReport spite spiteLines) == controlShape (stressReport "x" "y")
+
+#guard markupShape (stressReport spite spiteLines) == markupShape (stressReport "x" "y")
+
+#guard has (stressReport spite spiteLines)
+  ("/deps.toy` bytes 36+38: `\"a\\x5bb&c<d*e_f~g\\x1bh\\x00i\\x7fj" ++
+    "a\\x5bb&c<d*e_f~g\\x1bh\\x00i\\x7fj\"`\n")
+
+private def tabFiles : List SourceFile :=
+  [{ repo := "a", path := "deps.toy", text := "require p\tq\n" },
+   { repo := "b", path := "PROVIDES", text := "provide p\tq\n" }]
+
+#guard (numbersAll [pinAs "t" tabFiles []]) matches .ok
+  ["counts\tt\t2\t1\t1\t0\t0", "rates\tt\ttoy/runtime\t0.00 (0/1)\tn/a\t0.00 (0/1)\tn/a\t1",
+   "edge\tt\t`a` → `b` (toy/runtime `p\\tq`)\tconfirmed\t1\t[\"a\",\"b\",\"toy\",\"p\\u0009q\",\"runtime\"]"]
 
 end Score.Nightly

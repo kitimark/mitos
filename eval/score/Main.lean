@@ -49,7 +49,9 @@ def scoreAll (root : System.FilePath) : IO (List Nightly.Result) := do
     out := out.push { name, card }
   return out.toList
 
-def main (args : List String) : IO UInt32 := do
+def fail (msg : String) : IO Unit := IO.eprintln (logLine msg)
+
+def run (args : List String) : IO UInt32 := do
   match args with
   | [dir] =>
     if dir.startsWith "-" then
@@ -57,12 +59,12 @@ def main (args : List String) : IO UInt32 := do
       return 2
     match ← scoreDir dir with
     | .ok c => IO.print (c.render (fixtureName dir)); return 0
-    | .error e => IO.eprintln e; return 1
+    | .error e => fail e; return 1
   | ["--numbers", root] =>
     match Nightly.numbersAll (← scoreAll root) with
     | .ok ls => for l in ls do IO.println l
                 return 0
-    | .error es => for e in es do IO.eprintln e
+    | .error es => for e in es do fail e
                    return 1
   | "--all" :: root :: rest =>
     let base ← match rest with
@@ -70,9 +72,12 @@ def main (args : List String) : IO UInt32 := do
       | [b] => (·.map some) <$> Nightly.parseNumbers <$> IO.FS.readFile b
       | _ => IO.eprintln usage; return 2
     match base with
-    | .error e => IO.eprintln s!"baseline {e}"; return 1
+    | .error e => fail s!"baseline {e}"; return 1
     | .ok base =>
       let rs ← scoreAll root
       IO.print (Nightly.report rs base)
       return if rs.all (·.card.isOk) then 0 else 1
   | _ => IO.eprintln usage; return 2
+
+def main (args : List String) : IO UInt32 :=
+  try run args catch e => do fail (toString e); return 1

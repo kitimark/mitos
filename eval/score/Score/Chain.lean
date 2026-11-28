@@ -24,13 +24,15 @@ private def svc (key : List Char) : Identity := { kind := "svc", key := String.o
 private def trim (l : List Char) : List Char :=
   ((l.dropWhile Char.isWhitespace).reverse.dropWhile Char.isWhitespace).reverse
 
+private def keySpan (o : Nat) (verb rest : List Char) : Span :=
+  { start := o + utf8Len verb + utf8Len (rest.takeWhile Char.isWhitespace),
+    len := utf8Len (trim rest) }
+
 private def ofLine (o : Nat) (l : List Char) : Option Fact :=
   if needsChars.isPrefixOf l then
-    let key := l.drop needsChars.length
-    if key.all Char.isWhitespace then none
-    else
-      some { kind := .requires, ident := env key,
-             span := { start := o + utf8Len needsChars, len := utf8Len key } }
+    let rest := l.drop needsChars.length
+    if (trim rest).isEmpty then none
+    else some { kind := .requires, ident := env (trim rest), span := keySpan o needsChars rest }
   else if bindsChars.isPrefixOf l then
     let (key, rest) := (l.drop bindsChars.length).span (· != ' ')
     let target := trim rest
@@ -39,11 +41,9 @@ private def ofLine (o : Nat) (l : List Char) : Option Fact :=
       some { kind := .binds (svc target), ident := env key,
              span := { start := o + utf8Len bindsChars, len := utf8Len key } }
   else if servesChars.isPrefixOf l then
-    let key := l.drop servesChars.length
-    if key.all Char.isWhitespace then none
-    else
-      some { kind := .provides, ident := svc key,
-             span := { start := o + utf8Len servesChars, len := utf8Len key } }
+    let rest := l.drop servesChars.length
+    if (trim rest).isEmpty then none
+    else some { kind := .provides, ident := svc (trim rest), span := keySpan o servesChars rest }
   else none
 
 def facts (repo path text : String) : List (Fact × Assumption) :=
@@ -80,6 +80,17 @@ theorem trims_binding_target :
       [({ kind := .binds ⟨"svc", "db"⟩, ident := ⟨"env", "A"⟩, span := ⟨6, 1⟩ },
           .humanDeclaredOutsideSource "deploy/CHAIN"),
         ({ kind := .binds ⟨"svc", "db"⟩, ident := ⟨"env", "A"⟩, span := ⟨18, 1⟩ },
+          .humanDeclaredOutsideSource "deploy/CHAIN")] := by decide
+
+theorem trims_keys :
+    facts "deploy" "CHAIN" "needs A \nneeds  A\r\nserves db\t\nserves  db\n" =
+      [({ kind := .requires, ident := ⟨"env", "A"⟩, span := ⟨6, 1⟩ },
+          .humanDeclaredOutsideSource "deploy/CHAIN"),
+        ({ kind := .requires, ident := ⟨"env", "A"⟩, span := ⟨16, 1⟩ },
+          .humanDeclaredOutsideSource "deploy/CHAIN"),
+        ({ kind := .provides, ident := ⟨"svc", "db"⟩, span := ⟨26, 2⟩ },
+          .humanDeclaredOutsideSource "deploy/CHAIN"),
+        ({ kind := .provides, ident := ⟨"svc", "db"⟩, span := ⟨38, 2⟩ },
           .humanDeclaredOutsideSource "deploy/CHAIN")] := by decide
 
 theorem requires_env {repo path text : String} {p : Fact × Assumption}
