@@ -84,7 +84,7 @@ source_payload >"$tmp/source.json"
 "$bin" provenance render owner/mitos "$tmp/source.json" >"$tmp/source.block" || exit 1
 publish() {
   jq -n --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/source.block")" \
-    '{title: "Owner dashboard", user: {login: "owner"}, state: "open", body: $body}'
+    '{title: "Provenance record", user: {login: "owner"}, state: "open", body: $body}'
 }
 publish >"$b/dashboard.json"
 per_pr() {
@@ -208,7 +208,25 @@ jq '.user.login = "someone"' "$b/dashboard.json" >"$d/dashboard.json"
 holds "a dashboard from another login holds every pull request" "#7 holds: unread dashboard(, provenance)?$"
 fresh
 jq '.pull_request = {}' "$b/dashboard.json" >"$d/dashboard.json"
-holds "a pull request titled Owner dashboard is no dashboard" "#7 holds: unread dashboard(, provenance)?$"
+holds "a pull request titled Provenance record is not the provenance issue" "#7 holds: unread dashboard(, provenance)?$"
+fresh
+jq '.title = "Owner dashboard"' "$b/dashboard.json" >"$d/dashboard.json"
+holds "an issue with the old title Owner dashboard holds every pull request" "#7 holds: unread dashboard(, provenance)?$"
+record_body() {
+  # shellcheck disable=SC2016
+  printf 'Machine data.\n\n## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n\n%s%s\n' \
+    "$1" "$(cat "$tmp/source.block")"
+}
+fresh
+jq --arg body "$(record_body $'## Record\n\n')" '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
+if snap && [ ! -s "$tmp/snap.err" ]; then
+  ok "an empty In flight table closed by a heading above the section leaves nothing unread"
+else
+  bad "an empty In flight table closed by a heading above the section leaves nothing unread" "$(cat "$tmp/snap.err")"
+fi
+fresh
+jq --arg body "$(record_body '')" '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
+holds "an In flight table that runs into the section holds every pull request" "#7 holds: unread dashboard$"
 fresh
 jq --arg body "$(dash_body "$(row 7 "$p1")")" '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
 holds "two rows for one pull request hold every pull request" "#7 holds: unread dashboard(, provenance)?$"
@@ -285,6 +303,7 @@ refused_dashboard() {
 }
 refused_dashboard "the native hook refuses another dashboard author" '.user.login = "someone"'
 refused_dashboard "the native hook refuses another dashboard title" '.title = "Another dashboard"'
+refused_dashboard "the native hook refuses the old title Owner dashboard" '.title = "Owner dashboard"'
 refused_dashboard "the native hook refuses a closed dashboard" '.state = "closed"'
 refused_dashboard "the native hook refuses a dashboard carrying a pull_request marker" '.pull_request = {}'
 

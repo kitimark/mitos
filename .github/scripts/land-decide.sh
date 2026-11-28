@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Usage: .github/scripts/land-decide.sh <owner/name> <dashboard-issue> <dir>
+# Usage: .github/scripts/land-decide.sh <owner/name> <provenance-issue> <dir>
 # Exit 0: decided, or skipped under the REST floor. Exit 1: refused, or the record or handoff could not be written. Exit 2: usage.
 set -u
 
 die() { printf 'land-decide: %s\n' "$1" >&2; exit 2; }
-[ $# = 3 ] || die "usage: land-decide.sh <owner/name> <dashboard-issue> <dir>"
-repo=$1 dash=$2 out=$3
+[ $# = 3 ] || die "usage: land-decide.sh <owner/name> <provenance-issue> <dir>"
+repo=$1 issue=$2 out=$3
 gate=${MITOS_GATE:-.lake/build/bin/mitos-gate}
 fetch=${SNAPSHOT_FETCH:-gate/snapshot-fetch.sh}
 floor=${LAND_REST_FLOOR:-300}
@@ -54,7 +54,7 @@ if num "$left" && [ "$left" -lt "$floor" ]; then
   exit 0
 fi
 
-"$fetch" "$repo" "$dash" "$out/reads" 2>"$out/fetch.err"; code=$?
+"$fetch" "$repo" "$issue" "$out/reads" 2>"$out/fetch.err"; code=$?
 after=$(timeout -k 5 120 gh api "repos/$repo/branches/main" --jq .commit.sha \
   2>"$out/main-after.err" </dev/null); after_code=$?
 if [ "$after_code" = 0 ] && sha "$after"; then

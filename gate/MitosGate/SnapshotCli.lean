@@ -99,8 +99,8 @@ def stacksOf (j : Json) : Option (List Nat) := do
   let prs ← stacks.mapM fun s => (field "pull_requests" s).bind arr >>= (·.mapM (nat "number"))
   return prs.flatten
 
-def dashboardOf (owner : String) (j : Json) : Option String := do
-  unless str "title" j == some "Owner dashboard" && login "user" j == some owner &&
+def provenanceIssueOf (owner : String) (j : Json) : Option String := do
+  unless str "title" j == some "Provenance record" && login "user" j == some owner &&
       str "state" j == some "open" && (field "pull_request" j).isNone do none
   str "body" j
 
@@ -304,12 +304,12 @@ def run (dir : System.FilePath) : IO UInt32 := do
     | stop "the read of main has no commit"
   unless (← ensure main) do
     return (← stop s!"main's commit {main} is not in this clone and could not be fetched")
-  let dashboard := (← load dir "dashboard").bind (dashboardOf owner)
-  let provenance := dashboard.bind fun body => (Provenance.decode repo body).toOption
+  let issue := (← load dir "dashboard").bind (provenanceIssueOf owner)
+  let provenance := issue.bind fun body => (Provenance.decode repo body).toOption
   let g : Global :=
     { repo, owner, protection := (← load dir "protection").bind protectionOf,
       stacked := (← load dir "stacks").bind stacksOf,
-      verdictCells := dashboard.bind rows, provenance }
+      verdictCells := issue.bind rows, provenance }
   let mut out : Array Json := #[]
   for p in pulls.mergeSort (fun a b => a.number ≤ b.number) do
     let k := toString p.number

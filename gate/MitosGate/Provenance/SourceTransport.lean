@@ -16,7 +16,7 @@ private def legacyFrame (payload : String) : String :=
   legacyStart ++ "\n```json\n" ++ payload ++ "\n```\n" ++ legacyEnd
 
 private def bodyOk (body : String) : Except String Unit := do
-  unless body.utf8ByteSize ≤ 262144 do throw "dashboard exceeds bound"
+  unless body.utf8ByteSize ≤ 262144 do throw "issue body exceeds bound"
   unless (body.splitOn "<!-- mitos-provenance:").length == 2 &&
       (body.splitOn "<!-- /mitos-provenance:").length == 2 do
     throw "missing or duplicate source section"
