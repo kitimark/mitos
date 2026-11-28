@@ -650,7 +650,7 @@ C1, the nightly scorecard, as `tasks/P2-010-nightly-scorecard.md` hands it over 
   - `--numbers`: 0, or 1 with nothing on stdout.
   - The numbers never change either code (P2-010's D6). The step exits with any non-zero code, because a scorer error fails the run (`docs/process.md:190`), and it adds none for a number (O7).
 - **The D1 line.** Before any card (P2-010's D7), the report holds exactly one of these two lines, byte for byte as P2-010's `summary` prints them:
-  - ``Most derivations any repo-level edge has: <n>, <edge> in fixture `<name>`. D1 reopens above 8.``, with ``, which that fixture's card leaves out`` before `. D1 reopens above 8.` when that edge is not in the card;
+  - ``Most derivations any repo-level edge has: <n>, <edge> in fixture `<name>`. D1 reopens above 8.``, with ``, which that fixture's card leaves out`` before `. D1 reopens above 8.` when that edge is not in the card. Since P2-010's hardening follow-up (#552), edges that tie for `<n>` are all listed, each as ``<edge> in fixture `<name>` ``, joined by `; `, and the note about the card then follows the edge it is about. On `eval/fixtures` the line reads ``…has: 2, <edge> in fixture `chain`; <edge> in fixture `gomod`. D1 reopens above 8.`` The start of the line, which is all the step reads, is unchanged;
   - `No fixture has a repo-level edge, so no derivations were counted.`
 
   Above the threshold, a later line reads ``**Above 8: D1 reopens (`plan/phase-2.md`, Scope decisions).**``. P2-010's pins G6 to G8 hold the D1 line from `has: <n>, ` on and the bold line's start, `**Above 8: D1 reopens`. No pin of P2-010 holds the words before `has:` or the no-edge line, so F23 holds them.
@@ -734,7 +734,7 @@ Run the fixtures at the head, and the variants in a scratch worktree of the head
   s=$(mktemp -d); RUNNER_TEMP=$s GITHUB_STEP_SUMMARY=$s/summary bash -eo pipefail -c "$(step .github/workflows/nightly.yml 'Scorecard of every fixture' | sed "s#eval/fixtures#$root#g")"
   ```
 
-  - `eval/fixtures`: exit 0. The log prints `Most derivations any repo-level edge has: 2` (at least 2 once `chain` joins, P2-010's N13), with no `::warning::`, and `numbers/numbers.tsv` holds the `--numbers` lines (27 for `gomod` and `toy`).
+  - `eval/fixtures`: exit 0. The log prints `Most derivations any repo-level edge has: 2` (at least 2 once `chain` joins, P2-010's N13), with no `::warning::`, and `numbers/numbers.tsv` holds the `--numbers` lines (29 for `gomod` and `toy`; 27 before P2-010's hardening follow-up for #552 added one `counts` line per fixture).
   - The same root with its own `numbers.tsv` at `$s/base/numbers.tsv`: exit 0, and `No change against the baseline.`
   - `d1-8`: exit 0, `… has: 8`, no `::warning::`.
   - `d1-9`: exit 0, `… has: 9`, the `::warning::`, and the bold line in the summary. A number never fails the step (O7).
