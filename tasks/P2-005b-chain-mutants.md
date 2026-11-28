@@ -66,7 +66,7 @@ escalation: hint → automation → stronger model → pair → split → revisi
    | T2 | An anchor the cached resolver never runs: `ends`, or the default `same` arguments of `statusOf`, `mkEdge` and `mkBoundEdge` | An equivalent mutant. No refutation can be proved, so the case ends `REJECTED, NOT REFUTED`. It cannot be relabelled `survives=`, which needs an accepted gate run | Every anchor lies in text that `resolveOne`, `mkEdge`, `mkBoundEdge`, `boundProviders`, `summarizeEnds` or `fires` runs. P2-001b's candidate (c), `providers fs r ++ fs.flatMap (boundProviders fs r)` → `providers fs r`, is the `ends` line and is dead. All ten resolver statements hold on nine inputs under it (measured). It is replaced by `unresolved_ignores_bound_ends` and `status_ignores_bound_ends` (fixture `anchors-live`) |
    | T3 | A refutation input with no binding in it | A Phase 1 case in disguise | Inputs are locked `Spec.Chains` fixtures whose `derivations` a locked theorem pins, or local inputs with an `example` that pins `derivations` |
    | T4 | Anchor or edit text the runner's lint refuses | A case `REFUSED BY LINT`. The plan-time `inductive EndSummary` did this to every `Impl/Resolve.lean` case, and the branch made it an `abbrev`. A later edit that brings back a `structure` or `inductive` repeats it, and the 15 `rejects=lint` cheat cases would still read as rejected, for the wrong reason | `--prepare` over the cases before any run (fixture `prepare-lint-clean`), and P2-005a's `cheat-evidence-unchanged` |
-   | T5 | A refutation that is true of the unmutated resolver | Impossible for a checked proof, but a stale input can make a proof elaborate for another reason, or the case pin nothing | Fixture `control-fails`: every Refute file fails to build against the unmutated core |
+   | T5 | A refutation that is true of the unmutated resolver | Impossible for a checked proof, but a stale input can make a proof elaborate for another reason, or the case pin nothing | Fixture `control-fails`: every Refute file fails to build against the unmutated core. Each fails on the proposition it names, except that two fail their consequence pin first and five report `decide failed to reduce` |
    | T6 | Relabelling a stubborn case `survives=` | A spec gap hidden | A case that cannot be refuted is re-anchored or cut and reported, never relabelled. A real survivor (the gate accepts it and the values check accepts it) goes to the owner (exit criterion 3). None is predicted |
    | T7 | A resolver wrong in a way no theorem sees | A hole in the spec | The matrix under Rationale: every clause a chain extends has a chain breaker. The one theorem without one, `resolve_unresolved_nodup`, has no chain source of duplicates (`unresolved` holds one entry per requirement), and Phase 1's `unresolved_duplicated` keeps it |
    | T8 | A plugin that emits facts a resolver mishandles: a binding with no provision, a binding of someone else's identity, a binding to a requirement, a binding held in the requirer's repo, a binding to itself, two bindings that reach one provider, an AI-proposed binding, a test-scoped requirement under a runtime binding | Each is a valid input, and the resolver must answer it by the spec | The cases named in the table under `statements` |
@@ -119,14 +119,20 @@ revisit_when: re-check after P2-001b merges (#204). At branch time, from the rep
    `lake --dir eval/mutants exe mitos-mutants --prepare <scratch> <the 28 cases>`. It prints 28 paths
    and no `lint:` or error line, exit 0. A `find=` that no longer occurs exactly once is named there.
    Re-anchor that case to the smallest text that occurs once and makes the same edit, and keep its
-   `why=`, `breaks=` and Refute.
+   `why=`, `breaks=` and Refute. A re-anchor that needs a new refutation goes to a stronger model
+   (`opus`), the third step of `escalation`.
 3. `grep -c 'p.fact.ident != r.fact.ident' core/Mitos/Core/Spec/Derivations.lean` prints `1`, which
    is O1's conjunct in `boundB`. If it prints `0`, drop `self_binding_allowed`, and delete the
    trailing `&& p.fact.ident != r.fact.ident` from the three other inlined texts, so each still drops
    exactly one conjunct.
-4. `grep -cE '^(def|theorem) (needDb|bindDb|provDb|chain|wfChain|chainEdge|chainAI|bindStaging|twoBindings|wfTwoBindings|selfBound|wfSelfBound|req|prov|goodEdge|twoProvisions) ' core/Mitos/Core/Spec/Adequacy.lean`
-   prints `16`. If the chain names moved to `Spec/Chains.lean`, add `open Mitos.Spec.Chains` after
-   the `open` line of each Refute. Phase 1's four names stay in `Spec.Adequacy`.
+4. The 16 fixture names are in two files:
+   - `grep -cE '^(def|theorem) (needDb|bindDb|provDb|chain|wfChain|chainEdge|chainAI|bindStaging|twoBindings|wfTwoBindings|selfBound|wfSelfBound) ' core/Mitos/Core/Spec/Chains.lean`
+     prints `12`, the chain names in namespace `Mitos.Spec.Chains`.
+   - `grep -cE '^(def|theorem) (req|prov|goodEdge|twoProvisions) ' core/Mitos/Core/Spec/Adequacy.lean`
+     prints `4`, Phase 1's names in `Mitos.Spec.Adequacy`.
+
+   Each Refute opens both namespaces (Appendix A1). If a name moves again, open its new namespace
+   in each Refute that uses it.
 5. The merged `Impl/Resolve.lean` still has `resolveOne` with `direct`, `groups`, `allEnds` and
    `summary`, and `mkBoundEdge` over `mkEdge`. `Impl/Impact.lean` still has `fires` over
    `e.through`. A different shape moves the anchors named in D4, and step 2 finds each one.
@@ -274,10 +280,44 @@ A `breaks=` line that names a theorem the Refute does not prove does not come ou
 claim cannot be inflated. A Refute that proves a theorem false which `breaks=` omits loses only a
 cell in the breakers table.
 
-**`breaks=` sets and memory.** Each distinct `breaks=` set is one generated Challenge.
-The design-time runner retained imports and reached 10.8 GB at 72 cases. The #521 runner fix
-(`a046630`, see #537) frees each Lean import after its check. Its follow-up measurements were
-4,992,568 KiB for one case and 5,001,472 KiB for 44. Recheck the peak with this corpus.
+**`breaks=` sets and memory.** Each distinct `breaks=` set is one generated Challenge, 19 for the 72
+cases. The runner's peak resident memory does not grow with that number or with the number of
+cases. It stays between 4.6 and 4.8 GiB. A new case or a new `breaks=` set adds time and no memory.
+
+The design-time runner kept every import and reached 10.8 GB at 72 cases. Since the #521 fix
+(`a046630`, #536), the runner frees each Lean import after its check. It holds the approved
+Challenge, the parse check's set and one generated Challenge at a time. The first step checks the
+generated Challenges before any case is judged, and `--prepare` runs that step alone. Its peak is
+within 4 % of a full run's.
+
+Measured peaks of the `mitos-mutants` process:
+
+| Cases (generated Challenges) | Command | Peak in KiB | Runs | Read as | Source |
+|---|---|---|---|---|---|
+| 1 (2) | full run, default mode | 5,055,428 and 4,959,228 | 2 | `VmHWM` | #537, `main` at `00fae4d` |
+| 72 (19) | full run, default mode | 5,055,668 | 1 | `VmHWM` | #537, `main` at `00fae4d` |
+| 1 (2) | `--prepare` | 4,958,044 | 1 | `VmHWM` | #537, `main` at `00fae4d` |
+| 72 (19) | `--prepare` | 4,956,016 and 4,855,436 | 2 | `VmHWM` | #537, `main` at `00fae4d` |
+| 72 | not recorded | 5,029,100 | 1 | `VmHWM` | #550 item 3, from #547's verifier |
+| 1 (2) | `--prepare` | 4,992,568 | 1 | `/usr/bin/time -v` max RSS | #536 |
+| 44 (15) | `--prepare` | 5,001,472 | 1 | `/usr/bin/time -v` max RSS | #536 |
+| 44 (15) | full run, `--paranoid` | 4,989,044 to 5,001,284 | 3 | `/usr/bin/time -v` max RSS | #536 |
+
+- Each figure is one process and never a sum. `VmHWM` and the max RSS of `/usr/bin/time -v` both
+  give the largest single process, and the runner is the largest. In the #537 runs, the max RSS that
+  `wait4` returns equals the runner's `VmHWM`.
+- The #537 rows ran on a host with 4 cores and 15.7 GiB, inside one 13.4 GiB memory cgroup that
+  every agent's shell shares. The #536 rows ran on a host with 4 cores and 16 GB.
+- The #537 runs of one command lie within 102,608 KiB (2 %) of each other, with 1 case or with 72.
+  So the measurements show no slope. The lower 72-case `--prepare` run ran while another agent's
+  process filled the cgroup.
+- While a case is judged, the comparator's children run beside the runner. The largest were one
+  `leanexport` at 1,678,412 KiB and one `lean` at 1,648,800 KiB (`VmHWM`, the 72-case run). The
+  anonymous memory of the whole process tree peaked at 4,156,900 KiB in a 1-case run (one run).
+  #536 measured 4,061 to 4,092 MiB for 44 cases with `--paranoid` (three runs).
+- The 72-case run ended `mutants: all 72 cases as expected, 52 refuted, 0 known gap(s), 20 cheat
+  case(s) rejected`, exit 0, after 3,948 s. That is one run, and other agents' Lean builds shared
+  its four cores for part of it.
 
 These four new sets each name two refuted theorems:
 - `resolve_sound resolve_complete` (`bound_key_legs_swapped`);
@@ -327,16 +367,20 @@ Run-level fixtures:
   Measured at `3d939da`: 28 of 28 in both modes. Case TIME was 22 to 31 s default and 31 to 62 s with
   `--paranoid`, one run each, on the shared host.
 - `control-fails`: from `core/` of the P2-001b head, `lake env lean <Refute.lean>` fails for every
-  new Refute. `binding_origin_forgotten` and `edges_one_per_repo_key` first fail their consequence
-  pins. The five impact cases report `decide failed to reduce`. Measured at `3d939da`: 28 of 28
-  exit 1.
+  new Refute. Each fails on the proposition it names, except that `binding_origin_forgotten` and
+  `edges_one_per_repo_key` first fail their consequence pins, and the five impact cases report
+  `decide failed to reduce`. Build `Mitos.Impl.Resolve` and `Mitos.Impl.Impact` first. Without
+  them, every file fails on its import, which shows nothing. Measured at `3d939da` and again on
+  `main` at `00fae4d`: 28 of 28 exit 1.
 - `anchors-live`: `grep -lE '^find=.*(def ends|\(ends fs r\)|providers fs r \+\+ fs\.flatMap)'` over
   the 28 `mutant` files prints nothing (T2), and no case ends `REJECTED, NOT REFUTED`. A case that does
   is re-anchored on live text, never relabelled. Measured: nothing printed.
 - `runner-peak`: run `--prepare` over every case directory while reading the `mitos-mutants`
   process's `VmHWM` from `/proc/<pid>/status`. The run prints `generated Challenges (as Lean built
-  them): 19`. Report the peak with the #537 measurements as a baseline. The exit is 1, because the 15
-  `rejects=lint` cheat cases print their `lint:` lines by design.
+  them): 19`. Report the peak beside the lines under "`breaks=` sets and memory". Measured at
+  `00fae4d`: 4,956,016 KiB and 4,855,436 KiB, two runs. The exit is 0. The run prints one
+  `<case>: <dir>` line for each of the 57 other cases, and `refused by the lint, as its manifest
+  says` for each of the 15 `rejects=lint` cheat cases.
 - `nightly-dispatch`: at the head the PR owner reports, run
   `gh workflow run nightly.yml --ref <branch>`. Job `full`, step "Mutation testing (paranoid)", ends
   `mutants: all 72 cases as expected, 52 refuted, 0 known gap(s), 20 cheat case(s) rejected`, with
@@ -385,10 +429,12 @@ cut_line: ships the 28 cases, this file's measured lines and the run log. It shi
 runner, the lint or an existing case, no `survives=` case and no `rejects=` case. P2-001b adds no
 cheat surface that the lint's allow-list does not already close: no syntax, attribute, instance or
 import, and the cases name only `Mitos` namespaces. The PR says `Closes #206`.
-- Keep all 28 cases and their declared theorems. A memory failure blocks completion until
-  the runner's new peak and the reason for the failure are established. This keeps the expected
-  counts in `runner-peak`, `nightly-dispatch`, `breakers-table` and `new-files-only` tied to
-  one corpus and preserves the sole chain `impact_nodup` breaker.
+- Keep all 28 cases and their declared theorems. Memory is no reason to cut a case or to narrow a
+  `breaks=` set, because the runner's peak does not grow with either (measured, "`breaks=` sets and
+  memory"). A memory failure is a fault of the runner or of the host. It blocks completion until
+  the runner's peak and the reason for the failure are established, and it drops nothing. This
+  keeps the expected counts in `runner-peak`, `nightly-dispatch`, `breakers-table` and
+  `new-files-only` tied to one corpus and preserves the sole chain `impact_nodup` breaker.
 
 deferrals:
 - **From P2-001b (#204), its contract.**
@@ -404,6 +450,10 @@ deferrals:
     from the current runner after the #521 fix.
   - The 28 cases add about 7 min to the nightly's mutation step, at the 15 s per case it averaged at
     `beed5eb`.
+- **To #538 item 2 (the runner's import scoping, no row).** Only a result type (`Detach`) enforces
+  the rule that an environment must not escape a `withImport` scope. A rank-2, `ST`-style scoped
+  token for the environment would stop the environment itself from escaping. #536 left it out to
+  stay small, and #537 recorded it.
 - **To a later chain row (longer chains, or a second binding constructor).** `impact_through_head_only`
   becomes load-bearing then. Each new premise conjunct of `boundB` adds one case of the
   `binding_*_unchecked` kind. No row exists yet.
