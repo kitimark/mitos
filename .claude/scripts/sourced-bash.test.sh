@@ -67,7 +67,8 @@ if ! shellcheck -x -S warning "$root/.claude/hooks/pr-state.sh" \
     "$root/.claude/hooks/check-agent-spawn.sh" \
     "$root/.claude/scripts/watch-github.sh" \
     "$root/.claude/scripts/bot-review.sh" \
-    "$root/.claude/scripts/carry.sh" >"$work/sc-follow" 2>&1; then
+    "$root/.claude/scripts/carry.sh" \
+    "$root/.claude/scripts/land.sh" >"$work/sc-follow" 2>&1; then
   echo "FAIL shellcheck -x on the scripts that source the libraries"; cat "$work/sc-follow"; failed=1
 else
   echo "ok   shellcheck -x follows the sourced libraries"
