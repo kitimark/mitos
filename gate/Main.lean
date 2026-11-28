@@ -40,12 +40,12 @@ def usage : String := s!"usage:
                                                  and for gate/ outside gate/vendor/: {Imports.vendorName}
                                                  appears only in {Imports.seamFile}, including comments;
                                                  that exact seam may also import it
-  mitos-gate lock [--check]                      write or check statements.lock; either fails on a
-                                                 module under core/Mitos/Core/ that Mitos.Core.Spec does
-                                                 not import, directly or transitively, when the root and
-                                                 core git dependencies disagree, or when a LEAN_PATH
-                                                 entry under <packagesDir>/<name>/ resolves outside that
-                                                 package
+  mitos-gate lock [--check]                      write or check statements.lock; either fails on
+                                                 core/Mitos/Core.lean or a module under core/Mitos/Core/
+                                                 that Mitos.Core.Spec does not import, directly or
+                                                 transitively, when the root and core git dependencies
+                                                 disagree, or when a LEAN_PATH entry under
+                                                 <packagesDir>/<name>/ resolves outside that package
   mitos-gate lock --check-header                 statements.lock starts with MitosGate.Lock.header,
                                                  the newline after its format line included
   mitos-gate lock --text                         print pre-canonical toString digest lines
@@ -144,13 +144,13 @@ def lockReach (core : Lock.ImportedRoot) : IO UInt32 := do
   let srcs ← Lock.sourceModules coreSrcDir scan
   let missed := Lock.unreached srcs.toList core.env.header.moduleNames.contains
   if missed.isEmpty then
-    IO.println (ciLine s!"every module under {dir}/ is reached from {root} ({srcs.size} modules)")
+    IO.println (ciLine s!"every spec module is reached from {root} ({srcs.size} modules in {Lean.modToFilePath coreSrcDir scan "lean"} and {dir}/)")
     return 0
   for m in missed do
     IO.println (ciLine s!"{Lean.modToFilePath coreSrcDir m "lean"}: {root} does not import {m}, directly or transitively, so statements.lock has no line for its declarations")
   let n := missed.length
   let (noun, verb, it) := if n == 1 then ("module", "is", "it") else ("modules", "are", "each")
-  IO.println (ciLine s!"{n} {noun} under {dir}/ {verb} not reached from {root}: import {it} from {Lean.modToFilePath coreSrcDir root "lean"}, which is a spec change, or delete it")
+  IO.println (ciLine s!"{n} spec {noun} {verb} not reached from {root}: import {it} from {Lean.modToFilePath coreSrcDir root "lean"}, which is a spec change, or delete it")
   return 1
 
 def lockStatements (check : Bool) : IO UInt32 := do

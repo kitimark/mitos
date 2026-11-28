@@ -636,8 +636,11 @@ deferrals:
 - To P2-012 (#213): mutants run nightly only, so this PR's mutant evidence is a local run
   (#107 items 2 and 3).
 - From #231: if its cases merge first, they join P2-005a's table.
-- No row, so the PR's follow-up issue: a core file that `core/Mitos/Core.lean` does not import
-  builds without being locked, which only a `gate/` check can close.
+- Done under #276 item 1, with no row. A core file that the lock's root did not import built
+  without being locked. Since #317, `mitos-gate lock` fails on such a module under
+  `core/Mitos/Core/`. Since #594, it also fails on `core/Mitos/Core.lean`, which
+  `Mitos.Core.Spec` need not import now that the lock reads from it (#419).
+  `gate/lock-reach-test.sh` pins both.
 
 owner_decisions:
 
