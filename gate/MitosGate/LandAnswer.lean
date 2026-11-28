@@ -84,12 +84,13 @@ structure Handoff where
   requiresSpec : Bool
   deriving DecidableEq
 
+def commentId (said : Nat) : Option Nat := if said % 2 = 0 then some (said / 2) else none
+
 def handoff (q : Queue) : Option Handoff :=
   match plan q, next q with
   | .merge p h, some (e, o) =>
-    if e.mark.said % 2 = 0 then
-      some ⟨p, h, e.mark.said / 2, (o.paths.map (·.any Snapshot.specPath)).getD true⟩
-    else none
+    (commentId e.mark.said).map fun c =>
+      ⟨p, h, c, (o.paths.map (·.any Snapshot.specPath)).getD true⟩
   | _, _ => none
 
 def marker : String := "<!-- land-report -->"
@@ -166,17 +167,13 @@ def greatest : List Nat → Option Nat
 
 def lands (ws : List Word) : List Nat :=
   ws.filterMap fun
-    | .ownerLand m => if m.said % 2 = 0 then some (m.said / 2) else none
+    | .ownerLand m => commentId m.said
     | _ => none
 
-/-- The comment that holds the owner's newest `/land`: a reader places a comment's word at twice
-its id. -/
 def asked (o : Obs) : Option Nat := greatest (lands o.words)
 
-/-- A failed read holds every open pull request. Where the owner has no `/land` and no `/hold`,
-that hold answers nothing the owner asked. -/
 def unasked (n : Option Note) : Answer → Bool
-  | .held _ => n.any fun note => !note.unread.isEmpty && !note.owner
+  | .held _ => n.any fun note => !note.unread.isEmpty && !note.ownerMayDecide
   | _ => false
 
 structure Named where
@@ -219,7 +216,7 @@ def NamedAnswersAreAnswers : Prop :=
 def OnlyAnUnaskedReadHoldIsLeftOut : Prop :=
   ∀ notes os p a, (p, a) ∈ answers os →
     (∃ x ∈ named notes os, x.pr = p ∧ x.answer = a) ∨
-      ∃ h n, a = .held h ∧ notes.lookup p = some n ∧ n.unread ≠ [] ∧ n.owner = false
+      ∃ h n, a = .held h ∧ notes.lookup p = some n ∧ n.unread ≠ [] ∧ n.ownerMayDecide = false
 
 def WithoutANoteTheLinesAreTheSame : Prop :=
   ∀ a : Answer, a.linesWith none = a.lines
@@ -228,6 +225,12 @@ def AskedIsTheOwnersNewestLand : Prop :=
   ∀ (o : Obs) c, asked o = some c →
     (∃ m, Word.ownerLand m ∈ o.words ∧ m.said = 2 * c) ∧
       ∀ m, Word.ownerLand m ∈ o.words → m.said % 2 = 0 → m.said ≤ 2 * c
+
+theorem commentId_eq {said c : Nat} (h : commentId said = some c) : said = 2 * c := by
+  unfold commentId at h
+  split at h
+  · cases h; omega
+  · cases h
 
 theorem namedAnswersAreAnswers : NamedAnswersAreAnswers := by
   intro notes os x hx
@@ -309,15 +312,11 @@ theorem askedIsTheOwnersNewestLand : AskedIsTheOwnersNewestLand := by
   · simp only [lands, List.mem_filterMap] at hc
     obtain ⟨w, hw, hc⟩ := hc
     cases w with
-    | ownerLand m =>
-      simp only at hc
-      split at hc
-      · next he => cases hc; exact ⟨m, hw, by omega⟩
-      · cases hc
+    | ownerLand m => exact ⟨m, hw, commentId_eq hc⟩
     | _ => cases hc
   · have : m.said / 2 ∈ lands o.words := by
       simp only [lands, List.mem_filterMap]
-      exact ⟨.ownerLand m, hm, by simp [he]⟩
+      exact ⟨.ownerLand m, hm, by simp [commentId, he]⟩
     have := hmax _ this
     omega
 
@@ -363,14 +362,15 @@ theorem handoffIsThePlannedMerge : HandoffIsThePlannedMerge := by
   unfold handoff at hx
   split at hx
   · next p h e o' hp hn =>
-    split at hx
-    · next hev =>
+    cases hc : commentId e.mark.said with
+    | none => rw [hc] at hx; cases hx
+    | some c =>
+      rw [hc] at hx
       cases hx
       obtain ⟨e', o, hn', hpr, hh, -, -, -, -, -, -, -, hl, hw, -⟩ := plannedMergeIsGated q p h hp
       rw [hn] at hn'
       cases hn'
-      exact ⟨hp, e, o', hn, hpr, hh.symm, hl, by show e.mark.said = 2 * (e.mark.said / 2); omega, hw, rfl⟩
-    · cases hx
+      exact ⟨hp, e, o', hn, hpr, hh.symm, hl, commentId_eq hc, hw, rfl⟩
   · cases hx
 
 namespace Fixture

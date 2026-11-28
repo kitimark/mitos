@@ -18,7 +18,8 @@ The snapshot is what a reader has already parsed from GitHub; this command parse
   "me": { "provider": "claude", "name": "orchestrator" },   -- with "pr": the caller of `land`
   "pr": 153,
   "event": { "kind": "gateDone", "pr": 153, "gate": "success" },   -- optional: who wakes
-  "notes": [ { "pr": 153, "unread": ["dashboard"], "unmet": ["entry"], "owner": true } ] }
+  "notes": [ { "pr": 153, "unread": ["dashboard"], "unmet": ["entry"],
+                "ownerMayDecide": true } ] }
 ```
 
 A pull request has the fields of `Land.Obs`: `pr`, `updatable`, `enforced`, `head`, `pushes` (each
@@ -31,8 +32,9 @@ ownerLand, said, about, approves}`, `{kind: ownerHold, said}`, `{kind: ownerSpok
 field says the safe thing: nothing is known, so nothing is covered, reviewed, approved or unkept.
 
 `notes` is optional and changes no decision. A note is `Snapshot.Note` of its pull request: the
-reads that failed, the parts of `rest` that are unmet, and whether the owner has a `/land` or a
-`/hold` there. Only `land-answers` reads it, to word an answer.
+reads that failed, the parts of `rest` that are unmet, and `ownerMayDecide`, which is false only
+when the comments were read and hold no `/land` and no `/hold` of the owner's. Only `land-answers`
+reads it, to word an answer.
 
 The decision is `{"next": <pr or null>, "plan": ..., "step": ..., "word": ..., "wake": ...}`.
 `step` and `word` are there when the snapshot names `me` and `pr`, and `wake` when it names an
@@ -199,11 +201,11 @@ private def event : D Event := tagged
    ("ownerSpoke", ["pr"], fun j => return .ownerSpoke (← at' "pr" nat j))]
 
 private def note : D (Pr × MitosGate.Snapshot.Note) := fun j => do
-  obj ["pr", "unread", "unmet", "owner"] j
+  obj ["pr", "unread", "unmet", "ownerMayDecide"] j
   return (← at' "pr" nat j,
     ⟨← at' "unread" (list (named (MitosGate.Snapshot.Unread.all.map fun u => (u.name, u)))) j,
      ← at' "unmet" (list (named (MitosGate.Snapshot.Unmet.all.map fun u => (u.name, u)))) j,
-     ← at' "owner" bool j⟩)
+     ← at' "ownerMayDecide" bool j⟩)
 
 structure Snapshot where
   prs : List Obs

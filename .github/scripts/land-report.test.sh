@@ -172,13 +172,13 @@ named_answer() {
   body_is 153 "$marker"$'\n'"$3"
 }
 own_hold='.prs[0].words += [{"kind":"ownerHold","said":1901}]'
-named_answer read "$own_hold | .notes = [{pr: 153, unread: [\"dashboard\"], unmet: [], owner: true}]" \
+named_answer read "$own_hold | .notes = [{pr: 153, unread: [\"dashboard\"], unmet: [], ownerMayDecide: true}]" \
   'Held at aaa: a read failed (unread dashboard). The next run reads again, so no new comment is needed.'
-named_answer hold "$own_hold | .notes = [{pr: 153, unread: [], unmet: [], owner: true}]" \
+named_answer hold "$own_hold | .notes = [{pr: 153, unread: [], unmet: [], ownerMayDecide: true}]" \
   'Held by your /hold or an edited comment. Comment /land aaa to go on.'
 while IFS='|' read -r part text <&3; do
   named_answer "$part" \
-    ".prs[0].rest = false | .notes = [{pr: 153, unread: [], unmet: [\"$part\"], owner: true}]" \
+    ".prs[0].rest = false | .notes = [{pr: 153, unread: [], unmet: [\"$part\"], ownerMayDecide: true}]" \
     "Stopped: $text."
 done 3<<'PARTS'
 footer|a PR body without exactly one footer or with a session link

@@ -35,7 +35,7 @@ def repoChar (c : Char) : Bool := c.isAlphanum || c == '-' || c == '_' || c == '
 def after? (p l : List Char) : Option (List Char) :=
   if p.isPrefixOf l then some (l.drop p.length) else none
 
-/-- Reads from just after `[#`. GitHub draws `[#7](https://github.com/owner/name/pull/7)` as `#7`,
+/-- GitHub draws `[#7](https://github.com/owner/name/pull/7)` as `#7`,
 so the cell reads as 7 only when the link is a pull request link that ends in the same digits. -/
 def linkedNumber (r : List Char) : Option Nat :=
   match after? linkOpen (r.dropWhile digit) with

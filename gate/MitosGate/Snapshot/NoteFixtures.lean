@@ -47,10 +47,10 @@ theorem aSpecPathWithoutTheLabelIsNoted :
 theorem unreadFilesAreNotedAsASpecPath :
     (noteOf (r := { reads with files := none })).unmet = [.label] := by decide +kernel
 theorem theOwnerDecidesByALandOrAHold :
-    [(noteOf).owner, (noteOf (r := withComments [])).owner,
-     (noteOf (r := withComments [question])).owner,
-     (noteOf (r := withComments [{ land with body := "/hold" }])).owner,
-     (noteOf (r := { reads with comments := none })).owner] =
+    [(noteOf).ownerMayDecide, (noteOf (r := withComments [])).ownerMayDecide,
+     (noteOf (r := withComments [question])).ownerMayDecide,
+     (noteOf (r := withComments [{ land with body := "/hold" }])).ownerMayDecide,
+     (noteOf (r := { reads with comments := none })).ownerMayDecide] =
       [true, false, false, true, true] := by decide +kernel
 
 end Fixture

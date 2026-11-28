@@ -1,13 +1,5 @@
 import MitosGate.Snapshot.Obs
 
-/-!
-# Why a pull request holds or is not admitted
-
-An `Obs` says only that some read failed, as a hold above every owner word, or that `rest` is
-false. The land report names which read and which part of `rest` (#509, #520), so the snapshot
-carries a `Note` beside each `Obs`. A note decides nothing: `land` reads only the `Obs`.
--/
-
 namespace MitosGate.Snapshot
 
 open Land (Word newestOwner)
@@ -37,8 +29,7 @@ def Unmet.all : List Unmet := [.footer, .unanswered, .label, .provenance, .entry
 structure Note where
   unread : List Unread
   unmet : List Unmet
-  /-- The owner has a `/land` or a `/hold` on the pull request, or its comments were not read. -/
-  owner : Bool
+  ownerMayDecide : Bool
   deriving DecidableEq
 
 def flagged (l : List (α × Bool)) : List α := l.filterMap fun (k, b) => if b then some k else none
@@ -59,12 +50,14 @@ def unmetOf (g : Global) (p : Pull) (r : Reads) (x : Git) : List Unmet :=
     (.verdict, fact.any fun f =>
       (author f).isSome && !Provenance.sourceGuard (sourceObs g p r x) f p.labels)]
 
-def ownerDecides (g : Global) (p : Pull) (r : Reads) : Bool :=
-  r.comments.isNone ||
-    (Speech.words (ctx g p r) (r.comments.getD []) ((activity p r).getD []) true).1.any (·.decides)
+def completeWords (g : Global) (p : Pull) (r : Reads) : List Word :=
+  (Speech.words (ctx g p r) (r.comments.getD []) ((activity p r).getD []) (complete := true)).1
+
+def ownerMayDecide (g : Global) (p : Pull) (r : Reads) : Bool :=
+  r.comments.isNone || (completeWords g p r).any (·.decides)
 
 def note (g : Global) (p : Pull) (r : Reads) (x : Git) : Note :=
-  ⟨unreadOf g p r, unmetOf g p r x, ownerDecides g p r⟩
+  ⟨unreadOf g p r, unmetOf g p r x, ownerMayDecide g p r⟩
 
 def EveryFailedReadIsNamed : Prop :=
   ∀ g p r x, complete g p r = false ↔ (note g p r x).unread ≠ []
@@ -72,13 +65,10 @@ def EveryFailedReadIsNamed : Prop :=
 def UnmetRestIsNamed : Prop :=
   ∀ g p r x, (obs g p r x).rest = false ↔ (note g p r x).unmet ≠ []
 
-/-- Where the note says the owner decided nothing, the comments were read, and read with nothing
-missing they hold no `/land` and no `/hold` of the owner's. -/
 def NoOwnerWordWhereTheOwnerDecidedNothing : Prop :=
-  ∀ g p r x, (note g p r x).owner = false →
+  ∀ g p r x, (note g p r x).ownerMayDecide = false →
     r.comments.isSome = true ∧
-      newestOwner (withReviewSpeech g p r (Speech.words (ctx g p r) (r.comments.getD [])
-        ((activity p r).getD []) true).1) = none
+      newestOwner (withReviewSpeech g p r (completeWords g p r)) = none
 
 theorem flagged_ne_nil (l : List (α × Bool)) : flagged l ≠ [] ↔ l.any (·.2) = true := by
   induction l with
@@ -128,11 +118,10 @@ theorem unmetRestIsNamed : UnmetRestIsNamed := by
 
 theorem noOwnerWordWhereTheOwnerDecidedNothing : NoOwnerWordWhereTheOwnerDecidedNothing := by
   intro g p r x h
-  simp only [note, ownerDecides, Bool.or_eq_false_iff] at h
+  simp only [note, ownerMayDecide, Bool.or_eq_false_iff] at h
   refine ⟨by simpa using h.1, ?_⟩
   rw [newestOwner_withReviewSpeech, Land.onlyLandOrHoldChangesTheWord]
-  have : (Speech.words (ctx g p r) (r.comments.getD []) ((activity p r).getD []) true).1.filter
-      (·.decides) = [] := by
+  have : (completeWords g p r).filter (·.decides) = [] := by
     simpa [List.filter_eq_nil_iff] using h.2
   rw [this]
   rfl

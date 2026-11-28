@@ -286,7 +286,7 @@ def unread (g : Global) (p : Pull) (r : Reads) : List String :=
 
 def noteJson (pr : Nat) (x : Note) : Json :=
   Json.mkObj [("pr", n pr), ("unread", .arr (x.unread.map fun u => Json.str u.name).toArray),
-    ("unmet", .arr (x.unmet.map fun u => Json.str u.name).toArray), ("owner", .bool x.owner)]
+    ("unmet", .arr (x.unmet.map fun u => Json.str u.name).toArray), ("ownerMayDecide", .bool x.ownerMayDecide)]
 
 private def stop (m : String) : IO UInt32 := do
   IO.eprintln (ciLine s!"snapshot: {m}")

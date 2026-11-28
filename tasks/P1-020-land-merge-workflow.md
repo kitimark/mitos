@@ -1798,16 +1798,19 @@ answer on #518 equalled the report already there, so `report` posted nothing for
   compared. `LinkedCellIsItsPullLink` and `OnlyALinkedCellIsNew` state the new arm.
 - **A note beside each observation.** `mitos-gate snapshot` also prints `notes`, one
   `Snapshot.Note` per pull request: the reads that failed, the parts of `rest` that are unmet, and
-  whether the owner has a `/land` or a `/hold` there. `land` decodes a note and decides nothing
-  from it. `land-answers` words a held or not-admitted answer from it (`LandAnswer.named`).
-  `reply`, `answers` and `Answer.lines` are unchanged, and an answer without a note keeps its line.
+  `ownerMayDecide`, which is false only when the comments were read and hold no `/land` and no
+  `/hold` of the owner's. `land` decodes a note and decides nothing from it. `land-answers` words
+  a held or not-admitted answer from it (`LandAnswer.named`). `reply`, `answers` and
+  `Answer.lines` are unchanged, and an answer without a note keeps its line.
 - **One answer per `/land`.** Each answer carries `land`, the comment of the owner's newest
   `/land`. `report` posts when the body differs from its newest report, or when that report is
   older than the comment. The answer after `apply` (landed, stopped, failed) keeps the old rule:
   the approval's comment id does not reach `report`, and `land.yml` is unchanged.
 - **A read hold is answered only where the owner asked.** A failed read holds every open pull
-  request. `named` leaves out the held answer where a read failed and the owner has no `/land`
-  and no `/hold`.
+  request. `named` leaves out the held answer where a read failed and `ownerMayDecide` is false.
+- **Round 2.** `commentId` decodes a word's position to its comment's id, in `handoff` and in
+  `lands`. `completeWords` names the words of a read with nothing missing. The `/no-comments` pass
+  at 33c939a deleted five comments and trimmed two.
 - **Not done here.** Closing the issues a land merge links (#509, second half) needs
   `issues: write` on `report`, which is a `land.yml` change with its pins in
   `Workflow/LandPins.lean`. Its cause is not tested: #505 was merged by `mitos-pr-updater[bot]`,

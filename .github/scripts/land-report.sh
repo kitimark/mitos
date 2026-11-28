@@ -56,9 +56,7 @@ fi
 
 tmp=$(mktemp -d) || die "cannot make a scratch folder"
 trap 'rm -rf -- "$tmp"' EXIT
-# post_due <pr> <body> <land>: one read of the comments, then a post unless the newest report is
-# this body and the owner typed no /land after it. <land> is the id of the comment with the owner's
-# newest /land, or null. A comment's id grows with the time it was posted.
+# A comment's id grows with the time it was posted.
 post_due() {
   timeout -k 5 120 gh api --paginate --slurp "repos/$repo/issues/$1/comments?per_page=100" \
     >"$tmp/c.json" 2>/dev/null </dev/null || return 1
