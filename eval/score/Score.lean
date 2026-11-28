@@ -79,47 +79,91 @@ def ingest (files : List SourceFile) : Except String (List Located) := do
       out := out.push { id := out.size, repo := f.repo, rev := "fixture", path := f.path, fact, origin }
   return out.toList
 
-def breaks : List Char := ['`', '|', '\n', '\r', '@']
+def controls : List (Char × List Char) :=
+  (List.range 32 ++ [127]).map fun n =>
+    (Char.ofNat n, ['\\', 'x', Nat.digitChar (n / 16), Nat.digitChar (n % 16)])
 
 def escapes : List (Char × List Char) :=
   [('\\', "\\\\".toList), ('`', "\\x60".toList), ('|', "\\x7c".toList),
-   ('\n', "\\n".toList), ('\r', "\\x0d".toList), ('@', "\\x40".toList)]
+   ('\n', "\\n".toList), ('\r', "\\x0d".toList), ('@', "\\x40".toList),
+   ('[', "\\x5b".toList), ('\t', "\\t".toList)] ++ controls
 
-def escape (c : Char) : List Char :=
-  match escapes.find? (·.1 == c) with
+def plainEscapes : List (Char × List Char) :=
+  escapes ++ [('&', "\\x26".toList), ('<', "\\x3c".toList), ('*', "\\x2a".toList),
+    ('_', "\\x5f".toList), ('~', "\\x7e".toList)]
+
+def breaks : List Char := ['`', '|', '\n', '\r', '@', '['] ++ controls.map (·.1)
+
+def plainBreaks : List Char := breaks ++ ['&', '<', '*', '_', '~']
+
+def escape (t : List (Char × List Char)) (c : Char) : List Char :=
+  match t.find? (·.1 == c) with
   | some (_, e) => e
   | none => [c]
 
-def inert (s : String) : String := String.ofList (s.toList.flatMap escape)
+def escaped (t : List (Char × List Char)) (s : String) : String :=
+  String.ofList (s.toList.flatMap (escape t))
+
+def inert (s : String) : String := escaped escapes s
+
+def plain (s : String) : String := escaped plainEscapes s
 
 def code (s : String) : String := "`" ++ inert s ++ "`"
 
-private theorem escape_safe {d c : Char} (h : c ∈ escape d) : c ∉ breaks := by
+def logLine (s : String) : String := "mitos-score: " ++ inert s
+
+private theorem escape_safe {t : List (Char × List Char)} {bs : List Char}
+    (h₁ : ∀ p ∈ t, ∀ x ∈ p.2, x ∉ bs) (h₂ : ∀ b ∈ bs, ∃ p ∈ t, p.1 = b) {d c : Char}
+    (h : c ∈ escape t d) : c ∉ bs := by
   unfold escape at h
   split at h
-  · next e he =>
-    exact (by decide : ∀ p ∈ escapes, ∀ x ∈ p.2, x ∉ breaks) _ (List.mem_of_find?_eq_some he) c h
+  · next e he => exact h₁ _ (List.mem_of_find?_eq_some he) c h
   · next he =>
     rw [List.mem_singleton] at h
     subst h
     intro hb
-    obtain ⟨p, hp, rfl⟩ := (by decide : ∀ b ∈ breaks, ∃ p ∈ escapes, p.1 = b) c hb
+    obtain ⟨p, hp, rfl⟩ := h₂ c hb
     exact absurd (beq_self_eq_true p.1) (List.find?_eq_none.1 he p hp)
 
-theorem inert_safe (s : String) : ∀ c ∈ (inert s).toList, c ∉ breaks := by
+private theorem escaped_safe {t : List (Char × List Char)} {bs : List Char}
+    (h₁ : ∀ p ∈ t, ∀ x ∈ p.2, x ∉ bs) (h₂ : ∀ b ∈ bs, ∃ p ∈ t, p.1 = b) (s : String) :
+    ∀ c ∈ (escaped t s).toList, c ∉ bs := by
   intro c h
-  simp only [inert, String.toList_ofList, List.mem_flatMap] at h
+  simp only [escaped, String.toList_ofList, List.mem_flatMap] at h
   obtain ⟨d, -, hd⟩ := h
-  exact escape_safe hd
+  exact escape_safe h₁ h₂ hd
 
-theorem inert_clean {s : String} (h : ∀ c ∈ s.toList, c ∉ escapes.map (·.1)) : inert s = s := by
-  have : ∀ l : List Char, (∀ c ∈ l, c ∉ escapes.map (·.1)) → l.flatMap escape = l := by
+theorem inert_safe (s : String) : ∀ c ∈ (inert s).toList, c ∉ breaks :=
+  escaped_safe (by decide +kernel) (by decide +kernel) s
+
+theorem plain_safe (s : String) : ∀ c ∈ (plain s).toList, c ∉ plainBreaks :=
+  escaped_safe (by decide +kernel) (by decide +kernel) s
+
+theorem logLine_safe (s : String) : ∀ c ∈ (logLine s).toList, c ∉ breaks := by
+  intro c h
+  rw [logLine, String.toList_append, List.mem_append] at h
+  rcases h with h | h
+  · exact (by decide +kernel : ∀ c ∈ "mitos-score: ".toList, c ∉ breaks) c h
+  · exact inert_safe s c h
+
+theorem logLine_head (s : String) : (logLine s).toList.head? = some 'm' := by
+  rw [logLine, String.toList_append]
+  rfl
+
+theorem logLine_cases :
+    ["::warning::x: labels.tsv is missing", "x##[error]y", "a\n::error::b"].map logLine =
+      ["mitos-score: ::warning::x: labels.tsv is missing", "mitos-score: x##\\x5berror]y",
+        "mitos-score: a\\n::error::b"] := by decide +kernel
+
+private theorem escaped_clean {t : List (Char × List Char)} {s : String}
+    (h : ∀ c ∈ s.toList, c ∉ t.map (·.1)) : escaped t s = s := by
+  have : ∀ l : List Char, (∀ c ∈ l, c ∉ t.map (·.1)) → l.flatMap (escape t) = l := by
     intro l
     induction l with
     | nil => intro _; rfl
     | cons c l ih =>
       intro hl
-      have hc : escape c = [c] := by
+      have hc : escape t c = [c] := by
         unfold escape
         split
         · next k e he =>
@@ -128,64 +172,90 @@ theorem inert_clean {s : String} (h : ∀ c ∈ s.toList, c ∉ escapes.map (·.
         · rfl
       rw [List.flatMap_cons, hc, ih fun x hx => hl x (List.mem_cons_of_mem _ hx)]
       rfl
-  rw [inert, this _ h, String.ofList_toList]
+  rw [escaped, this _ h, String.ofList_toList]
 
-private theorem escape_cases (c : Char) :
-    (∃ p ∈ escapes, p.1 = c ∧ escape c = p.2) ∨
-      (escapes.find? (·.1 == c) = none ∧ escape c = [c]) := by
+theorem inert_clean {s : String} (h : ∀ c ∈ s.toList, c ∉ escapes.map (·.1)) : inert s = s :=
+  escaped_clean h
+
+theorem plain_clean {s : String} (h : ∀ c ∈ s.toList, c ∉ plainEscapes.map (·.1)) : plain s = s :=
+  escaped_clean h
+
+private structure Decodes (t : List (Char × List Char)) : Prop where
+  lead : ∀ p ∈ t, p.2.head? = some '\\'
+  keyed : t.find? (·.1 == '\\') ≠ none
+  apart : ∀ p ∈ t, ∀ q ∈ t, (p.2.isPrefixOf q.2 || q.2.isPrefixOf p.2) = true → p.1 = q.1
+
+private theorem escape_cases (t : List (Char × List Char)) (c : Char) :
+    (∃ p ∈ t, p.1 = c ∧ escape t c = p.2) ∨
+      (t.find? (·.1 == c) = none ∧ escape t c = [c]) := by
   unfold escape
   split
   · next k e he =>
     exact .inl ⟨(k, e), List.mem_of_find?_eq_some he, by simpa using List.find?_some he, rfl⟩
   · next he => exact .inr ⟨he, rfl⟩
 
-private theorem keyed_ne_plain {p : Char × List Char} (hp : p ∈ escapes) {b : Char}
-    (nb : escapes.find? (·.1 == b) = none) {x y : List Char} : p.2 ++ x ≠ [b] ++ y := by
+private theorem keyed_ne_plain {t : List (Char × List Char)} (ht : Decodes t)
+    {p : Char × List Char} (hp : p ∈ t) {b : Char} (nb : t.find? (·.1 == b) = none)
+    {x y : List Char} : p.2 ++ x ≠ [b] ++ y := by
   intro h
   have hb : b = '\\' := by
     have := congrArg List.head? h
-    simpa [List.head?_append, (by decide : ∀ p ∈ escapes, p.2.head? = some '\\') p hp] using this.symm
+    simpa [List.head?_append, ht.lead p hp] using this.symm
   subst hb
-  exact absurd nb (by decide)
+  exact ht.keyed nb
 
-private theorem escape_head {a b : Char} {x y : List Char} (h : escape a ++ x = escape b ++ y) : a = b := by
-  rcases escape_cases a with ⟨p, hp, rfl, ha⟩ | ⟨na, ha⟩ <;>
-    rcases escape_cases b with ⟨q, hq, rfl, hb⟩ | ⟨nb, hb⟩ <;> rw [ha, hb] at h
+private theorem escape_head {t : List (Char × List Char)} (ht : Decodes t) {a b : Char}
+    {x y : List Char} (h : escape t a ++ x = escape t b ++ y) : a = b := by
+  rcases escape_cases t a with ⟨p, hp, rfl, ha⟩ | ⟨na, ha⟩ <;>
+    rcases escape_cases t b with ⟨q, hq, rfl, hb⟩ | ⟨nb, hb⟩ <;> rw [ha, hb] at h
   · have hpq : p.2 <+: q.2 ∨ q.2 <+: p.2 :=
       List.prefix_or_prefix_of_prefix (List.prefix_append p.2 x) (h ▸ List.prefix_append q.2 y)
-    exact (by decide : ∀ p ∈ escapes, ∀ q ∈ escapes,
-        (p.2.isPrefixOf q.2 || q.2.isPrefixOf p.2) = true → p.1 = q.1) p hp q hq
-      (by simpa [List.isPrefixOf_iff_prefix] using hpq)
-  · exact absurd h (keyed_ne_plain hp nb)
-  · exact absurd h.symm (keyed_ne_plain hq na)
+    exact ht.apart p hp q hq (by simpa [List.isPrefixOf_iff_prefix] using hpq)
+  · exact absurd h (keyed_ne_plain ht hp nb)
+  · exact absurd h.symm (keyed_ne_plain ht hq na)
   · exact (by simpa using h : a = b ∧ x = y).1
 
-private theorem flatMap_escape_inj : ∀ {l m : List Char}, l.flatMap escape = m.flatMap escape → l = m
+private theorem flatMap_escape_inj {t : List (Char × List Char)} (ht : Decodes t) :
+    ∀ {l m : List Char}, l.flatMap (escape t) = m.flatMap (escape t) → l = m
   | [], [], _ => rfl
   | [], b :: m, h => by
-    rcases escape_cases b with ⟨p, hp, -, hb⟩ | ⟨-, hb⟩ <;> simp [hb] at h
-    exact absurd h.1 ((by decide : ∀ p ∈ escapes, p.2 ≠ []) p hp)
+    rcases escape_cases t b with ⟨p, hp, -, hb⟩ | ⟨-, hb⟩ <;> simp [hb] at h
+    exact absurd (ht.lead p hp) (by simp [h.1])
   | a :: l, [], h => by
-    rcases escape_cases a with ⟨p, hp, -, ha⟩ | ⟨-, ha⟩ <;> simp [ha] at h
-    exact absurd h.1 ((by decide : ∀ p ∈ escapes, p.2 ≠ []) p hp)
+    rcases escape_cases t a with ⟨p, hp, -, ha⟩ | ⟨-, ha⟩ <;> simp [ha] at h
+    exact absurd (ht.lead p hp) (by simp [h.1])
   | a :: l, b :: m, h => by
     rw [List.flatMap_cons, List.flatMap_cons] at h
-    obtain rfl := escape_head h
-    rw [flatMap_escape_inj (List.append_cancel_left h)]
+    obtain rfl := escape_head ht h
+    rw [flatMap_escape_inj ht (List.append_cancel_left h)]
 
-theorem inert_injective {s t : String} (h : inert s = inert t) : s = t := by
+private theorem escaped_injective {t : List (Char × List Char)} (ht : Decodes t) {a b : String}
+    (h : escaped t a = escaped t b) : a = b := by
   have := congrArg String.toList h
-  simp only [inert, String.toList_ofList] at this
-  exact String.toList_injective (flatMap_escape_inj this)
+  simp only [escaped, String.toList_ofList] at this
+  exact String.toList_injective (flatMap_escape_inj ht this)
+
+theorem inert_injective {s t : String} (h : inert s = inert t) : s = t :=
+  escaped_injective ⟨by decide +kernel, by decide +kernel, by decide +kernel⟩ h
+
+theorem plain_injective {s t : String} (h : plain s = plain t) : s = t :=
+  escaped_injective ⟨by decide +kernel, by decide +kernel, by decide +kernel⟩ h
 
 theorem inert_cases :
-    ["`", "|", "\n", "\r", "@", "\\", "naïve-date"].map inert =
-      ["\\x60", "\\x7c", "\\n", "\\x0d", "\\x40", "\\\\", "naïve-date"] := by decide
+    ["`", "|", "\n", "\r", "@", "\\", "naïve-date", "[", "\t", "\x00", "\x1b", "\x7f", "&<*_~"].map
+        inert =
+      ["\\x60", "\\x7c", "\\n", "\\x0d", "\\x40", "\\\\", "naïve-date", "\\x5b", "\\t", "\\x00",
+        "\\x1b", "\\x7f", "&<*_~"] := by decide +kernel
+
+theorem plain_cases :
+    ["&", "<", "*", "_", "~", "[", "@", "\x1b", "go-module/runtime", "0.83 (5/6)"].map plain =
+      ["\\x26", "\\x3c", "\\x2a", "\\x5f", "\\x7e", "\\x5b", "\\x40", "\\x1b", "go-module/runtime",
+        "0.83 (5/6)"] := by decide +kernel
 
 def edgeType (k : RepoKey) : String := s!"{k.ident.kind}/{scopeName k.scope}"
 
 def renderEdge (k : RepoKey) : String :=
-  s!"{code k.requiringRepo} → {code k.providingRepo} ({inert (edgeType k)} {code k.ident.key})"
+  s!"{code k.requiringRepo} → {code k.providingRepo} ({plain (edgeType k)} {code k.ident.key})"
 
 def parseLabels (txt : String) : Except String (List RepoKey) := do
   let mut out := #[]
@@ -286,14 +356,14 @@ def Scorecard.typeCounts (c : Scorecard) : List TypeCounts :=
       inferred := (trust .inferred).length, inferredTp := hits (trust .inferred) }
 
 def TypeCounts.row (t : TypeCounts) : String :=
-  s!"| {inert t.edgeType} | {t.predicted} | {t.labelled} | {t.tp} | {t.predicted - t.tp} | " ++
+  s!"| {plain t.edgeType} | {t.predicted} | {t.labelled} | {t.tp} | {t.predicted - t.tp} | " ++
     s!"{t.labelled - t.tp} | {ratio t.tp t.predicted} | {ratio t.tp t.labelled} |"
 
 def TypeCounts.trustRow (t : TypeCounts) (s : Status) : String :=
   let (n, tp) := match s with
     | .confirmed => (t.confirmed, t.confirmedTp)
     | .inferred => (t.inferred, t.inferredTp)
-  s!"| {inert t.edgeType} | {statusName s} | {n} | {tp} | {n - tp} | {ratio tp n} |"
+  s!"| {plain t.edgeType} | {statusName s} | {n} | {tp} | {n - tp} | {ratio tp n} |"
 
 def Scorecard.render (c : Scorecard) (name : String) : String := Id.run do
   let pred := c.predicted.map (·.1)
@@ -334,6 +404,17 @@ private def chainUnionFiles : List SourceFile :=
 theorem chain_union_end_to_end :
     (score chainUnionFiles []).toOption.map (fun c => (c.facts.length, c.predicted)) =
       some (4, [({ requiringRepo := "web", providingRepo := "orders", ident := ⟨"env", "A"⟩,
+                   scope := .runtime }, .confirmed)]) := by
+  decide +kernel
+
+private def chainCrlfFiles : List SourceFile :=
+  [{ repo := "deploy", path := "CHAIN", text := "binds A db\r\n" },
+   { repo := "orders", path := "CHAIN", text := "serves db \r\n" },
+   { repo := "web", path := "CHAIN", text := "needs  A\r\n" }]
+
+theorem chain_crlf_end_to_end :
+    (score chainCrlfFiles []).toOption.map (fun c => (c.facts.length, c.predicted)) =
+      some (3, [({ requiringRepo := "web", providingRepo := "orders", ident := ⟨"env", "A"⟩,
                    scope := .runtime }, .confirmed)]) := by
   decide +kernel
 
