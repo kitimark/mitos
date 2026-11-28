@@ -50,8 +50,13 @@ repo_env() {
   eval "$(cd "$root" && lake env bash -c 'printf "export LEAN_PATH=%q\nexport PATH=%q\n" "$LEAN_PATH" "$PATH"')"
 }
 
+clean_env() {
+  eval "$(cd "$cleanws" && lake env bash -c 'printf "export LEAN_PATH=%q\nexport PATH=%q\n" "$LEAN_PATH" "$PATH"')"
+}
+
 remote="$tmp/remote"
 ws="$tmp/ws"
+cleanws="$tmp/cleanws"
 git init -q "$remote"
 cp "$root/lean-toolchain" "$remote/lean-toolchain"
 cat >"$remote/lakefile.toml" <<'EOF'
@@ -1004,12 +1009,54 @@ pin() {
 {"version":"1.3.0","packagesDir":".lake/packages","packages":[{"type":"git","name":"toyext","url":"file:///pkg","rev":"$rev","scope":"","inherited":false,"configFile":"lakefile.toml","manifestFile":"lake-manifest.json"}],"name":"toy","lakeDir":".lake","fixedToolchain":false}
 EOF
 }
+mkdir -p "$cleanws/core/Mitos/Core"
+cp "$root/lean-toolchain" "$cleanws/lean-toolchain"
+cp "$root/lean-toolchain" "$cleanws/core/lean-toolchain"
+cat >"$cleanws/lakefile.toml" <<'EOF'
+name = "clean-root"
+
+[[require]]
+name = "clean-core"
+path = "core"
+EOF
+cat >"$cleanws/core/lakefile.toml" <<'EOF'
+name = "clean-core"
+defaultTargets = ["CleanCore"]
+
+[[lean_lib]]
+name = "CleanCore"
+roots = ["Mitos.Core.Spec"]
+EOF
+cat >"$cleanws/core/Mitos/Core/Spec.lean" <<'EOF'
+namespace Mitos.Core.Spec
+
+def cleanSpec : Nat := 1
+
+end Mitos.Core.Spec
+EOF
+lock_ec=99
+if (cd "$cleanws/core" && lake update >"$tmp/lake.out" 2>&1) \
+    && (cd "$cleanws" && lake update >"$tmp/lake.out" 2>&1) \
+    && (cd "$cleanws/core" && lake build >"$tmp/lake.out" 2>&1); then
+  run_at "$cleanws" lock
+else
+  cat "$tmp/lake.out" >"$out"
+fi
+if [ "$lock_ec" = 0 ] && grep -q '^def Mitos.Core.Spec.cleanSpec ' "$cleanws/statements.lock" \
+    && ! grep -q '^ext ' "$cleanws/statements.lock"; then
+  ok "a toy spec that reaches no package builds and locks with no ext line"
+else
+  bad "a toy spec that reaches no package builds and locks with no ext line"
+  echo "$pass passed, $fail failed"
+  exit 1
+fi
+
 mandir="$tmp/manifests"
 mkdir -p "$mandir/core"
 pin aaa >"$mandir/lake-manifest.json"
 pin bbb >"$mandir/core/lake-manifest.json"
-cp "$root/statements.lock" "$mandir/statements.lock"
-repo_env
+cp "$cleanws/statements.lock" "$mandir/statements.lock"
+clean_env
 lock_ec=0
 (cd "$mandir" && "$bin" lock --check >"$out" 2>&1) || lock_ec=$?
 if [ "$lock_ec" = 1 ] && grep -q 'toyext' "$out" && grep -q 'disagree' "$out"; then
@@ -1020,8 +1067,7 @@ fi
 
 pin aaa >"$mandir/core/lake-manifest.json"
 mkdir -p "$mandir/core/Mitos"
-cp -R "$root/core/Mitos/Core" "$mandir/core/Mitos/Core"
-cp "$root/core/Mitos/Core.lean" "$mandir/core/Mitos/Core.lean"
+cp -R "$cleanws/core/Mitos/Core" "$mandir/core/Mitos/Core"
 lock_ec=0
 (cd "$mandir" && "$bin" lock --check >"$out" 2>&1) || lock_ec=$?
 if [ "$lock_ec" = 0 ] && grep -q 'statements.lock up to date' "$out"; then
@@ -1084,6 +1130,7 @@ cp "$root/lake-manifest.json" "$copy/lake-manifest.json"
 cp "$root/core/lake-manifest.json" "$copy/core/lake-manifest.json"
 cp -R "$root/core/Mitos/Core" "$copy/core/Mitos/Core"
 cp "$root/core/Mitos/Core.lean" "$copy/core/Mitos/Core.lean"
+mkdir -p "$copy/core/.lake" && ln -s "$root/core/.lake/packages" "$copy/core/.lake/packages"
 repo_env
 lock_ec=0
 (cd "$copy" && "$bin" lock >"$out" 2>&1) || lock_ec=$?
@@ -1191,14 +1238,13 @@ fi
 symws="$tmp/symws"
 symout="$tmp/symout"
 mkdir -p "$symws/core/Mitos" "$symws/.lake/packages/sympkg/.lake" "$symout/lib/lean"
-cp "$root/statements.lock" "$symws/statements.lock"
+cp "$cleanws/statements.lock" "$symws/statements.lock"
 pin aaa >"$symws/lake-manifest.json"
 pin aaa >"$symws/core/lake-manifest.json"
-cp -R "$root/core/Mitos/Core" "$symws/core/Mitos/Core"
-cp "$root/core/Mitos/Core.lean" "$symws/core/Mitos/Core.lean"
+cp -R "$cleanws/core/Mitos/Core" "$symws/core/Mitos/Core"
 ln -s "$symout" "$symws/.lake/packages/sympkg/.lake/build"
 ln -s "$symout" "$symws/.lake/packages/symroot"
-repo_env
+clean_env
 base_lean_path=$LEAN_PATH
 
 lock_ec=0
