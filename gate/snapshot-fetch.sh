@@ -130,7 +130,7 @@ pages_to open "repos/$repo/pulls?state=open&per_page=100"
 read_to main "repos/$repo/branches/main"
 protection
 pages_to stacks -H "X-GitHub-Api-Version: 2026-03-10" "repos/$repo/stacks?per_page=100"
-read_to dashboard "repos/$repo/issues/$issue"
+read_to provenance-issue "repos/$repo/issues/$issue"
 
 [ -e "$out/open.json" ] || exit 0
 prs=$(jq -r '.[][] | [.number, .head.sha, .head.ref] | @tsv' "$out/open.json" 2>/dev/null) || exit 0

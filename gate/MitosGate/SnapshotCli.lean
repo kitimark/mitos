@@ -282,7 +282,7 @@ def obsJson (o : Obs) : Json :=
 
 def unread (g : Global) (p : Pull) (r : Reads) : List String :=
   [("protection", g.protection.isNone), ("stacks", g.stacked.isNone),
-   ("dashboard", g.verdictCells.isNone), ("comments", r.comments.isNone),
+   ("provenance-issue", !g.issueRead), ("comments", r.comments.isNone),
    ("review-comments", r.reviewComments.isNone), ("reviews", r.reviews.isNone),
    ("activity", (activity p r).isNone), ("files", r.files.isNone),
    ("checks", r.checks.isNone), ("provenance", g.provenance.isNone)].filterMap fun (k, b) =>
@@ -304,12 +304,12 @@ def run (dir : System.FilePath) : IO UInt32 := do
     | stop "the read of main has no commit"
   unless (← ensure main) do
     return (← stop s!"main's commit {main} is not in this clone and could not be fetched")
-  let issue := (← load dir "dashboard").bind (provenanceIssueOf owner)
+  let issue := (← load dir "provenance-issue").bind (provenanceIssueOf owner)
   let provenance := issue.bind fun body => (Provenance.decode repo body).toOption
   let g : Global :=
     { repo, owner, protection := (← load dir "protection").bind protectionOf,
       stacked := (← load dir "stacks").bind stacksOf,
-      verdictCells := issue.bind rows, provenance }
+      issueRead := issue.isSome, provenance }
   let mut out : Array Json := #[]
   for p in pulls.mergeSort (fun a b => a.number ≤ b.number) do
     let k := toString p.number

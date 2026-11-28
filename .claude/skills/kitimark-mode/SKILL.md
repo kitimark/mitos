@@ -377,11 +377,9 @@ rely on both.
   machine facts go in the Provenance record issue, as the next bullet says.
 - The root also publishes exactly one `mitos-provenance:v2` section in the Provenance record
   issue (#586), below its human lines, using `mitos-gate provenance render <owner/repo>
-  <payload.json>` from main. That issue carries no human sections except one `## In flight` table
-  with no rows, which stays while the snapshot's table reader does (#527). A level-2 heading,
-  such as `## Record`, stands between that table and the section, because the table reader reads
-  to the next level-2 heading. Without that heading, the reader runs into the section and every
-  pull request holds (#592).
+  <payload.json>` from main. That issue carries no human sections. It may still hold one empty
+  `## In flight` table and a `## Record` heading under it. No tool reads them since #527, so
+  the body reads the same with them and without them.
   The renderer validates the complete section through the shared decoder. It writes exact markers
   and a text fence that holds uppercase UTF-8 hex, wrapped at 64 characters with LF. Supply
   compact, sorted source-schema-v1 payload bytes from a JSON encoder (`jq -cS` for these ASCII
@@ -393,9 +391,7 @@ rely on both.
   Preserve every event and stop on refusal. The source schema and the archived record stay v1.
   Local round trips do not prove publication. After the owner merges, the root must read the
   current Provenance record issue, publish current real facts, read back the exact machine bytes
-  and run the deployed shared decoder (#483). While the table reader stays, each publish also
-  ends with `gate/snapshot-fetch.sh` and `mitos-gate snapshot` from main, and no `holds: unread`
-  line of the snapshot may name `dashboard`, the tool's name for the read of that issue (#592).
+  and run the deployed shared decoder (#483).
   The decoded object has `version: 1`,
   `repository: "owner/repo"`, and `pulls: [...]`. Each pull has `number`, an `author` object and
   a `verdicts` list, which may be empty before any review completes. The author fields are `head`

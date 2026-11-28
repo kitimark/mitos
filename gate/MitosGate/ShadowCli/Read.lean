@@ -156,7 +156,7 @@ private def merge (owner : String) : D Merge := fun j => do
   let comments := comments.filter fun c => c.created ≤ time.digits
   let g : Snapshot.Global :=
     { repo := "", owner := owner, protection := none, stacked := none,
-      verdictCells := none, provenance := none }
+      issueRead := false, provenance := none }
   let r : Snapshot.Reads := ⟨none, some comments, some reviews, none, none, none⟩
   let summary := if Snapshot.reviewsSpeak g r then Summary.spoke else .silent
   return { pr := ← at' "pr" nat j, time,
