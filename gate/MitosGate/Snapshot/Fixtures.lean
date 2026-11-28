@@ -64,6 +64,49 @@ theorem crlfDashboard :
     rows "## In flight\r\n\r\n| #7 a | x | y | PASS opus-xhigh at 85b0781 |\r\n" =
       some [(7, "PASS opus-xhigh at 85b0781".toList)] := by decide +kernel
 
+def linked (cell : String) : String :=
+  "| " ++ cell ++ " | `x` | green | PASS opus-xhigh at `85b0781`, author sonnet |\n"
+def linked7 : String := linked "[#7](https://github.com/owner/mitos/pull/7) a"
+def linked7To8 : String := linked "[#7](https://github.com/owner/mitos/pull/8) a"
+
+theorem aLinkedPrCellReads :
+    rows (dash (linked7 ++ "| #8 b | `x` | running | No verdict |")) =
+      some [(7, "PASS opus-xhigh at `85b0781`, author sonnet".toList), (8, "No verdict".toList)] := by
+  decide +kernel
+theorem aLinkedCellAloneReads :
+    rows (dash (linked "[#7](https://github.com/owner/mitos/pull/7)")) =
+      some [(7, "PASS opus-xhigh at `85b0781`, author sonnet".toList)] := by decide +kernel
+theorem aLinkedAndAPlainRowForOnePrSpoilTheDashboard :
+    rows (dash (linked7 ++ "| #7 b | `x` | red | No verdict |")) = none := by decide +kernel
+theorem aLinkToAnotherNumberSpoilsTheDashboard :
+    rows (dash linked7To8) = none := by decide +kernel
+theorem aLinkToALongerNumberSpoilsTheDashboard :
+    rows (dash (linked "[#7](https://github.com/owner/mitos/pull/70) a")) = none := by
+  decide +kernel
+theorem aLinkToAnIssueSpoilsTheDashboard :
+    rows (dash (linked "[#7](https://github.com/owner/mitos/issues/7) a")) = none := by
+  decide +kernel
+theorem aLinkToAnotherHostSpoilsTheDashboard :
+    rows (dash (linked "[#7](https://example.com/owner/mitos/pull/7) a")) = none := by
+  decide +kernel
+theorem aLinkPastThePullSpoilsTheDashboard :
+    rows (dash (linked "[#7](https://github.com/owner/mitos/pull/7/files) a")) = none := by
+  decide +kernel
+theorem aLinkWithATitleSpoilsTheDashboard :
+    rows (dash (linked "[#7](https://github.com/owner/mitos/pull/7 \"8\") a")) = none := by
+  decide +kernel
+theorem aLinkThatNeverClosesSpoilsTheDashboard :
+    rows (dash (linked "[#7](https://github.com/owner/mitos/pull/7 a")) = none := by
+  decide +kernel
+theorem aLinkedCellWithoutANumberSpoilsTheDashboard :
+    rows (dash (linked "[7](https://github.com/owner/mitos/pull/7) a")) = none ∧
+      rows (dash (linked "[#](https://github.com/owner/mitos/pull/) a")) = none := by
+  constructor <;> decide +kernel
+theorem aLinkedNumberRunIntoTextSpoilsTheDashboard :
+    rows (dash (linked "[#7a](https://github.com/owner/mitos/pull/7) a")) = none ∧
+      rows (dash (linked "[#7](https://github.com/owner/mitos/pull/7)a")) = none := by
+  constructor <;> decide +kernel
+
 def tableHead : String := "| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n"
 def under (s : String) : String := "## In flight\n\n" ++ tableHead ++ passFor7 ++ s ++ "\n## Next up\n"
 def fail8 : String := tableHead ++ "| #8 b | `x` | red | FAIL opus-xhigh at `85b0781` |\n"
@@ -353,6 +396,12 @@ def rename (t : Stamp) : Post := ⟨owner, none, t, t, "rename", none⟩
 def renamed (t : Stamp) : Post := ⟨owner, none, t, t, "Renamed." ++ footer, none⟩
 
 theorem aTypedApprovalOnATrustPathIsMerged : planOf = .merge 7 hB := by decide +kernel
+theorem aLinkedRowLeavesTheTypedApprovalToMerge :
+    Land.plan (Land.queueOf [o { g with verdictCells := rows (dash linked7) } pull reads git]) =
+      .merge 7 hB := by decide +kernel
+theorem aLinkToAnotherNumberStillHolds :
+    stepOf (g := { g with verdictCells := rows (dash linked7To8) }) = .stop .held := by
+  decide +kernel
 theorem anAnsweredReviewCommentAfterTheApprovalRetiresIt :
     planOf (r := withReviewComments [rename 20261114080100, renamed 20261114080200]) = .idle := by
   decide +kernel

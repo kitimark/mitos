@@ -17,7 +17,8 @@ The snapshot is what a reader has already parsed from GitHub; this command parse
 { "prs": [ <pull request>, ... ],
   "me": { "provider": "claude", "name": "orchestrator" },   -- with "pr": the caller of `land`
   "pr": 153,
-  "event": { "kind": "gateDone", "pr": 153, "gate": "success" } }   -- optional: who wakes
+  "event": { "kind": "gateDone", "pr": 153, "gate": "success" },   -- optional: who wakes
+  "notes": [ { "pr": 153, "unread": ["dashboard"], "unmet": ["entry"], "owner": true } ] }
 ```
 
 A pull request has the fields of `Land.Obs`: `pr`, `updatable`, `enforced`, `head`, `pushes` (each
@@ -28,6 +29,10 @@ result}`), `botAt` (absent: the bot has not reviewed), `delegates`, `words` (eac
 ownerLand, said, about, approves}`, `{kind: ownerHold, said}`, `{kind: ownerSpoke, said}` or
 `{kind: agentLand, who, said, about}`, in ascending comment id) and `rest`. An absent optional
 field says the safe thing: nothing is known, so nothing is covered, reviewed, approved or unkept.
+
+`notes` is optional and changes no decision. A note is `Snapshot.Note` of its pull request: the
+reads that failed, the parts of `rest` that are unmet, and whether the owner has a `/land` or a
+`/hold` there. Only `land-answers` reads it, to word an answer.
 
 The decision is `{"next": <pr or null>, "plan": ..., "step": ..., "word": ..., "wake": ...}`.
 `step` and `word` are there when the snapshot names `me` and `pr`, and `wake` when it names an
@@ -42,6 +47,7 @@ two words share a comment
 id, which statement 13 (`nextIgnoresListingOrder`) and `newestOwner_perm` need; and a pull
 request's words are in ascending comment id, the reader's contract. The decision does not depend
 on that order: the newest owner word is the one with the greatest comment id wherever it is listed.
+A note names a listed pull request, and no two notes name the same one.
 -/
 
 open Lean (Json)
@@ -192,16 +198,25 @@ private def event : D Event := tagged
    ("landWord", ["pr"], fun j => return .landWord (← at' "pr" nat j)),
    ("ownerSpoke", ["pr"], fun j => return .ownerSpoke (← at' "pr" nat j))]
 
+private def note : D (Pr × MitosGate.Snapshot.Note) := fun j => do
+  obj ["pr", "unread", "unmet", "owner"] j
+  return (← at' "pr" nat j,
+    ⟨← at' "unread" (list (named (MitosGate.Snapshot.Unread.all.map fun u => (u.name, u)))) j,
+     ← at' "unmet" (list (named (MitosGate.Snapshot.Unmet.all.map fun u => (u.name, u)))) j,
+     ← at' "owner" bool j⟩)
+
 structure Snapshot where
   prs : List Obs
   me : Option Teammate
   pr : Option Pr
   event : Option Event
+  notes : List (Pr × MitosGate.Snapshot.Note) := []
 
 private def snapshot : D Snapshot := fun j => do
-  obj ["prs", "me", "pr", "event"] j
+  obj ["prs", "me", "pr", "event", "notes"] j
   return { prs := ← at' "prs" (list observation) j, me := ← opt "me" teammate j,
-           pr := ← opt "pr" nat j, event := ← opt "event" event j }
+           pr := ← opt "pr" nat j, event := ← opt "event" event j,
+           notes := (← opt "notes" (list note) j).getD [] }
 
 private def firstDup : List Nat → Option Nat
   | [] => none
@@ -224,6 +239,10 @@ def Snapshot.check (s : Snapshot) : Except String Unit := do
     throw s!"comment {d} is used by two words"
   if let some p := s.event.bind eventPr then
     unless s.prs.any (·.pr == p) do throw s!"event.pr: pull request {p} is not in prs"
+  if let some p := firstDup (s.notes.map (·.1)) then
+    throw s!"notes: pull request {p} has two notes"
+  for (p, _) in s.notes do
+    unless s.prs.any (·.pr == p) do throw s!"notes: pull request {p} is not in prs"
   match s.me, s.pr with
   | none, none => pure ()
   | some _, some p =>
@@ -326,14 +345,17 @@ def cli (args : List String) (usage : String) : IO UInt32 := do
     return 1
 
 /-- `mitos-gate land-answers [<snapshot.json>]`: what land.yml's apply and report act on, as one
-line: `merge` is `LandAnswer.handoff` and `answers` holds one entry per pull request whose reply is
-an `Answer`. It refuses what `land` refuses (`read`); `me`, `pr` and `event` change nothing. -/
+line: `merge` is `LandAnswer.handoff` and `answers` holds one entry per `LandAnswer.named`, a pull
+request whose reply is an `Answer` that its note does not leave out. `land` is the comment of the
+owner's newest `/land` there, or null. It refuses what `land` refuses (`read`); `me`, `pr` and
+`event` change nothing. -/
 def answersJson (s : Snapshot) : Json :=
   Json.mkObj
     [("merge", (LandAnswer.handoff (queueOf s.prs)).elim Json.null fun x =>
         Json.mkObj [("pr", n x.pr), ("head", .str x.head), ("approval", n x.approval), ("requiresSpec", .bool x.requiresSpec)]),
-     ("answers", Json.arr ((LandAnswer.answers s.prs).map fun (p, a) =>
-        Json.mkObj [("pr", n p), ("line", .str a.line), ("body", .str a.body)]).toArray)]
+     ("answers", Json.arr ((LandAnswer.named s.notes s.prs).map fun x =>
+        Json.mkObj [("pr", n x.pr), ("line", .str x.line), ("body", .str x.body),
+          ("land", x.land.elim Json.null n)]).toArray)]
 
 
 def answersCli (args : List String) (usage : String) : IO UInt32 := do

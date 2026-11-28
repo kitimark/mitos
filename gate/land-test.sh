@@ -297,6 +297,56 @@ if "$bin" land-answers "$tmp/in" >"$tmp/out" 2>"$tmp/err" &&
   jq -e '.merge == {pr:153,head:"ar",approval:450,requiresSpec:false} and .answers == []' "$tmp/out" >/dev/null; then
   ok "the planned merge hands its approval"
 else bad "the planned merge hands its approval" "$(cat "$tmp/out" "$tmp/err")"; fi
+answers_are() {
+  local name=$1 filter=$2 want=$3
+  jq -c "$filter" "$base" >"$tmp/in" || { bad "$name" "the jq filter failed"; return; }
+  if "$bin" land-answers "$tmp/in" >"$tmp/out" 2>"$tmp/err" &&
+    [ "$(jq -c '[.answers[] | [.pr, .line, .land]]' "$tmp/out")" = "$want" ]; then
+    ok "$name"
+  else bad "$name" "got:  $(cat "$tmp/out" "$tmp/err")" "want: $want"; fi
+}
+held153='.prs[0].words += [{"kind":"ownerHold","said":1901}]'
+answers_are "an answer names the comment of the owner's newest /land" '.' \
+  '[[153,"Queued at aaa: waiting for the replay.",450]]'
+answers_are "a hold with a failed read names the read" \
+  "$held153 | .notes = [{pr: 153, unread: [\"dashboard\", \"protection\"], unmet: [], owner: true}]" \
+  '[[153,"Held at aaa: a read failed (unread dashboard, protection). The next run reads again, so no new comment is needed.",450]]'
+answers_are "a hold with every read done is the owner's own" \
+  "$held153 | .notes = [{pr: 153, unread: [], unmet: [], owner: true}]" \
+  '[[153,"Held by your /hold or an edited comment. Comment /land aaa to go on.",450]]'
+answers_are "a hold with no note keeps the general line" "$held153" \
+  '[[153,"Held by your /hold, an edited comment or a failed read. Comment /land aaa to go on.",450]]'
+read_hold149='.prs = [.prs[1] | .words = [{"kind":"ownerHold","said":1601}]] | .pr = 149'
+answers_are "a read hold where the owner asked nothing is left out" \
+  "$read_hold149 | .notes = [{pr: 149, unread: [\"dashboard\"], unmet: [], owner: false}]" '[]'
+answers_are "the same hold with no note is answered, and names no /land" "$read_hold149" \
+  '[[149,"Held by your /hold, an edited comment or a failed read. Comment /land bbb to go on.",null]]'
+answers_are "a missing provenance entry is named" \
+  '.prs[0].rest = false | .notes = [{pr: 153, unread: [], unmet: ["entry"], owner: true}]' \
+  '[[153,"Stopped: no provenance entry for the author (provenance admission incomplete).",450]]'
+answers_are "with no note, an unmet rest keeps the general line" '.prs[0].rest = false' \
+  '[[153,"Stopped: an unanswered owner comment, a missing required label or footer, or unmet author or reviewer verification requirements.",450]]'
+jq -c "$held153" "$base" >"$tmp/plain"
+jq -c "$held153 | .notes = [{pr: 153, unread: [\"dashboard\"], unmet: [\"entry\"], owner: false}]" "$base" >"$tmp/noted"
+if "$bin" land "$tmp/plain" >"$tmp/plain.out" 2>"$tmp/err" && "$bin" land "$tmp/noted" >"$tmp/noted.out" 2>>"$tmp/err" &&
+  [ -s "$tmp/plain.out" ] && cmp -s "$tmp/plain.out" "$tmp/noted.out"; then
+  ok "a note changes no decision of land"
+else bad "a note changes no decision of land" "$(cat "$tmp/plain.out" "$tmp/noted.out" "$tmp/err")"; fi
+refuses "a note with a read that does not exist" \
+  '.notes = [{pr: 153, unread: ["dashbord"], unmet: [], owner: true}]' \
+  'notes\[0\]\.unread\[0\]: "dashbord" is not one of "protection", "stacks", "dashboard"'
+refuses "a note with an unmet part that does not exist" \
+  '.notes = [{pr: 153, unread: [], unmet: ["luck"], owner: true}]' \
+  'notes\[0\]\.unmet\[0\]: "luck" is not one of "footer", "unanswered", "label"'
+refuses "a note with a field the format does not define" \
+  '.notes = [{pr: 153, unread: [], unmet: [], owner: true, why: "x"}]' 'notes\[0\]\."why": not a field here'
+refuses "a note without its owner field" '.notes = [{pr: 153, unread: [], unmet: []}]' \
+  'notes\[0\]\.owner: missing'
+refuses "two notes for one pull request" \
+  '.notes = [{pr: 153, unread: [], unmet: [], owner: true}, {pr: 153, unread: [], unmet: [], owner: false}]' \
+  'notes: pull request 153 has two notes'
+refuses "a note for a pull request that is not listed" \
+  '.notes = [{pr: 1, unread: [], unmet: [], owner: true}]' 'notes: pull request 1 is not in prs'
 echo '{"prs":[{"pr":1}]}' >"$tmp/in"
 got=0
 "$bin" land-answers "$tmp/in" >"$tmp/out" 2>"$tmp/err" || got=$?

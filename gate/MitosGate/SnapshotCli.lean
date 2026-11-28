@@ -8,9 +8,10 @@ import MitosGate.Provenance.Decode
 # `mitos-gate snapshot`: what GitHub said, as one `land` snapshot
 
 `mitos-gate snapshot <dir>` reads the REST responses that `gate/snapshot-fetch.sh` saved in
-`<dir>` and prints one line of JSON, `{"prs": [...]}`, which `mitos-gate land` reads. A response
-that is missing (its read failed) or not of its route's shape is a failed read, and
-`MitosGate.Snapshot` decides what it does: the pull requests that need it hold.
+`<dir>` and prints one line of JSON, `{"prs": [...], "notes": [...]}`, which `mitos-gate land`
+reads. A response that is missing (its read failed) or not of its route's shape is a failed read,
+and `MitosGate.Snapshot` decides what it does: the pull requests that need it hold. `notes` holds
+`Snapshot.note` of each pull request, which says why it holds or is not admitted.
 
 Two reads have no such fallback, so the command stops with one line on standard error and exit 1:
 the repository and the list of open pull requests, and the commit of `main`. A usage error is
@@ -281,12 +282,11 @@ def obsJson (o : Obs) : Json :=
     (o.botAt.map fun b => [("botAt", Json.str b)]).getD []
 
 def unread (g : Global) (p : Pull) (r : Reads) : List String :=
-  [("protection", g.protection.isNone), ("stacks", g.stacked.isNone),
-   ("dashboard", g.verdictCells.isNone), ("comments", r.comments.isNone),
-   ("review-comments", r.reviewComments.isNone), ("reviews", r.reviews.isNone),
-   ("activity", (activity p r).isNone), ("files", r.files.isNone),
-   ("checks", r.checks.isNone), ("provenance", g.provenance.isNone)].filterMap fun (k, b) =>
-    if b then some k else none
+  (unreadOf g p r).map (·.name) ++ if g.provenance.isNone then ["provenance"] else []
+
+def noteJson (pr : Nat) (x : Note) : Json :=
+  Json.mkObj [("pr", n pr), ("unread", .arr (x.unread.map fun u => Json.str u.name).toArray),
+    ("unmet", .arr (x.unmet.map fun u => Json.str u.name).toArray), ("owner", .bool x.owner)]
 
 private def stop (m : String) : IO UInt32 := do
   IO.eprintln (ciLine s!"snapshot: {m}")
@@ -311,6 +311,7 @@ def run (dir : System.FilePath) : IO UInt32 := do
       stacked := (← load dir "stacks").bind stacksOf,
       verdictCells := issue.bind rows, provenance }
   let mut out : Array Json := #[]
+  let mut notes : Array Json := #[]
   for p in pulls.mergeSort (fun a b => a.number ≤ b.number) do
     let k := toString p.number
     let reviews := (← load dir s!"reviews-{k}").bind reviewsOf
@@ -336,7 +337,8 @@ def run (dir : System.FilePath) : IO UInt32 := do
     unless (provenanceFact g p.number).any (fun f => Provenance.admitted (sourceObs g p r ⟨ids.toList, base⟩) f p.labels) do
       IO.eprintln (ciLine s!"snapshot: #{k} holds: provenance admission incomplete")
     out := out.push (obsJson (obs g p r ⟨ids.toList, base⟩))
-  IO.println (Json.mkObj [("prs", Json.arr out)]).compress
+    notes := notes.push (noteJson p.number (note g p r ⟨ids.toList, base⟩))
+  IO.println (Json.mkObj [("prs", Json.arr out), ("notes", Json.arr notes)]).compress
   return 0
 
 def cli (args : List String) (usage : String) : IO UInt32 := do

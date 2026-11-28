@@ -1,5 +1,7 @@
 import MitosGate.Snapshot.Obs
+import MitosGate.Snapshot.Note
 import MitosGate.Snapshot.Fixtures
+import MitosGate.Snapshot.NoteFixtures
 import MitosGate.Provenance.Fixtures
 
 namespace MitosGate.Snapshot
@@ -21,7 +23,9 @@ open Lean in
       ``ModelIdentity.reportedDifferent_eq, ``ModelIdentity.absentDifferentNeedsKnown,
       ``ModelIdentity.canonicalOutsideNotClaude, ``Land.reportedCovered_iff, ``obs_projection,
       ``reviewCommentsSpeakWhenSubmitted, ``restNeedsAnswersAndTheLabel,
-      ``keptMergeIsTheOwnersTypedApproval] ++ fixtures.toList do
+      ``keptMergeIsTheOwnersTypedApproval, ``linkedCellIsItsPullLink, ``onlyALinkedCellIsNew,
+      ``everyFailedReadIsNamed, ``unmetRestIsNamed, ``noOwnerWordWhereTheOwnerDecidedNothing] ++
+      fixtures.toList do
     for a in ← collectAxioms n do
       unless standard.contains a do
         throwError "{n} depends on the axiom {a}"

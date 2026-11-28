@@ -13,7 +13,7 @@ ok() { echo "ok   $1"; pass=$((pass + 1)); }
 bad() {
   echo "FAIL $1"
   shift
-  for line in "$@"; do echo "  | $line"; done
+  for l in "$@"; do echo "  | $l"; done
   fail=$((fail + 1))
 }
 problems=()
@@ -79,7 +79,10 @@ body_is() {
   jq -es --argjson pr "$1" --arg body "$2" '[.[] | select(.pr == $pr)] == [{pr:$pr,body:$body}]' \
     "$dir/posts" >/dev/null 2>&1 || note "expected body for #$1: $2" "posts: $(cat "$dir/posts")"
 }
-answer() { jq -cn --argjson pr "$1" --arg line "$2" --arg body "$3" '[{pr:$pr,line:$line,body:$body}]'; }
+answer() {
+  jq -cn --argjson pr "$1" --arg line "$2" --arg body "$3" --argjson land "${4:-null}" \
+    '[{pr:$pr,line:$line,body:$body,land:$land}]'
+}
 prior() {
   jq -n --arg body "$2" --argjson id "$1" '[[{id:$id,user:{login:"github-actions[bot]",type:"Bot"},
     performed_via_github_app:{slug:"github-actions"},body:$body}]]' >"$dir/comments-153.json"
@@ -94,7 +97,7 @@ fence=$(printf '\140\140\140')
 bare_line='This PR touches a path you keep. To approve and merge it, comment only this line:'
 bare_body="$marker"$'\n'"$bare_line"$'\n\n'"$fence"$'\n'"/land $head"$'\n'"$fence"
 many=$(jq -cn --arg l "$line" --arg b "$body" --arg bl "$bare_line" --arg bb "$bare_body" \
-  '[{pr:154,line:$l,body:$b},{pr:153,line:$bl,body:$bb}]')
+  '[{pr:154,line:$l,body:$b,land:null},{pr:153,line:$bl,body:$bb,land:null}]')
 run LAND_ANSWERS="$many"
 exits 0
 body_is 153 "$bare_body"
@@ -109,6 +112,86 @@ exits 0
 no_post
 [ "$(wc -l <"$dir/calls")" = 1 ] || note "dedupe did not make just one read"
 finish the-same-answer-posts-nothing
+
+owner_land() {
+  jq --argjson id "$1" '.[0] += [{id:$id,user:{login:"owner",type:"User"},
+    performed_via_github_app:null,body:"/land"}]' "$dir/comments-153.json" >"$dir/changed.json"
+  mv "$dir/changed.json" "$dir/comments-153.json"
+}
+start
+prepare new-land
+prior 90 "$body"
+owner_land 100
+run LAND_ANSWERS="$(answer 153 "$line" "$body" 100)"
+exits 0
+body_is 153 "$body"
+run LAND_ANSWERS="$(answer 153 "$line" "$body" 100)"
+exits 0
+[ "$(wc -l <"$dir/posts")" = 1 ] || note "the answered /land was answered again"
+owner_land 102
+run LAND_ANSWERS="$(answer 153 "$line" "$body" 102)"
+exits 0
+[ "$(wc -l <"$dir/posts")" = 2 ] || note "the next /land was not answered"
+finish the-same-answer-to-each-new-land-posts-once
+
+start
+prepare old-land
+prior 90 "$body"
+owner_land 80
+run LAND_ANSWERS="$(answer 153 "$line" "$body" 80)"
+exits 0
+no_post
+finish the-same-answer-to-an-answered-land-posts-nothing
+
+start
+prepare first-land
+owner_land 100
+run LAND_ANSWERS="$(answer 153 "$line" "$body" 100)"
+exits 0
+body_is 153 "$body"
+finish a-land-with-no-report-yet-is-answered
+
+start
+prepare forged-newer
+prior 90 "$body"
+owner_land 100
+jq '.[0] += [.[0][0] | .id=200 | .user.login="outsider" | .user.type="User"]' \
+  "$dir/comments-153.json" >"$dir/changed.json"
+mv "$dir/changed.json" "$dir/comments-153.json"
+run LAND_ANSWERS="$(answer 153 "$line" "$body" 100)"
+exits 0
+body_is 153 "$body"
+finish a-forged-report-after-the-land-is-not-its-answer
+
+start
+named_answer() {
+  prepare "named-$1"
+  jq -c "$2" "$root/gate/land-fixtures/queue.json" >"$dir/snapshot.json"
+  run LAND_ANSWERS="$("$real" land-answers "$dir/snapshot.json" | jq -c .answers)"
+  exits 0
+  body_is 153 "$marker"$'\n'"$3"
+}
+own_hold='.prs[0].words += [{"kind":"ownerHold","said":1901}]'
+named_answer read "$own_hold | .notes = [{pr: 153, unread: [\"dashboard\"], unmet: [], owner: true}]" \
+  'Held at aaa: a read failed (unread dashboard). The next run reads again, so no new comment is needed.'
+named_answer hold "$own_hold | .notes = [{pr: 153, unread: [], unmet: [], owner: true}]" \
+  'Held by your /hold or an edited comment. Comment /land aaa to go on.'
+while IFS='|' read -r part text <&3; do
+  named_answer "$part" \
+    ".prs[0].rest = false | .notes = [{pr: 153, unread: [], unmet: [\"$part\"], owner: true}]" \
+    "Stopped: $text."
+done 3<<'PARTS'
+footer|a PR body without exactly one footer or with a session link
+unanswered|an unanswered owner comment
+label|a spec path without the spec-approved label
+provenance|unread provenance (provenance admission incomplete)
+entry|no provenance entry for the author (provenance admission incomplete)
+author|a recorded author that does not cover this head (provenance admission incomplete)
+verdict|verdicts short of the reviewer requirements (provenance admission incomplete)
+PARTS
+named_answer fallback '.prs[0].rest = false' \
+  'Stopped: an unanswered owner comment, a missing required label or footer, or unmet author or reviewer verification requirements.'
+finish the-tools-named-reasons-are-posted
 
 start
 prepare pushed-bare
@@ -235,12 +318,18 @@ finish why-codes-are-worded
 
 start
 for payload in 'null' '{}' 'not JSON' '[{}]' \
-  '[{"pr":153,"line":"x","body":"x"}]' \
-  '[{"pr":153,"line":"x\ny","body":"<!-- land-report -->\nx\ny"}]' \
-  '[{"pr":0,"line":"x","body":"<!-- land-report -->\nx"}]' \
-  '[{"pr":1.5,"line":"x","body":"<!-- land-report -->\nx"}]' \
-  '[{"pr":"153","line":"x","body":"<!-- land-report -->\nx"}]' \
-  '[{"pr":153,"line":"x","body":"<!-- land-report -->\nx","extra":1}]'; do
+  '[{"pr":153,"line":"x","body":"x","land":null}]' \
+  '[{"pr":153,"line":"x\ny","body":"<!-- land-report -->\nx\ny","land":null}]' \
+  '[{"pr":0,"line":"x","body":"<!-- land-report -->\nx","land":null}]' \
+  '[{"pr":1.5,"line":"x","body":"<!-- land-report -->\nx","land":null}]' \
+  '[{"pr":"153","line":"x","body":"<!-- land-report -->\nx","land":null}]' \
+  '[{"pr":153,"line":"x","body":"<!-- land-report -->\nx","land":null,"extra":1}]' \
+  '[{"pr":153,"line":"x","body":"<!-- land-report -->\nx"}]' \
+  '[{"pr":153,"line":"x","body":"<!-- land-report -->\nx","land":0}]' \
+  '[{"pr":153,"line":"x","body":"<!-- land-report -->\nx","land":1.5}]' \
+  '[{"pr":153,"line":"x","body":"<!-- land-report -->\nx","land":"100"}]' \
+  '[{"pr":153,"line":"x","body":"<!-- land-report -->\nx","land":false}]' \
+  '[{"pr":153,"line":"x","body":"<!-- land-report -->\nx","land":9007199254740992}]'; do
   prepare "bad-answers-${#payload}"
   run LAND_ANSWERS="$payload"
   exits 2
@@ -251,7 +340,7 @@ run LAND_ANSWERS="$(jq -c '. + .' <<<"$answers")"
 exits 2
 no_call
 prepare answers-cap
-run LAND_ANSWERS="$(jq -cn --arg m "$marker" '[range(1;102) | {pr:.,line:"x",body:($m+"\nx")}]')"
+run LAND_ANSWERS="$(jq -cn --arg m "$marker" '[range(1;102) | {pr:.,line:"x",body:($m+"\nx"),land:null}]')"
 exits 2
 no_call
 finish malformed-answers-call-nothing
