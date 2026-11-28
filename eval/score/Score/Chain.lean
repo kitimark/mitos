@@ -21,22 +21,29 @@ private def env (key : List Char) : Identity := { kind := "env", key := String.o
 
 private def svc (key : List Char) : Identity := { kind := "svc", key := String.ofList key }
 
+private def trim (l : List Char) : List Char :=
+  ((l.dropWhile Char.isWhitespace).reverse.dropWhile Char.isWhitespace).reverse
+
 private def ofLine (o : Nat) (l : List Char) : Option Fact :=
   if needsChars.isPrefixOf l then
     let key := l.drop needsChars.length
-    some { kind := .requires, ident := env key,
-           span := { start := o + utf8Len needsChars, len := utf8Len key } }
+    if key.all Char.isWhitespace then none
+    else
+      some { kind := .requires, ident := env key,
+             span := { start := o + utf8Len needsChars, len := utf8Len key } }
   else if bindsChars.isPrefixOf l then
     let (key, rest) := (l.drop bindsChars.length).span (· != ' ')
-    let target := rest.drop 1
-    if key.isEmpty || target.all Char.isWhitespace then none
+    let target := trim rest
+    if key.isEmpty || target.isEmpty then none
     else
       some { kind := .binds (svc target), ident := env key,
              span := { start := o + utf8Len bindsChars, len := utf8Len key } }
   else if servesChars.isPrefixOf l then
     let key := l.drop servesChars.length
-    some { kind := .provides, ident := svc key,
-           span := { start := o + utf8Len servesChars, len := utf8Len key } }
+    if key.all Char.isWhitespace then none
+    else
+      some { kind := .provides, ident := svc key,
+             span := { start := o + utf8Len servesChars, len := utf8Len key } }
   else none
 
 def facts (repo path text : String) : List (Fact × Assumption) :=
@@ -64,6 +71,17 @@ theorem skips_incomplete_bindings :
     facts "deploy" "CHAIN" "binds A\nbinds A \nbinds A  \nbinds  db\n" = [] := by
   decide
 
+theorem skips_blank_keys :
+    facts "deploy" "CHAIN" "needs \nneeds  \nserves \nserves \t\n" = [] := by
+  decide
+
+theorem trims_binding_target :
+    facts "deploy" "CHAIN" "binds A db \nbinds A  db\n" =
+      [({ kind := .binds ⟨"svc", "db"⟩, ident := ⟨"env", "A"⟩, span := ⟨6, 1⟩ },
+          .humanDeclaredOutsideSource "deploy/CHAIN"),
+        ({ kind := .binds ⟨"svc", "db"⟩, ident := ⟨"env", "A"⟩, span := ⟨18, 1⟩ },
+          .humanDeclaredOutsideSource "deploy/CHAIN")] := by decide
+
 theorem requires_env {repo path text : String} {p : Fact × Assumption}
     (h : p ∈ facts repo path text) (hk : p.1.kind = .requires) :
     p.1.ident.kind = "env" ∧ p.1.scope = .runtime := by
@@ -71,13 +89,17 @@ theorem requires_env {repo path text : String} {p : Fact × Assumption}
   obtain ⟨⟨o, l⟩, -, hl⟩ := List.mem_filterMap.1 hf
   simp only [ofLine] at hl
   split at hl
-  · cases hl; exact ⟨rfl, rfl⟩
+  · split at hl
+    · cases hl
+    · cases hl; exact ⟨rfl, rfl⟩
   · split at hl
     · split at hl
       · cases hl
       · cases hl; cases hk
     · split at hl
-      · cases hl; cases hk
+      · split at hl
+        · cases hl
+        · cases hl; cases hk
       · cases hl
 
 end Score.Chain

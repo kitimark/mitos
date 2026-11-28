@@ -40,15 +40,15 @@ def declared (src : String) : List Fact :=
              span := { start := o + utf8Len provideChars, len := utf8Len name } }
     else none
 
+def readsToy (path : String) : Bool := ".toy".toList.isSuffixOf path.toList
+
 def factsOf (f : SourceFile) : List (Fact × Assumption) :=
   if GoMod.reads f.path then GoMod.facts f.text else
   if Chain.reads f.path then Chain.facts f.repo f.path f.text else
-  let fromPlugin := (ToyRequire.extractor.run f.text).map (·, .extractor "ToyRequire")
-  let fromDecl :=
-    if f.path == "PROVIDES" then
-      (declared f.text).map (·, .humanDeclaredOutsideSource s!"{f.repo}/PROVIDES")
-    else []
-  fromPlugin ++ fromDecl
+  if readsToy f.path then (ToyRequire.extractor.run f.text).map (·, .extractor "ToyRequire") else
+  if f.path == "PROVIDES" then
+    (declared f.text).map (·, .humanDeclaredOutsideSource s!"{f.repo}/PROVIDES")
+  else []
 
 theorem factsOf_chain {f : SourceFile} (h : Chain.reads f.path = true) :
     factsOf f = Chain.facts f.repo f.path f.text := by
@@ -56,6 +56,19 @@ theorem factsOf_chain {f : SourceFile} (h : Chain.reads f.path = true) :
     simp only [Chain.reads, Bool.or_eq_true, beq_iff_eq] at h
     rcases h with h | h <;> rw [h] <;> decide
   simp [factsOf, hg, h]
+
+theorem readsToy_cases :
+    ["deps.toy", "src/main.toy", "PROVIDES", "mail.yaml", "deps.toy.bak", "toy"].map readsToy =
+      [true, true, false, false, false, false] := by decide
+
+theorem factsOf_unclaimed {f : SourceFile} (hg : GoMod.reads f.path = false)
+    (hc : Chain.reads f.path = false) (ht : readsToy f.path = false) (hp : f.path ≠ "PROVIDES") :
+    factsOf f = [] := by
+  simp [factsOf, hg, hc, ht, hp]
+
+theorem factsOf_unclaimed_yaml :
+    factsOf { repo := "deploy", path := "mail.yaml", text := "require x\nprovide y\n" } = [] := by
+  decide
 
 def ingest (files : List SourceFile) : Except String (List Located) := do
   let mut out : Array Located := #[]
