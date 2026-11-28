@@ -27,7 +27,6 @@ echo pr >"$work/shared.txt"
 git -C "$work" commit -q -am conflict
 conflict=$(git -C "$work" rev-parse HEAD)
 
-# Each of these branches is behind main and rebases cleanly: one commit that adds one file.
 behind_branch() {
   git -C "$work" checkout -q -b "$1" "${2:-$c0}"
   echo pr >"$work/$1.txt"
@@ -68,8 +67,6 @@ fi
 EOF
 chmod +x "$bare/hooks/update"
 
-# The script must read only the pull request it was given. The fake still answers `pr list`, so a
-# script that lists and loops runs here, and the checks catch it by what it did to the others.
 mkdir -p "$root/bin"
 cat >"$root/bin/gh" <<'EOF'
 #!/usr/bin/env bash
@@ -96,17 +93,21 @@ case "$cmd" in
         case "${FAKE_MODE:-}" in
           stacks-down) echo "gh: HTTP 500" >&2; exit 1 ;;
           stacks-odd) printf '%s\n' '{"message":"moved"}' ;;
-          *) printf '%s\n' '[[{"pull_requests":[{"number":90}]}]]' ;;
+          *)
+            printf '%s\n' '[[{"pull_requests":[{"number":90}]},
+              {"open":false,"pull_requests":[{"number":91,"state":"closed"}]}]]'
+            ;;
         esac
         ;;
       'repos/{owner}/{repo}/pulls/'*)
         n=${route##*/}
         [[ $n =~ ^[0-9]+$ ]] || { echo "unexpected api $route" >&2; exit 1; }
+        later=.
         reads=$(grep -c -F -x "GET $route" "$FAKE_DIR/routes")
-        # Pull request 12 is force-pushed between the script's two reads of it.
-        if ! jq -e -r --argjson n "$n" --argjson reads "$reads" --arg moved "$(cat "$FAKE_DIR/race-oid")" \
-            'first(.[] | select(.number == $n))
-             | if $n == 12 and $reads > 1 then .head.sha = $moved else . end' \
+        if [ "${FAKE_MODE:-}" = head-moves ] && [ "$reads" -gt 1 ]; then
+          later='.head.sha = "ffffffffffffffffffffffffffffffffffffffff"'
+        fi
+        if ! jq -e --argjson n "$n" "first(.[] | select(.number == \$n)) | $later" \
             "$FAKE_DIR/prs.json" >"$FAKE_DIR/answer.json" 2>/dev/null; then
           printf '%s\n' '{"message":"Not Found","status":"404"}'
           echo "gh: Not Found (HTTP 404)" >&2
@@ -121,20 +122,6 @@ case "$cmd" in
     sub=$1
     shift
     case "$sub" in
-      list)
-        base=
-        while [ $# -gt 0 ]; do
-          case $1 in
-            --base) base=$2; shift 2 ;;
-            *) shift ;;
-          esac
-        done
-        jq --arg base "$base" '[.[]
-            | select(.state == "open" and .base.ref == $base and (.head.sha | test("^[0-9a-f]{40}$")))
-            | {number, headRefName: .head.ref, headRefOid: .head.sha, isDraft: .draft, labels,
-               isCrossRepository: (.head.repo.full_name != .base.repo.full_name)}]' \
-          "$FAKE_DIR/prs.json"
-        ;;
       comment) exit 0 ;;
       edit)
         n=$1
@@ -180,8 +167,8 @@ one() {
   one 8 pr-other "$other" "$(lab needs-rebase)" '.head.repo.full_name = "someone/mitos"'
   one 9 pr-other "$other" "$(lab no-auto-rebase needs-rebase)"
   one 90 pr-other "$other" "$(lab needs-rebase)"
+  one 91 pr-other "$other" "$(lab needs-rebase)"
   one 11 pr-other "$other" "$(lab needs-rebase)" '.base.ref = "feature"'
-  one 12 pr-moved "$ahead" "$(lab needs-rebase)"
   one 13 pr-other "$other" "$(lab needs-rebase)" '.state = "closed"'
   one 14 pr-other "$other" "$(lab)"
   one 15 pr-raced "$raced" "$(lab)"
@@ -189,7 +176,6 @@ one() {
   one 17 pr-locked "$locked" "$(lab)"
   one 18 pr-other "$other" "$(lab)" '.head.sha = "pr-other"'
 } | jq -s '.' >"$root/prs.json"
-printf '%s\n' "$behind" >"$root/race-oid"
 
 tip() { git -C "$bare" rev-parse "refs/heads/$1"; }
 declare -A start
@@ -207,7 +193,6 @@ check() {
   fi
 }
 
-# run <mode> [NAME=value]...: one run of the script against the branches as they started.
 run() {
   local mode=$1 b
   shift
@@ -230,13 +215,13 @@ moved() {
 }
 errors() { grep '^::' "$root/out"; }
 
-# refused <name> <error line> <label and comment calls>: the run failed with that one error line
-# and moved no branch.
 refused() {
-  check "$1: the run fails" 1 "$rc"
-  check "$1: it says why" "$2" "$(errors)"
-  check "$1: no branch moved" "" "$(moved)"
-  check "$1: label and comment calls" "$3" "$(grep -E '^pr (edit|comment) ' "$root/calls" | cut -d' ' -f1-4)"
+  local name=$1 error=$2 calls=$3
+  check "$name: the run fails" 1 "$rc"
+  check "$name: it says why" "$error" "$(errors)"
+  check "$name: no branch moved" "" "$(moved)"
+  check "$name: label and comment calls" "$calls" \
+    "$(grep -E '^pr (edit|comment) ' "$root/calls" | cut -d' ' -f1-4)"
 }
 
 bad_input() {
@@ -288,10 +273,10 @@ run "" PR_NUMBER=2
 check "an identical PR: an absent label is tolerated" 0 "$rc"
 check "an identical PR: the removal was tried" 1 "$(called '^pr edit 2 --remove-label needs-rebase$')"
 
-run "" PR_NUMBER=12
+run head-moves PR_NUMBER=1
 check "a head moved during the run: the run passes" 0 "$rc"
 check "a head moved during the run: needs-rebase is kept" 0 "$(called '^pr (edit|comment) ')"
-check "a head moved during the run: it was read twice" 2 "$(grep -c /pulls/12 "$root/routes")"
+check "a head moved during the run: it was read twice" 2 "$(grep -c '/pulls/1$' "$root/routes")"
 
 run fail PR_NUMBER=1
 check "a failed label delete fails the run" 1 "$rc"
@@ -320,6 +305,8 @@ run "" PR_NUMBER=9
 refused "no-auto-rebase" "::error::#9 has the no-auto-rebase label; it was not rebased" ""
 run "" PR_NUMBER=90
 refused "a stacked PR" "::error::#90 is in a stack; it was not rebased" ""
+run "" PR_NUMBER=91
+refused "a PR in a stack that the list calls closed" "::error::#91 is in a stack; it was not rebased" ""
 run "" PR_NUMBER=11
 refused "a PR on another base" "::error::#11 is not based on main; it was not rebased" ""
 run "" PR_NUMBER=13

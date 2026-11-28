@@ -1,7 +1,5 @@
 name: Keep PR branches up to date
 
-# A move of main starts no run. Each rebase push starts a full ci run, and a merge used to start one
-# for every open PR at once (#596).
 on:
   workflow_dispatch:
     inputs:

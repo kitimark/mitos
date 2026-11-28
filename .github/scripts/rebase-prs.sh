@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Rebases the one pull request that PR_NUMBER names onto $BASE. Exit 0 means the head this run read
-# contains $BASE, already or after this run's push. Every other outcome exits 1, so the run's
-# conclusion answers the dispatch that asked. A refusal puts its reason on an `::error::` line.
 set -euo pipefail
 BASE="${BASE:-main}"
 n=${PR_NUMBER:-}
@@ -28,10 +25,8 @@ refuse() {
 # `gh stack push`). So no PR in a stack is rebased or labelled `needs-rebase` here.
 # `GET repos/{owner}/{repo}/stacks` lists every stack with its `pull_requests`. A pull request
 # object also carries a `stack` field, but only for members, so a missing field cannot be told
-# from a renamed one, and the stack list is the source. Every PR number in any stack is refused,
-# whatever the stack's `open` or the PR's `state` say: a filter on those fields would refuse
-# nothing if they changed.
-stack_numbers_on_well_formed_pages() {
+# from a renamed one, and the stack list is the source.
+every_member_of_every_stack() {
   jq -s -c 'def int: type == "number" and . == floor;
       def pr: type == "object" and (.number | int);
       def stack: type == "object" and (.pull_requests | type == "array" and all(.[]; pr));
@@ -40,13 +35,12 @@ stack_numbers_on_well_formed_pages() {
       then [.[0][][].pull_requests[].number] else error("unexpected stack list") end'
 }
 if ! stacked=$(gh api --paginate --slurp -H "X-GitHub-Api-Version: 2026-03-10" \
-    "repos/{owner}/{repo}/stacks?per_page=100" | stack_numbers_on_well_formed_pages); then
+    "repos/{owner}/{repo}/stacks?per_page=100" | every_member_of_every_stack); then
   echo "::error::could not read the stack list; #$n was not rebased"
   exit 1
 fi
 echo "PRs in a stack: $stacked"
 
-# A fork whose repository was deleted has no `head.repo`, and it reads as a fork here.
 pull_request_fields() {
   jq -c --argjson n "$n" 'def text: type == "string" and length > 0;
       if type == "object" and .number == $n and (.state | text) and (.draft | type == "boolean")
@@ -54,7 +48,7 @@ pull_request_fields() {
           and (.head.sha | type == "string" and test("^[0-9a-f]{40}$"))
           and (.labels | type == "array" and all(.[]; type == "object" and (.name | text)))
       then {state, draft, base: .base.ref, ref: .head.ref, oid: .head.sha,
-            fork: (.head.repo.full_name != .base.repo.full_name),
+            fork: (.head.repo == null or (.head.repo.full_name != .base.repo.full_name)),
             labels: [.labels[].name]}
       else error("unexpected pull request") end'
 }
