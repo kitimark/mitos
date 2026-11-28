@@ -315,7 +315,10 @@ rely on both.
   a known author, an accepted independent Claude PASS from another model family, and, for
   critical work, an independent Claude Opus PASS with actual effort `xhigh` or `max`. For an Opus
   author, these are two witnesses. For a known GPT or Grok author, one qualifying Opus review can
-  supply both. An author whose actual model is null may instead use provider independence when
+  supply both. Fable is its own model family for independence, so Fable and Opus, Sonnet or Haiku
+  verify each other, and Fable does not verify Fable. The critical witness stays Opus at `xhigh` or
+  `max`, and a Fable PASS never supplies it.
+  An author whose actual model is null may instead use provider independence when
   its canonical provider is exactly `openai` or `google`. It still needs a standing accepted
   actual Claude PASS from another giver and provider. Critical work and `spec-approved` still need
   an actual Opus PASS at `xhigh` or `max`. The model stays null. Same-provider, null-Claude and

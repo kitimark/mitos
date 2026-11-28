@@ -156,4 +156,113 @@ def real488Context : Obs :=
 theorem real488UnknownAuthorAndIndependentOpus : admitted real488Context real488 = true := by
   decide +kernel
 
+def fable (actor : String := "fable-reviewer") (effort : Option Effort := some .xhigh)
+    (order : Nat := 1) : VerdictFact :=
+  ⟨"h", ⟨"claude", actor, some "claude-fable-5-2", none⟩, effort, .pass, order,
+    "https://github.com/owner/repo/pull/1#issuecomment-2"⟩
+
+def fableAuthored : PullFact :=
+  { facts with author := ⟨"h", ⟨"claude", "builder", some "claude-fable-5-2", none⟩⟩ }
+
+def opusAuthored : PullFact :=
+  { facts with author := ⟨"h", ⟨"claude", "builder", some "claude-opus-5-5", none⟩⟩ }
+
+theorem fableAuthorKeepsItsExactModel :
+    ((project context fableAuthored).author.map (·.model)) = some (.reported "claude-fable-5-2") := by
+  decide +kernel
+
+theorem criticalFableAuthorAndIndependentOpus : admitted context fableAuthored = true := by
+  decide +kernel
+
+theorem fableAuthorNeedsActualOpusEffort :
+    [none, some Effort.low, some .medium, some .high].all (fun effort =>
+      !admitted context { fableAuthored with verdicts := [opus (effort := effort)] }) = true := by
+  decide +kernel
+
+theorem fablePassCannotCoverAFableAuthor :
+    admitted ordinary { fableAuthored with verdicts := [{ fable with identity :=
+      ⟨"claude", "fable-reviewer", some "claude-fable-5-3", none⟩ }] } = false := by decide +kernel
+
+theorem fableJudgedOrdinaryGptWork : admitted ordinary { facts with verdicts := [fable] } = true := by
+  decide +kernel
+
+theorem fablePassCannotDischargeCritical :
+    [some Effort.xhigh, some .max].all (fun effort =>
+      !admitted context { facts with verdicts := [fable (effort := effort)] }) = true := by
+  decide +kernel
+
+theorem fablePassCannotDischargeTheLabel :
+    admitted ordinary { facts with verdicts := [fable] } ["spec-approved"] = false := by
+  decide +kernel
+
+theorem fablePassCoversOrdinaryOpusWork :
+    admitted ordinary { opusAuthored with verdicts := [fable] } = true := by decide +kernel
+
+theorem criticalOpusWorkUsesFableAndAnotherOpus :
+    admitted context { opusAuthored with verdicts := [fable] } = false ∧
+      admitted context { opusAuthored with verdicts := [fable, opus (order := 2)] } = true := by
+  decide +kernel
+
+theorem unknownAuthorCanUseAnOrdinaryFablePass :
+    admitted ordinary { absentFacts with verdicts := [fable] } = true := by decide +kernel
+
+theorem unknownCriticalAuthorCannotUseFableAsOpus :
+    admitted context { absentFacts with verdicts := [fable (effort := some .max)] } = false := by
+  decide +kernel
+
+open Lean (Json) in
+def sourceIdentity (actor : String) (model : Json) : List (String × Json) :=
+  [("head", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), ("provider", "claude"), ("actor", actor),
+    ("actualModel", model)]
+
+open Lean (Json) in
+def source (author judge : Json) : Json :=
+  Json.mkObj [("version", (1 : Nat)), ("repository", "owner/repo"),
+    ("pulls", Json.arr #[Json.mkObj [("number", (1 : Nat)),
+      ("author", Json.mkObj (sourceIdentity "builder" author)),
+      ("verdicts", Json.arr #[Json.mkObj (sourceIdentity "reviewer" judge ++
+        ([("effort", "xhigh"), ("result", "pass"), ("order", (1 : Nat)),
+          ("evidence", "https://github.com/owner/repo/pull/1#issuecomment-1")] :
+          List (String × Json)))])]])]
+
+def sourceContext (paths : List String) : Obs :=
+  { context with head := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                 ids := [("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "source-content")],
+                 paths := some paths }
+
+def decodedAdmitted (paths : List String) (author judge : String) : Bool :=
+  match decodePayload "owner/repo" (source (.str author) (.str judge)) with
+  | .ok [p] => admitted (sourceContext paths) p
+  | _ => false
+
+theorem fableAuthorDecodesExactly :
+    ((decodePayload "owner/repo" (source "claude-fable-5-2" "claude-opus-5-5")).toOption.map
+      (·.map fun p => (p.author.identity.actualModel, p.verdicts.map (·.identity.actualModel)))) =
+      some [(some "claude-fable-5-2", [some "claude-opus-5-5"])] := by decide +kernel
+
+theorem fableVerifierDecodesExactly :
+    ((decodePayload "owner/repo" (source "claude-opus-5-5" "claude-fable-5-2")).toOption.map
+      (·.map fun p => (p.author.identity.actualModel, p.verdicts.map (·.identity.actualModel)))) =
+      some [(some "claude-opus-5-5", [some "claude-fable-5-2"])] := by decide +kernel
+
+theorem decodedFableAuthorIsAdmittedWithOpus :
+    decodedAdmitted ["gate/Main.lean"] "claude-fable-5-2" "claude-opus-5-5" = true := by
+  decide +kernel
+
+theorem decodedFableVerifierCoversOnlyOrdinaryOpusWork :
+    decodedAdmitted ["ordinary.txt"] "claude-opus-5-5" "claude-fable-5-2" = true ∧
+      decodedAdmitted ["gate/Main.lean"] "claude-opus-5-5" "claude-fable-5-2" = false := by
+  decide +kernel
+
+theorem decodedFableCannotVerifyFable :
+    decodedAdmitted ["ordinary.txt"] "claude-fable-5-2" "claude-fable-5-3" = false := by
+  decide +kernel
+
+theorem bareOrMalformedFableIsRefused :
+    ["fable", "claude-fable-5-2-latest", "claude-fable-0-1", "claude-fable-05-2", "Claude-fable-5-2",
+      "fable5.2", "claude_fable_5_2"].all (fun m =>
+      !(decodePayload "owner/repo" (source (.str m) "claude-opus-5-5")).isOk &&
+        !(decodePayload "owner/repo" (source "claude-opus-5-5" (.str m))).isOk) = true := by
+  decide +kernel
+
 end MitosGate.Provenance.Fixture

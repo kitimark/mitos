@@ -417,6 +417,26 @@ source_case "spec-approved label alone accepts qualifying Opus" \
   '.pulls[0].author |= (.provider = "openai" | .actualModel = "gpt-6.2-astra")' \
   '.prs[0] | .rest and .paths == ["ordinary.txt"]' label
 
+fable='"claude-fable-5-2"'
+source_case "a critical Fable author is covered by one independent Opus PASS" \
+  ".pulls[0].author.actualModel = $fable" \
+  '.prs[0] | .author.model == "claude-fable-5-2" and .rest' critical true
+source_case "a Fable PASS cannot cover a Fable author" \
+  ".pulls[0].author.actualModel = $fable | .pulls[0].verdicts[0].actualModel = \"claude-fable-5-3\"" \
+  '.prs[0] | (.rest | not) and .verdicts[0].model == "claude-fable-5-3"' ordinary false
+source_case "a Fable PASS at max effort cannot supply the critical Opus witness" \
+  ".pulls[0].author |= (.provider = \"openai\" | .actualModel = \"gpt-6.2-astra\") | .pulls[0].verdicts[0] |= (.actualModel = $fable | .effort = \"max\")" \
+  '.prs[0] | (.rest | not) and .verdicts[0].model == "claude-fable-5-2"' critical false
+source_case "a Fable PASS cannot supply the Opus witness for spec-approved" \
+  ".pulls[0].author |= (.provider = \"openai\" | .actualModel = \"gpt-6.2-astra\") | .pulls[0].verdicts[0].actualModel = $fable" \
+  '.prs[0] | (.rest | not) and .paths == ["ordinary.txt"]' label false
+source_case "ordinary Opus-written work can use an independent Fable PASS" \
+  ".pulls[0].author.actualModel = \"claude-opus-5-5\" | .pulls[0].verdicts[0].actualModel = $fable" \
+  '.prs[0] | .rest and .verdicts[0].model == "claude-fable-5-2"' ordinary true
+source_case "critical Opus author uses a Fable PASS and another giver's Opus PASS" \
+  ".pulls[0].author.actualModel = \"claude-opus-5-5\" | .pulls[0].verdicts += [(.pulls[0].verdicts[0] | .actor = \"fable-reviewer\" | .actualModel = $fable | .order = 2 | .evidence += \"-fable\")]" \
+  '.prs[0] | .rest and (.verdicts | length) == 2' critical true
+
 null_author='.pulls[0].author |= (.provider = "openai" | .actualModel = null)'
 source_case "canonical null author uses the actual cross-provider Opus PASS" "$null_author" \
   '.prs[0] | .author == {who:{provider:"openai",name:"builder"},model:null} and .rest' critical true
@@ -519,6 +539,25 @@ refused_source "requested alias cannot be published as actual model" \
   "$(jq -cS '.pulls[0].author.actualModel = "inherited"' "$tmp/source.json")"
 refused_source "malformed Claude suffix refuses" \
   "$(jq -cS '.pulls[0].verdicts[0].actualModel = "claude-opus-4-6-latest"' "$tmp/source.json")"
+refused_source "a bare Fable alias cannot be published as an actual author model" \
+  "$(jq -cS '.pulls[0].author.actualModel = "fable"' "$tmp/source.json")"
+refused_source "a bare Fable alias cannot be published as an actual verifier model" \
+  "$(jq -cS '.pulls[0].verdicts[0].actualModel = "fable"' "$tmp/source.json")"
+refused_source "malformed Fable suffix refuses" \
+  "$(jq -cS '.pulls[0].verdicts[0].actualModel = "claude-fable-5-2-latest"' "$tmp/source.json")"
+refused_source "a compact Fable alias cannot become an opaque independent author" \
+  "$(jq -cS '.pulls[0].author |= (.provider = "grok" | .actualModel = "fable5.2")' "$tmp/source.json")"
+render_refused() {
+  local name=$1 filter=$2 status=0
+  jq -cS "$filter" "$tmp/source.json" >"$tmp/render-refused.json"
+  "$bin" provenance render owner/mitos "$tmp/render-refused.json" >"$tmp/render-refused.block" \
+    2>"$tmp/render-refused.err" || status=$?
+  if [ "$status" = 1 ] && [ ! -s "$tmp/render-refused.block" ]; then ok "$name"
+  else bad "$name" "render exit $status"; fi
+}
+render_refused "the renderer refuses a bare Fable author model" '.pulls[0].author.actualModel = "fable"'
+render_refused "the renderer refuses a malformed Fable verifier model" \
+  '.pulls[0].verdicts[0].actualModel = "claude-fable-5-2-latest"'
 refused_source "a compact Sonnet alias cannot become an opaque independent author" \
   "$(jq -cS '.pulls[0].author |= (.provider = "grok" | .actualModel = "sonnet4.5")' "$tmp/source.json")"
 refused_source "a case-variant Opus alias cannot become an opaque independent author" \
