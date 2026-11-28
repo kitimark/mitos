@@ -142,4 +142,18 @@ live issue comment carries the key, but every existing fixture predates it, so t
 existing checks unchanged. The Lean reader refuses such an item instead (`Observe.lean`).
 
 The Watchers text changes in the lines named in the row. It says the app decides for issue
-comments, tha
+comments, that the footer still decides on the review routes, and that the first poll lists only
+owner words; it names #501.
+
+## Gates before PR 15
+
+The bash watcher is deleted only when all of these hold:
+- **Bootstrap.** Main's tool runs where the root runs, built or fetched without `lake` in the
+  root's environment.
+- **Canary.** One real session ran both watchers, and every bash line was matched or listed.
+- **A/B.** The numbers are in, with run counts and spread, and they pass (Gates, A/B pass).
+- **Rules.** The switch has been in use for a week, and the root has recorded on the Owner
+  dashboard each fallback to the bash watcher in that week, or none.
+- **Sign-off.** The owner answered question 9 yes, and signs off once the four gates above hold.
+
+Until then the bash watcher, with PR 1's fix, is the fallback, and the rules keep its paragraph.

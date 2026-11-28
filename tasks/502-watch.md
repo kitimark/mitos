@@ -592,9 +592,10 @@ Open, from amendment 1, each with the root's recommendation (`DESIGN.md`, Questi
   dashboard; `failed` only while no PR owner it would resume waits on CI, since a red check belongs
   to its PR's owner. A `--ride` list replaces the default, so it names `outside` again.
   Recommended: yes.
-- 11: `peers` stays off by default; an agent that must hear Claude-app posts asks for it. Then an
-  issue comment the owner makes through the Claude app wakes no Claude caller, the root included,
-  unless its wait adds `peers`; their review-thread posts through it still do. Recommended: yes.
+- 11: `peers` stays off by default; a Claude agent that must hear Claude-app posts asks for it.
+  Then an issue comment the owner makes through the Claude app wakes no Claude caller, the root
+  included, unless its wait adds `peers`; their review-thread posts through it still do.
+  Recommended: yes.
 - 12: topic agents are sessions of their own or short-lived handlers; standing subagent loops wait
   for PR 12's idle-cost counter. Recommended: yes.
 - 13: verify the tool offline against a pinned trusted-root file renewed by an owner-merged PR, or

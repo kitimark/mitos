@@ -78,11 +78,12 @@ Open, from amendment 1:
   root resumes one, so the root lets `failed` ride only while no PR owner it would resume waits
   on CI (Usage).
 - **11. `peers` stays off by default.** A post you make through the Claude app on an issue comment
-  is then heard only by a caller that asks for `peers`, and pr-state already reads such an
-  unrecorded post as an agent's answer. That includes the root: its catch-all does not hear your
-  Claude-app issue comments unless its wait adds `peers`. Your review-thread posts through the app
-  carry no app key, so they still wake the root. An agent that must hear Claude-app posts asks for
-  `peers`. Recommended: yes. A no makes every caller hear `peers` by default.
+  is then heard by a Claude caller only when it asks for `peers` (another app's caller hears it as
+  `agents`), and pr-state already reads such an unrecorded post as an agent's answer. That
+  includes the root: its catch-all does not hear your Claude-app issue comments unless its wait
+  adds `peers`. Your review-thread posts through the app carry no app key, so they still wake the
+  root. A Claude agent that must hear Claude-app posts asks for `peers`. Recommended: yes. A no
+  makes every caller hear `peers` by default.
 - **12. Topic agents are sessions of their own, or live only while they have work.** A standing
   subagent that loops on a bounded wait inside the root's session re-reads its context at every
   deadline (Tradeoffs). Such loops wait until PR 12 measures their idle cost. Recommended: yes.
@@ -703,8 +704,9 @@ The judge's must-fix list and review rounds 1 and 2 are in `REVIEW-LOG.md`.
   page and hide a pull request for one poll: it reads as having left the open list, then as
   opened. The bash watcher pages the same way. A second look before `gone` is deferred to PR 6.
 - `peers` is off by default (question 11), so a post you make through the Claude app on an issue
-  comment is heard only by a caller that asks for `peers`. GitHub names only the app, so `peers`
-  holds your Claude-app posts and every other Claude session's alike. A class that hears `peers`
+  comment is heard by a Claude caller only when it asks for `peers` (another app's caller hears it
+  as `agents`). GitHub names only the app, so for a Claude caller `peers` holds your Claude-app
+  posts and every other Claude session's alike. A class that hears `peers`
   records its own issue-comment ids.
 - An agent that posts issue comments with your token and no app (a local CLI, for example) reads as
   your typed words and wakes every caller that hears `words`, itself included. The other way would
@@ -838,8 +840,9 @@ checks it:
   merges, a newer asset fails closed to the bash watcher or the bounded `gh` loop, and after
   PR 15 to the loop alone (question 13).
   PR 11 is done only after one real run on Claude cloud.
-- **A host's slug.** An agent post that names no app reads as your typed words. `build --fetch`
-  checks the slug, and a host without one posts no issue comment.
+- **A host's slug.** An agent post that names no app reads as your typed words. The caller checks
+  its own slug (the slug row), since `build --fetch` prints `unchecked` for it, and a host without
+  one posts no issue comment.
 
 ## Next implementation step
 
