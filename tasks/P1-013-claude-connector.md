@@ -136,7 +136,7 @@ On a path the owner keeps, the same command never merges. A stop also prints wha
 
 ```
 $ .claude/scripts/land.sh 282
-land: #282 as read: updatable=true enforced=true rest=true base=current gate=success author=opus verdicts=2 botAt=3f1eba7 words=0
+land: #282 as read: updatable=true enforced=true rest=true base=current gate=success author=opus verdicts=2 botAt=3f1eba7 word=none
 land #282: stopped: noEntry
 ```
 
@@ -145,9 +145,10 @@ After the owner types `/land 3f1eba7…` it answers
 "nothing to do": the owner's word stands, the head is green on main's tip, and the merge is the
 land workflow's once A3 is on `main`, and the owner's by hand until then (#270, fix b).
 
-A caller does not poll `land.sh`: one call is 7 + 6N REST reads for N open pull requests. The
-root waits on its Monitor (the kitimark-mode skill, Watchers). A PR owner waits with its bounded
-loop on one cheap read, then calls once.
+A caller does not poll `land.sh`: one call is 7 + 6N REST reads for N open pull requests (6 + 6N
+until the fetch reads main's protection outside a workflow), and five more before a land record or
+a merge. The root waits on its Monitor (the kitimark-mode skill, Watchers). A PR owner waits with
+its bounded loop on one cheap read, then calls once.
 
 | Answer | Call again when the Monitor prints |
 |---|---|
@@ -206,7 +207,7 @@ owns, so it goes to a researcher, as a `ci:` line does.
 | `enter about` again, and the record this clone posted about that commit is in the read | `stopped: the land record in comment <id> is read and is no word` | 1 | nothing |
 | `merge head` | `merged <head>` | 0 | one rebase merge pinned to `head`, after the read again, then one read that it merged |
 | `merge head`, GitHub answers 405 or 409 | `waiting: GitHub refused the merge (<code>): <its message>` | 3 | the one merge call |
-| `enter` or `merge`, and the head or the conversation differs from the snapshot's reads | `waiting: #<pr> changed since the read` | 3 | nothing |
+| `enter` or `merge`, and the pull request, its conversation or the dashboard differs from the snapshot's reads | `waiting: #<pr> changed since the read` | 3 | nothing |
 | `present head` | `stopped: present <head>, the merge is not this caller's` | 1 | nothing |
 | `wait ahead` | `waiting: #<ahead> lands first` | 3 | nothing |
 | `awaitPush head` | `waiting: the replay of <head> onto main` | 3 | nothing |
@@ -707,6 +708,89 @@ land_snapshot() {
 The fetch script, the snapshot command and the dashboard number all come from main's checkout,
 not the caller's tree, so a pull request that edits them does not judge itself.
 
+### PR 3, as built (on `main` at 00fae4d)
+
+The re-checks of `revisit_when` came first, against `main` at 00fae4d. None changes the contract.
+- **The decision.** `.step` has the seven kinds and the fields the sketch reads. Since A1 the
+  decision also has `word`, the tool's "why an owner word does not stand": `none`, `held`,
+  `unnamed`, `spoke`, `stale` or `stands`.
+- **The snapshot's fields** for one pull request keep their names. `author.model` may be `null`.
+- **The fetch outside a workflow.** `gate/snapshot-fetch.sh` takes main's protection only from
+  the artifact of the run that `GITHUB_RUN_ID` names. A session has no run, so the read of
+  protection fails and the snapshot holds every pull request. That is the state the contract
+  below names (Contract only: main's protection outside a workflow), and the branch it asks for
+  is not on `main`. `held` is one of `land.sh`'s answers, so the script is the same either way.
+- **The delegate.** `Speech.delegates` is `[]`, because PR 2 has not merged. The case
+  `the-caller-is-the-delegate` reads the list from the tree. It passes on an empty list and says
+  so. On any other list it asks for exactly the caller `land.sh` names. So it holds before PR 2
+  merges and binds after.
+
+The sketches went in as written, with these differences.
+- **The read line ends `word=<the tool's word>`**, where the sketch counted `words=<n>`. The line
+  itself stays. `revisit_when` asked to replace `as_read` by the tool's word, but that word
+  explains only an owner's `/land`. For `notEligible` the tool names no clause that is lacking,
+  so the fields are all a caller has (#591, item 1).
+- **The read again compares more (#290, item 2).** Before a write it reads five routes again: the
+  pull request, its three conversation lists and the dashboard issue. It compares the pull
+  request's state, draft flag, head, head and base repository, base branch, labels and body. It
+  compares each comment's and review's id, time, state and body, and the dashboard's title,
+  state, author and body. So a label taken off or a verdict edited after the snapshot stops the
+  write. The sketch compared the head, and each id with its time. The view is `land.sh`'s own,
+  not `.github/scripts/land-digest.sh` (#591, item 3).
+- **A failed read again is an error**, `land: cannot read #<pr> again`, exit 2. The sketch
+  answered `waiting: #<pr> changed since the read`. That tells the caller to call again at once,
+  and it names a change nobody saw.
+- **Deadlines (#290, item 3).** `land_snapshot` gives the fetch and the snapshot 240 s each
+  (`LAND_SNAPSHOT_WAIT`, so a test can shorten it) and says `timed out`. `land.sh` gives
+  `mitos-gate land` 120 s.
+- **`land_snapshot` takes an absolute folder (#290, s1)** and refuses any other, because it runs
+  the snapshot from main's checkout.
+- **No stray line on the first `enter` (#290, s2).** `land.sh` reads the record file only when it
+  exists. The form #290 proposed, `{ read -r was id; } <"$posted" 2>/dev/null`, still prints
+  "No such file or directory" (run here).
+- **`held` prints only the lines that name this pull request or none**, at most 20. The sketch
+  printed the first 20 lines, whichever pull request they named.
+- **The status of a refused merge** is the last `(HTTP nnn)` that ends a line of `gh`'s standard
+  error, as `.github/scripts/land-apply.sh` reads it. The sketch took any `HTTP nnn` in that
+  text.
+- **Every commit a step names is 40 hex digits**, for `present`, `awaitPush` and `awaitGate` too,
+  or the call is an error. A run with no attempt number is not re-run.
+- **The call count.** One call is 6 + 6N reads on `main` today, not 7 + 6N, because the fetch
+  makes no protection call outside a workflow. A call that posts the record or merges reads five
+  routes more first.
+- **The mutants are a mode of the test**, `land.test.sh --mutants`: 55 edits of `land.sh` and
+  `lib/land-snapshot.sh`, four at a time. The run fails when an edit changes nothing, or when a
+  copy passes every case.
+- **`holds-no-rule` allows one more read of the decision**, `.word`, for the read line. It still
+  refuses a kept path, a label, a verdict or a model name in `land.sh`.
+- **Sizes.** The three files are 29, 246 and 682 lines, where the design counted 14, 197 and
+  320. Each file keeps the one topic the design gave it.
+
+Run here on 28 Nov, with the real `mitos-gate land` and `speech` of 00fae4d. `land.test.sh` passes
+428 checks over 97 runs of `land.sh`, in 33 s. All 55 mutants fail a check (539 s, beside a Lean
+build). shellcheck 0.11.0 `-x` is clean on the four scripts.
+
+Real runs, reads only, through a `gh` wrapper that refuses a write, with main's tool built by
+`main_tool ensure` (846 s for the first call, beside other builds):
+- #583, #588, #589 and #590, the four open pull requests, each answer `stopped: held`, in 30
+  calls and 12 to 13 s. While only #583 and #588 were open, each took 18 calls and 7 to 8 s. Each
+  prints `land: snapshot-fetch: the read of protection failed`.
+- #310 answers `merged 7429df6` and #465 answers `stopped: closed`, each in one call.
+- #192, an issue, is `land: cannot read #192`, exit 2, in one call.
+- With a stand-in for main's tool whose snapshot makes `land` answer `enter`, `merge` and
+  `awaitGate` on #583, the five real reads again found nothing changed, and the wrapper refused
+  the record and the merge. A cancelled gate found the real run of the newest `gate` check, read
+  it, and did not re-run it, because it was not over. This shows the reads before a write. It
+  shows nothing about who may land.
+
+Left to later.
+- **The real landing.** It needs PR 2's delegate and the protection branch of the contract below.
+  Until both are on `main`, `land.sh` answers `held` on every open pull request (#591, item 2).
+  The three writes are proved against the stub, and against GitHub only up to the refused call.
+- **#591** holds the other minor findings: the read line, the two views of "the conversation
+  changed", the list `gh-api-rest.test.sh` scans, the lock and record files that stay in the git
+  directory, and that CI runs none of these tests before P1-014.
+
 ### The wake rules (PR 4)
 
 The design's connector table gives Claude Code's `wake` as "two rules in `watch-github.sh`". In
@@ -1040,10 +1124,11 @@ types: shell, no new Lean type.
   - Both leave a shared lock on `<checkout>.lock` held until the calling process exits. A build
     takes it exclusively, for up to 30 minutes of waiting.
 - `lib/land-snapshot.sh`: `land_snapshot <owner/name> <dir> <tool-dir> <tool-bin>`, after
-  `main_tool`, with what `main_tool_dir` and `main_tool_bin` printed. It writes `<dir>/reads/`,
-  `<dir>/snapshot.json`, `<dir>/fetch.err` and `<dir>/snapshot.err`, and returns 1 with the
-  reason as the last line on standard error. The dashboard issue is the one main's `land.yml`
-  names.
+  `main_tool`, with what `main_tool_dir` and `main_tool_bin` printed. `<dir>` is an absolute
+  path. It writes `<dir>/reads/`, `<dir>/snapshot.json`, `<dir>/fetch.err` and
+  `<dir>/snapshot.err`, and returns 1 with the reason as the last line on standard error. The
+  fetch and the snapshot each get `LAND_SNAPSHOT_WAIT` seconds, 240 unless it is set. The
+  dashboard issue is the one main's `land.yml` names.
 - `lib/wake.sh`: `wake_filter <state-dir> <poll-dir> <owner/name>`, called by `watch-github.sh` as
   `wake_filter "$dir" "$w" "$repo"`. It rewrites `<poll-dir>/lines` (`<tier>\t<line>`). It calls
   `watch-github.sh`'s `api`, `say` and `drop_lock_fd`. `api <file>` writes `$w/<file>`, so the
