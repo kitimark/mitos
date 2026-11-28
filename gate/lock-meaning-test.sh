@@ -82,7 +82,7 @@ bad() {
 
 run_lock_and_text "$tmp/base.canon" "$tmp/base.text" || exit 1
 
-python3 - <<'PY'
+python3 - <<'PY' || exit 1
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
 text = p.read_text()
@@ -118,7 +118,7 @@ if rebuild "macro_rules"; then
 fi
 restore_sources
 
-python3 - <<'PY'
+python3 - <<'PY' || exit 1
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
 old = "    ∀ {a b : Located}, a ∈ fs → b ∈ fs → a.id = b.id → a = b :=\n"
@@ -143,7 +143,7 @@ if rebuild "renamed binder"; then
 fi
 restore_sources
 
-python3 - <<'PY'
+python3 - <<'PY' || exit 1
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
 text = p.read_text()
@@ -156,7 +156,7 @@ PY
 
 if rebuild "universe probe"; then
   if run_lock_and_text "$tmp/univ-u.canon" "$tmp/univ-u.text"; then
-  python3 - <<'PY'
+  python3 - <<'PY' || exit 1
 from pathlib import Path
 p = Path("core/Mitos/Core/Graph.lean")
 p.write_text(p.read_text().replace("def canonProbe.{u} : Type u := Sort u",
@@ -229,7 +229,7 @@ if rebuild "isAI arm"; then
 fi
 restore_sources
 
-python3 - <<'PY'
+python3 - <<'PY' || exit 1
 from pathlib import Path
 p = Path("core/Mitos/Core/Lines.lean")
 text = p.read_text()
@@ -305,7 +305,7 @@ if rebuild "eq_of_id"; then
 fi
 restore_sources
 
-python3 - <<'PY'
+python3 - <<'PY' || exit 1
 from pathlib import Path
 g = Path("core/Mitos/Core/Graph.lean")
 gtext = g.read_text()
@@ -336,7 +336,7 @@ if rebuild "hidden axiom and congr_eq"; then
 fi
 restore_sources
 
-python3 - <<'PY'
+python3 - <<'PY' || exit 1
 from pathlib import Path
 g = Path("core/Mitos/Core/Graph.lean")
 gtext = g.read_text()
@@ -371,7 +371,7 @@ if rebuild "private and internal axioms and lookalikes"; then
 fi
 restore_sources
 
-python3 - <<'PY'
+python3 - <<'PY' || exit 1
 from pathlib import Path
 g = Path("core/Mitos/Core/Graph.lean")
 gtext = g.read_text()
