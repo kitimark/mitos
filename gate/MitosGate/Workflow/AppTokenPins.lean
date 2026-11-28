@@ -93,8 +93,9 @@ private def configured : Node := .text "steps.cfg.outputs.ok == 'true'"
 
 private def updaterRoot : Node := .map [
   ("name", .text "Keep PR branches up to date"),
-  ("on", .map [("push", .map [("branches", .seq [.text "main"])]),
-    ("workflow_dispatch", .text "")]),
+  ("on", .map [("workflow_dispatch", .map [("inputs", .map [("pr", .map [
+    ("description", .text "Number of the one pull request to rebase onto main"),
+    ("required", .text "true"), ("type", .text "string")])])])]),
   ("permissions", .map [("contents", .text "read")]),
   ("concurrency", .map [("group", .text "update-prs"), ("cancel-in-progress", .text "false")]),
   ("jobs", .map [("rebase", .map [("runs-on", .text "ubuntu-24.04"),
@@ -110,8 +111,9 @@ private def updaterRoot : Node := .map [
       .map [("uses", .text "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"),
         ("if", configured), ("with", .map [("fetch-depth", .text "0"),
           ("token", .text "${{ steps.app.outputs.token }}")])],
-      .map [("name", .text "Rebase open PRs onto main"), ("if", configured),
-        ("env", .map [("GH_TOKEN", .text "${{ steps.app.outputs.token }}")]),
+      .map [("name", .text "Rebase the named PR onto main"), ("if", configured),
+        ("env", .map [("GH_TOKEN", .text "${{ steps.app.outputs.token }}"),
+          ("PR_NUMBER", .text "${{ inputs.pr }}")]),
         ("run", .text ".github/scripts/rebase-prs.sh")]])])])]
 
 private def updaterAuthority (d : Doc) : Bool := same d.root updaterRoot
@@ -182,6 +184,21 @@ private def extraReferenceRefusal? (value : String) : Option String :=
   | .ok d => match check emptyFixture emptyFixture d [] with
     | .ok () => none
     | .error reason => some reason
+
+private def pushTriggerRefusal? : Option String :=
+  let push : String × Node := ("push", .map [("branches", .seq [.text "main"])])
+  let root := match updaterRoot with
+    | .map entries => .map (entries.map fun (key, node) => match key, node with
+      | "on", .map triggers => (key, .map (push :: triggers))
+      | _, _ => (key, node))
+    | n => n
+  match Doc.ofNode root with
+  | .error _ => some "reader"
+  | .ok d => match check emptyFixture emptyFixture d [] with
+    | .ok () => none
+    | .error reason => some reason
+
+example : pushTriggerRefusal? = some "mint.updater" := by decide +kernel
 
 example : extraReferenceRefusal? "${{ steps['app']['outputs']['token'] }}" =
     some "mint.updater" := by decide +kernel

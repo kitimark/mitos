@@ -222,9 +222,17 @@ with tempfile.TemporaryDirectory(prefix='workflow-pins-') as scratch:
             ('config-run', lambda s, v=ref: change(s, '          if [ -z "$APP_ID" ]', '          echo ' + v + '\n          if [ -z "$APP_ID" ]')),
             ('mint-input', lambda s, v=ref: change(s, '          app-id: ${{ vars.PR_UPDATER_APP_ID }}', '          app-id: ' + v)),
             ('checkout-input', lambda s, v=ref: change(s, '          fetch-depth: 0', '          fetch-depth: ' + v)),
-            ('rebase-env', lambda s, v=ref: change(s, '          GH_TOKEN:', '          EXTRA: ' + v + '\n          GH_TOKEN:'))]
+            ('rebase-env', lambda s, v=ref: change(s, '          GH_TOKEN:', '          EXTRA: ' + v + '\n          GH_TOKEN:')),
+            ('rebase-pr-env', lambda s, v=ref: change(s, '          PR_NUMBER: ${{ inputs.pr }}', '          PR_NUMBER: ' + v)),
+            ('dispatch-input', lambda s, v=ref: change(s, '        type: string', '        default: ' + v + '\n        type: string'))]
         for site, mutate in mutations:
             case('updater-' + site + '-' + name, 'update-prs.yml', mutate, 'mint.updater')
+    case('updater-push-trigger', 'update-prs.yml', lambda s: change(s,
+         'on:\n  workflow_dispatch:', 'on:\n  push:\n    branches: [main]\n  workflow_dispatch:'), 'mint.updater')
+    case('updater-dispatch-without-input', 'update-prs.yml', lambda s: change(s,
+         '        required: true', '        required: false'), 'mint.updater')
+    case('updater-input-in-run', 'update-prs.yml', lambda s: change(s,
+         '        run: .github/scripts/rebase-prs.sh', '        run: .github/scripts/rebase-prs.sh ${{ inputs.pr }}'), 'mint.updater')
     case('updater-config-changed', 'update-prs.yml', lambda s: change(s,
          'echo "ok=true"', 'echo "ok=false"'), 'mint.updater')
     case('safe-updater-map-order', 'update-prs.yml', lambda s: change(s,

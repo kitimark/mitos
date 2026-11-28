@@ -199,10 +199,18 @@ branch. The **poteto-mode** skill's "Fresh subagents by default" names the same 
 1. Branch from the latest `main`. Give each PR one concern: one task, or a few tightly coupled
    ones. A fix the task does not need goes in its own PR. So does a security fix found while
    reviewing a feature, when it does not depend on the feature's code. Keep the branch current by
-   rebasing onto `main`, not by merging `main` in. `.github/workflows/update-prs.yml` sets a
-   `needs-rebase` label when an automatic rebase conflicts. A PR with that label gets a PR owner,
-   who rebases, resolves, reruns the checks and force-pushes with a lease. A PR in a GitHub stack
-   never gets that label, and it is rebased only with its whole stack (see **Stacks**).
+   rebasing onto `main`, not by merging `main` in. A move of `main` rebases no PR (#596).
+   `.github/workflows/update-prs.yml` rebases one PR per run, when an agent asks for it with
+   `gh api -X POST repos/{owner}/{repo}/actions/workflows/update-prs.yml/dispatches -f ref=main
+   -f 'inputs[pr]=<n>'`. Ask only for the PR that lands next, in this order: the dispatch, a green
+   `gate` at the new head, then the merge (for a PR the user keeps, their `/land`). A verdict
+   carries over the updater's push (see Verdicts), and not over an agent's own rebase. Ask for one
+   PR at a time, because the workflow keeps one waiting run and a later request cancels it. The run
+   fails and says why when it does not leave the PR current. It refuses a draft, a fork, a PR in a
+   stack or on another base, and the `no-auto-rebase` label. It sets a `needs-rebase` label when
+   the rebase conflicts. A PR with that label gets a PR owner, who rebases, resolves, reruns the
+   checks and force-pushes with a lease. A PR in a GitHub stack never gets that label, and it is
+   rebased only with its whole stack (see **Stacks**).
 2. Before pushing, run locally every check in the `docs/process.md` check matrix that the change
    can affect. For Lean work, that includes `cd core && lake check` and
    `lake comparator --paranoid`.
@@ -648,11 +656,12 @@ an agent lists go in its report to the root, not in a post. The routes are in **
   Never enable auto-merge, and never post a merge command. `pr-state.sh` shows a `merge-ready #N`
   line when the first three conditions hold. The hook gives no state line for a PR past the ten
   it lists, or for one from another account. The paths the user keeps decide who merges, so a PR
-  that touches them stops at merge-ready. Each merge moves `main`, and the updater rebases every
-  open PR, so a head that moved needs a new catch-up, as on #61 and #62. When that line changes
-  or goes away for a PR that waits on the user's merge, post a new catch-up. It names the
-  condition now unmet (a verdict that covers the new head, a green `gate`, an answered comment)
-  and says to hold the merge until that condition is met.
+  that touches them stops at merge-ready. Each merge moves `main`. A PR behind `main` cannot
+  merge, and the updater's rebase, which an agent asks for (PR owners carry their PR, step 1),
+  gives it a new head, so a head that moved needs a new catch-up, as on #61 and #62. When that
+  line changes or goes away for a PR that waits on the user's merge, post a new catch-up. It
+  names the condition now unmet (a verdict that covers the new head, a green `gate`, an answered
+  comment) and says to hold the merge until that condition is met.
 - The user may merge before a verdict. The verifier then still runs, on the merged head. Its
   verdict goes in the PR's merged line, in a comment on the PR, such as #44 merged 09:30 UTC,
   then PASS opus-xhigh at 04fcb83; follow-ups #47. A FAIL also becomes a `follow-up` issue and a
