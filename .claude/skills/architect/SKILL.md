@@ -81,3 +81,5 @@ When you scrap:
 The caller's usage is written first and the type sketch derived from it. One file with new types and signatures for small changes. Module map plus type definitions for larger work. For a plan row, the module map is the Design block's `modules:` field (`tasks/TEMPLATE.md`). The rationale ships alongside, shaped per `references/rationale-template.md`, including the usage sketch and the synthesis decision.
 
 For a plan row, the package lands in the row's task file or issue body, not in a scratchpad file, and later changes amend it there (the **kitimark-mode** skill, Plan-time designs).
+
+Under the **kitimark-mode** skill, each open question the rationale leaves for the human names the bullet of that skill's What stays with the user section that keeps it. A question that no bullet keeps becomes a default, and the synthesis decision records it with its reason.

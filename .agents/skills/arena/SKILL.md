@@ -21,7 +21,7 @@ Every candidate gets the same prompt, so the prompt is the contract.
 
 spawn a subagent with your host's tool (Codex `spawn_agent`, Antigravity `invoke_subagent`, Cursor `Task`, Claude Code `Agent`); if none, run the steps one at a time.
 
-Spawn all N subagents in one turn, each in its own worktree when the candidate writes into the repository, each with the task, the path to the shared grounding, its own output path, and instructions to produce the artifact and a short rationale naming the alternatives it considered and what it rejected. Inherit the parent model, or the host's default. An isolated worktree starts from the default branch, not your `HEAD`, so give each candidate the commit to start from and tell it to check that commit out first, then copy in any uncommitted changes it needs.
+Spawn all N subagents in one turn, each in its own worktree when the candidate writes into the repository, each with the task, the path to the shared grounding, its own output path, and instructions to produce the artifact and a short rationale naming the alternatives it considered and what it rejected. The prompt carries the task and the grounding, never the rubric (Phase A, step 2). Inherit the parent model, or the host's default. An isolated worktree starts from the default branch, not your `HEAD`, so give each candidate the commit to start from and tell it to check that commit out first, then copy in any uncommitted changes it needs.
 
 If a candidate produces no output, proceed with N-1 and note the dropout.
 

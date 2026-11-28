@@ -45,13 +45,13 @@ Move any Accepted item that a lint rule, script, metadata flag, or runtime check
 
 ## 5. Apply
 
-Present the synthesizer's full Accepted / Rejected / Backlog output and wait for explicit approval before applying any Accepted edit. The user picks the subset and may redirect routings. Skill changes affect every future agent in the org. Do not auto-apply.
+Present the synthesizer's full Accepted / Rejected / Backlog output and wait for explicit approval before applying any Accepted edit. The user picks the subset and may redirect routings. Skill changes affect every future agent in the org. Do not auto-apply. Under the **kitimark-mode** skill, the user's review and merge of the rules PR is that approval. So the parent hands every Accepted row to one PR owner without row-by-row approval first, and the user strikes a row they reject in review.
 
-File each Backlog item to your team's devex or backlog tracker without waiting. Under the **kitimark-mode** skill, each Backlog item the user approves becomes an issue in this repository labelled `process`, naming its target path, the cause it fixes and its owner (the PR owner who builds it, or the user for a path only they change). The parent files them right after approval and links them in the reply. Only the Accepted list and, under kitimark-mode, the Backlog wait for approval.
+File each Backlog item to your team's devex or backlog tracker without waiting. Under the **kitimark-mode** skill, each Backlog item the user approves becomes an issue in this repository labelled `process`, naming its target path, the cause it fixes and its owner (the PR owner who builds it, or the user for a path only they change). The parent files them right after approval and links them in the reply. Outside kitimark-mode, only the Accepted list waits for approval. Under it, only the Backlog does.
 
-Never edit a skill under `~/.claude/plugins/`. Before approval, show its destination, `.claude/skills/<skill>/` or `~/.claude/skills/<skill>/`. After approval, copy the skill folder there and edit the copy. Never open a PR or push, unless the **kitimark-mode** skill applies. There the skills are this repository's files, so the parent hands the approved rows to a PR owner, which makes the edits below on a branch and opens a PR for the user to merge.
+Never edit a skill under `~/.claude/plugins/`. Before approval, show its destination, `.claude/skills/<skill>/` or `~/.claude/skills/<skill>/`. After approval, copy the skill folder there and edit the copy. Never open a PR or push, unless the **kitimark-mode** skill applies. There the skills are this repository's files, so the parent hands the Accepted rows to a PR owner, which makes the edits below on a branch and opens a PR for the user to merge.
 
-Follow each approved row's Routing exactly:
+When you apply a row, follow its Routing exactly:
 
 - Trivial existing-skill edit (a one-line bullet, a tightened sentence, a stale fact corrected): the parent does it directly. Under the **kitimark-mode** skill the PR owner above does it.
 - Substantive existing-skill edit (a new section, a new pattern table, more than ~10 lines): hand to the `skill-creator` skill and run its draft / test / iterate loop.
