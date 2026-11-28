@@ -25,7 +25,6 @@ def main (args : List String) : IO UInt32 := do
     { Snapshot.Fixture.g with
       repo := "kitimark/mitos"
       owner := "kitimark"
-      verdictCells := some []
       provenance := some [f] }
   let p : Snapshot.Pull :=
     { Snapshot.Fixture.pull with

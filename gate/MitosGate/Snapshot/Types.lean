@@ -16,7 +16,7 @@ structure Global where
   owner : String
   protection : Option Protection
   stacked : Option (List Nat)
-  verdictCells : Option (List (Pr × List Char))
+  issueRead : Bool
   provenance : Option (List Provenance.PullFact) := none
 
 structure Pull where

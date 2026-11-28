@@ -86,7 +86,7 @@ publish() {
   jq -n --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/source.block")" \
     '{title: "Provenance record", user: {login: "owner"}, state: "open", body: $body}'
 }
-publish >"$b/dashboard.json"
+publish >"$b/provenance-issue.json"
 per_pr() {
   local n=$1 h=$2 file=$3
   jq -n --argjson id "${n}001" \
@@ -180,7 +180,7 @@ for r in comments review-comments reviews files checks activity; do
   [ "$r" != reviews ] || unread='review-comments, reviews'
   holds "a failed read of $r holds the pull request" "^snapshot: #7 holds: unread $unread\$"
 done
-for r in protection stacks dashboard; do
+for r in protection stacks provenance-issue; do
   fresh
   rm "$d/$r.json"
   holds "a failed read of $r holds every pull request" "^snapshot: #9 holds: unread $r(, provenance)?\$"
@@ -204,59 +204,36 @@ fresh
 jq '.[0][0].before = "HEAD"' "$b/activity-7.json" >"$d/activity-7.json"
 holds "activity with a commit that is not a sha holds" "#7 holds: unread activity$"
 fresh
-jq '.user.login = "someone"' "$b/dashboard.json" >"$d/dashboard.json"
-holds "a dashboard from another login holds every pull request" "#7 holds: unread dashboard(, provenance)?$"
+jq '.user.login = "someone"' "$b/provenance-issue.json" >"$d/provenance-issue.json"
+holds "a provenance issue from another login holds every pull request" "#7 holds: unread provenance-issue, provenance$"
 fresh
-jq '.pull_request = {}' "$b/dashboard.json" >"$d/dashboard.json"
-holds "a pull request titled Provenance record is not the provenance issue" "#7 holds: unread dashboard(, provenance)?$"
+jq '.pull_request = {}' "$b/provenance-issue.json" >"$d/provenance-issue.json"
+holds "a pull request titled Provenance record is not the provenance issue" "#7 holds: unread provenance-issue, provenance$"
 fresh
-jq '.title = "Owner dashboard"' "$b/dashboard.json" >"$d/dashboard.json"
-holds "an issue with the old title Owner dashboard holds every pull request" "#7 holds: unread dashboard(, provenance)?$"
+jq '.title = "Owner dashboard"' "$b/provenance-issue.json" >"$d/provenance-issue.json"
+holds "an issue with the old title Owner dashboard holds every pull request" "#7 holds: unread provenance-issue, provenance$"
 record_body() {
   # shellcheck disable=SC2016
   printf 'Machine data.\n\n## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n\n%s%s\n' \
     "$1" "$(cat "$tmp/source.block")"
 }
 fresh
-jq --arg body "$(record_body $'## Record\n\n')" '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
-if snap && [ ! -s "$tmp/snap.err" ]; then
-  ok "an empty In flight table closed by a heading above the section leaves nothing unread"
-else
-  bad "an empty In flight table closed by a heading above the section leaves nothing unread" "$(cat "$tmp/snap.err")"
-fi
-fresh
-jq --arg body "$(record_body '')" '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
-holds "an In flight table that runs into the section holds every pull request" "#7 holds: unread dashboard$"
-fresh
-jq --arg body "$(dash_body "$(row 7 "$p1")")" '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
-holds "two rows for one pull request hold every pull request" "#7 holds: unread dashboard(, provenance)?$"
-fresh
-echo '[[]]' >"$d/comments-9.json"
-# shellcheck disable=SC2016
-jq --arg body "$(dash_body "$(printf '#7 y | `%s` | red | FAIL opus-xhigh at `%s` |' "${p1:0:7}" "${p1:0:7}")")" \
-  '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
-holds "a FAIL row without the leading pipe holds every pull request" "#7 holds: unread dashboard(, provenance)?$"
-if snap && decide "$me7" && [ "$(jq -c .plan "$tmp/land.out")" = '{"kind":"idle"}' ]; then
-  ok "a FAIL row without the leading pipe pushes nothing"
-else
-  bad "a FAIL row without the leading pipe pushes nothing" "$(cat "$tmp/land.out" "$tmp/land.err")"
-fi
-# shellcheck disable=SC2016
-fail7=$(printf '| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n| #7 y | `%s` | red | FAIL opus-xhigh at `%s` |' "${p1:0:7}" "${p1:0:7}")
-# shellcheck disable=SC2016
-for hide in 'an HTML comment:<!--:-->' 'a code fence:```:```'; do
-  IFS=: read -r what open close <<<"$hide"
+snap && cp "$tmp/snap.json" "$tmp/base-snap.json"
+only_the_section_is_read() {
+  local name=$1 issue_body=$2
   fresh
-  echo '[[]]' >"$d/comments-9.json"
-  jq --arg body "$(dash_body "$(printf '\n%s\n## old\n%s\n\n%s' "$open" "$close" "$fail7")")" \
-    '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
-  holds "a heading in $what above a FAIL table holds every pull request" "#7 holds: unread dashboard(, provenance)?$"
-  if snap && decide "$me7" && [ "$(jq -c .plan "$tmp/land.out")" = '{"kind":"idle"}' ]; then
-    ok "a heading in $what above a FAIL table pushes nothing"
-  else
-    bad "a heading in $what above a FAIL table pushes nothing" "$(cat "$tmp/land.out" "$tmp/land.err")"
-  fi
-done
+  jq --arg body "$issue_body" '.body = $body' "$b/provenance-issue.json" >"$d/provenance-issue.json"
+  if snap && [ ! -s "$tmp/snap.err" ] && cmp -s "$tmp/snap.json" "$tmp/base-snap.json"; then ok "$name"
+  else bad "$name" "$(cat "$tmp/snap.err")"; fi
+}
+only_the_section_is_read "the section alone, with no table and no heading, is the whole record" \
+  "$(cat "$tmp/source.block")"
+only_the_section_is_read "an empty In flight table closed by a heading above the section changes nothing" \
+  "$(record_body $'## Record\n\n')"
+only_the_section_is_read "an In flight table that runs into the section changes nothing" "$(record_body '')"
+# shellcheck disable=SC2016
+only_the_section_is_read "two rows for one pull request, a FAIL row without its pipe and a heading in a comment change nothing" \
+  "$(dash_body "$(row 7 "$p1"; printf '#7 y | `%s` | red | FAIL opus-xhigh at `%s` |\n\n<!--\n## old\n-->' "${p1:0:7}" "${p1:0:7}")")$(printf '\n\n'; cat "$tmp/source.block")"
 fresh
 jq '.enforce_admins.enabled = false' "$b/protection.json" >"$d/protection.json"
 expect_land "protection that lets admins bypass lands nothing" "$me7" \
@@ -273,7 +250,7 @@ fresh
 jq -cS '.pulls[].author.actualModel = "claude-opus-4-6"' "$tmp/source.json" >"$tmp/same-model.json"
 "$bin" provenance render owner/mitos "$tmp/same-model.json" >"$tmp/same-model.block"
 jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/same-model.block")" '.body = $body' \
-  "$b/dashboard.json" >"$d/dashboard.json"
+  "$b/provenance-issue.json" >"$d/provenance-issue.json"
 expect_land "a pass on the author's model covers nothing" "$me7" \
   '{"next":null,"plan":{"kind":"idle"},"step":{"kind":"stop","why":"notEligible"},"word":"stands"}'
 
@@ -282,7 +259,7 @@ prepare_native_hook() {
   rm -rf "$tmp/native-hook"
   mkdir -p "$tmp/native-hook"
   jq '.[0]' "$d/open.json" >"$tmp/native-hook/open.json"
-  cp "$d/dashboard.json" "$tmp/native-hook/dash.json"
+  cp "$d/provenance-issue.json" "$tmp/native-hook/dash.json"
   for n in 7 8 9; do
     if [ -e "$d/files-$n.json" ]; then
       jq '.[0]' "$d/files-$n.json" >"$tmp/native-hook/files-$n.json"
@@ -294,7 +271,7 @@ prepare_native_hook() {
 refused_dashboard() {
   local name=$1 filter=$2 status=0
   fresh
-  jq "$filter" "$b/dashboard.json" >"$d/dashboard.json"
+  jq "$filter" "$b/provenance-issue.json" >"$d/provenance-issue.json"
   prepare_native_hook
   (cd "$repo" && "$bin" provenance hook "$tmp/native-hook" owner/mitos owner "$m2") \
     >"$tmp/admission.json" 2>"$tmp/admission.err" || status=$?
@@ -334,7 +311,7 @@ source_case() {
     bad "$name" "renderer refused"; return
   fi
   jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/mutated.block")" '.body = $body' \
-    "$b/dashboard.json" >"$d/dashboard.json"
+    "$b/provenance-issue.json" >"$d/provenance-issue.json"
   if [ "$mode" = critical ]; then
     echo '[[{"filename":"gate/Main.lean"}]]' >"$d/files-7.json"
   else
@@ -352,7 +329,7 @@ source_case() {
     jq --arg dash "$(dash_body)" --rawfile raw "$tmp/mutated.json" \
       '.body = $dash + "\n\n<!-- mitos-provenance:v1 -->\n\u0060\u0060\u0060json\n" +
         ($raw | rtrimstr("\n")) + "\n\u0060\u0060\u0060\n<!-- /mitos-provenance:v1 -->"' \
-      "$b/dashboard.json" >"$d/dashboard.json"
+      "$b/provenance-issue.json" >"$d/provenance-issue.json"
     if snap && cmp -s "$tmp/snap.json" "$tmp/v2-snap.json" && native_hook_matches "$wanted" &&
         cmp -s "$tmp/candidates.json" "$tmp/v2-candidates.json" &&
         cmp -s "$tmp/admission.json" "$tmp/v2-admission.json"; then
@@ -457,7 +434,7 @@ sonnet_files_case() {
     .pulls[0].verdicts[0].actualModel = "claude-sonnet-5-5"' "$tmp/source.json" >"$tmp/mutated.json"
   "$bin" provenance render owner/mitos "$tmp/mutated.json" >"$tmp/mutated.block" || { bad "$name" "renderer refused"; return; }
   jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/mutated.block")" '.body = $body' \
-    "$b/dashboard.json" >"$d/dashboard.json"
+    "$b/provenance-issue.json" >"$d/provenance-issue.json"
   if [ "$files" = unread ]; then rm "$d/files-7.json"
   else printf '%s\n' "$files" >"$d/files-7.json"; fi
   if snap && jq -e --argjson expected "$snapshot_expected" '.prs[0].rest == $expected' "$tmp/snap.json" >/dev/null &&
@@ -494,7 +471,7 @@ refused_source() {
   fresh
   # shellcheck disable=SC2016
   jq --arg body "$(dash_body)$(printf '\n\n<!-- mitos-provenance:v1 -->\n```json\n%s\n```\n<!-- /mitos-provenance:v1 -->' "$raw")" \
-    '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
+    '.body = $body' "$b/provenance-issue.json" >"$d/provenance-issue.json"
   if ! snap || ! jq -e '.prs[0] | (.author == null) and .verdicts == [] and (.rest | not) and all(.words[]; .kind != "ownerHold")' \
       "$tmp/snap.json" >/dev/null; then bad "$name" "$(cat "$tmp/snap.err")"; return; fi
   if [ "$native" = native ]; then
@@ -531,12 +508,12 @@ refused_source "one real actor cannot self-certify by changing provider" \
 
 
 fresh
-jq --arg body "$(dash_body)" '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
+jq --arg body "$(dash_body)" '.body = $body' "$b/provenance-issue.json" >"$d/provenance-issue.json"
 if snap && jq -e 'all(.prs[]; .author == null and .verdicts == [] and (.rest | not))' "$tmp/snap.json" >/dev/null; then
   ok "favorable human prose never substitutes for missing provenance"
 else bad "favorable human prose never substitutes for missing provenance"; fi
 fresh
-jq --arg extra "$(cat "$tmp/source.block")" '.body += "\n\n" + $extra' "$b/dashboard.json" >"$d/dashboard.json"
+jq --arg extra "$(cat "$tmp/source.block")" '.body += "\n\n" + $extra' "$b/provenance-issue.json" >"$d/provenance-issue.json"
 if snap && jq -e 'all(.prs[]; .author == null and .verdicts == [] and (.rest | not))' "$tmp/snap.json" >/dev/null; then
   ok "duplicate machine sections refuse"
 else bad "duplicate machine sections refuse"; fi
@@ -601,7 +578,7 @@ if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH=
     jq -e '.v == 1 and .outcome.kind == "decided" and
       .outcome.snapshot.prs[0].author.who.provider == "openai" and
       .outcome.snapshot.prs[0].author.model == "gpt-6.2-astra"' "$tmp/record/record.json" >/dev/null &&
-    cmp -s "$d/dashboard.json" "$tmp/record/reads/dashboard.json"; then
+    cmp -s "$d/provenance-issue.json" "$tmp/record/reads/provenance-issue.json"; then
   ok "actual raw snapshot and canonical v1 record round trip preserves identities and source bytes"
 else bad "actual raw snapshot and canonical v1 record round trip preserves identities and source bytes" \
   "$(cat "$tmp/record.err")"; fi
@@ -619,7 +596,7 @@ if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH=
     jq -e '.v == 1 and .outcome.kind == "decided" and
       (.outcome.snapshot.prs[0].author | .who == {provider:"openai",name:"builder"} and
         has("model") and .model == null)' "$tmp/null-record/record.json" >/dev/null &&
-    cmp -s "$d/dashboard.json" "$tmp/null-record/reads/dashboard.json" &&
+    cmp -s "$d/provenance-issue.json" "$tmp/null-record/reads/provenance-issue.json" &&
     jq -c '.outcome.snapshot.prs[0].verdicts' "$tmp/null-record/record.json" >"$tmp/null-record-events" &&
     jq -c '.prs[0].verdicts' "$tmp/snap.json" >"$tmp/null-snapshot-events" &&
     cmp -s "$tmp/null-record-events" "$tmp/null-snapshot-events"; then
@@ -637,7 +614,7 @@ if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH=
     cmp -s "$tmp/low-replayed" "$tmp/low-record/decision.json" &&
     jq -e '.outcome.snapshot.prs[0] | .verdicts[0].result == "pass" and (.rest | not) and
       all(.words[]; .kind != "ownerHold")' "$tmp/low-record/record.json" >/dev/null &&
-    cmp -s "$d/dashboard.json" "$tmp/low-record/reads/dashboard.json"; then
+    cmp -s "$d/provenance-issue.json" "$tmp/low-record/reads/provenance-issue.json"; then
   ok "low actual effort survives raw-to-record round trip without inventing HOLD or owner speech"
 else bad "low actual effort survives raw-to-record round trip without inventing HOLD or owner speech" \
   "$(cat "$tmp/low-record.err")"; fi
@@ -655,13 +632,13 @@ source_case "opaque URL and unknown adverse facts survive both source versions" 
 for version in legacy v2; do
   if [ "$version" = v2 ]; then
     jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/mutated.block")" '.body = $body' \
-      "$b/dashboard.json" >"$d/dashboard.json"
+      "$b/provenance-issue.json" >"$d/provenance-issue.json"
   fi
   if (cd "$repo" && PATH="$tmp/record-bin:$PATH" MITOS_GATE="$bin" SNAPSHOT_FETCH="$tmp/record-fetch" \
         LAND_DIGEST_SCRIPT="$root/.github/scripts/land-digest.sh" \
         ROUNDTRIP_MAIN="$m2" ROUNDTRIP_READS="$d" bash "$root/.github/scripts/land-decide.sh" owner/mitos 43 "$tmp/$version-record") \
         >"$tmp/$version-record.out" 2>"$tmp/$version-record.err" &&
-      cmp -s "$d/dashboard.json" "$tmp/$version-record/reads/dashboard.json" &&
+      cmp -s "$d/provenance-issue.json" "$tmp/$version-record/reads/provenance-issue.json" &&
       jq -e '.v == 1 and .outcome.kind == "decided"' "$tmp/$version-record/record.json" >/dev/null; then
     jq -c '.outcome.snapshot' "$tmp/$version-record/record.json" >"$tmp/$version-record-snapshot.json"
     ok "$version source preserves raw dashboard and canonical record v1"
@@ -715,7 +692,7 @@ else bad "complete source evidence leaves the typed approval to apply" "$(cat "$
 jq -cS '.pulls[2].verdicts[0].effort = "low"' "$tmp/source.json" >"$tmp/low-answer-source.json"
 "$bin" provenance render owner/mitos "$tmp/low-answer-source.json" >"$tmp/low-answer-source.block"
 jq --arg block "$(cat "$tmp/low-answer-source.block")" --arg prose "$(dash_body)" \
-  '.body = ($prose + "\n\n" + $block)' "$b/dashboard.json" >"$d/dashboard.json"
+  '.body = ($prose + "\n\n" + $block)' "$b/provenance-issue.json" >"$d/provenance-issue.json"
 want_evidence_answer=$(printf '<!-- land-report -->\nStopped: an unanswered owner comment, a missing required label or footer, or unmet author or reviewer verification requirements.')
 if snap && jq -e '.prs[] | select(.pr == 9) | (.rest | not) and .author != null and
       .verdicts[0].result == "pass"' "$tmp/snap.json" >/dev/null &&
@@ -868,7 +845,7 @@ for bc_identity in claude openai; do
       .verdicts[0].actualModel="claude-opus-5-5" else . end)' >"$tmp/bc-source.json"
   "$bin" provenance render owner/mitos "$tmp/bc-source.json" >"$tmp/bc-source.block" || exit 1
   jq --arg body "$(dash_body)$(printf '\n\n'; cat "$tmp/bc-source.block")" \
-    '.body=$body' "$b/dashboard.json" >"$d/dashboard.json"
+    '.body=$body' "$b/provenance-issue.json" >"$d/provenance-issue.json"
   for bc_case in postless footer none; do
     cp "$b/reviews-9.json" "$d/reviews-9.json"
     echo '[[]]' >"$d/review-comments-9.json"
@@ -998,7 +975,7 @@ fetch() {
 rm -f "$tmp/gh.log"
 if fetch owner/mitos 43 "$tmp/f"; then
   have=$(find "$tmp/f" -mindepth 1 -printf '%f\n' | sort | paste -sd' ' -)
-  want="activity-7.json checks-7.json checks-8.json comments-8.json comments-9.json dashboard.json files-7.json files-8.json files-9.json main.json open.json repo.json review-comments-7.json review-comments-8.json review-comments-9.json reviews-7.json reviews-8.json reviews-9.json stacks.json"
+  want="activity-7.json checks-7.json checks-8.json comments-8.json comments-9.json provenance-issue.json files-7.json files-8.json files-9.json main.json open.json repo.json review-comments-7.json review-comments-8.json review-comments-9.json reviews-7.json reviews-8.json reviews-9.json stacks.json"
   want=$(tr ' ' '\n' <<<"$want" | sort | paste -sd' ' -)
   if [ "$have" = "$want" ]; then
     ok "fetch: a failed read leaves no file, even after a first page"

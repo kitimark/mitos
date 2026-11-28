@@ -1,6 +1,5 @@
 import MitosGate.Snapshot.Activity
 import MitosGate.Snapshot.Fields
-import MitosGate.Snapshot.Table
 
 namespace MitosGate.Snapshot
 
@@ -11,7 +10,7 @@ def provenanceFact (g : Global) (n : Pr) : Option Provenance.PullFact :=
   g.provenance.bind fun ps => ps.find? (·.number == n)
 
 def complete (g : Global) (p : Pull) (r : Reads) : Bool :=
-  g.protection.isSome && g.stacked.isSome && g.verdictCells.isSome && r.comments.isSome &&
+  g.protection.isSome && g.stacked.isSome && g.issueRead && r.comments.isSome &&
     r.reviewComments.isSome && r.reviews.isSome && (activity p r).isSome && r.files.isSome &&
     r.checks.isSome
 

@@ -10,175 +10,17 @@ namespace Fixture
 def hA : Sha := "5c258d6aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 def hB : Sha := "85b0781bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 def hC : Sha := "5c258d6ccccccccccccccccccccccccccccccccc"
-def known : List Sha := [hB, hA]
-
-def dash (rows : String) : String :=
-  "Intro.\n\n## Needs you\n\n- | #1 | not | a | row |\n\n## In flight\n\n" ++
-    "| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n" ++ rows ++
-    "\n\nMerged in the last 24 hours:\n- #9 merged\n\n## Next up\n\n| #5 | x | y | z |\n"
-
-theorem inFlightRows :
-    rows (dash "| #7 a PR | `85b0781` | green | PASS opus-xhigh at `85b0781` |\n| #8 b | `x` | running | No verdict |") =
-      some [(7, "PASS opus-xhigh at `85b0781`".toList), (8, "No verdict".toList)] := by
-  decide +kernel
-theorem twoRowsForOnePrSpoilTheDashboard :
-    rows (dash "| #7 a | `x` | green | PASS opus-xhigh at `85b0781` |\n| #7 b | `x` | red | No verdict |") =
-      none := by decide +kernel
-theorem aFifthColumnSpoilsTheDashboard :
-    rows (dash "| #7 a | `x` | green | PASS opus-xhigh at `85b0781` | extra |") = none := by
-  decide +kernel
-theorem aRowWithoutANumberSpoilsTheDashboard :
-    rows (dash "| 7 a | `x` | green | PASS opus-xhigh at `85b0781` |") = none := by decide +kernel
-theorem aPipeInACellSpoilsTheDashboard :
-    rows (dash "| #7 a | `x` | green | PASS opus-xhigh at `85b0781` `a|b` |") = none := by
-  decide +kernel
-theorem aRowWithoutTheClosingPipeSpoilsTheDashboard :
-    rows (dash "| #7 a | `x` | green | PASS opus-xhigh at `85b0781`") = none := by decide +kernel
-def passFor7 : String := "| #7 a | `x` | green | PASS opus-xhigh at `85b0781`, author sonnet |\n"
-theorem aSecondRowWithoutTheLeadingPipeSpoilsTheDashboard :
-    rows (dash (passFor7 ++ "#7 b | `x` | red | FAIL opus-xhigh at `85b0781` |")) = none := by
-  decide +kernel
-theorem aLineWithoutPipesUnderTheTableSpoilsTheDashboard :
-    rows (dash (passFor7 ++ "FAIL opus-xhigh at `85b0781` for #7")) = none := by decide +kernel
-theorem aTableWithoutLeadingPipesSpoilsTheDashboard :
-    rows (dash (passFor7 ++ "\nPR | Head | `gate` | Verdict\n--- | --- | --- | ---\n" ++
-      "#7 b | `x` | red | FAIL opus-xhigh at `85b0781`")) = none := by decide +kernel
-theorem aLineWithoutPipesUnderALaterTableSpoilsTheDashboard :
-    rows ("## In flight\n\n| #8 b | `x` | running | No verdict |\n\n" ++
-      "| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n" ++ passFor7 ++
-      "FAIL opus-xhigh at `85b0781` for #7\n\n## Next up\n") = none := by decide +kernel
-theorem theLiveShapeReads :
-    rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n" ++ passFor7 ++
-      "| #8 b (Grok Bot) | `x` | needs-rebase | No verdict. Opened by Grok Bot. |\n\n" ++
-      "Merged in the last 24 hours (newest first):\n" ++
-      "- #6 merged 11:23 UTC at `85b0781` by Claude: FAIL sonnet-xhigh at `85b0781`.\n" ++
-      "- #5 merged 10:52 UTC: PASS sonnet-high + opus-xhigh at `85b0781`.\n\n" ++
-      "- #4 merged 20:52 UTC on 11-13.\n\n\n\n- #3 merged 11:55 UTC on 11-11.\n\n## Next up\n") =
-      some [(7, "PASS opus-xhigh at `85b0781`, author sonnet".toList),
-        (8, "No verdict. Opened by Grok Bot.".toList)] := by decide +kernel
-theorem noInFlightSectionIsUnread : rows "## Needs you\n\n| #7 | x | y | z |\n" = none := by
-  decide +kernel
-theorem twoInFlightSectionsAreUnread :
-    rows "## In flight\n\n| #7 | x | y | z |\n## In flight\n" = none := by decide +kernel
-theorem crlfDashboard :
-    rows "## In flight\r\n\r\n| #7 a | x | y | PASS opus-xhigh at 85b0781 |\r\n" =
-      some [(7, "PASS opus-xhigh at 85b0781".toList)] := by decide +kernel
-
-def tableHead : String := "| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n"
-def under (s : String) : String := "## In flight\n\n" ++ tableHead ++ passFor7 ++ s ++ "\n## Next up\n"
-def fail8 : String := tableHead ++ "| #8 b | `x` | red | FAIL opus-xhigh at `85b0781` |\n"
-def only7 : Option (List (Nat × List Char)) :=
-  some [(7, "PASS opus-xhigh at `85b0781`, author sonnet".toList)]
-
-theorem aHeadingInACommentSpoilsTheDashboard :
-    rows (under ("\n<!--\n## old\n-->\n\n" ++ fail8)) = none := by decide +kernel
-theorem aHeadingInACodeFenceSpoilsTheDashboard :
-    rows (under ("\n```\n## old\n```\n\n" ++ fail8)) = none := by decide +kernel
-theorem aHeadingInATildeFenceSpoilsTheDashboard :
-    rows (under ("\n~~~\n## old\n~~~\n\n" ++ fail8)) = none := by decide +kernel
-theorem aHeadingIndentedByATabSpoilsTheDashboard :
-    rows (under ("\n\t## old\n\n" ++ fail8)) = none := by decide +kernel
-theorem aHeadingIndentedByFourSpacesSpoilsTheDashboard :
-    rows (under ("\n    ## old\n\n" ++ fail8)) = none := by decide +kernel
-theorem aHeadingInAPreBlockSpoilsTheDashboard :
-    rows (under ("\n<pre>\n## old\n</pre>\n\n" ++ fail8)) = none := by decide +kernel
-theorem aHeadingInADivBlockSpoilsTheDashboard :
-    rows (under ("\n<div>\n## old\n</div>\n\n" ++ fail8)) = none := by decide +kernel
-theorem aHeadingThatEndsACommentSpoilsTheDashboard :
-    rows (under ("\n<!--\n## old -->\n\n" ++ fail8)) = none := by decide +kernel
-theorem aHeadingInAFenceInAListItemSpoilsTheDashboard :
-    rows (under ("\n- ```\n  ## old\n  ```\n\n" ++ fail8)) = none := by decide +kernel
-theorem aHeadingInACommentInAListItemSpoilsTheDashboard :
-    rows (under ("\n- <!--\n  ## old\n  -->\n\n" ++ fail8)) = none := by decide +kernel
-theorem aFenceWithNoLaterTableSpoilsTheDashboard :
-    rows (under "\n```\n## not a heading\n```\n") = none := by decide +kernel
-theorem aHeadingInABlockQuoteSpoilsTheDashboard :
-    rows (under ("\n> ## old\n\n" ++ fail8)) = none := by decide +kernel
-theorem aFirstLevelHeadingSpoilsTheDashboard :
-    rows (under ("\n# old\n\n" ++ fail8)) = none := by decide +kernel
-theorem aThirdLevelHeadingSpoilsTheDashboard :
-    rows (under ("\n### old\n\n" ++ fail8)) = none := by decide +kernel
-theorem aSetextHeadingSpoilsTheDashboard :
-    rows (under ("\nNext up\n---\n\n" ++ fail8)) = none := by decide +kernel
-theorem aRowInACommentSpoilsTheDashboard :
-    rows ("## In flight\n\n" ++ tableHead ++ "| #8 b | x | y | No verdict |\n\n<!--\n" ++ passFor7 ++
-      "\n-->\n\n## Next up\n") = none := by decide +kernel
-theorem aRowInACodeFenceSpoilsTheDashboard :
-    rows ("## In flight\n\n" ++ tableHead ++ "| #8 b | x | y | No verdict |\n\n```\n" ++ passFor7 ++
-      "\n```\n\n## Next up\n") = none := by decide +kernel
-theorem anIndentedCodeRowSpoilsTheDashboard :
-    rows ("## In flight\n\n" ++ tableHead ++ "| #8 b | x | y | No verdict |\n\n    " ++ passFor7 ++
-      "\n## Next up\n") = none := by decide +kernel
-theorem aHeaderRowInTheBodySpoilsTheDashboard :
-    rows (under "| PR | `x` | red | FAIL opus-xhigh at `85b0781` for #7 |\n") = none := by
-  decide +kernel
-theorem aDelimiterRowInTheBodySpoilsTheDashboard :
-    rows (under "|---|---|---|---|\n") = none := by decide +kernel
-theorem aPipeAloneSpoilsTheDashboard : rows (under "|\n") = none := by decide +kernel
-theorem anEmptyRowSpoilsTheDashboard : rows (under "| | | | |\n") = none := by decide +kernel
-theorem aHeaderOverAShortDelimiterSpoilsTheDashboard :
-    rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|\n" ++ passFor7) = none := by
-  decide +kernel
-theorem aHeaderPairUnderADataRowSpoilsTheDashboard : rows (under tableHead) = none := by
-  decide +kernel
-theorem aHeaderRowWithoutADelimiterSpoilsTheDashboard :
-    rows (under "\n| PR | `x` | red | FAIL opus-xhigh at `85b0781` for #7 |\n") = none := by
-  decide +kernel
-theorem aRowOverADelimiterSpoilsTheDashboard :
-    rows ("## In flight\n\n" ++ passFor7 ++ "|---|---|---|---|\n" ++
-      "| #8 b | `x` | red | FAIL opus-xhigh at `85b0781` |\n") = none := by decide +kernel
-theorem aDelimiterWithAnEmptyCellSpoilsTheDashboard :
-    rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---| |---|---|\n" ++ passFor7) = none := by
-  decide +kernel
-theorem aDelimiterWithASpacedCellSpoilsTheDashboard :
-    rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|- -|---|---|\n" ++ passFor7) =
-      none := by decide +kernel
-theorem aDelimiterWithColonsReads :
-    rows ("## In flight\n\n| PR | Head | `gate` | Verdict |\n| :-- | --: | :-: | - |\n" ++ passFor7) =
-      only7 := by decide +kernel
-theorem aHiddenInFlightHeadingIsUnread :
-    rows ("<!--\n## In flight\n\n" ++ tableHead ++ passFor7 ++ "\n-->\n") = none := by decide +kernel
-theorem anInFlightHeadingInAFenceIsUnread :
-    rows ("```\n## In flight\n\n" ++ tableHead ++ passFor7 ++ "\n```\n") = none := by decide +kernel
-theorem anIndentedInFlightHeadingIsUnread :
-    rows ("    ## In flight\n\n" ++ tableHead ++ passFor7) = none := by decide +kernel
-theorem anInFlightHeadingInAListItemIsUnread :
-    rows ("- x\n\n    <!--\n  ## In flight\n\n  | PR | Head | `gate` | Verdict |\n  |---|---|---|---|\n  " ++
-      passFor7 ++ "\n  -->\n") = none := by decide +kernel
-def fail7 : String := tableHead ++ "| #7 a | `x` | red | FAIL opus-xhigh at `85b0781` |\n"
-def passThenNextUp : String := "## In flight\n\n" ++ tableHead ++ passFor7 ++ "\n## Next up\n\n"
-theorem aSecondInFlightHeadingAfterASpaceIsUnread :
-    rows (passThenNextUp ++ " ## In flight\n\n" ++ fail7) = none := by decide +kernel
-theorem aSecondInFlightHeadingAfterThreeSpacesIsUnread :
-    rows (passThenNextUp ++ "   ## In flight\n\n" ++ fail7) = none := by decide +kernel
-theorem anIndentedInFlightHeadingAboveTheSectionIsUnread :
-    rows ("  ## In flight\n\n" ++ fail7 ++ "\n" ++ passThenNextUp) = none := by decide +kernel
-theorem aSecondInFlightHeadingInAListItemIsUnread :
-    rows (passThenNextUp ++ "- x\n\n  ## In flight\n\n  | PR | Head | `gate` | Verdict |\n" ++
-      "  |---|---|---|---|\n  | #7 a | `x` | red | FAIL opus-xhigh at `85b0781` |\n") = none := by
-  decide +kernel
-theorem nextUpEndsTheSection :
-    rows ("## In flight\n\n" ++ tableHead ++ passFor7 ++ "\n## Next up\n\n" ++ fail8) = only7 := by
-  decide +kernel
-theorem aHeadingAfterThreeSpacesEndsTheSection :
-    rows (under "\n   ## old\n\n| #8 b | `x` | red | FAIL |\n") = only7 := by decide +kernel
-theorem aHeadingAfterATabEndsTheSection :
-    rows (under "\n##\told\n\n| #8 b | `x` | red | FAIL |\n") = only7 := by decide +kernel
-theorem anEmptyHeadingEndsTheSection :
-    rows (under "\n##\n\n| #8 b | `x` | red | FAIL |\n") = only7 := by decide +kernel
 
 def owner : String := "owner"
 def repo : String := "owner/mitos"
 def protection : Protection := ⟨true, true, ["gate"]⟩
-def cellFor7 (verdict : String) : Option (List (Pr × List Char)) := some [(7, verdict.toList)]
 def source (authorModel : Option String := some "sonnet")
     (head : Sha := hB) : Provenance.PullFact :=
   ⟨7, ⟨head, ⟨"claude", "actual-builder", authorModel, none⟩⟩,
     [⟨head, ⟨"claude", "actual-reviewer", some "opus", none⟩,
       some .xhigh, .pass, 1, "https://github.com/owner/mitos/pull/7#issuecomment-1"⟩]⟩
 def g : Global :=
-  { repo, owner, protection := some protection, stacked := some [],
-    verdictCells := cellFor7 "PASS opus-xhigh at `85b0781`, author sonnet",
+  { repo, owner, protection := some protection, stacked := some [], issueRead := true,
     provenance := some [source] }
 def withSource (s : Provenance.PullFact) : Global := { g with provenance := some [s] }
 def footer : String := "\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_"
@@ -210,7 +52,6 @@ def stepOf (g : Global := g) (p : Pull := pull) (r : Reads := reads) (x : Git :=
   let ob := o g p r x
   Land.step Land.Fixture.orchestrator (Land.queueOf [ob]) ob
 def step0 : Land.Step := stepOf
-def carried : String := "PASS opus-xhigh carried from `5c258d6`, author sonnet"
 
 theorem allReadAndCoveredIsPresented : step0 = .present hB := by decide +kernel
 theorem theOwnersLandIsTheEntry : o0.words = [.ownerLand ⟨1800, hB, true⟩] := by decide +kernel
@@ -230,7 +71,7 @@ theorem unreadProtectionHolds : stepOf (g := { g with protection := none }) = .s
   decide +kernel
 theorem unreadStacksHold : stepOf (g := { g with stacked := none }) = .stop .held := by
   decide +kernel
-theorem unreadDashboardHolds : stepOf (g := { g with verdictCells := none }) = .stop .held := by
+theorem unreadIssueHolds : stepOf (g := { g with issueRead := false }) = .stop .held := by
   decide +kernel
 theorem activityAtAnotherHeadHolds :
     stepOf (p := { pull with head := hC }) = .stop .held := by decide +kernel
@@ -339,7 +180,7 @@ theorem theContentIdsAsked : contentIdCommits (o (g := withSource (source (head 
   decide +kernel
 theorem eachFailedReadIsIncomplete :
     [complete { g with protection := none } pull reads, complete { g with stacked := none } pull reads,
-     complete { g with verdictCells := none } pull reads,
+     complete { g with issueRead := false } pull reads,
      complete g pull { reads with comments := none },
      complete g pull { reads with reviewComments := none },
      complete g pull { reads with reviews := none }, complete g pull { reads with activity := none },
