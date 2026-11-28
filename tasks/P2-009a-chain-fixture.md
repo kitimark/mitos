@@ -2,7 +2,7 @@
 
 phase: 2
 goal: `lake --dir eval/score exe mitos-score eval/fixtures/chain` prints precision and recall for the chain edge type `env/runtime` against hand labels, a repo-level edge is `confirmed` when any of its records is, a chain file is read by the chain reader and by no other reader, and the toy and go.mod scorecards keep their bytes.
-statement: none (tooling task). The scorer's own theorems, not locked: `Score.collapse_union`, `Score.factsOf_chain`, `Score.chain_union_end_to_end`, `Score.Chain.reads_cases`, `Score.Chain.facts_line_forms`, `Score.Chain.facts_ai`, `Score.Chain.skips_incomplete_bindings`, `Score.Chain.requires_env`. The follow-up for #549 items 2 and 3 (Build notes) adds `Score.Chain.skips_blank_keys`, `Score.Chain.trims_binding_target`, `Score.readsToy_cases`, `Score.factsOf_unclaimed` and `Score.factsOf_unclaimed_yaml`
+statement: none (tooling task). The scorer's own theorems, not locked: `Score.collapse_union`, `Score.factsOf_chain`, `Score.chain_union_end_to_end`, `Score.Chain.reads_cases`, `Score.Chain.facts_line_forms`, `Score.Chain.facts_ai`, `Score.Chain.skips_incomplete_bindings`, `Score.Chain.requires_env`. The follow-up for #549 items 2 and 3 (Build notes) adds `Score.Chain.skips_blank_keys`, `Score.Chain.trims_binding_target`, `Score.readsToy_cases`, `Score.factsOf_unclaimed` and `Score.factsOf_unclaimed_yaml`. The follow-up for #600 item 7 (Build notes) adds `Score.Chain.trims_keys` and `Score.chain_crlf_end_to_end`
 touches: eval/fixtures/chain/ (new), eval/score/Score/Chain.lean (new), eval/score/Score.lean (one import; one guard line in `factsOf` and `factsOf_chain`; one changed line of `collapse` with `collapse_union` and its two private helpers; the header line of `render`; `chain_union_end_to_end` and its private input at the end), this file, ops/runs/
 must_not_touch: statements.lock, models.lock, gate/, eval/cheats/, models, core/, examples/acme/, eval/fixtures/toy/, eval/fixtures/gomod/, eval/score/Main.lean, eval/score/lakefile.toml, eval/score/lake-manifest.json, eval/score/Score/GoMod.lean, eval/diff/, eval/mutants/, .github/, docs/, plan/, .claude/
 checks: S1 (P2-001b's contract on `main`), the scorer builds with no new warning (check 1), axioms (check 2), toy scorecard unchanged (check 3), go.mod scorecard unchanged (check 4), the chain scorecard is F2 (check 5), fixture bytes and fact lines (check 6), labels against the labelling rules (check 7, local), changed paths (check 8), the run-log check (check 9), `plan-tasks.test.sh` (check 10), `gate` green in CI (check 11)
@@ -176,9 +176,13 @@ serves orders-db                provision    svc/orders-db
 - A file named `CHAIN.ai` at a repo's root is AI-proposed, with origin `.ai "<repo>/CHAIN.ai"`.
 - A binding line needs a key and a non-blank target. Incomplete binding lines and unrecognized
   lines give no fact. Since the follow-up for #549 item 3, a `needs` or `serves` line with a
-  blank key gives no fact either, and a binding's target loses the whitespace around it.
+  blank key gives no fact either, and a binding's target loses the whitespace around it. Since
+  the follow-up for #600 item 7, a `needs` or `serves` key loses the whitespace around it too, as
+  the binding's target does. So `serves db ` gives `svc/db`, and a file with CRLF line ends
+  resolves. A binding's key keeps its rule: it ends at the first space.
 - The span anchors the first key. For a binding that is the bound key, and the binding's target
-  is not anchored (P2-001b, O2).
+  is not anchored (P2-001b, O2). Since the follow-up for #600 item 7, the span of a `needs` or
+  `serves` key starts after the blanks that follow the verb and covers the trimmed key only.
 
 Call sites:
 - `Score.factsOf` reads `if Chain.reads f.path then Chain.facts f.repo f.path f.text else` on its
@@ -190,8 +194,9 @@ Call sites:
 - P2-010 runs the scorer on each fixture directory. `chain` is one more directory, and it calls
   nothing here.
 - The interface is `Score.Chain.reads`, `Score.Chain.facts` and five theorems, seven since the
-  follow-up for #549 item 3. `origin`, the three verb prefixes, `env`, `svc`, `ofLine` and that
-  follow-up's `trim` are `private`, and so are the inputs of the theorems in `Score.lean`.
+  follow-up for #549 item 3, and eight since the follow-up for #600 item 7 (`trims_keys`).
+  `origin`, the three verb prefixes, `env`, `svc`, `ofLine`, the first follow-up's `trim` and the
+  second's `keySpan` are `private`, and so are the inputs of the theorems in `Score.lean`.
 
 ### How a builder goes wrong here
 - Taking the cell literally, with no call in `factsOf`. `factsOf_chain` and
@@ -450,6 +455,13 @@ statements:
     fact. General, by `simp`.
   - `Score.factsOf_unclaimed_yaml`: `deploy/mail.yaml` with a `require ` and a `provide ` line
     gives no fact. This is R4's case.
+- From the follow-up for #600 item 7 (Build notes):
+  - `Score.Chain.trims_keys`: `needs A `, `needs  A` before a carriage return, `serves db` before
+    a tab and `serves  db` give the keys `A`, `A`, `db` and `db`, each with its span on the key.
+  - `Score.chain_crlf_end_to_end`: three chain files with CRLF line ends, a blank after a `serves`
+    key and two blanks before a `needs` key score to 3 facts and the one repo-level edge `web` →
+    `orders`, `confirmed`. So `ingest` accepts each span, and the trimmed keys meet the binding's
+    key and target.
 - `Score.Chain.requires_env`: every requirement the chain reader gives has kind `env` and scope
   `.runtime`. A chain record's repo key takes both from its requirement (C2), so every chain
   repo-level edge has edge type `env/runtime`. This is the row's "scorer edge type for chain
@@ -635,6 +647,8 @@ From the repository root, at the head after the last rebase.
    - the other six: `[propext, Classical.choice, Quot.sound]`.
    - the five theorems of the follow-up for #549 items 2 and 3, measured the same way:
      `[propext, Classical.choice, Quot.sound]`.
+   - `Score.Chain.trims_keys` and `Score.chain_crlf_end_to_end`, from the follow-up for #600
+     item 7, measured the same way: `[propext, Classical.choice, Quot.sound]`.
 
    None names `Lean.ofReduceBool` or `sorryAx`.
 3. `lake --dir eval/score exe mitos-score eval/fixtures/toy | sha256sum` prints F3's hash, before
@@ -856,6 +870,27 @@ The follow-up for #549 items 2 and 3, built on `main` at `00fae4d` (run log
   `factsOf_unclaimed_yaml`); `needs ` with a blank key giving a fact (`skips_blank_keys`);
   `serves ` the same (`skips_blank_keys`); the target untrimmed (`trims_binding_target`).
 - The build prints the one warning `main` prints, and check 2 lists the new theorems' axioms.
+
+The follow-up for #600 item 7, built on `main` at `7c3afc8` (run logs
+`ops/runs/2026-11-28/P2-010-followups-builder-1.json` and `-2.json`). The whole change is recorded
+in `tasks/P2-010-nightly-scorecard.md`, Follow-up notes for #600.
+
+- In `Score.Chain.ofLine`, the key of a `needs` or `serves` line is what stands after the verb
+  with the whitespace around it removed (`trim`), and its span starts after the blanks that follow
+  the verb (`keySpan`, private). On `main` the key kept that whitespace. So `serves db ` gave
+  `svc/"db "`, which no trimmed target can name, and in a file with CRLF line ends every `needs`
+  and `serves` key ended in a carriage return, so nothing resolved (recall 0.00 (0/1) on the
+  input of `chain_crlf_end_to_end`, measured on a build of `main`).
+- A blank key still gives no fact (`skips_blank_keys`), and a binding's key and target keep their
+  rules (`skips_incomplete_bindings`, `trims_binding_target`). `requires_env` keeps its text and
+  its proof.
+- No fixture line has such whitespace. The cards of `toy`, `gomod` and `chain` are byte for byte
+  F3, F4 and F2, measured against a build of `main`.
+- Three wrong variants, each one edit built in the worktree and then put back, failed the build
+  at `trims_keys`: a `needs` key untrimmed, a `serves` key untrimmed, and a key's span that starts
+  at the blanks before it.
+- The reader has eight theorems now. The counts of eight elsewhere in this file are the row's own
+  build: five in the reader and three in `Score.lean`.
 
 ## Rationale
 
