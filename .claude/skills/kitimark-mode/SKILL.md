@@ -69,6 +69,17 @@ it otherwise.
   The Architect row names the same runners and judge as **architect** and **arena**. Under the
   **poteto-mode** skill, `poteto-agent` replaces `general-purpose` for PR owners. If the Agent tool
   rejects a value, omit that field and say so.
+- **Workflow scripts.** Each `agent()` call in a Workflow script is a spawn, so this section
+  applies to it. The script's shared prompt section carries every Briefs field, `pr-state.sh`'s
+  rule-change note when there is one, and the machine limits (see Working rules). Each call sets
+  the `model`, `effort`, `agentType` and `isolation` that this table or the routed skill names for
+  the role, such as `agentType: "Explore"` for arena's judge. Each agent writes only to its own
+  folder.
+- **Workflow resumes.** A resumed run reuses the results of the longest unchanged prefix of
+  `agent()` calls, in the order the calls started. Before you resume an edited script, read the
+  `started` order in the run's journal. Edit only calls that start after the last result you want
+  to keep, and leave every other prompt byte-identical. Right after the relaunch, read the journal
+  again, and stop the run if a call that had finished starts again (#183).
 - **Usage limits.** On a usage-limit error, probe the preferred model before any fallback, with a
   foreground agent whose whole prompt is `probe`. Probe it again before each later spawn that
   wants that model. A reset time says when the limit lifts at the latest, not when to try again.
@@ -158,6 +169,12 @@ it otherwise.
   owner or a catch-up waits on. Such a watcher may poll with those MCP tools where `gh` fails.
   Once `gh` answers again, the root re-arms the monitor and stops those watchers, so one wake
   source covers each condition at a time.
+- The monitor and every watcher in the container stop when the container goes down. So before the
+  root leaves a background workflow or agent unattended for more than about 30 minutes, it arms
+  one scheduled message that survives a container restart (`send_later`). The message is timed
+  for the expected finish plus a margin, and the root cancels it when the run reports. A workflow
+  died with the container at 10:20, and nothing woke the root until the user asked at 11:33
+  (#183).
 - A watcher agent returns only on a state change. A state change here is a new head, a check
   result at the current head, a new or reopened thread that no agent posted, a new comment without
   the footer or with an id no poster recorded, a label, a merge or a close. The watcher drops
@@ -272,7 +289,11 @@ rely on both.
   block because weakening one is a spec change for the user (PR owners carry their PR, step 4). A
   confidential key, token or ID in the diff or a post also blocks, and Catching the user up rules
   those out. A problem that `main` already has blocks only if the PR copies it, newly reaches it
-  or is meant to fix it. Everything else is minor.
+  or is meant to fix it. Everything else is minor. A PR that adds a check states its threat model
+  in its body, with a closed list of what is in scope and what is out of scope. A finding outside
+  that list is minor, and its reply quotes the list. From the second finding of one class, the PR
+  owner writes that list instead of another fix. #153 ran 30 commits because each bot round found
+  one more bash spelling of the same call, and each one was fixed as blocking.
 - Minor findings go into one `follow-up` issue per PR, which the PR body links. The PR owner files
   the minor findings it holds in its round, and the root files those of a passing verdict. A minor
   fix joins a round only when it is one line in a file that round already touches. A finding
@@ -288,9 +309,11 @@ rely on both.
   verifier, as Verdicts says. A `/no-comments` pass that only deletes or rewords comments does not
   count either. A reshape fix that the pass accepts counts as the PR's next round. Before a third
   round starts, the root narrows or splits the PR. The PR keeps its task's change and the blocking
-  fixes, and the rest moves to separate PRs or the follow-up issue. The third brief names what is
-  left. A PR that still fails after its third round stops there. The root starts no fourth round
-  and posts a catch-up that names what still fails.
+  fixes, and the rest moves to separate PRs or the follow-up issue. Splitting may also mean
+  closing the PR and opening smaller replacements, each with a closed scope. The user prefers that
+  to saving a sprawled PR, as with #153. The third brief names what is left. A PR that still fails
+  after its third round stops there. The root starts no fourth round and posts a catch-up that
+  names what still fails.
 
 ## Verdicts
 
@@ -503,6 +526,11 @@ rely on both.
   one longer command.
 - Each agent names its scratch folders so that no other agent can pick the same name, for example
   with a prefix unique to that agent. Two verifiers once overwrote each other's folders.
+- All agents share one machine with no swap. A brief that lets an agent build Lean states its
+  build budget: one heavy build at a time across all agents, a timeout on each build, and
+  proof-search caps. A test script that starts `lake build` counts as a build. A brief whose job
+  needs no build tells the agent not to build. A runaway mutant build came right before the
+  container went down for 73 minutes (#183).
 
 ## Done means verified
 
@@ -527,6 +555,9 @@ rely on both.
 
 ## What stays with the user
 
+For the paths below, the user keeps the approval, which is the `spec-approved` label or the merge.
+Agents start, build and verify work on those paths without asking first.
+
 - **Spec approval.** The `spec-approved` label stays with the user. PRs that change
   `statements.lock`, `models.lock`, `core/Mitos/Core.lean`, `core/Mitos/Core/`, `core/Challenge/`
   or `core/comparator.json` need it. Everything in `core/Mitos/Core/` is spec, even a change the
@@ -537,7 +568,7 @@ rely on both.
   `core/lake-manifest.json`, which pin what the root build and `lake check` resolve. They decide
   what CI checks and what the gate trusts, so a PR that touches them is trust-critical (see
   Verdicts).
-- **Agent rules and plans.** `docs/process.md`, `CLAUDE.md`, `.claude/`, `.cursor/` and `plan/`.
+- **Agent rules and plans.** `docs/process.md`, `CLAUDE.md`, `.claude/`, `.agents/` and `plan/`.
 - The user merges every PR that needs `spec-approved` or touches a path in the first three
   bullets above. The exception is a PR whose only change to those paths is issue links in the
   Issue column of a `plan/phase-N.md`, such as `[#31](https://github.com/kitimark/mitos/issues/31)`.
@@ -580,10 +611,13 @@ an agent lists go in its report to the root, not in a post. The routes are in **
     and verdict. A PR that merged without a verdict gets that line once it has one.
   - What comes next and the open follow-ups are in the milestones (see Milestones and issues).
 - **Needs you means assigned to the user.** Assign `kitimark` to each issue or PR that waits on
-  the user, and unassign them when their part is done. Their queue is the search
-  `is:open assignee:kitimark`. Agents act through the user's account, and GitHub never
-  notifies a user of their own actions. So on each assignment of the user made from the user's
-  account, `.github/workflows/owner-ping.yml` comments as `github-actions[bot]` with
+  the user, and unassign them when their part is done. Before each assignment, re-assignment or
+  move of the queue, test each call on the item again against What stays with the user. Assign
+  the user only for a call they can act on now. A call that waits on other work goes in its
+  milestone's `Next up` line instead. #511 and #512 sat assigned while they waited on #510. The
+  user's queue is the search `is:open assignee:kitimark`. Agents act through the user's account,
+  and GitHub never notifies a user of their own actions. So on each assignment of the user made
+  from the user's account, `.github/workflows/owner-ping.yml` comments as `github-actions[bot]` with
   `@kitimark this needs you:` and a line. The line is the first line of the item's latest
   catch-up, in a code span, with every `@` and every invisible character removed. So it mentions
   nobody, links nothing and hides no text. A hand-over runs in this order: the PR owner reports
@@ -632,9 +666,11 @@ an agent lists go in its report to the root, not in a post. The routes are in **
   plan's. The root marks each criterion `(met in #n)` once #n reads merged over REST. It changes
   the criteria text only to match the plan on `main`, which the user keeps. The user's own queue
   stays the search `is:open assignee:kitimark`. Work found during a task becomes an issue
-  labelled `follow-up`. A finding about agent rules (`.claude/`, `.cursor/`, `CLAUDE.md`,
+  labelled `follow-up`. A finding about agent rules (`.claude/`, `.agents/`, `CLAUDE.md`,
   `docs/process.md`) gets the `process` label. A tracker issue's steps become rows in the current
   plan, each with its own issue. The tracker body lists those issue links instead of checkboxes.
+  When a merge, a plan or a close replaces an open proposal, an agent closes or re-scopes that
+  proposal with a link to what replaced it, and the root unassigns the user in the same step.
 - **Plan-time designs.** When a plan or a tracker lands, the Architect (see Roles) writes a task
   file from `tasks/TEMPLATE.md` for each open row, Design block included. The row's issue links
   that file. The design stays in that file or the issue body (`.claude/skills/architect/SKILL.md`,
@@ -662,8 +698,11 @@ an agent lists go in its report to the root, not in a post. The routes are in **
     the root itself.
     Never call a bot's verdict or your own independent.
   - **Next steps:** numbered, with a `gh` command (one per code block) wherever one exists. Say
-    "browser only" where none does.
+    "browser only" where none does. Each step names the bullet of What stays with the user that
+    keeps it.
   - **Expected result** of each step, and what to do if it differs.
+  - **Defaults taken:** each call that no bullet of What stays with the user keeps, with the
+    root's pick and its reason. The root takes these calls itself, so none of them is a step.
   A known fix that is not pushed yet, such as one held back to save bot reviews, goes in a new
   catch-up as "hold the merge until N fixes land". When the state changes, post a new catch-up
   rather than editing an old one, and reassign as Needs you says.

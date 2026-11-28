@@ -16,5 +16,6 @@ Apply the following discipline. The orchestrator compares candidates on these ax
 - Single source of truth per invariant. Derive instead of sync.
 - Idempotent state transitions where applicable, per the **make-operations-idempotent** principle skill. Ask what happens if the operation runs twice or crashes halfway.
 - Short call chains. If tracing the flow needs more than three files, flatten the hierarchy, per the **laziness-protocol** and **minimize-reader-load** principle skills. Flattening merges layers of one flow, not topics: a file that owns several topics still splits, per the **split-by-topic** principle skill.
+- Build nothing. A sketch compiles nothing and runs no tests or mutants, unless the orchestrator's brief gives it a build budget, such as the type-check a build-depth design needs. Name any evidence that needs a run as a Phase D test instead.
 
 You are one of the parallel runners, each on a different model. Produce the best design your model can make. Don't hedge against the others. Differences between candidates are the signal used to pick a base and graft. Converging on a safe-looking middle defeats the exploration.

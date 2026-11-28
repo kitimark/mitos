@@ -1,6 +1,6 @@
 name	class	source	invocation	cursor	cursor_sha256	claude_sha256
-architect	rewrite	none	explicit	kept	-	d2a7e14797a7ae89da9cea225fc50b39b3a7b379f69ef41e393c04415fb7ecac
-arena	rewrite	none	explicit	kept	-	d14e5a87be06b4912987c7cd818855a394bdf0054058b172d79e95b6f10f4717
+architect	rewrite	none	explicit	kept	-	e6de9461f10699ec96601d6df8da1001e5b2b0dd46dc0100df351c44da5cc05e
+arena	rewrite	none	explicit	kept	-	b1132fc7fc4ef455e47d22b2a074e701f9cf407e539c3fed45ea2065e9a72132
 automate-me	rewrite	none	explicit	kept	-	ee9ba331795ad96bea035964dfe8bbccb21199082a008e98b00dc9405dd15bfa
 benchmark-checklist	mirror	claude	explicit	vendored	-	-
 blast-radius	mirror	agents	explicit	vendored	-	-
@@ -12,9 +12,9 @@ figure-it-out	rewrite	none	explicit	kept	-	ae083ac69ad7c04c8c5424aa1b3ac694ef5b2
 how	rewrite	none	explicit	kept	-	a47fb5901ef8b367a99e0c91c089434078f08cff220062d9a611c79cb17896cb
 in-your-own-words	mirror	claude	explicit	vendored	-	-
 interrogate	rewrite	none	explicit	kept	-	f7e5884acc2af686455006804e8588201f21a18213fe7772c1b1670902432190
-ketchup	rewrite	none	explicit	kept	-	2284d34c60fec9c18477c59d61db48ced1061d42c1225c627a460082e2d24364
+ketchup	rewrite	none	explicit	kept	-	4244311187b0c6a732aa2037cfe0758c9a5091af1e6cb762766a192f378e8d94
 ketchup-video	mirror	agents	explicit	vendored	-	-
-kitimark-mode	rewrite	none	named	kept	-	3ceb69c7a11d9ce5e7fd1b0ebace7774bbbd2eb9b7c4311d871cae379e82176c
+kitimark-mode	rewrite	none	named	kept	-	7ff8c5a9ba0467cae8fa23eb15d20c8615f4482d73e243007f6678d40645dcaa
 maintain-formal-verification-skill	mirror	agents	explicit	vendored	-	-
 maintain-verification-skill	rewrite	none	explicit	kept	-	-
 make-bot-ui	mirror	agents	explicit	vendored	-	-
@@ -47,7 +47,7 @@ principle-subtract-before-you-add	mirror	claude	explicit	vendored	-	-
 principle-test-behavior-not-implementation	mirror	claude	explicit	vendored	-	-
 principle-type-system-discipline	mirror	claude	explicit	kept	-	-
 recall	mirror	agents	explicit	vendored	-	-
-reflect	rewrite	none	explicit	kept	-	5a0b2652b8d390fdc851982db664a3bdef43110410b98995d0bf3d84fbe0b10f
+reflect	rewrite	none	explicit	kept	-	26c25e3528077126ad37bd54cc3c42f96034db429623f08e4e5b410b7959b651
 setup-pstack	mirror	agents	open	vendored	-	-
 sharpen	mirror	agents	explicit	vendored	-	-
 show-me-your-work	rewrite	none	explicit	kept	-	5c4266b273bf08c2860382d28533ee965866e65d0f0dc7322ae00fb18acc1c62
