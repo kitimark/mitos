@@ -40,8 +40,8 @@ escalation: hint → automation → stronger model → pair → split → revisi
      `String.ofList`, as Phase 1's four status cases do.
 3. **How this design was checked.** It was run, not read. Everything below was measured at `3d939da`
    on Lean v4.35.0, in a scratch checkout, with the real runner (`lake --dir eval/mutants exe
-   mitos-mutants`). The host is shared: 4 cores, and one 14.3 GB memory cgroup for every agent's
-   shell in the session.
+   mitos-mutants`). The host is shared: 4 cores, and one 13.4 GiB (14.3 GB) memory cgroup for every
+   agent's shell in the session.
    - `--prepare` over the 28 cases printed 28 paths and no `lint:` line, exit 0.
    - Each of the 28 cases run alone printed `control ... ACCEPTED`, then the case `REFUTED` with
      exactly the theorems of its `breaks=`, then `mutants: all 1 cases as expected, 1 refuted`. This
@@ -285,7 +285,11 @@ cases. The runner's peak resident memory does not grow with that number or with 
 cases. It stays between 4.63 and 4.83 GiB (4,855,436 to 5,055,668 KiB). A new case or a new
 `breaks=` set adds time and no memory.
 
-The design-time runner kept every import and reached 10.8 GB at 72 cases. Since the #521 fix
+The design-time runner kept every import and reached 10.8 GB at this row's 72 cases (19 generated
+Challenges). That figure is the `VmHWM` of the `mitos-mutants` process under `--prepare`, one run,
+at `3d939da`. Its source is the table that #547 (`5914856`) removed from this section. The table
+gave each peak in GB to one decimal and no KiB reading. So the figure is about 10.1 GiB if its GB is
+decimal, and it does not compare digit for digit with the KiB rows below. Since the #521 fix
 (`a046630`, #536), the runner frees each Lean import after its check. It holds the approved
 Challenge, the parse check's set and one generated Challenge at a time. The first step checks the
 generated Challenges before any case is judged, and `--prepare` runs that step, writes the
@@ -307,15 +311,28 @@ Measured peaks of the `mitos-mutants` process:
 - Each figure is one process and never a sum. `VmHWM` and the max RSS of `/usr/bin/time -v` both
   give the largest single process, and the runner is the largest. In the #537 runs, the max RSS that
   `wait4` returns equals the runner's `VmHWM`.
-- The #537 rows ran on a host with 4 cores and 15.7 GiB, inside one 13.4 GiB memory cgroup that
-  every agent's shell shares. The #536 rows ran on a host with 4 cores and 16 GB.
+- The runner's `VmHWM` counts file-backed pages as well as anonymous ones. Three of the #537 runs
+  recorded the split at the runner's largest sampled RSS (every 2 s; 4,866,252 to 4,954,560 KiB):
+  `RssAnon` was 3,602,968 to 3,694,536 KiB (3.44 to 3.52 GiB) and `RssFile` was 1,260,024 to
+  1,263,284 KiB (1.20 GiB). The three are the second 1-case full run, the 1-case `--prepare` run and
+  the higher 72-case `--prepare` run. The other three runs recorded no split.
+- The #537 rows ran on a host with 4 cores and 15.7 GiB, inside the 13.4 GiB memory cgroup that
+  every agent's shell shares ("How this design was checked" gives it in both units). The #536 rows
+  ran on a host that #536 gives as 4 cores and 16 GB.
 - The #537 runs of one command lie within 102,608 KiB (2 %) of each other, with 1 case or with 72.
-  So the measurements show no slope. The lower 72-case `--prepare` run ran while another agent's
-  process filled the cgroup.
+  So the measurements show no slope. No measurement explains the lower 72-case `--prepare` run
+  (4,855,436 KiB). That another agent's process filled the cgroup during it is an inference from
+  host-level samples taken every 2 s, and no cgroup counter was captured. The host's used memory
+  (`MemTotal` minus `MemAvailable`) peaked at 14,695,636 KiB in that run and at 7,612,168 KiB in
+  the higher one. The 72-case full run had a host peak of 14,675,448 KiB and the highest runner
+  peak, so a full host does not always lower the figure.
 - While a case is judged, the comparator's children run beside the runner. The largest were one
   `leanexport` at 1,678,412 KiB and one `lean` at 1,648,800 KiB (`VmHWM`, the 72-case run). The
-  anonymous memory of the whole process tree peaked at 4,156,900 KiB in a 1-case run (one run).
-  #536 measured 4,061 to 4,092 MiB for 44 cases with `--paranoid` (three runs).
+  sum of `RssAnon` over the whole process tree, sampled every 2 s, peaked at 4,156,900 KiB
+  (3.96 GiB) in a 1-case full run (one run). A sampled sum can miss a shorter peak, so that figure
+  is a lower bound. #536 measured the same quantity, the peak anonymous memory of the process
+  group sampled every second, at 4,061 to 4,092 MiB (3.97 to 4.00 GiB) for 44 cases with
+  `--paranoid` (three runs). Those are sampled too, so each is a lower bound.
 - The 72-case run ended `mutants: all 72 cases as expected, 52 refuted, 0 known gap(s), 20 cheat
   case(s) rejected`, exit 0, after 3,948 s wall, 3,830 s by the runner's own count. That is one
   run, and other agents' Lean builds shared its four cores for part of it.
@@ -370,9 +387,10 @@ Run-level fixtures:
 - `control-fails`: from `core/` of the P2-001b head, `lake env lean <Refute.lean>` fails for every
   new Refute. Each fails on the proposition it names, except that `binding_origin_forgotten` and
   `edges_one_per_repo_key` first fail their consequence pins, and the five impact cases report
-  `decide failed to reduce`. Build `Mitos.Impl.Resolve` and `Mitos.Impl.Impact` first. Without
-  them, every file fails on its import, which shows nothing. Measured at `3d939da` and again on
-  `main` at `00fae4d`: 28 of 28 exit 1.
+  `decide failed to reduce`. Build `Mitos.Impl.Resolve` and `Mitos.Impl.Impact` first, also from
+  `core/`: `lake build Mitos.Impl.Resolve Mitos.Impl.Impact`. Without them, every file fails on its
+  import, which shows nothing. Measured at `3d939da` and again on `main` at `00fae4d`: 28 of 28
+  exit 1.
 - `anchors-live`: `grep -lE '^find=.*(def ends|\(ends fs r\)|providers fs r \+\+ fs\.flatMap)'` over
   the 28 `mutant` files prints nothing (T2), and no case ends `REJECTED, NOT REFUTED`. A case that does
   is re-anchored on live text, never relabelled. Measured: nothing printed.
