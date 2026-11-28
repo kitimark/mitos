@@ -282,13 +282,14 @@ cell in the breakers table.
 
 **`breaks=` sets and memory.** Each distinct `breaks=` set is one generated Challenge, 19 for the 72
 cases. The runner's peak resident memory does not grow with that number or with the number of
-cases. It stays between 4.6 and 4.8 GiB. A new case or a new `breaks=` set adds time and no memory.
+cases. It stays between 4.63 and 4.83 GiB (4,855,436 to 5,055,668 KiB). A new case or a new
+`breaks=` set adds time and no memory.
 
 The design-time runner kept every import and reached 10.8 GB at 72 cases. Since the #521 fix
 (`a046630`, #536), the runner frees each Lean import after its check. It holds the approved
 Challenge, the parse check's set and one generated Challenge at a time. The first step checks the
-generated Challenges before any case is judged, and `--prepare` runs that step alone. Its peak is
-within 4 % of a full run's.
+generated Challenges before any case is judged, and `--prepare` runs that step, writes the
+workspaces and runs the lint, and judges nothing. Its peak is within 4 % of a full run's.
 
 Measured peaks of the `mitos-mutants` process:
 
@@ -316,8 +317,8 @@ Measured peaks of the `mitos-mutants` process:
   anonymous memory of the whole process tree peaked at 4,156,900 KiB in a 1-case run (one run).
   #536 measured 4,061 to 4,092 MiB for 44 cases with `--paranoid` (three runs).
 - The 72-case run ended `mutants: all 72 cases as expected, 52 refuted, 0 known gap(s), 20 cheat
-  case(s) rejected`, exit 0, after 3,948 s. That is one run, and other agents' Lean builds shared
-  its four cores for part of it.
+  case(s) rejected`, exit 0, after 3,948 s wall, 3,830 s by the runner's own count. That is one
+  run, and other agents' Lean builds shared its four cores for part of it.
 
 These four new sets each name two refuted theorems:
 - `resolve_sound resolve_complete` (`bound_key_legs_swapped`);
@@ -431,10 +432,10 @@ cheat surface that the lint's allow-list does not already close: no syntax, attr
 import, and the cases name only `Mitos` namespaces. The PR says `Closes #206`.
 - Keep all 28 cases and their declared theorems. Memory is no reason to cut a case or to narrow a
   `breaks=` set, because the runner's peak does not grow with either (measured, "`breaks=` sets and
-  memory"). A memory failure is a fault of the runner or of the host. It blocks completion until
-  the runner's peak and the reason for the failure are established, and it drops nothing. This
-  keeps the expected counts in `runner-peak`, `nightly-dispatch`, `breakers-table` and
-  `new-files-only` tied to one corpus and preserves the sole chain `impact_nodup` breaker.
+  memory"). A memory failure is a fault of the runner, the host or the case's own build. It blocks
+  completion until the runner's peak and the reason for the failure are established, and it drops
+  nothing. This keeps the expected counts in `runner-peak`, `nightly-dispatch`, `breakers-table`
+  and `new-files-only` tied to one corpus and preserves the sole chain `impact_nodup` breaker.
 
 deferrals:
 - **From P2-001b (#204), its contract.**
