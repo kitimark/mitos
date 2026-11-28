@@ -79,10 +79,113 @@ def ingest (files : List SourceFile) : Except String (List Located) := do
       out := out.push { id := out.size, repo := f.repo, rev := "fixture", path := f.path, fact, origin }
   return out.toList
 
+def breaks : List Char := ['`', '|', '\n', '\r', '@']
+
+def escapes : List (Char × List Char) :=
+  [('\\', "\\\\".toList), ('`', "\\x60".toList), ('|', "\\x7c".toList),
+   ('\n', "\\n".toList), ('\r', "\\x0d".toList), ('@', "\\x40".toList)]
+
+def escape (c : Char) : List Char :=
+  match escapes.find? (·.1 == c) with
+  | some (_, e) => e
+  | none => [c]
+
+def inert (s : String) : String := String.ofList (s.toList.flatMap escape)
+
+def code (s : String) : String := "`" ++ inert s ++ "`"
+
+private theorem escape_safe {d c : Char} (h : c ∈ escape d) : c ∉ breaks := by
+  unfold escape at h
+  split at h
+  · next e he =>
+    exact (by decide : ∀ p ∈ escapes, ∀ x ∈ p.2, x ∉ breaks) _ (List.mem_of_find?_eq_some he) c h
+  · next he =>
+    rw [List.mem_singleton] at h
+    subst h
+    intro hb
+    obtain ⟨p, hp, rfl⟩ := (by decide : ∀ b ∈ breaks, ∃ p ∈ escapes, p.1 = b) c hb
+    exact absurd (beq_self_eq_true p.1) (List.find?_eq_none.1 he p hp)
+
+theorem inert_safe (s : String) : ∀ c ∈ (inert s).toList, c ∉ breaks := by
+  intro c h
+  simp only [inert, String.toList_ofList, List.mem_flatMap] at h
+  obtain ⟨d, -, hd⟩ := h
+  exact escape_safe hd
+
+theorem inert_clean {s : String} (h : ∀ c ∈ s.toList, c ∉ escapes.map (·.1)) : inert s = s := by
+  have : ∀ l : List Char, (∀ c ∈ l, c ∉ escapes.map (·.1)) → l.flatMap escape = l := by
+    intro l
+    induction l with
+    | nil => intro _; rfl
+    | cons c l ih =>
+      intro hl
+      have hc : escape c = [c] := by
+        unfold escape
+        split
+        · next k e he =>
+          have hk : k = c := by simpa using List.find?_some he
+          exact absurd (List.mem_map.2 ⟨_, List.mem_of_find?_eq_some he, hk⟩) (hl c List.mem_cons_self)
+        · rfl
+      rw [List.flatMap_cons, hc, ih fun x hx => hl x (List.mem_cons_of_mem _ hx)]
+      rfl
+  rw [inert, this _ h, String.ofList_toList]
+
+private theorem escape_cases (c : Char) :
+    (∃ p ∈ escapes, p.1 = c ∧ escape c = p.2) ∨
+      (escapes.find? (·.1 == c) = none ∧ escape c = [c]) := by
+  unfold escape
+  split
+  · next k e he =>
+    exact .inl ⟨(k, e), List.mem_of_find?_eq_some he, by simpa using List.find?_some he, rfl⟩
+  · next he => exact .inr ⟨he, rfl⟩
+
+private theorem keyed_ne_plain {p : Char × List Char} (hp : p ∈ escapes) {b : Char}
+    (nb : escapes.find? (·.1 == b) = none) {x y : List Char} : p.2 ++ x ≠ [b] ++ y := by
+  intro h
+  have hb : b = '\\' := by
+    have := congrArg List.head? h
+    simpa [List.head?_append, (by decide : ∀ p ∈ escapes, p.2.head? = some '\\') p hp] using this.symm
+  subst hb
+  exact absurd nb (by decide)
+
+private theorem escape_head {a b : Char} {x y : List Char} (h : escape a ++ x = escape b ++ y) : a = b := by
+  rcases escape_cases a with ⟨p, hp, rfl, ha⟩ | ⟨na, ha⟩ <;>
+    rcases escape_cases b with ⟨q, hq, rfl, hb⟩ | ⟨nb, hb⟩ <;> rw [ha, hb] at h
+  · have hpq : p.2 <+: q.2 ∨ q.2 <+: p.2 :=
+      List.prefix_or_prefix_of_prefix (List.prefix_append p.2 x) (h ▸ List.prefix_append q.2 y)
+    exact (by decide : ∀ p ∈ escapes, ∀ q ∈ escapes,
+        (p.2.isPrefixOf q.2 || q.2.isPrefixOf p.2) = true → p.1 = q.1) p hp q hq
+      (by simpa [List.isPrefixOf_iff_prefix] using hpq)
+  · exact absurd h (keyed_ne_plain hp nb)
+  · exact absurd h.symm (keyed_ne_plain hq na)
+  · exact (by simpa using h : a = b ∧ x = y).1
+
+private theorem flatMap_escape_inj : ∀ {l m : List Char}, l.flatMap escape = m.flatMap escape → l = m
+  | [], [], _ => rfl
+  | [], b :: m, h => by
+    rcases escape_cases b with ⟨p, hp, -, hb⟩ | ⟨-, hb⟩ <;> simp [hb] at h
+    exact absurd h.1 ((by decide : ∀ p ∈ escapes, p.2 ≠ []) p hp)
+  | a :: l, [], h => by
+    rcases escape_cases a with ⟨p, hp, -, ha⟩ | ⟨-, ha⟩ <;> simp [ha] at h
+    exact absurd h.1 ((by decide : ∀ p ∈ escapes, p.2 ≠ []) p hp)
+  | a :: l, b :: m, h => by
+    rw [List.flatMap_cons, List.flatMap_cons] at h
+    obtain rfl := escape_head h
+    rw [flatMap_escape_inj (List.append_cancel_left h)]
+
+theorem inert_injective {s t : String} (h : inert s = inert t) : s = t := by
+  have := congrArg String.toList h
+  simp only [inert, String.toList_ofList] at this
+  exact String.toList_injective (flatMap_escape_inj this)
+
+theorem inert_cases :
+    ["`", "|", "\n", "\r", "@", "\\", "naïve-date"].map inert =
+      ["\\x60", "\\x7c", "\\n", "\\x0d", "\\x40", "\\\\", "naïve-date"] := by decide
+
 def edgeType (k : RepoKey) : String := s!"{k.ident.kind}/{scopeName k.scope}"
 
 def renderEdge (k : RepoKey) : String :=
-  s!"`{k.requiringRepo}` → `{k.providingRepo}` ({edgeType k} `{k.ident.key}`)"
+  s!"{code k.requiringRepo} → {code k.providingRepo} ({inert (edgeType k)} {code k.ident.key})"
 
 def parseLabels (txt : String) : Except String (List RepoKey) := do
   let mut out := #[]
@@ -146,33 +249,67 @@ def score (files : List SourceFile) (labels : List RepoKey) : Except String Scor
     return { facts, labels, predicted := collapse r.edges,
              unresolved := facts.filter (r.unresolved.contains ·.id) }
 
-def Scorecard.render (c : Scorecard) (name : String) : String := Id.run do
+structure FactCounts where
+  facts : Nat
+  requirements : Nat
+  provisions : Nat
+  bindings : Nat
+  unresolved : Nat
+
+def Scorecard.factCounts (c : Scorecard) : FactCounts :=
+  { facts := c.facts.length,
+    requirements := (c.facts.filter (·.fact.kind == .requires)).length,
+    provisions := (c.facts.filter (·.fact.kind == .provides)).length,
+    bindings := (c.facts.filter (·.fact.kind matches .binds _)).length,
+    unresolved := c.unresolved.length }
+
+structure TypeCounts where
+  edgeType : String
+  predicted : Nat
+  labelled : Nat
+  tp : Nat
+  confirmed : Nat
+  confirmedTp : Nat
+  inferred : Nat
+  inferredTp : Nat
+
+def Scorecard.typeCounts (c : Scorecard) : List TypeCounts :=
   let pred := c.predicted.map (·.1)
-  let types := (pred ++ c.labels).map edgeType |>.eraseDups
-  let reqs := c.facts.filter (·.fact.kind == .requires) |>.length
-  let provs := c.facts.filter (·.fact.kind == .provides) |>.length
-  let binds := c.facts.filter (·.fact.kind matches .binds _) |>.length
-  let mut out := s!"### Scorecard: fixture `{name}`\n\n"
-  out := out ++ s!"{c.facts.length} facts ({reqs} requirements, {provs} provisions"
-  out := out ++ (if binds = 0 then "), " else s!", {binds} bindings), ")
-  out := out ++ s!"{pred.length} repo-level edges predicted, {c.labels.length} hand-labelled, "
-  out := out ++ s!"{c.unresolved.length} requirements unresolved.\n\n"
-  out := out ++ "| Edge type | Predicted | Labelled | TP | FP | FN | Precision | Recall |\n"
-  out := out ++ "|---|---|---|---|---|---|---|---|\n"
-  for t in types do
+  ((pred ++ c.labels).map edgeType).eraseDups.map fun t =>
     let p := pred.filter (edgeType · == t)
     let l := c.labels.filter (edgeType · == t)
-    let tp := (p.filter l.contains).length
-    out := out ++ s!"| {t} | {p.length} | {l.length} | {tp} | {p.length - tp} | {l.length - tp} "
-    out := out ++ s!"| {ratio tp p.length} | {ratio tp l.length} |\n"
+    let trust (s : Status) :=
+      c.predicted.filter (fun (e, s') => edgeType e == t && s' == s) |>.map (·.1)
+    let hits (ks : List RepoKey) := (ks.filter c.labels.contains).length
+    { edgeType := t, predicted := p.length, labelled := l.length, tp := (p.filter l.contains).length,
+      confirmed := (trust .confirmed).length, confirmedTp := hits (trust .confirmed),
+      inferred := (trust .inferred).length, inferredTp := hits (trust .inferred) }
+
+def TypeCounts.row (t : TypeCounts) : String :=
+  s!"| {inert t.edgeType} | {t.predicted} | {t.labelled} | {t.tp} | {t.predicted - t.tp} | " ++
+    s!"{t.labelled - t.tp} | {ratio t.tp t.predicted} | {ratio t.tp t.labelled} |"
+
+def TypeCounts.trustRow (t : TypeCounts) (s : Status) : String :=
+  let (n, tp) := match s with
+    | .confirmed => (t.confirmed, t.confirmedTp)
+    | .inferred => (t.inferred, t.inferredTp)
+  s!"| {inert t.edgeType} | {statusName s} | {n} | {tp} | {n - tp} | {ratio tp n} |"
+
+def Scorecard.render (c : Scorecard) (name : String) : String := Id.run do
+  let pred := c.predicted.map (·.1)
+  let n := c.factCounts
+  let mut out := s!"### Scorecard: fixture {code name}\n\n"
+  out := out ++ s!"{n.facts} facts ({n.requirements} requirements, {n.provisions} provisions"
+  out := out ++ (if n.bindings = 0 then "), " else s!", {n.bindings} bindings), ")
+  out := out ++ s!"{pred.length} repo-level edges predicted, {c.labels.length} hand-labelled, "
+  out := out ++ s!"{n.unresolved} requirements unresolved.\n\n"
+  out := out ++ "| Edge type | Predicted | Labelled | TP | FP | FN | Precision | Recall |\n"
+  out := out ++ "|---|---|---|---|---|---|---|---|\n"
+  for t in c.typeCounts do out := out ++ t.row ++ "\n"
   out := out ++ "\n| Edge type | Trust level | Predicted | TP | FP | Precision |\n"
   out := out ++ "|---|---|---|---|---|---|\n"
-  for t in types do
-    for s in [Status.confirmed, .inferred] do
-      let p := c.predicted.filter (fun (e, s') => edgeType e == t && s' == s) |>.map (·.1)
-      let tp := (p.filter c.labels.contains).length
-      out := out ++ s!"| {t} | {statusName s} | {p.length} | {tp} | {p.length - tp} "
-      out := out ++ s!"| {ratio tp p.length} |\n"
+  for t in c.typeCounts do
+    for s in [Status.confirmed, .inferred] do out := out ++ t.trustRow s ++ "\n"
   let fps := c.predicted.filter (!c.labels.contains ·.1)
   let fns := c.labels.filter (!pred.contains ·)
   unless fps.isEmpty do
@@ -184,8 +321,8 @@ def Scorecard.render (c : Scorecard) (name : String) : String := Id.run do
   unless c.unresolved.isEmpty do
     out := out ++ "\nUnresolved requirements:\n"
     for l in c.unresolved do
-      out := out ++ s!"- `{l.repo}/{l.path}` bytes {l.fact.span.start}+{l.fact.span.len}: "
-      out := out ++ s!"`{repr l.fact.ident.key}`\n"
+      out := out ++ s!"- {code s!"{l.repo}/{l.path}"} bytes {l.fact.span.start}+{l.fact.span.len}: "
+      out := out ++ s!"`\"{inert l.fact.ident.key}\"`\n"
   return out
 
 private def chainUnionFiles : List SourceFile :=
