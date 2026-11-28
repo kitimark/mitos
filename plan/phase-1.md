@@ -7,7 +7,7 @@ later phase relies on.
 **Exit criteria**
 
 1. `cd core && lake comparator` accepts `Mitos.Proofs.Resolver` against
-   `core/Challenge/Resolver.lean`: all eight theorems, standard axioms only, also with
+   `core/Challenge/Resolver.lean`: all twelve theorems, standard axioms only, also with
    `--paranoid`.
 2. `cd core && lake check` passes: no `sorry` anywhere in the core.
 3. Mutation testing: each mutant of the resolver in `eval/mutants/` breaks at least one theorem.
