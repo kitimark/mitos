@@ -960,6 +960,9 @@ one decision. The module is small on purpose, because the fixture is data.
   code is the same either way.
   Default: use the resolver's provision-fact semantics and leave any change to the owner as a
   spec decision.
+  Answered: (a), the provision fact, by the owner on #584
+  ([comment](https://github.com/kitimark/mitos/issues/584#issuecomment-7240096942)). `statusOf`
+  stays as it is, and the PR that closes #584 rewords the plan's status rule to say so.
 - At design time, neither CI nor the merged P2-001b head had been checked. See Build notes.
 
 ### Next implementation step
