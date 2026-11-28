@@ -716,7 +716,7 @@ jq -cS '.pulls[2].verdicts[0].effort = "low"' "$tmp/source.json" >"$tmp/low-answ
 "$bin" provenance render owner/mitos "$tmp/low-answer-source.json" >"$tmp/low-answer-source.block"
 jq --arg block "$(cat "$tmp/low-answer-source.block")" --arg prose "$(dash_body)" \
   '.body = ($prose + "\n\n" + $block)' "$b/dashboard.json" >"$d/dashboard.json"
-want_evidence_answer=$(printf '<!-- land-report -->\nStopped: an unanswered owner comment, a missing required label or footer, or unmet author or reviewer verification requirements.')
+want_evidence_answer=$(printf '<!-- land-report -->\nStopped: verdicts short of the reviewer requirements (provenance admission incomplete).')
 if snap && jq -e '.prs[] | select(.pr == 9) | (.rest | not) and .author != null and
       .verdicts[0].result == "pass"' "$tmp/snap.json" >/dev/null &&
     jq -c '.prs[] | select(.pr == 9) | del(.rest)' "$tmp/high-effort.snapshot" >"$tmp/high-answer-facts" &&
@@ -736,6 +736,57 @@ if [ "$(words9)" = "[{\"about\":\"$q1\",\"approves\":true,\"kind\":\"ownerLand\"
   ok "the snapshot prints approves true for the typed approval"
 else
   bad "the snapshot prints approves true for the typed approval" "$(words9)"
+fi
+# shellcheck disable=SC2016
+linked_row() { printf '| [#%s](https://github.com/owner/mitos/pull/%s) x | `%s` | green | PASS opus-xhigh at `%s`, author sonnet |\n' "$1" "$2" "${3:0:7}" "${3:0:7}"; }
+linked_dash() {
+  # shellcheck disable=SC2016
+  jq --arg body "$(printf '## Needs you\n\n- nothing\n\n## In flight\n\n| PR | Head | `gate` | Verdict |\n|---|---|---|---|\n%s\n\n## Next up\n\n' "$1"; cat "$tmp/source.block")" \
+    '.body = $body' "$b/dashboard.json" >"$d/dashboard.json"
+}
+fresh
+said9 "$typed9"
+linked_dash "$(linked_row 7 7 "$p1"; linked_row 8 8 "$c1"; linked_row 9 9 "$q1")"
+expect_land "linked PR cells (#518): the typed approval still plans its merge" "$me9" \
+  "{\"next\":9,\"plan\":{\"head\":\"$q1\",\"kind\":\"merge\",\"pr\":9},\"step\":{\"head\":\"$q1\",\"kind\":\"present\"},\"word\":\"stands\"}"
+if ! grep -q 'holds' "$tmp/snap.err" && "$bin" land-answers "$tmp/snap.json" >"$tmp/linked.answers" 2>&1 &&
+    jq -e '.merge.pr == 9 and all(.answers[]; .pr != 9)' "$tmp/linked.answers" >/dev/null &&
+    jq -e 'all(.notes[]; .unread == [] and .unmet == [])' "$tmp/snap.json" >/dev/null; then
+  ok "linked PR cells (#518): nothing holds, and the merge is handed to apply"
+else
+  bad "linked PR cells (#518): nothing holds, and the merge is handed to apply" \
+    "$(cat "$tmp/snap.err" "$tmp/linked.answers")"
+fi
+fresh
+said9 "$typed9"
+echo '[[]]' >"$d/comments-7.json"
+linked_dash "$(linked_row 7 7 "$p1"; linked_row 8 8 "$c1"; linked_row 9 10 "$q1")"
+want_unread=$(printf '<!-- land-report -->\nHeld at %s: a read failed (unread dashboard). The next run reads again, so no new comment is needed.' "$q1")
+if snap && grep -qxF 'snapshot: #9 holds: unread dashboard' "$tmp/snap.err" && decide "$me9" &&
+    [ "$(jq -c '[.step, .plan]' "$tmp/land.out")" = "[$held,{\"kind\":\"idle\"}]" ] &&
+    "$bin" land-answers "$tmp/snap.json" >"$tmp/unread.answers" 2>&1 &&
+    jq -e --arg body "$want_unread" '.merge == null and ([.answers[].pr] | sort) == [8, 9] and
+      any(.answers[]; .pr == 9 and .body == $body and .land == 9001) and
+      any(.answers[]; .pr == 8 and .land == 8001)' "$tmp/unread.answers" >/dev/null; then
+  ok "a PR cell that links another pull request: the hold names the unread dashboard where the owner asked, and is silent elsewhere"
+else
+  bad "a PR cell that links another pull request: the hold names the unread dashboard where the owner asked, and is silent elsewhere" \
+    "$(cat "$tmp/snap.err" "$tmp/land.out" "$tmp/unread.answers")"
+fi
+fresh
+said9 "$typed9"
+jq -cS 'del(.pulls[2])' "$tmp/source.json" >"$tmp/no-entry-source.json"
+"$bin" provenance render owner/mitos "$tmp/no-entry-source.json" >"$tmp/no-entry-source.block"
+jq --arg block "$(cat "$tmp/no-entry-source.block")" --arg prose "$(dash_body)" \
+  '.body = ($prose + "\n\n" + $block)' "$b/dashboard.json" >"$d/dashboard.json"
+want_no_entry=$(printf '<!-- land-report -->\nStopped: no covering verdict, no provenance entry for the author (provenance admission incomplete).')
+if snap && "$bin" land-answers "$tmp/snap.json" >"$tmp/no-entry.answers" 2>&1 &&
+    jq -e --arg body "$want_no_entry" '.merge == null and
+      any(.answers[]; .pr == 9 and .body == $body and .land == 9001)' "$tmp/no-entry.answers" >/dev/null; then
+  ok "a pull request with no provenance entry: the answer names the missing entry"
+else
+  bad "a pull request with no provenance entry: the answer names the missing entry" \
+    "$(cat "$tmp/snap.err" "$tmp/no-entry.answers")"
 fi
 fresh
 jq -n '[[{filename: "gate/Main.lean"}]]' >"$d/files-9.json"
