@@ -1,0 +1,5 @@
+class-1	9900000001	1	not-listed	listed
+class-2	9900000002	2	listed	not-listed
+class-3	9900000004	3	listed	not-listed
+class-4-quoted	9900000005	4	not-listed	listed
+class-4-other-tool	9900000006	4	listed	not-listed
