@@ -1,7 +1,7 @@
 # tasks/P1-020-land-merge-workflow.md
 
 phase: 1
-goal: On a `merge` plan, `land.yml`'s `apply` job reads the pull request and its conversation again and makes the one pinned rebase-merge call with the updater app's token, and `report` answers each change of answer to an owner word, so a kept pull request lands on the owner's typed `/land <commit>` with no Claude session calling the merge.
+goal: On a `merge` plan, `land.yml`'s `apply` job reads the pull request and its conversation again and makes the one pinned rebase-merge call with the updater app's token, and `report` answers each change of answer to an owner word, so a kept pull request lands on the owner's typed `/land` or `/land <commit>` with no Claude session calling the merge.
 statement: none locked (workflow tooling). It acts on P1-018's `PlannedMergeIsGated` (15) and P1-019's `KeptMergeIsTheOwnersTypedApproval`, and adds the gate statements under `statements` below.
 touches: .github/workflows/land.yml, .github/workflows/update-prs.yml (its mint step and the two `uses:` pins of that job only, #284 O3), .github/workflows/ci.yml (three test steps, and the name of the protection test's step), .github/scripts/land-decide.sh, .github/scripts/land-decide.test.sh, .github/scripts/land-digest.sh, .github/scripts/land-apply.sh, .github/scripts/land-apply.test.sh, .github/scripts/land-report.sh, .github/scripts/land-report.test.sh, .github/scripts/app-token.test.sh, .github/scripts/land-protection.test.sh (its `land.yml` pins narrow to the `decide` job), gate/MitosGate/LandAnswer.lean, gate/MitosGate/LandCli.lean, gate/Main.lean, gate/MitosGate/Land.lean (two comments), gate/MitosGate/Snapshot/Types.lean, gate/MitosGate/Snapshot/Fields.lean, gate/MitosGate/Snapshot/Obs.lean, gate/MitosGate/Snapshot/Fixtures.lean, gate/MitosGate/Snapshot.lean, gate/MitosGate/SnapshotCli.lean, gate/snapshot-test.sh, gate/MitosGate/Shadow/Types.lean, gate/MitosGate/Shadow/Reading.lean, gate/MitosGate/Shadow/Seat.lean, gate/MitosGate/Shadow/Finding.lean, gate/MitosGate/Shadow.lean, gate/MitosGate/ShadowCli.lean, gate/MitosGate/ShadowCli/Read.lean, gate/provenance-provider-test.sh, gate/shadow-fetch.sh, gate/shadow-test.sh, gate/shadow-fixtures/, gate/land-test.sh, this file, ops/runs/
 must_not_touch: statements.lock, models.lock, core/, eval/cheats/, models, .claude/, .cursor/, CLAUDE.md, docs/process.md, plan/, .github/scripts/rebase-prs.sh, .github/workflows/land-protection.yml, .github/scripts/land-protection.sh, gate/snapshot-fetch.sh (this row adds no read to `decide`), gate/MitosGate/Speech/ (the comment reader stays P1-019's)
@@ -1484,29 +1484,38 @@ Before the merge, no key:
   digest from `snapshot-fetch.sh`'s saved reads equals `apply`'s, a comment between the two reads
   gives `digest`, and a comment id that is not the owner's gives `approval`.
 
-After the owner merges. T1 is a throwaway kept, not critical, pull request that adds
-`.claude/land-trial.md`, one line, with a real verdict on the dashboard (a model other than the
-author's) and a CodeRabbit review. Each stop case types `/land <head>` while `gate` still runs at
-that head, then does the stop action before `gate` finishes, so the approval cannot merge first.
+After the owner merges, and after P1-019b merges (`tasks/P1-019b-bare-land.md`, #508), so the
+runs test the final rule. T1 is a throwaway kept, not critical, pull request that adds
+`.claude/land-trial.md`, one line, and changes no spec path, with a real verdict on the dashboard
+(a model other than the author's) and a CodeRabbit review. Each stop case types its `/land` while
+`gate` still runs at that head, a bare `/land` in R9 and `/land <head>` in R4 to R8, then does the
+stop action before `gate` finishes, so the approval cannot merge first.
 
 | Run | Who | Action | What it proves |
 |---|---|---|---|
-| R1 | owner, browser | on T1, at the end, `/land <head>` with `gate` green on `main`'s tip | the app merges at that head, `merged_by` is the app, `report` says "Landed <head> … main is <sha>" and that `sha` is `main`'s head, and `apply`'s mint step is green |
-| R2 | owner | a bare `/land` | the unnamed answer with its code block, once; no merge |
+| R1 | owner, browser | on T1, at the end, a bare `/land` with `gate` green on `main`'s tip | the app merges at the head the comment pinned, `merged_by` is the app, `report` says "Landed <head> … main is <sha>" and that `sha` is `main`'s head, and `apply`'s mint step is green; in the record the word is `ownerLand` with `approves: true`, and its `about` is the newest activity `after` before the comment's `created_at` |
+| R2 | owner | `merge it` and `/land` on two lines, which an agent then answers so that `rest` holds for R1 | the unnamed answer with its code block naming the current head, once; no merge |
 | R3 | an agent | `/land <head>` with the footer | no merge and no answer |
 | R4 | owner | `/land <head>`, then edit it | held |
 | R5 | owner | `/land <head>`, then `/hold` | held |
 | R6 | owner | `/land <head>`, then a comment an agent answers | spoke |
 | R7 | owner | a pending review with an inline comment, `/land <head>`, then submit the review with an empty summary | spoke (item 2); record the comment's `created_at` and `updated_at` against the review's `submitted_at` |
 | R8 | owner | `/land <head>`, a review with text, then that summary edited to empty | spoke (item 1) |
-| R9 | owner | `/land <head>`, then a push | stale; no merge |
-| R10 | owner | `/land <head>` right after another merge, while `main` moves | `apply` stops (`pr`, or GitHub's 405) with no merge at the old head; the next run merges after the updater's push and a green `gate` |
-| R11 | owner, own terminal | on T2 (a critical throwaway that adds a comment line to a workflow file and deletes `.claude/land-trial.md`, with `verifier-opus` and other-model passes): `gh pr comment <T2> --body "/land <head>"` | the owner's `gh` reads as typed, and the app merges a pull request that edits a workflow file |
+| R9 | owner, then the builder | a bare `/land`, then a push | stale; no merge; the answer reads `<new> is new content since <the head the comment pinned>` |
+| R10 | owner | a bare `/land` right after another merge, while `main` moves | `about` is the head just before the comment's second; when the updater's rebase comes after the comment, the approval carries across it with an equal content id; `apply` stops (`pr`, or GitHub's 405) with no merge at the old head; the next run merges after the updater's push and a green `gate`. A bare `/land` in the same second as the updater's force push reads `held`, with a text that names another cause: that hold is expected, and the owner types again |
+| R11 | owner, own terminal | on T2 (a critical throwaway that adds a comment line to a workflow file and deletes `.claude/land-trial.md`, with `verifier-opus` and other-model passes): `gh pr comment <T2> --body "/land <head>"` | the owner's `gh` reads as typed, and the app merges a pull request that edits a workflow file; it is also the one real merge by the named form |
 | R12 | an agent | `gh run rerun <run>` and `--failed` on R1's run | `apply` is skipped on attempt 2, with no call |
 | R13 | — | the first `update-prs` run after the merge | the three-input mint is green, every pull request behind `main` is rebased, a pull request that edits `.github/workflows/` is pushed (O3) |
 | R14 | — | two triggers in one state during R2 to R9 | one post, not two; whether `held` flaps on a failed read |
 | R15 | owner | `/land <head>` before CodeRabbit's check finishes | whether the merge stalls with no trigger; over 10 minutes adds `check_run` |
-| R16 | — | every run's record | `cost.reads` unchanged, since this row adds no read to `decide` |
+| R16 | — | every run's record | `cost.reads` unchanged, since neither this row nor P1-019b adds a read to `decide`; for each bare word (R1, R9, R10) the `land-reads` artifact's activity times and the comment's `created_at` give the record's `about` by hand; also record the gap between each T1 push's activity time and its timeline event |
+
+Rows R1, R2, R9, R10, R11 and R16 follow P1-019b (`tasks/P1-019b-bare-land.md`, Changed real
+runs): a bare `/land` alone approves the head the pull request had when the owner commented, by
+the owner's calls of 19 and 28 Nov. R3 to R8 and R12 to R15 are as they were, and R14 still covers
+R2 to R9. After R1 and R11 both forms have merged for real. No run adds a bare twin of R9, merges a
+pull request into T1's branch, or types a bare `/land` on a pull request that needs
+`spec-approved`, where it does not approve: fixtures and JSON cases pin those three.
 
 Each run is reported on #179, as Done when asks.
 

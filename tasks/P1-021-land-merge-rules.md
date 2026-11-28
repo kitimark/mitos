@@ -1,7 +1,7 @@
 # tasks/P1-021-land-merge-rules.md
 
 phase: 1
-goal: The rules say the owner lands every pull request they keep by typing `/land <commit>`, the land workflow merges it, and no agent calls a merge route for it, asked or not; `pr-state.sh` prints `land-ready #N` with the line to type; no agent deletes a comment or edits one it did not post, and a Bash hook refuses `DELETE` on the comment routes. Closes #270.
+goal: The rules say the owner lands every pull request they keep by typing `/land` or `/land <commit>` (only `/land <commit>` on a pull request that needs `spec-approved`), the land workflow merges it, and no agent calls a merge route for it, asked or not; `pr-state.sh` prints `land-ready #N` with the line to type; no agent deletes a comment or edits one it did not post, and a Bash hook refuses `DELETE` on the comment routes. Closes #270.
 statement: none (process rules)
 touches: CLAUDE.md, .claude/skills/kitimark-mode/SKILL.md, docs/process.md, .cursor/ (the port of the same rules), .claude/hooks/pr-state.sh, .claude/hooks/pr-state.test.sh, .claude/hooks/check-no-comment-delete.sh, .claude/hooks/check-no-comment-delete.test.sh, .claude/settings.json (one hook entry), this file, ops/runs/
 must_not_touch: statements.lock, models.lock, gate/, eval/cheats/, models, .github/, plan/, .claude/scripts/watch-github.sh
@@ -59,6 +59,12 @@ to paste as a comment. Expected result: `github-actions` answers within minutes,
 follows `gate` on `main`'s tip. The line stays valid when `main` moves, so no new catch-up follows a
 rebase.
 
+The catch-up keeps this full line, because it pins the head that the catch-up's verdict covers.
+Under the code block it adds one note: a bare `/land` also works right after the owner looks at
+the pull request, and it approves the head the pull request had when they commented (P1-019b,
+`tasks/P1-019b-bare-land.md`). The note is left out for a pull request that needs `spec-approved`,
+where only the full line approves.
+
 types: none.
 
 statements: none. The rules rest on P1-018's `PlannedMergeIsGated` and P1-019's
@@ -91,6 +97,11 @@ owner_decisions:
 - **Settled by the owner's acceptance (15 Nov):** call 2 flips (one owner action on a kept path,
   the line `/land <commit>`; a spec pull request keeps its label first), call 6 (the owner must
   type), call 7 (`plan/` is kept), and N6 (accept, with the rule and the hook of section 7).
+- **Settled by the owner on 28 Nov** ("accept the picks",
+  https://github.com/kitimark/mitos/issues/508#issuecomment-7241070778): the rules say "`/land` or
+  `/land <commit>`"; catch-ups keep the full `/land <head>` line, with a note that a bare `/land`
+  also works right after the owner looks at the pull request; a pull request that needs
+  `spec-approved` keeps the named form, and a bare `/land` does not approve it.
 - **Root's defaults, made at plan time:** the hook in its own file; the `land-ready` line's
   words; the `gh pr comment` form only after the real run shows it reads as typed.
 
@@ -112,8 +123,14 @@ Section 7:
 - **#270.** The owner closed fix (a) with #271. Fix (b) holds until A3 and A4 land: the root gives the pinned command at once. A4 closes #270.
 - **Same PR:** `docs/process.md`, the mode skill under `.claude/skills/` and the `.cursor` port.
 
+The owner's calls of 19 and 28 Nov (#508, P1-019b) amend the text above, which is the amendment's
+of 15 Nov. The rule this row writes says that the owner lands a kept pull request by typing `/land`
+or `/land <commit>`, and a pull request that needs `spec-approved` only by `/land <commit>`. A
+catch-up's code block still holds only `/land <full head sha>`, with the note that Usage gives. On
+"approved, merge it" the root replies with that line and that note.
+
 ## Done when
 - [ ] `pr-state.test.sh` and `check-no-comment-delete.test.sh` pass
 - [ ] every hook test and `plan-tasks.test.sh` pass; shellcheck reports nothing
-- [ ] the owner landed it with `/land <commit>`, and the merge is the land workflow's
+- [ ] the owner landed it with `/land` or `/land <commit>`, and the merge is the land workflow's
 - [ ] run-log record written (ops/runs/)
