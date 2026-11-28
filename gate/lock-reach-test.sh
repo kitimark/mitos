@@ -19,6 +19,7 @@ tree() {
   cp "$root/statements.lock" "$tmp/$1/statements.lock"
   cp "$root/lake-manifest.json" "$tmp/$1/lake-manifest.json"
   cp "$root/core/lake-manifest.json" "$tmp/$1/core/lake-manifest.json"
+  cp "$root/core/Mitos/Core.lean" "$tmp/$1/core/Mitos/Core.lean"
   cp -R "$root/core/Mitos/Core" "$tmp/$1/core/Mitos/Core"
 }
 
@@ -33,7 +34,7 @@ expect() {
   ok "$name"
 }
 
-reached='every module under core/Mitos/Core/ is reached from Mitos.Core.Spec'
+reached='every spec module is reached from Mitos.Core.Spec'
 missed='not reached from Mitos.Core.Spec'
 
 tree main
@@ -46,13 +47,13 @@ expect "lock --check fails on an unreached module" top 1 \
 expect "the lock lines alone still match, so the reach check is what fails" top 1 \
   'statements\.lock up to date' 'statements\.lock is out of date' lock --check
 expect "lock --check names how many modules it missed" top 1 \
-  '^1 module under core/Mitos/Core/ is not reached from Mitos\.Core\.Spec' '' lock --check
+  '^1 spec module is not reached from Mitos\.Core\.Spec' '' lock --check
 
 tree nested
 printf 'def nestedSpec : Nat := 1\n' >"$tmp/nested/core/Mitos/Core/Spec/Nested.lean"
 printf 'def otherSpec : Nat := 1\n' >"$tmp/nested/core/Mitos/Core/Other.lean"
 expect "lock --check fails on unreached modules in a subfolder and at the top" nested 1 \
-  '^2 modules under core/Mitos/Core/ are not reached from Mitos\.Core\.Spec' "$reached" lock --check
+  '^2 spec modules are not reached from Mitos\.Core\.Spec' "$reached" lock --check
 expect "the nested module is named" nested 1 \
   '^core/Mitos/Core/Spec/Nested\.lean: Mitos\.Core\.Spec does not import Mitos\.Core\.Spec\.Nested' '' lock --check
 
@@ -77,6 +78,54 @@ cp "$root/lake-manifest.json" "$tmp/nocore/lake-manifest.json"
 cp "$root/core/lake-manifest.json" "$tmp/nocore/core/lake-manifest.json"
 expect "lock --check fails where core/Mitos/Core is not a folder" nocore 1 \
   'core/Mitos/Core is not a folder here' "$reached" lock --check
+
+globs='globs = ["Mitos.Core", "Mitos.Core.+"]'
+if grep -A1 '^name = "MitosCore"$' "$root/core/lakefile.toml" | grep -qxF -- "$globs"; then
+  ok "core/lakefile.toml builds Mitos.Core and Mitos.Core.+, the modules the reach check lists"
+else
+  cp "$root/core/lakefile.toml" "$out"; bad "core/lakefile.toml builds Mitos.Core and Mitos.Core.+"
+fi
+
+toy="$tmp/toy"
+mkdir -p "$toy/core/Mitos/Core"
+cp "$root/lean-toolchain" "$toy/lean-toolchain"
+cp "$root/lean-toolchain" "$toy/core/lean-toolchain"
+printf 'name = "toy-root"\n\n[[require]]\nname = "toy-core"\npath = "core"\n' >"$toy/lakefile.toml"
+printf 'name = "toy-core"\ndefaultTargets = ["ToyCore"]\n\n[[lean_lib]]\nname = "ToyCore"\n%s\n' "$globs" \
+  >"$toy/core/lakefile.toml"
+printf 'namespace Mitos\n\ndef rootOnly : Nat := 1\n\nend Mitos\n' >"$toy/core/Mitos/Core.lean"
+
+toy_build() {
+  printf '%snamespace Mitos\n\ndef specOnly : Nat := 2\n\nend Mitos\n' "$1" >"$toy/core/Mitos/Core/Spec.lean"
+  (cd "$toy/core" && lake update && lake build && cd "$toy" && lake update) >"$out" 2>&1
+}
+
+unset LEAN_PATH
+if toy_build '' && [ -f "$toy/core/.lake/build/lib/lean/Mitos/Core.olean" ]; then
+  ok "Lake builds core/Mitos/Core.lean in a toy core whose Spec does not import it"
+  eval "$(cd "$toy" && lake env bash -c 'printf "export LEAN_PATH=%q\n" "$LEAN_PATH"')"
+  expect "lock fails when Mitos.Core.Spec does not import core/Mitos/Core.lean" toy 1 \
+    '^core/Mitos/Core\.lean: Mitos\.Core\.Spec does not import Mitos\.Core,' "$reached" lock
+  cp "$toy/statements.lock" "$out"
+  if grep -q '^def Mitos\.specOnly ' "$out" && ! grep -q 'Mitos\.rootOnly' "$out"; then
+    ok "the lock it wrote has a line for Spec's declaration and none for the root file's"
+  else
+    bad "the lock it wrote has a line for Spec's declaration and none for the root file's"
+  fi
+  if toy_build $'import Mitos.Core\n'; then
+    expect "lock passes on the same toy core once Spec imports the root file" toy 0 "$reached" "$missed" lock
+    cp "$toy/statements.lock" "$out"
+    if grep -q '^def Mitos\.rootOnly ' "$out"; then
+      ok "the root file's declaration then has a line"
+    else
+      bad "the root file's declaration then has a line"
+    fi
+  else
+    bad "the toy core builds once Spec imports the root file"
+  fi
+else
+  bad "Lake builds core/Mitos/Core.lean in a toy core whose Spec does not import it"
+fi
 
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]
