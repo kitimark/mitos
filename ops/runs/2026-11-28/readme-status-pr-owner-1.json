@@ -1,0 +1,1 @@
+{"task":"readme-status","role":"pr-owner","model":"claude-sonnet-5-5","attempt":1,"iterations":1,"wall_min":15,"tokens":null,"errors_by_kind":{},"lint_hits":[],"escalations":[],"outcome":"in-review","note":"README Status section and core/ row; facts read over REST on 28 Nov 2026."}
