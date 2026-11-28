@@ -894,8 +894,6 @@ theorem unreached_eq_nil_iff (sources : List Name) (reached : Name → Bool) :
 def moduleDir (base : System.FilePath) (root : Name) : System.FilePath :=
   modToFilePath base root ""
 
-/-- A library with the globs `root` and `root.+`, such as `MitosCore`, also builds the file of
-`root` itself. The lock reads from `Mitos.Core.Spec`, which need not import that file. -/
 def libraryModules (root : Name) (rootIsFile : Bool) (inFolder : List Name) : List Name :=
   if rootIsFile then root :: inFolder else inFolder
 
@@ -906,8 +904,8 @@ theorem unreached_libraryModules_eq_nil_iff (root : Name) (rootIsFile : Bool)
   cases rootIsFile <;> simp [unreached_eq_nil_iff, libraryModules]
 
 /-- Lake's
-`Glob.forEachModuleIn` walks the folder with this same `forEachModuleInDir`, so a file is here
-exactly when the library's glob names it as a module. -/
+`Glob.forEachModuleIn` walks the folder with this same `forEachModuleInDir`, so a file in the
+folder is here exactly when the library's glob names it as a module. -/
 def sourceModules (base : System.FilePath) (root : Name) : IO (Array Name) := do
   let out ← IO.mkRef #[]
   forEachModuleInDir (moduleDir base root) fun m => out.modify (·.push (root ++ m))
