@@ -51,6 +51,7 @@ for d in good line1; do
   mkdir -p "$tmp/$d/core/Mitos" && cp -R "$root/core/Mitos/Core" "$tmp/$d/core/Mitos/Core"
   cp "$root/lake-manifest.json" "$tmp/$d/lake-manifest.json"
   cp "$root/core/lake-manifest.json" "$tmp/$d/core/lake-manifest.json"
+  mkdir -p "$tmp/$d/core/.lake" && ln -s "$root/core/.lake/packages" "$tmp/$d/core/.lake/packages"
 done
 
 expect "the repository header matches" 0 "$root"

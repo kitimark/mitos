@@ -21,6 +21,7 @@ tree() {
   cp "$root/core/lake-manifest.json" "$tmp/$1/core/lake-manifest.json"
   cp "$root/core/Mitos/Core.lean" "$tmp/$1/core/Mitos/Core.lean"
   cp -R "$root/core/Mitos/Core" "$tmp/$1/core/Mitos/Core"
+  mkdir -p "$tmp/$1/core/.lake" && ln -s "$root/core/.lake/packages" "$tmp/$1/core/.lake/packages"
 }
 
 expect() {
@@ -76,6 +77,7 @@ mkdir -p "$tmp/nocore/core"
 cp "$root/statements.lock" "$tmp/nocore/statements.lock"
 cp "$root/lake-manifest.json" "$tmp/nocore/lake-manifest.json"
 cp "$root/core/lake-manifest.json" "$tmp/nocore/core/lake-manifest.json"
+mkdir -p "$tmp/nocore/core/.lake" && ln -s "$root/core/.lake/packages" "$tmp/nocore/core/.lake/packages"
 expect "lock --check fails where core/Mitos/Core is not a folder" nocore 1 \
   'core/Mitos/Core is not a folder here' "$reached" lock --check
 
