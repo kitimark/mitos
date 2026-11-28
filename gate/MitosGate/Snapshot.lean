@@ -19,7 +19,8 @@ open Lean in
       ``Provenance.render_isDecoded, ``Provenance.absentAuthorOf,
       ``Provenance.unknownAdmitted, ``Provenance.unknownRequiredHasEffort,
       ``ModelIdentity.reportedDifferent_eq, ``ModelIdentity.absentDifferentNeedsKnown,
-      ``ModelIdentity.canonicalOutsideNotClaude, ``Land.reportedCovered_iff, ``obs_projection,
+      ``ModelIdentity.canonicalOutsideNotClaude, ``ModelIdentity.fableKeyIsNeverOpus,
+      ``ModelIdentity.fableKeysAreOneFamily, ``Land.reportedCovered_iff, ``obs_projection,
       ``reviewCommentsSpeakWhenSubmitted, ``restNeedsAnswersAndTheLabel,
       ``keptMergeIsTheOwnersTypedApproval] ++ fixtures.toList do
     for a in ← collectAxioms n do

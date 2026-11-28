@@ -1806,6 +1806,41 @@ theorem fullSonnetAcrossAuthorSystemsIsStillTheAuthorsModel :
     ({ approvedJudgedOnTheAuthorsModel with
       author := some ⟨grokBuilder, .reported "claude-sonnet-4-6"⟩ } : Obs).covered = false := by decide +kernel
 
+def holderFable : Teammate := ⟨"claude", "worker-fable"⟩
+def verifierFable : Teammate := ⟨"claude", "verifier-fable"⟩
+
+def fableWrittenReady : Obs :=
+  { opusWrittenReady with author := some ⟨holderFable, .reported "claude-fable-5-2"⟩,
+                          verdicts := [⟨10, "h", verifierOpus, "claude-opus-5-5", .pass⟩] }
+def criticalFableAuthored : Obs := onTrustPath fableWrittenReady
+
+theorem anOpusPassCoversFableWrittenWork : fableWrittenReady.covered = true := by decide +kernel
+theorem anOpusPassCoversCriticalFableWrittenWork : criticalFableAuthored.covered = true := by
+  decide +kernel
+theorem aFablePassCoversNoFableWrittenWork :
+    ({ fableWrittenReady with verdicts := [⟨10, "h", verifierFable, "claude-fable-5-3", .pass⟩] } :
+      Obs).covered = false := by decide +kernel
+theorem aFableFailBlocksFableWrittenWork :
+    ({ criticalFableAuthored with verdicts :=
+      criticalFableAuthored.verdicts ++ [⟨20, "h", verifierFable, "claude-fable-5-2", .fail⟩] } :
+      Obs).covered = false := by decide +kernel
+theorem aFablePassCoversOpusWrittenWork :
+    ({ opusWrittenReady with verdicts := [⟨10, "h", verifierFable, "claude-fable-5-2", .pass⟩] } :
+      Obs).covered = true := by decide +kernel
+theorem aFablePassIsNotTheCriticalOpusPass :
+    (onTrustPath { opusWrittenReady with verdicts :=
+      [⟨10, "h", verifierFable, "claude-fable-5-2", .pass⟩] }).covered = false := by decide +kernel
+theorem aFablePassIsNotTheCriticalOpusPassForASonnetAuthor :
+    ({ criticalSonnetAuthored with verdicts := [⟨11, "h", verifierFable, "claude-fable-5-2", .pass⟩] } :
+      Obs).covered = false := by decide +kernel
+theorem criticalOpusWorkUsesAFablePassAndAnotherOpusPass :
+    (onTrustPath { opusWrittenReady with verdicts :=
+      [⟨10, "h", verifierFable, "claude-fable-5-2", .pass⟩,
+        ⟨11, "h", verifierOpus, "claude-opus-5-5", .pass⟩] }).covered = true := by decide +kernel
+theorem aBareFableNameIsTheFableFamily :
+    ({ fableWrittenReady with verdicts := [⟨10, "h", verifierFable, "fable", .pass⟩] } :
+      Obs).covered = false := by decide +kernel
+
 
 end Fixture
 

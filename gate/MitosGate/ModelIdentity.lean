@@ -10,7 +10,7 @@ def canonicalOutside : String → Bool
   | _ => false
 
 inductive Key
-  | opus | sonnet | haiku
+  | opus | sonnet | haiku | fable
   | reported (provider model : String)
   deriving DecidableEq, Repr
 
@@ -18,6 +18,7 @@ private def family : String → Option Key
   | "opus" => some .opus
   | "sonnet" => some .sonnet
   | "haiku" => some .haiku
+  | "fable" => some .fable
   | _ => none
 
 private def version (s : String) : Bool :=
@@ -144,5 +145,48 @@ theorem caseVariantAliasIsNotAnOpaqueAuthor : key "openai" "Opus-xhigh" = none :
 
 theorem underscoreAliasIsNotAnOpaqueAuthor : key "grok" "claude_sonnet_5_5" = none := by
   decide +kernel
+
+theorem fableIdIsAcceptedClaude : acceptedClaude "claude" "claude-fable-5-2" = true := by
+  decide +kernel
+
+theorem fableIdKeepsItsFamily : key "claude" "claude-fable-5-2" = some .fable := by decide +kernel
+
+theorem legacyFableIsFullFable : key "claude" "fable" = key "claude" "claude-fable-5-2" := by
+  decide +kernel
+
+theorem fableKeyIsNeverOpus {p m : String} (h : claudeKey m = some .fable) : opus p m = false := by
+  simp [opus, h]
+
+theorem fableIdIsNotOpus : opus "claude" "claude-fable-5-2" = false :=
+  fableKeyIsNeverOpus (by decide +kernel)
+
+theorem fableAndOtherFamiliesDiffer :
+    ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5", "opus", "sonnet"].all (fun m =>
+      different "claude" (.reported "claude-fable-5-2") "claude" m &&
+        different "claude" (.reported m) "claude" "claude-fable-5-2") = true := by decide +kernel
+
+theorem fableKeyOrUnknown {p m : String} (h : claudeKey m = some .fable) :
+    key p m = none ∨ key p m = some .fable := by
+  unfold key
+  rw [h]
+  split <;> simp
+
+theorem fableKeysAreOneFamily {ap am vp vm : String} (ha : claudeKey am = some .fable)
+    (hv : claudeKey vm = some .fable) : different ap (.reported am) vp vm = false := by
+  rcases fableKeyOrUnknown (p := ap) ha with h1 | h1 <;>
+    rcases fableKeyOrUnknown (p := vp) hv with h2 | h2 <;> simp [different, h1, h2]
+
+theorem fableDoesNotVerifyFable :
+    different "claude" (.reported "claude-fable-5-2") "claude" "claude-fable-5-3" = false :=
+  fableKeysAreOneFamily (by decide +kernel) (by decide +kernel)
+
+theorem malformedFableIsUnknown :
+    acceptedClaude "claude" "claude-fable-5-2-latest" = false ∧
+      key "grok" "claude-fable-5-2-inherited" = none := by decide +kernel
+
+theorem fableProviderCannotBeInferred : acceptedClaude "openai" "claude-fable-5-2" = false := by
+  decide +kernel
+
+theorem compactFableAliasIsNotAnOpaqueAuthor : key "grok" "fable5.2" = none := by decide +kernel
 
 end MitosGate.ModelIdentity
