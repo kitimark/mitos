@@ -12,6 +12,7 @@ import MitosGate.SnapshotCli
 import MitosGate.ShadowCli
 import MitosGate.WorkflowCli
 import MitosGate.ProvenanceCli
+import MitosGate.WatchCli
 
 open MitosGate
 
@@ -91,7 +92,12 @@ def usage : String := s!"usage:
   mitos-gate shadow <dir>                        what the decide records of a window would have done,
                                                  against what merged, from the folder that
                                                  gate/shadow-fetch.sh wrote: one line per merge, then
-                                                 the counts, the cost and the runs"
+                                                 the counts, the cost and the runs
+  mitos-gate watch unanswered --owner <login> [--issue-comments <file>] [--review-comments <file>]
+                    [--reviews <file>]           the words of <login> that no later answer follows, per
+                                                 thread, as one line of JSON; each file is one route's
+                                                 answer read with gh api --paginate --slurp. Exit 1: a
+                                                 file, an answer or one of <login>'s items is refused"
 
 partial def parseAccept (args : List String) (c : Accept.Config) : Except String Accept.Config :=
   match args with
@@ -246,6 +252,7 @@ def cli (args : List String) : IO UInt32 := do
   | "shadow" :: rest => ShadowCli.cli rest usage
   | "workflow" :: rest => WorkflowCli.cli rest usage
   | "provenance" :: rest => ProvenanceCli.cli rest usage
+  | "watch" :: rest => WatchCli.cli rest usage
   | _ => IO.eprintln usage; return 2
 
 def main (args : List String) : IO UInt32 := do
