@@ -874,3 +874,16 @@ the rounds above verified, so they are named here:
 - The end of `PR-SEQUENCE.md`: the package came out cut off in the middle of a word. Its last
   paragraph and the "Gates before PR 15" section are back as `main` has them, and the sign-off
   gate now says question 9 is answered and the owner signs off once the gates hold.
+
+**CodeRabbit at 49be0f3.** It reviewed the push of the pass and found two doc lines, both real and
+both fixed in the same round:
+- Row 0b's Files column in `PR-SEQUENCE.md` named the task files of rows 2, 3c, 7a to 13 and 15.
+  The reshape lines and P2-014's `reuse` line also change the files of rows 3, 4, 5 and 6, and
+  that column is the whole set a PR may change. It now names rows 2, 3, 3c, 4 to 13 and 15.
+- The slug check. Antigravity's row said "the slug check before it posts", and the slug row reads
+  the slug off the host's own first comment, so a host with no comment could not do both. The
+  slug row, Antigravity's row and the slug risk in `DESIGN.md`, and the host table and the app-name
+  paragraph in `HANDOVER.md`, now say what the check is: a new host posts its first issue comment
+  unchecked and reads the slug off it before it posts another. If that comment names no app, it
+  reads as the owner's typed words once, and the host posts no other. No new mechanism is added:
+  typed words are never quiet (TypedWordsAreNeverQuiet), so no probe can be hidden.
