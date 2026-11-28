@@ -14,13 +14,13 @@ in-your-own-words	mirror	claude	explicit	vendored	-	-
 interrogate	rewrite	none	explicit	kept	-	f7e5884acc2af686455006804e8588201f21a18213fe7772c1b1670902432190
 ketchup	rewrite	none	explicit	kept	-	2284d34c60fec9c18477c59d61db48ced1061d42c1225c627a460082e2d24364
 ketchup-video	mirror	agents	explicit	vendored	-	-
-kitimark-mode	rewrite	none	named	kept	-	b1e12430f128389a3190363ae47ab5ca6aaf2058db8b3f44710126d9fc263a09
+kitimark-mode	rewrite	none	named	kept	-	3ceb69c7a11d9ce5e7fd1b0ebace7774bbbd2eb9b7c4311d871cae379e82176c
 maintain-formal-verification-skill	mirror	agents	explicit	vendored	-	-
 maintain-verification-skill	rewrite	none	explicit	kept	-	-
 make-bot-ui	mirror	agents	explicit	vendored	-	-
 no-comments	rewrite	none	explicit	kept	e67f7df3a121bca8567149c2870778b0fd65894c901366698f642fe5abf36468	8c5ba5b4e5cacafb0ac73641afd880841e31ba181fde2fcd614cf7c31e34c05e
 poteto-help	mirror	agents	explicit	vendored	-	-
-poteto-mode	rewrite	none	explicit	kept	-	08f9c92fcb7f1df22ccef1fbf741d23eee825134cb542bea0021db4541c0ff00
+poteto-mode	rewrite	none	explicit	kept	-	2bedf43f01741a2f21afa5f40aaf898962573b69bf634372332f2efdcc66efc7
 principle-attack-the-premise	mirror	claude	explicit	vendored	-	-
 principle-boundary-discipline	mirror	claude	explicit	vendored	-	-
 principle-build-the-lever	mirror	claude	explicit	vendored	-	-

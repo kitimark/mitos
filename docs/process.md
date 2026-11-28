@@ -113,7 +113,7 @@ when the plan lands (`.claude/skills/kitimark-mode/SKILL.md`, Plan-time designs)
 | Orchestrator | agent, the session the owner talks to | task choice, agent briefs, merges of verified PRs, catch-ups on GitHub (§4) | any repository file, which it hands to other agents |
 | Planner | agent | task files; draft statements, submitted as a spec PR | proofs, gate, eval |
 | Builder | agent (a few in parallel) | code and proofs inside the task's `touches` | statements, lock files, `gate/`, `eval/`, models |
-| Implementor | outside agent (Codex, Cursor or another) building a task's issue | code and proofs inside the task's `touches`, its own PR's branch and body, replies on its PR's review threads, the task file and the run log | the Owner dashboard (#43), its verdict cell included; a verdict on its own PR; the owner's assignment on any item; labels |
+| Implementor | outside agent (Codex, Cursor or another) building a task's issue | code and proofs inside the task's `touches`, its own PR's branch and body, replies on its PR's review threads, the task file and the run log | the Provenance record issue (#586); a milestone description; a verdict on its own PR; the owner's assignment on any item; labels |
 | Red team | agent | new cases in `eval/cheats/`, counterexamples | anything merged into trusted code |
 | Verifier | agent that did not write the PR, on another model, plus an `opus` one on a trust-critical PR | a pass or fail verdict on one PR head | the code it checks |
 | Evaluator | CI and nightly job | scorecards, logs | — |
@@ -537,9 +537,10 @@ with the nightly scorecard.
 
 The owner catches up on GitHub, not in a chat session:
 
-- **The Owner dashboard**, a pinned issue. The orchestrator rewrites its body when something
-  changes for the owner: what needs the owner, each open PR with its head, `gate` result and
-  verdict, the PRs merged lately with their verdicts, what comes next, and the open follow-ups.
+- **A catch-up comment on the item.** When something changes for the owner on an issue or a PR,
+  the orchestrator writes it in a comment there: what needs the owner, and a PR's head, `gate`
+  result and verdict. A PR that merged gets a merged line with its verdict, in a comment on it.
+  What comes next and the open follow-ups are in the milestones.
 - **Assigned to the owner** means it needs the owner (`is:open assignee:kitimark`). Agents act
   through the owner's account, and GitHub does not notify a user of their own actions, so
   `.github/workflows/owner-ping.yml` posts an @mention as `github-actions[bot]` on each
@@ -547,12 +548,13 @@ The owner catches up on GitHub, not in a chat session:
   or a bot makes gets no ping. Never label a PR to show the owner its state. A label is not a
   status flag: any label change still starts `gate`, which reads the labels live and does not
   rerun the corpus.
-- **Only the orchestrator writes the dashboard and assigns the owner.** An implementor (§2)
-  reports its head and evidence in its PR body or a PR comment, and the orchestrator assigns the
-  owner once the PR waits on them, after its verdict (#441). A check an implementor runs with its
-  own model is an input to a verdict, not a verdict. `pr-state.sh` reads the dashboard's verdict
-  cell, so an implementor's own PASS there printed a merge command before any verifier had
-  passed that head (#327).
+- **Only the orchestrator writes verdict lines, the Provenance record issue (#586) and the
+  milestone descriptions, and assigns the owner.** An implementor (§2) reports its head and
+  evidence in its PR body or a PR comment, and the orchestrator assigns the owner once the PR
+  waits on them, after its verdict (#441). A check an implementor runs with its own model is an
+  input to a verdict, not a verdict. `/land` and `pr-state.sh` read the record in that issue. An
+  implementor's own PASS, written where `pr-state.sh` read verdicts then, printed a merge command
+  before any verifier had passed that head (#327).
 - **`/no-comments` before a hand-over.** A PR whose diff adds comments goes to the owner only
   after the orchestrator's `/no-comments` pass over its head and the push of what the pass
   accepts. A verifier then gives a verdict at that cleaned head. A wording-only change still gets
@@ -561,9 +563,13 @@ The owner catches up on GitHub, not in a chat session:
 - **CodeRabbit before a hand-over.** A PR goes to the owner only once
   `.claude/scripts/bot-review.sh` reads `reviewed` at its head and its PR owner has answered that
   review, or once CodeRabbit refuses it, which the catch-up names.
-- **One milestone per phase, one issue per open plan row.** `plan/phase-N.md` says what is to be
-  done and in which order, and its Issue column links each row's issue. Status lives in the
-  issue and its PRs. The labels `follow-up` and `process` mark work found along the way.
+- **One milestone per topic, one issue per open plan row.** Every open issue belongs to exactly
+  one topic milestone: a phase, or Gate architecture, Land, Watch, Provenance and verdicts, CI
+  and toolchain, Agent rules and process, or Outside agents. A milestone description holds the
+  goal, the exit criteria where the topic has them, and a `Next up` line. `plan/phase-N.md` says
+  what is to be done and in which order, and its Issue column links each row's issue. Status
+  lives in the issue and its PRs. The labels `follow-up` and `process` mark work found along the
+  way.
 
 The rules are in `.claude/skills/kitimark-mode/SKILL.md`, "Catching the user up".
 
@@ -594,7 +600,7 @@ At the end of each phase the owner reviews the scorecard trend and the run logs:
 | L2 CI fixes | the agent that owns the PR, watching it and fixing failures inside the task's `touches` |
 | L3 | `.github/workflows/nightly.yml` (full checks, `--paranoid` comparator, next-toolchain canary), plus a scheduled task posting the scorecard |
 | L4 | the scorecard trend plus a short retrospective in `plan/` |
-| Owner catch-up | the pinned Owner dashboard issue, issues and PRs assigned to the owner, one milestone per phase, `.github/workflows/owner-ping.yml` |
+| Owner catch-up | issues and PRs assigned to the owner, a catch-up comment on each, one milestone per topic, `.github/workflows/owner-ping.yml` |
 | Waiting on GitHub | the orchestrator's Monitor running `.claude/scripts/watch-github.sh`, which prints one line per change to an open PR, `main` or the owner's comments, and a `ci:` line when a head has no `ci` run, a run waits long in the queue or a run is left on an old head, and nothing otherwise. It leaves out a PR's merge, close, label or assignee line only when the orchestrator's own writes recorded with `.claude/scripts/watch-own.sh` since the poll before account for the whole change; PR owners wait at most two bounded calls, and watcher agents cover only what the script cannot see |
 | Merge readiness and fresh rules | `.claude/hooks/pr-state.sh` before every prompt: each owner PR's `gate`, shared structured-provenance admission result, unanswered owner comments and user-kept paths, a merge command pinned to the head only when native provenance admission passes, and the rule files that changed on `main` since the session loaded its rules. It reads every comment and review of a PR with source verdict events and only the newest 100 repository comments for the rest, and a footer post anywhere on a PR counts as the answer to an earlier owner comment, so the merge rule's own read of the owner's comments still decides |
 | Public posts | `.claude/hooks/check-no-session-link.sh` refuses a session link or a `Claude-Session:` line in a commit or GitHub write; `.claude/scripts/open-pr.sh` opens each PR, refuses a session link in its title or body file, and cleans the link the session proxy adds at create. The first revision of each PR body still holds that link in the edit history, which anyone who can read the repository can open; only the owner can delete it, in the browser |
