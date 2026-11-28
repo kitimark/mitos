@@ -7,12 +7,12 @@ PR's own task file (also from PR 0) names its slice of `modules` and `statements
 from `PR-SEQUENCE.md` and the path of the package. It does not restate them.
 
 phase: tracker #502. PR 0 adds one row and one issue per PR in `PR-SEQUENCE.md` (except PR 1, PR 3a and PR 3b, which start now) to the current `plan/phase-N.md`: rows P2-013 to P2-029 in `plan/phase-2.md` (section "Watch track (#502, milestone 6)"), issues #562 to #578 in milestone 6
-goal: Every consumer of the clone (the root, a PR owner, Codex) waits on GitHub through one Lean tool. Each sees every change meant for it once, and nobody's words or writes hide another's.
+goal: Every consumer of the clone (the root, a PR owner, an agent that handles one topic, Codex) waits on GitHub through one Lean tool, in any provider's cloud container. Each hears the topic its own wait names and sees every change in it once, and nobody's words, writes or topic hide anything from another.
 statement: none locked (tooling task). Named statements live in `gate/MitosGate/Watch/` and are audited in `gate/MitosGate/Watch.lean`.
-touches: gate/MitosGate/Watch/*.lean, gate/MitosGate/Watch.lean, gate/MitosGate/WatchCli.lean, gate/Main.lean (one import, one usage block, one arm), gate/watch-test.sh, gate/watch-fixtures/, gate/watch-fetch.sh, .claude/scripts/watch.sh, .claude/scripts/watch.test.sh, .claude/scripts/watch-diff.test.sh, .claude/scripts/watch-diff.intended, .claude/scripts/watch-github.sh and its test (PR 1 only, then deleted in PR 15), .claude/scripts/watch-own.sh (deleted in PR 15), .claude/hooks/pr-state.sh and its test, .claude/scripts/gh-api-rest.test.sh, .claude/scripts/sourced-bash.test.sh (PR 9 and PR 15), .claude/scripts/main-tool.test.sh, the Watchers text and the `#224` line of Catching the user up in .claude/skills/kitimark-mode/SKILL.md and .agents/skills/kitimark-mode/SKILL.md, the four waiting playbooks in both poteto-mode/playbooks copies and .claude/README.md (PR 13), .agents/scripts/agents-roster.tsv (stamps), docs/process.md (check matrix, the gh-only row and the waiting rows), plan/phase-N.md, tasks/502-watch.md, tasks/502-watch/ and the row task files (PR 0 only), the bootstrap files of question 3a (PR 11), and for PR 3c only (question 8b yes) gate/MitosGate/Snapshot/Types.lean, gate/MitosGate/Snapshot/Fields.lean, gate/MitosGate/Snapshot/Obs.lean, gate/MitosGate/Snapshot/Fixtures.lean, the review-comment reader in gate/MitosGate/SnapshotCli.lean and gate/snapshot-test.sh; ops/runs/
+touches: gate/MitosGate/Watch/*.lean, gate/MitosGate/Watch.lean, gate/MitosGate/WatchCli.lean, gate/Main.lean (one import, one usage block, one arm), gate/watch-test.sh, gate/watch-fixtures/, gate/watch-fetch.sh, .claude/scripts/watch.sh, .claude/scripts/watch.test.sh, .claude/scripts/watch-diff.test.sh, .claude/scripts/watch-diff.intended, .claude/scripts/watch-github.sh and its test (PR 1 only, then deleted in PR 15), .claude/scripts/watch-own.sh (deleted in PR 15), .claude/hooks/pr-state.sh and its test, .claude/scripts/gh-api-rest.test.sh, .claude/scripts/sourced-bash.test.sh (PR 9 and PR 15), .claude/scripts/main-tool.test.sh, the Watchers text and the `#224` line of Catching the user up in .claude/skills/kitimark-mode/SKILL.md and .agents/skills/kitimark-mode/SKILL.md, the four waiting playbooks in both poteto-mode/playbooks copies and .claude/README.md (PR 13), .agents/scripts/agents-roster.tsv (stamps), docs/process.md (check matrix, the gh-only row and the waiting rows), plan/phase-N.md, tasks/502-watch.md, tasks/502-watch/ and the row task files (PR 0 only), the bootstrap files of question 3a (PR 11, with the pinned trusted root `.github/attest/trusted_root.jsonl`), and for PR 3c only (question 8b yes) gate/MitosGate/Snapshot/Types.lean, gate/MitosGate/Snapshot/Fields.lean, gate/MitosGate/Snapshot/Obs.lean, gate/MitosGate/Snapshot/Fixtures.lean, the review-comment reader in gate/MitosGate/SnapshotCli.lean and gate/snapshot-test.sh; ops/runs/
 must_not_touch: statements.lock, models.lock, core/, eval/cheats/, gate/MitosGate/{Speech,Shadow,Accept,CheatsRun,DecideList,Util,Base,Snapshot*}.lean and every other existing gate module outside the PR's own Files column in `tasks/502-watch/PR-SEQUENCE.md` (imported, never moved or edited; a Lean row edits the Watch modules its predecessors made when its Files column names them, and PR 3c's Snapshot set above is the one exception for the Snapshot modules), .github/ (except PR 11, whose route the owner chooses)
 checks: build, imports, lock, lint-test, gate-tests (gate/watch-test.sh), cheats (locally for every row that touches gate/, as the check matrix asks, and in CI), plan-tasks (PR 0), the script tests each PR names
-budget: per PR, in the budget table under Design. Estimates from the unelaborated sketch, about 29M builder tokens for the Lean rows; the Architect re-budgets each row when it upgrades it to build depth. Script and rules PRs 20 iterations · 2h wall · 1M tokens each; PR 12 is its own A/B budget (owner question 2c)
+budget: per PR, in the budget table under Design. Estimates from the unelaborated sketch, about 35M builder tokens for the Lean rows, PR 3c included; the Architect re-budgets each row when it upgrades it to build depth. Script and rules PRs 20 iterations · 2h wall · 1M tokens each; PR 12 is its own A/B budget (owner question 2c)
 escalation: hint → automation → stronger model → pair → split → revisit statement (a statement that looks false gets its counterexample written into this file and goes to the owner; the implementation is not bent to fit)
 
 ## Context
@@ -23,10 +23,13 @@ escalation: hint → automation → stronger model → pair → split → revisi
   `PR-SEQUENCE.md`, `sketch/` (unchecked Lean at repository paths, plus the tested PR 1 and PR 3a
   diffs), `HANDOVER.md` (brief for an outside agent), `REVIEW-LOG.md` (review rounds 1 and 2;
   round 3 is at the end of `DESIGN.md`).
+- Amendment 1 (`tasks/502-watch/AMENDMENT-1.md`, landed by PR 0b before rows 7a to 13): the
+  owner's answers of 27 November, each agent subscribing to its own topics (5a) and a provider's
+  cloud container as the baseline host (2b), folded into this file, `DESIGN.md` and `sketch/`.
 
 ## Design
-depth: contract only for the Lean rows (PRs 2, 3c, 4, 5, 6, 7a, 7b, 7c, 8): their inputs, outputs and statements are fixed here, but the `sketch/` was never elaborated (the design ran with no Lean toolchain) and 34 bodies are stubs, `report`, `View.of`, `ciHealth`, `Shared.nextAges` and the readers among them. Build for PR 1 and PR 3a, whose diffs ran against `main` at `7dfd6cb`. PR 0's issues for the Lean rows say "contract only". Before a Lean row's PR owner starts, the Architect type-checks that row's slice of the sketch with the repository's toolchain, writes the stubs its statements are stated over, checks those statements against the written bodies, and upgrades the row's task file to build depth (`kitimark-mode`, Plan-time designs). For PR 2 this is its first step.
-revisit_when: each Lean row: re-check after the row it depends on merges (the upgrade to build depth above). Re-check `Observe` and `Time.ofHttpDate?` after PR 4's live read confirms `pull_request.merged_at` on the issues route, the absent app key on both review routes, and the `Date` header framing that `gh api --include` returns for `branches/main`. Re-check `nextMove`'s constants after PR 12's A/B. Re-check `Voice` after the owner answers questions 8a and 8b, or refuses default 8c on PR 0.
+depth: contract only for the Lean rows (PRs 2, 3c, 4, 5, 6, 7a, 7b, 7c, 8): their inputs, outputs and statements are fixed here, but the `sketch/` was never elaborated (the design ran with no Lean toolchain) and 42 bodies are stubs, `facts`, `notes`, `View.of`, `ciHealth`, `Shared.nextAges`, `WatchCli.flags?`, `Store.callers` and the readers among them. Build for PR 1 and PR 3a, whose diffs ran against `main` at `7dfd6cb`. PR 0's issues for the Lean rows say "contract only". Before a Lean row's PR owner starts, the Architect type-checks that row's slice of the sketch with the repository's toolchain, writes the stubs its statements are stated over, checks those statements against the written bodies, and upgrades the row's task file to build depth (`kitimark-mode`, Plan-time designs). For PR 2 this is its first step.
+revisit_when: each Lean row: re-check after the row it depends on merges (the upgrade to build depth above). Re-check `Observe` and `Time.ofHttpDate?` after PR 4's live read confirms `pull_request.merged_at` on the issues route, the absent app key on both review routes, and the `Date` header framing that `gh api --include` returns for `branches/main`. Re-check `nextMove`'s constants after PR 12's A/B. Re-check `Voice` only if the owner refuses default 8c (8a and 8b are answered yes). Re-check `--max`, its 30-second margin and the container cap (default 14) after PR 12 reports, `peers`'s default after question 11, and the pinned trusted root at each GitHub key rotation (question 13).
 
 ### modules
 
@@ -40,28 +43,36 @@ revisit_when: each Lean row: re-check after the row it depends on merges (the up
 | `gate/MitosGate/Watch/View.lean` | the level view, checks, `ci` health, the second look (`Plan.due`) | 560 | `Snapshot/Fields.lean` |
 | `gate/MitosGate/Watch/Feed.lean` | posts, closes and refused items keyed by GitHub time, poll-numbered, pruned; the cursor and the floor | 360 | `Carry.lean` |
 | `gate/MitosGate/Watch/Shared.lean` | the clone's one observation, its decidable invariant, one poll's step, head ages | 360 | `Snapshot/Obs.lean` |
-| `gate/MitosGate/Watch/Wake.lean` | identity, quiet posts, echoes of one's writes, which changes wake, scope, tiers | 360 | `Land` wake plus `Carry.lean` |
-| `gate/MitosGate/Watch/Deliver.lean` | the report, offer and ack (PR 7b); the cut, `Moment.of`, `nextMove`, `finish` (PR 7c) | 900 | `LandAnswer`, `CheatsSlot` |
-| `gate/MitosGate/Watch/Render.lean` | the text of every line and the next command | 220 | `Util.oneLine` |
+| `gate/MitosGate/Watch/Topic.lean` | what a caller asks to hear: kinds, scope, rides, the subscription, its typed flags and their read-back, the overlap hint | 320 | `Observe.lean`'s `Listed` |
+| `gate/MitosGate/Watch/Wake.lean` | identity, quiet posts, echoes of one's writes, which changes wake, the kind of each fact, tiers | 400 | `Land` wake plus `Carry.lean` |
+| `gate/MitosGate/Watch/Deliver.lean` | the facts, notes, lens and report, offer and ack (PR 7b); the cut, `Moment.of`, `nextMove`, `finish` (PR 7c) | 960 | `LandAnswer`, `CheatsSlot` |
+| `gate/MitosGate/Watch/Render.lean` | the text of every line and the next command, flags included | 240 | `Util.oneLine` |
 | `gate/MitosGate/Watch/Gh.lean` | the one `gh` process: bounded, stdin closed, both pipes as bytes (PR 8); the pure `Date` header framing `frame` (PR 4) | 140 | `CheatsRun.runChild` (copied) |
-| `gate/MitosGate/Watch/Store.lean` | the state files: version, codecs and on-load checks, lease, the consumer lock, claim, records, quarantine, housekeeping | 380 | `Accept.writeByRename` |
-| `gate/MitosGate/WatchCli.lean` | `watch wait / own / status / unanswered`, and the test-only `read` (PR 4) and `replay` (PR 6) | 460 | `SpeechCli.lean` |
+| `gate/MitosGate/Watch/Store.lean` | the state files: version, codecs and on-load checks, lease, the consumer lock, claim, records, quarantine, housekeeping, the read-only caller list | 400 | `Accept.writeByRename` |
+| `gate/MitosGate/WatchCli.lean` | `watch wait / own / status / unanswered`, the subscription flags' text, and the test-only `read` (PR 4) and `replay` (PR 6) | 500 | `SpeechCli.lean` |
 | `gate/MitosGate/Watch.lean` | imports of the pure modules and their axiom audit | 60 | `Snapshot.lean` |
-| `.claude/scripts/watch.sh` | find clone, repo, owner and main's tool; exec the tool | 100 | `watch-own.sh` |
+| `.claude/scripts/watch.sh` | find clone, repo, owner and main's tool; exec the tool; from PR 11, the host checks of `build --fetch` | 140 | `watch-own.sh` |
 
-That is about 5,350 lines of Lean, code and proofs. The unchecked sketch is 2,736 lines with 34
-stub bodies and no proofs, and gate modules with proofs of this kind (`Snapshot/Obs.lean`,
+`Topic.lean` is a new small pure module, because `Wake` would otherwise own two topics: who a fact
+is for (identity, echoes, which changes wake, a fact's kind) and what a caller asks to hear (the
+subscription and its flags). PR 7a writes both.
+
+That is about 5,800 lines of Lean, code and proofs. The unchecked sketch is 3,700 lines of Lean with
+42 stub bodies and no proofs, and gate modules with proofs of this kind (`Snapshot/Obs.lean`,
 `Yaml/View.lean`) run several hundred lines of proof each, so the budgets are for writing the
 bodies and the proofs, not for new topics. Planned splits, each along a topic already in this map,
 so a build that crosses a budget splits as planned instead of reporting a deviation:
-- `Deliver.lean` into `Deliver/Report.lean` (the report, offer and ack, what is told) and
-  `Deliver/Move.lean` (the cut, `Moment`, `nextMove`), when it passes 600 lines.
+- `Deliver.lean` into `Deliver/Report.lean` (the facts, notes, lens and report, offer and ack, what is told) and
+  `Deliver/Move.lean` (the cut, `Moment`, `nextMove`), when it passes 600 lines. The sketch already
+  does, so the split comes with row 7b or 7c, and the Architect budgets each half at that upgrade.
 - `Observe.lean` into `Observe/Posts.lean` (the post and close readers, `Refused`, `Reading`) and
   `Observe/Pulls.lean` (pulls, runs, checks, `Names`, `Plan.heads`), when it passes 300.
 - `View.lean` into `View.lean` and `View/Health.lean` (`ciHealth`, the alarms and their
   statements), when it passes 400.
 Any other growth is reported as a deviation. The Architect re-budgets each file when it upgrades
-its row to build depth. PR 7b and PR 7c each write part of `Deliver.lean`, as PR 2 and PR 4 each
+its row to build depth, before the build, so a file whose sketch already fills most of its budget
+(`Topic.lean`, `Wake.lean`) gets its new number then and is not a deviation.
+PR 7b and PR 7c each write part of `Deliver.lean`, as PR 2 and PR 4 each
 write part of `Time.lean` and `Observe.lean`. `watch-github.sh` (395), `watch-own.sh` (25), their tests and pr-state's
 two jq classifiers go in PR 15 and PR 3.
 
@@ -80,13 +91,13 @@ EXPENSIVE proof. The Architect re-budgets each row at its build-depth upgrade.
 | 4 | 7 (1) | the other readers, `frame`, `watch read` | 70 · 4h · 3M |
 | 5 | 19 | `View.of`, `ciHealth`, `Checks.of` | 100 · 5h · 4M |
 | 6 | 24 | `nextAges`, `watch replay` | 110 · 6h · 4.5M |
-| 7a | 13 | none | 70 · 4h · 3M |
-| 7b | 17 (2) | `report` | 130 · 7h · 5M |
-| 7c | 24 | `Item.line` | 120 · 6h · 4.5M |
-| 8 | none; the fault cases | `Gh`, `Store`, `WatchCli` | 80 · 4h · 3M |
+| 7a | 19 | none | 95 · 5h · 4M |
+| 7b | 25 (2) | `facts`, `notes` | 160 · 8h · 6.2M |
+| 7c | 27 | `Item.line` | 130 · 6h · 5M |
+| 8 | none; the fault and topic cases | `Gh`, `Store` (with `callers`), `WatchCli` (with `flags?` and `status`'s overlap) | 90 · 5h · 3.5M |
 
-The Lean rows without PR 3c come to about 29M builder tokens, before the Architect's upgrades and
-the verifiers.
+The Lean rows come to about 35M builder tokens with PR 3c, which is required (question 8b), and
+about 32M without it, before the Architect's upgrades and the verifiers.
 
 ### types
 
@@ -122,13 +133,22 @@ Feed := {entries : List {fact, poll}, cursor : Option Epoch (GitHub time), prune
         overlap = 3600, keep = 86400, slack = 60;  floor = cursor - keep
 Shared := {repo, owner, gen, polls, view, feed, main, ages, lastTry, lastOk, failStreak, lastError}
                                                 -- each state file also carries "version" (Store.version = 1)
-Consumer := {app, name, scope : repo | pulls ns}
+Consumer := {app, name}                    -- identity only; what it hears is each wait's Subscription
+Scope := repo | items ns
+Kind := words | agents | peers | passed | failed | pulls | outside | alarms   -- closed; Kind.every lists them
+Kinds := one Bool per kind;  Rides := {passed failed outside alarms : Bool}   -- nothing else can ride
+Topic := {hears : Kinds := every kind but peers, on : Scope := repo}
+Subscription := {topic : Topic := {}, rides : Rides := {outside}}
+Flag := topics (List Kind) | on (List Pr) | ride (List Kind)   -- typed; WatchCli.flags? reads the text
+Subject := caller | kinds (List Kind)      -- a note is about the caller; a head line may be passed and failed
 PostRecord := {place, id}  (per class);  WriteRecord := {gen, afterPoll, seq, write}  (per consumer;
         seq orders the writes of one poll interval)
 Mark := {gen, view, feed : since t | after poll, toldDown};  Mark.fits s := gen = s.gen ∧ poll ≤ s.polls
-Pending := nothing | offered number mark repeats;  ConsumerState := {acked, pending, offers}
-        ConsumerState.fresh acked base   -- base: a random six-digit number Store draws
-Item := change | post | closed | gone pr author | refused | note (reset | gap | down | up | redelivering)
+Pending := nothing | offered number mark repeats sub      -- sub: the subscription, as data only
+ConsumerState := {acked, under : Subscription, pending, offers}   -- under: the acked place's
+        ConsumerState.fresh acked sub base   -- base: a random six-digit number Store draws
+Item := change | post | closed | gone pr author | refused
+      | note (reset | gap | down | up | redelivering | newTopic was now hidden)
 Told := {item, tier : words | owned | outside, wakes};  Batch := {shown, more}
 Moment := {now, started, deadline, lastTry, lastOk, failStreak, waking, words, told, firstWake, leaseBusy}
 Move := deliver | poll | sleep ms | quiet | blind
@@ -152,11 +172,22 @@ ciHealth        : Rules → (now : Epoch) → Fixed → KeyMap (Pr × String) He
 Feed.sinceAt    : (serverNow : Epoch) → Feed → Epoch
 Feed.add        : (poll : Nat) → (serverNow : Epoch) → List Fact → Feed → Feed   -- a lost window sets prunedPoll
 Mark.fresh      : (gen : String) → (since : Epoch) → Mark      -- since = --since, or Feed.floor
-report          : OutsidePolicy → Consumer → Records → (acked : Mark) → Pending → Shared → List Told
-waking          : OutsidePolicy → Consumer → Records → Mark → Pending → Shared → Bool
+quiet           : List PostRecord → Post → Bool                 -- only a recorded id; never typed words
+Post.kind       : (app : String) → Post → Kind                  -- the consumer's own app: peers
+Change.kinds    : Change → List Kind                            -- a head: passed, failed, or both
+Subscription.flags   : Subscription → List Flag                 -- what the trailer prints
+Subscription.ofFlags? : List Flag → Option Subscription         -- none: a usage error, exit 2
+facts           : Records → (acked : Mark) → Shared → List Told -- reads no subscription and no app
+notes           : (was now : Topic) → (hidden : Nat) → (acked : Mark) → Pending → Shared → List Told
+Subscription.lens : Subscription → (app : String) → List Told → List Told   -- a filter and a map
+hiddenBy        : (app : String) → (was now : Topic) → List Told → Nat   -- what `was` tells, `now` not
+report          : Consumer → Subscription → Records → (was : Topic) → (acked : Mark) → Pending
+                  → Shared → List Told   -- notes was sub.topic (hiddenBy c.app was sub.topic fs) acked pending s
+                                         --   ++ sub.lens c.app fs, with fs := facts rec acked s
+waking          : Consumer → Subscription → Records → Topic → Mark → Pending → Shared → Bool
 ConsumerState.ack   : ConsumerState → (seen : Option Nat) → ConsumerState   -- takes only the exact number
-ConsumerState.offer : ConsumerState → Shared → ConsumerState
-finish          : OutsidePolicy → Consumer → Records → (cap : Nat) → ConsumerState → Shared
+ConsumerState.offer : ConsumerState → Shared → Subscription → ConsumerState
+finish          : Consumer → Subscription → Records → (cap : Nat) → ConsumerState → Shared
                   → Batch × ConsumerState   -- the batch and the offer from one shared state
 cut             : (cap : Nat) → List Told → Batch               -- words and notes, then heads, owned, outside
 Moment.of       : (now started deadline : Epoch) → Shared → (report : List Told) → (waking : Bool)
@@ -170,9 +201,33 @@ unanswered      : (owner : String) → (apps : List String) → List Said → Li
 
 Each one is written `def Name : Prop` with `theorem name : Name` beside it, as in `gate/`. They are
 marked **EXPENSIVE** (a long proof; its proof plan and fallback are named) or *moderate* (a page of
-tactic work). The rest are short. There are 112; `Watch.lean`'s audit finds every one and fails the
+tactic work). The rest are short. There are 129; `Watch.lean`'s audit finds every one and fails the
 build when one has no theorem. Every statement is written outside any `variable` section, so its
 type is exactly `Prop` and the audit sees it.
+
+Amendment 1's delta, against the 112 of PR #580's head `efefa55` (a diff of the two sketches):
+- New (20). `Topic` (4): KindNamesReadBack, ACatchAllHearsEveryKindButPeers,
+  OnlyChecksAlarmsAndOutsideRide, TheTrailerFlagsReadBack. `Wake` (4): QuietNeedsARecord,
+  TheSpeakerDecidesThePostKind, AChangeIsAboutItsOwnKind, AHeadLineFailsOnANewFailure. `Deliver`
+  (12): EveryFactWakes, NotesAreNotes, AChangedTopicIsTold, EveryNoteIsReported,
+  TheLensOnlyDropsOrHolds, WhatIsToldPassesTheLens, ASubscriberHearsOnlyItsTopics,
+  TheCatchAllHearsEverything, OwnerWordsWakeWhoeverHearsWords, TheOfferIgnoresTheSubscription,
+  SkipsWindowIsTheWordsKind, QuietCatchAllHidOnlyPeers.
+- Removed (3): QuietNeedsTheClassOrARecord and AnotherClassIsHeard (`Wake`),
+  AScopedConsumerHearsOnlyItsPulls (`Deliver`), each replaced as noted below.
+- Restated (23). `Wake` (5), without the consumer or the outside policy: TypedWordsAreNeverQuiet,
+  UntoldIsHeardUnlessRecorded, QuietIgnoresTheText, FinishedCheckWakes, OnlyPendingIsQuiet.
+  `Deliver` over `facts` (7): TypedWordsAreTold, ANonQuietPostIsTold, EveryNotableChangeIsTold,
+  ANewCloseIsToldUnlessItsWriterRecordedIt, OneItemPerClose, ARefusedItemIsTold,
+  AFreshConsumerHearsFinishedChecks. `Deliver` over `notes` (4): AnUntakenOfferIsReplayed,
+  GapIsNeverSilent, ResetIsNeverSilent, AFailingGitHubIsTold. `Deliver` with the subscription, the
+  place's topic or the offer's new field (7): AckOnlyTakesTheOffer, AckNeedsTheNumber,
+  NoNewsStaysQuiet, AnAckedOfferHasNothingNew, IgnoredTrailerReplaysOnce, CopiedTrailerNeverSpins,
+  OfferMarksTheReportedState.
+- Unchanged: the other 86.
+- Row totals: 7a 13 to 19, 7b 17 to 25, 7c 24 to 27 (54 to 71).
+
+The statements by module:
 
 - `Watch/KeyMap.lean`: DiffNamesEveryChange, DiffNamesOnlyChanges, DiffSelf, DiffOnePerKey
   (needs `WF` of both maps), DiffSeesOnlyLookups, SetKeepsWF. None needs a key order.
@@ -211,36 +266,71 @@ type is exactly `Prop` and the audit sees it.
   late run that scrolls off the page raises no `noRun`), AReReadAddsNoPostOrClose (the same facts
   at the same or a later `Date` add no post or close; only a refused item pruned a day after it
   was told comes back).
-- `Watch/Wake.lean`: TypedWordsAreNeverQuiet, QuietNeedsTheClassOrARecord, AnotherClassIsHeard,
-  UntoldIsHeardUnlessRecorded, QuietIgnoresTheText, FinishedCheckWakes, OnlyPendingIsQuiet,
+- `Watch/Topic.lean` (PR 7a): KindNamesReadBack (`Kind.every` lists every kind and each name
+  reads back through `Kind.ofName?`; short: `cases k` and `decide`), ACatchAllHearsEveryKindButPeers,
+  OnlyChecksAlarmsAndOutsideRide (`Rides` has no field for the other kinds),
+  *TheTrailerFlagsReadBack* (parsing the typed flags `Subscription.flags` prints gives the same
+  subscription back, for canonical values; stated over `Flag`, never over the text, which `Render`
+  prints and `WatchCli.flags?` reads, both tested. That every subscription `ofFlags?` makes is
+  canonical holds by inspection of `add?` and is pinned by the fixture `parsedFlagsAreCanonical`,
+  not stated).
+- `Watch/Wake.lean`: TypedWordsAreNeverQuiet, QuietNeedsARecord (replaces
+  QuietNeedsTheClassOrARecord: the class alone hides nothing), UntoldIsHeardUnlessRecorded,
+  QuietIgnoresTheText, TheSpeakerDecidesThePostKind (replaces AnotherClassIsHeard: the speaker and
+  the consumer's app decide `words`, `agents` or `peers`), AChangeIsAboutItsOwnKind (a head line
+  is `passed` whenever a listed check newly passed, so a green gate beside a new red check is both
+  `passed` and `failed`), AHeadLineFailsOnANewFailure (a head line is `failed` exactly when a listed
+  check newly finished with a conclusion outside `Wake.passingConclusions`: `success`, `skipped`
+  and `neutral`), FinishedCheckWakes, OnlyPendingIsQuiet,
   *EchoAddsOnlyWhatWasWritten*, *EchoDropsOnlyWhatWasWritten*, NoLiveWriteNoEcho,
-  ARecordIsSpentTwoPollsLater, ARecordOfAnotherGenerationIsDead, OnlyAMergeExplainsAMerge.
-- `Watch/Deliver.lean` (PR 7b proves the first two groups but CopiedTrailerNeverSpins; PR 7c the
+  ARecordIsSpentTwoPollsLater, ARecordOfAnotherGenerationIsDead, OnlyAMergeExplainsAMerge. The
+  consumer and the outside policy leave every statement that took them.
+- `Watch/Deliver.lean` (PR 7b proves the first four groups but CopiedTrailerNeverSpins; PR 7c the
   rest):
   - offer and ack: AckOnlyTakesTheOffer, AckNeedsTheNumber (every other number is ignored),
-    AnUntakenOfferIsReplayed, **NoNewsStaysQuiet** (EXPENSIVE: it unfolds `report`. A state with no
-    news for a mark (`Shared.noNewsSince`: it fits, the view has the same lookups, no later feed
-    entry, no gap, the same down flag) gives an empty report. Proof plan, not a weaker statement:
-    the change, feed and note parts separately, then `List.append_eq_nil`), and three short ones
-    from it: AnAckedOfferHasNothingNew (under `Shared.Inv`), IgnoredTrailerReplaysOnce and
-    CopiedTrailerNeverSpins (both over any number of polls with no news, not only before the first;
+    **NoNewsStaysQuiet** (EXPENSIVE: it unfolds `facts`. A state with no news for a mark
+    (`Shared.noNewsSince`: it fits, the view has the same lookups, no later feed entry, no gap,
+    the same down flag) gives an empty report under the topic the mark was taken under. Proof
+    plan, not a weaker statement: `notes` is empty, `facts` is empty for its change, feed and close
+    parts separately, then `List.append_eq_nil`, and the lens of `[]` is `[]`), and three short
+    ones from it: AnAckedOfferHasNothingNew (under `Shared.Inv`), IgnoredTrailerReplaysOnce and
+    CopiedTrailerNeverSpins (both over any number of polls with no news, not only before the
+    first, for a caller that keeps the topic its offer was made under, as a copied trailer does;
     the second names `nextMove`, so PR 7c proves it). Both hold only for a caller that runs the
-    text after `next: ` exactly, which PR 13 writes into the rules. OfferMarksTheReportedState
-    (PR 7c): `finish` makes the batch and the offer from one consumer state and one shared state.
-  - what is told: TypedWordsAreTold, ANonQuietPostIsTold, **EveryNotableChangeIsTold**
-    (EXPENSIVE: it follows a change through scope, echo and the close merge, and covers `change`,
-    `closed` and `gone`, each with its own wake: a close wakes as its author, `gone` as the pull's.
-    Proof plan: split by `Change` constructor, then by whether the feed holds a new close),
-    ANewCloseIsToldUnlessItsWriterRecordedIt, OneItemPerClose, ARefusedItemIsTold,
-    AScopedConsumerHearsOnlyItsPulls, GapIsNeverSilent, ResetIsNeverSilent (another generation, or
-    a mark ahead of the state), AFreshConsumerHearsFinishedChecks (and they wake),
-    AFailingGitHubIsTold. All of them take `acked.fits s` where they used to take the same
-    generation.
+    text after `next: ` exactly, which PR 13 writes into the rules. OfferMarksTheReportedState and
+    TheOfferIgnoresTheSubscription (PR 7c): `finish` makes the batch and the offer from one
+    consumer state and one shared state, and taking the offer acks the same mark, with the same
+    number, whatever the subscription.
+  - the facts, which read no subscription and no app: TypedWordsAreTold, ANonQuietPostIsTold,
+    **EveryNotableChangeIsTold** (EXPENSIVE, and smaller than before: no scope and no policy. A
+    notable change is one that wakes. It covers `change`, `closed` and `gone`; `gone` carries
+    the change's kind, and a close the kind of the author its route read. Proof plan: split by `Change` constructor, then by whether the feed holds a
+    new close), ANewCloseIsToldUnlessItsWriterRecordedIt, OneItemPerClose, ARefusedItemIsTold,
+    AFreshConsumerHearsFinishedChecks (and they wake), EveryFactWakes. All of them take
+    `acked.fits s` where they used to take the same generation.
+  - the notes: NotesAreNotes, AnUntakenOfferIsReplayed, GapIsNeverSilent, ResetIsNeverSilent
+    (another generation, or a mark ahead of the state), AFailingGitHubIsTold, AChangedTopicIsTold
+    (a wait whose topic differs from the one its acked place was taken under is told so, waking,
+    with the count of facts since that place that the new topic hides, `hiddenBy`: taking the
+    batch passes them, and the old flags do not bring them back, tested by
+    `aNarrowerTopicIsToldWhatItPasses`; that a copied trailer is not told again is tested by
+    `aWiderTopicIsToldOnce` and the `topics/` cases, not stated).
+  - the lens, each a list lemma or a case split: EveryNoteIsReported, TheLensOnlyDropsOrHolds,
+    WhatIsToldPassesTheLens, ASubscriberHearsOnlyItsTopics (replaces
+    AScopedConsumerHearsOnlyItsPulls), TheCatchAllHearsEverything (the coverage statement, for the
+    form the root runs: a catch-all is told every fact but `peers`, with its tier, waking unless
+    its kinds ride; a head line rides only when each kind of it the topic hears rides),
+    OwnerWordsWakeWhoeverHearsWords (a post of kind `words` that is not quiet, typed words or an
+    unrecorded review-route post, wakes every caller that hears `words` on its thread, whatever it
+    lets ride).
   - the cut: WordsAreNeverCut, NotesAreNeverCut, OutsideIsCutFirst (its witness is not a head line:
     `cut` ranks every head line first, whatever its tier), ChecksAreCutLast, TheCutCountsEveryLine.
   - `nextMove`: OnlyPossibleOwnerWordsSkipTheWindow (a waking post no app names, or a post a reader
-    could not read; an app's post waits the window), OwnerWordsAreNotHeld, WakeIsDelivered,
-    NeverEarlyEmpty (now also: the report is empty), QuietEndAcksNothingUnshown, EndsWithinOneBudget
+    could not read; an app's post waits the window), SkipsWindowIsTheWordsKind (a waking line skips
+    the window exactly when its kind is `words`), OwnerWordsAreNotHeld, WakeIsDelivered,
+    NeverEarlyEmpty (now also: the report is empty), QuietEndAcksNothingUnshown (a quiet or blind
+    end acks nothing the subscription selects), QuietCatchAllHidOnlyPeers (its catch-all form: such
+    an end of a catch-all left no note unshown and hid only `peers`), EndsWithinOneBudget
     (the decision at a moment one budget past the deadline is to end; a poll in flight is bounded
     by `Gh`'s timeout, tested in PR 8, not proved), QuietOnlyAfterAFreshRead and
     BlindOnlyWithoutAFreshRead (fresh: a success within `interval + pollBudget + freshSlack` of
@@ -249,12 +339,14 @@ type is exactly `Prop` and the audit sees it.
     CoalescingNeverPassesOneWindow.
 - `Watch/Render.lean`: *EveryLineIsOneLine* (batch, quiet and blind lines, with `printable`),
   OwnerWordsNameTheirId, OnlyTypedWordsAreCalledTheOwners, TheLastLineIsTheNextCommand (all three
-  ends).
+  ends; the command carries the subscription's flags, which `TheTrailerFlagsReadBack` reads back
+  as types).
 - Tested, not proved: the readers in `Observe` (refusal at both levels, through `watch read` from
   PR 4), `Time.ofHttpDate?` beyond its fixtures, the header framing `Gh.frame`, the `gh` timeout
   that bounds a poll in flight, the codecs, on-load checks, quarantine and housekeeping in `Store`,
   the lease re-read and unique poll numbers (PR 8's `lease-race`), the consumer lock around every
-  `state.json` write, and `WatchCli`.
+  `state.json` write, and `WatchCli`, with the flags' text (`flags?`) and `status`'s `overlap:`
+  hint, which says nothing about callers in other containers.
 
 Lean lens fixes this list carries:
 - No ordering claim needs `List.mergeSort`. Maps compare by lookup (`Equiv`) and are WF by `Nodup`.
@@ -271,6 +363,16 @@ Lean lens fixes this list carries:
 - Decide fixtures use `DecideList.sortStrings` or a local insertion sort.
 - `WatchCli` imports `MitosGate.Watch`, so the audit is in the build; `gate/watch-test.sh` checks
   that `Watch.olean` exists after `lake build mitos-gate`.
+- Fixtures built with `Post.of` (Wake's `aClaudeAppPost`, Deliver's `anOwnerComment`) read only a
+  post's speaker and thread, never its excerpt, so `decide +kernel` need not unfold `Excerpt.of`.
+  If PR 7a's elaboration finds that it does, the fixture builds the `Post` from its fields with a
+  short literal excerpt instead.
+- `Render`'s flag text prints numbers through `Nat.toDigits` (`decimal`), not `toString`, so its
+  four fixtures avoid the four helpers above. They also reach `String.intercalate`, `String.join`
+  and `String.ofList`, which nobody has checked: that is unverified until PR 7c's elaboration. If
+  one does not reduce, the fixtures compare `List Char`: the pieces are joined with `++` on lists,
+  and `String.ofList` is called only outside the fixture. No statement is over the flags' text: the
+  round trip is over `Flag` (`TheTrailerFlagsReadBack`), and `WatchCli.flags?` is tested.
 
 ### reuse
 
@@ -322,12 +424,21 @@ Decide fixtures, in the `Fixture` namespace of their module, are audited:
 - `Wake`:
   - `echo224` and `echo239`: the recorded label and assignee writes of those issues are quiet for
     the writer and loud for the other consumer
-  - `codexWakesTheRoot`, `claudeReplyIsQuietForTheRoot` and `rootCatchUpWakesCodex` (#501, #336)
+  - `codexWakesTheRoot` and `rootCatchUpWakesCodex` (#501, #336: each is `agents` for the other)
+  - `aClaudeAppPostIsPeersForClaudeAndAgentsForCodex` (replaces `claudeReplyIsQuietForTheRoot`),
+    `aRedGateFailsAndAGreenHeadPasses`, `aGreenGateBesideARedCheckIsBoth` (a green gate and a
+    red check newly finished on one head make one line of both kinds) and
+    `aLabelRunsSkippedProvePasses` (a label run's skipped `prove` and a skipped CodeRabbit check
+    are `passed`; all four in the sketch)
   - `recordedReviewReplyIsQuiet` and `unrecordedReviewReplyWakes`
   - `aWriteThenTenQuietMinutesStillExplainsItsEcho`: no poll means no spend
   - `aFinishedCheckOnANewHeadWakes`, the merge-ready case that `pushed` absorption lost
   - `unassignThenAssignInOnePollIsQuiet`: the re-ping's two records of one poll, applied in `seq`
     order, explain the change
+- `Topic` (all in the sketch): `theDefaultIsACatchAll`, `wordsAndPullsCannotRide`,
+  `aFailuresAgentsFlagsReadBack`, `parsedFlagsAreCanonical` (what `ofFlags?` makes is canonical,
+  and an empty `--topics` and an unsorted `--on` are refused), `aWordsAgentAndAPrOwnerOverlapOnWords`
+  (the root's catch-all is never named).
 - `Deliver`:
   - `aMissingSeenReplaysOnce`
   - `copiedTrailerBlocks`, and `copiedTrailerBlocksAcrossARereadPoll`
@@ -341,6 +452,17 @@ Decide fixtures, in the `Fixture` namespace of their module, are audited:
     one recorded), `anAgentAppPostWaitsForTheWindow`
   - `anOutsidePullRidesToTheDeadline`, `nothingToldEndsQuiet` and
     `aHealthyWaitAtTheDeadlineEndsQuiet` (round 3's moment; all three in the sketch)
+  - `aFailuresAgentHearsOnlyTheRedCheck`, `aRidingFailureIsToldAndDoesNotWake`,
+    `anotherItemIsDropped`, `aGreenGateBesideARedCheckWakesTheRidingRoot` (a root that lets
+    `failed` ride, and a caller that hears only `passed`, both wake for it) and
+    `aNarrowedRootCountsWhatItHides` (`hiddenBy`; all five in the sketch)
+  - `aWiderTopicIsToldOnce`: a re-arm with the copied `--seen` and a wider `--topics` gets one
+    `newTopic` note, and the next copied trailer none
+  - `aNarrowerTopicIsToldWhatItPasses`: the root re-armed with the copied `--seen` and a narrower
+    `--topics` gets one `newTopic` note whose count is the facts the new topic hides; once that
+    batch is taken, a wait under the old flags is told none of them
+- `Render` (all in the sketch): `theDefaultPrintsNoFlag`, `aFailuresAgentsFlags`,
+  `aRidingRootsFlags`, `aPrOwnersFlags`.
 
 File fixtures in `gate/watch-fixtures/`, run by `gate/watch-test.sh` (through the test-only
 `watch read` and `watch replay` until `wait` exists):
@@ -379,10 +501,26 @@ File fixtures in `gate/watch-fixtures/`, run by `gate/watch-test.sh` (through th
   - a fake `gh` that prints a token on stderr and exits 1: no stdout line, state file or log
     may contain the token
   - a state folder that turns read-only mid-wait: one stdout `cannot run` line, exit 1
+- `topics/` (PR 8), on one poll:
+  - two callers with different topics: each batch holds only its kinds, and one poll served both
+  - a riding `failed` line printed at the deadline, while an owner comment ends another wait at once
+  - a wider re-arm with the copied `--seen`: one `topic changed` line, then none
+  - a narrower re-arm of the root (`--topics words`) with the copied `--seen`, after a red check
+    finished since its acked place: one `topic changed` line that counts it among the hidden
+    facts; once that batch is taken, a re-arm with the old flags does not print the red check
+  - `--ride words`, an unknown kind, an empty list, `--on 0`, the old `--pr` and
+    `--since 2026-11-23` (a date with no time): each prints one stdout `watch: usage:` line, then
+    the usage text on stderr, and exits 2
+  - `status --as` for the root: its `subscription:` line ends `riding outside (catch-all)`; for
+    `--topics failed,alarms` with the default ride it has no `riding` part (`riding` lists the
+    riding kinds the topic hears)
+  - `status` with the root's catch-all and two callers that both hear `failed` on one item: one
+    `overlap:` line, naming the two and not the root, and the line that says other containers are
+    not listed
 
 ### cut_line
 
-The program ships PRs 0 to 10 (3c only on question 8b yes), PR 11 and PR 13 from
+The program ships PRs 0, 0b and 1 to 10 (3c included: question 8b is yes), PR 11 and PR 13 from
 `PR-SEQUENCE.md`. PR 13 switches the rules only after PR 11 (main's tool runs where the root runs)
 and PR 12 (canary and A/B) are in, so until then the bash watcher, with PR 1's fix, stays the
 root's watcher and `watch.sh` serves PR owners wherever main's tool is built. PR 15 deletes the
@@ -391,8 +529,12 @@ background-shell ban) ships only if PR 12's numbers and the owner say so.
 
 ### deferrals
 
-- Conditional requests (ETag, `If-None-Match`) to cut REST cost. Deferred to a follow-up after
-  PR 12 measures the REST use of the shared poll. It moves from no row to a new follow-up issue.
+- Conditional requests (ETag, `If-None-Match`) are the first REST saving, because a 304 answer to a
+  conditional request does not count against the limit, and every waiting container polls on its
+  own. A follow-up issue opens once PR 12 has measured requests per container, and it goes ahead
+  of any other REST work and of raising default 14.
+- Narrowing the shared poll to the union of a clone's topics. A narrow caller saves wakes, not
+  reads. Deferred behind PR 12, and only if its numbers call for it.
 - Refusals that still fail the poll: a whole answer of the wrong shape, an item with no `id`, and
   any open-pull or run item the reader cannot read. Each lasts until the answer changes or the tool
   is fixed, and every consumer hears it (`DESIGN.md`, Tradeoffs). Post and close items no longer
@@ -408,11 +550,15 @@ background-shell ban) ships only if PR 12's numbers and the owner say so.
   `MITOS_OWNER` and `WATCH_OWNER`). A follow-up issue, not part of PR 9.
 - The Actions event log (#502 call 4). Not built, as #502 already decided.
 - A recording hook that records every agent post id at write time, so review-route replies are
-  quiet without a manual `watch.sh own`. It follows default 5b.
-- An hourly digest of outside-account events. Default 6 takes ride-along instead; a digest is a
-  follow-up only if the owner asks for one.
-- A resident watcher agent. It is rejected for now (`DESIGN.md`, Alternatives) and returns only
-  if owner question 1 is answered no.
+  quiet without a manual `watch.sh own`. It follows default 5b. A class that hears `peers` would
+  use it for its issue comments too.
+- A digest of outside-account events. Default 6 lets them ride; a caller that wants only them
+  waits with `--topics outside`. Nothing more is built.
+- Selecting on labels, milestones, issue versus pull request, one check or one app. Membership
+  moves, and the view holds no issues; whoever briefs an agent turns a milestone into numbers for
+  `--on`.
+- A view of callers across containers for `status`. It lists one clone's callers and says so.
+- A resident watcher agent. Rejected (`DESIGN.md`, Alternatives; question 1 is answered yes).
 - #38 stays open, and nothing here closes it. #501 is closed by PR 1 and PR 3a, and made
   structural by PR 3 and PR 13.
 - Round 3's minor findings that are more than one line, each in the row that takes it:
@@ -433,29 +579,60 @@ background-shell ban) ships only if PR 12's numbers and the owner say so.
 
 `DESIGN.md` (Questions for you) splits these in two.
 
-Part A, the owner's: 1 (no resident process: the deviation from the owner's ask), 2b (where the
-root runs, a fact only the owner has), 2c (PR 12's spend and who starts its arm sessions), 3a (how
-main's tool reaches the root: network and trust), 5a (the owner's own Claude-app posts quiet for
-Claude consumers), 8a (pr-state's unanswered rule), 8b (land's merge admission, optional PR 3c),
-9 (deleting the bash watcher's test suite, at PR 15).
+Part A, the owner's. Answered on 27 November: 1 yes (no resident process); 2b: a provider's cloud
+container is the baseline host for every agent (`DESIGN.md`, Cloud host profile); 2c yes (PR 12's
+spend; the owner starts its arm sessions); 3a: the attested release asset; 5a: per-agent topic
+subscriptions (amendment 1); 8a yes (pr-state's unanswered rule); 8b yes (land's merge admission:
+PR 3c is required, no longer optional); 9 yes (the owner signs off deleting the bash watcher's
+test suite once PR 15's gates hold).
 
-Part B, the root's defaults, each with its reason. PR 0 carries them; merging PR 0 accepts them,
-and a no on PR 0 changes one before the merge.
+Open, from amendment 1, each with the root's recommendation (`DESIGN.md`, Questions for you):
+- 10: the root is always the catch-all. `outside` already rides for every wait (default 6). The
+  root may let `failed` and `alarms` ride too once a handler is named in its brief and on the
+  dashboard; `failed` only while no PR owner it would resume waits on CI, since a red check belongs
+  to its PR's owner. A `--ride` list replaces the default, so it names `outside` again.
+  Recommended: yes.
+- 11: `peers` stays off by default; an agent that must hear Claude-app posts asks for it. Then an
+  issue comment the owner makes through the Claude app wakes no Claude caller, the root included,
+  unless its wait adds `peers`; their review-thread posts through it still do. Recommended: yes.
+- 12: topic agents are sessions of their own or short-lived handlers; standing subagent loops wait
+  for PR 12's idle-cost counter. Recommended: yes.
+- 13: verify the tool offline against a pinned trusted-root file renewed by an owner-merged PR, or
+  allow the Sigstore hosts in each environment. Recommended: the pinned file. A renewal runs
+  `gh attestation trusted-root > .github/attest/trusted_root.jsonl` on a host that reaches the
+  Sigstore hosts (the owner's device, or an environment where they allowed them), in a PR that
+  changes only that file; the owner merges it, and meanwhile the bash watcher or the bounded `gh`
+  loop serves.
+
+Part B, the root's defaults, each with its reason. PR 0 carries them and PR 0b amends them; merging
+each accepts them, and a no on PR 0b changes one before its merge.
 - 2a: Monitor with a wait that exits on the first event; the background-shell ban stays unless
   PR 12's numbers and the owner (PR 14) say otherwise. Reason: it saves about 66M of the about
   100M tokens with no new risk.
 - 3b: pr-state's unanswered column uses main's tool once PR 11 lands. Reason: one classifier, in
   `gate/`.
-- 3c: an outside agent gets the tool the way 3a decides, through `watch.sh build --fetch`; one that
-  cannot keeps a bounded `gh` loop. Reason: one route to keep working.
+- 3c: an outside agent gets the tool the way 3a decided, through `watch.sh build --fetch`; one that
+  can read GitHub but cannot get the tool keeps a bounded `gh` loop. Under Codex's defaults the
+  agent phase has no internet and no secrets, so neither `watch.sh` nor a `gh` loop can read GitHub
+  there: a Codex task does not wait, it reports its head and stops. Its setup phase has internet,
+  so the toolchain or the tool can be fetched there, a cache of up to 12 hours. The root asks the
+  owner to allow agent-phase GET to `api.github.com` and set a read-only token when Codex first
+  takes a row. Reason: one route to keep working, and 60 requests an hour without a token are
+  spent at once.
 - 4: all of it in `gate/`, in the one `mitos-gate` binary. Reason: the offer and ack logic bears on
   trust, and one binary keeps one build and one bootstrap.
 - 5b: agents record review-thread reply ids with `watch.sh own`. Reason: GitHub names no app there,
   so an unrecorded reply wakes every waiting agent.
-- 6: outside-account events ride along and never wake alone (`OutsidePolicy.rideAlong`). Reason: a
-  fork's activity should not cost the root a wake; it is shown at the latest at the wait's deadline.
+- 6: a wait with no `--ride` lets `outside` ride (`Rides.byDefault`): outside-account events come
+  with the next batch and never wake alone. Reason: a fork's activity should not cost the root a
+  wake; it is shown at the latest at the wait's deadline.
 - 8c: no app besides `claude` and `cursor` answers the owner's words without its footer. Reason: it
   keeps land's rule.
+- 14: at most three containers wait at once until PR 12 reports, fewer while more than five of
+  the owner's pull requests are open (containers × (6 + 3 × open owned heads) × 60 under about
+  4,000 an hour). Reason: each waiting container polls on its own, on the one REST limit of the
+  account's token, and four can pass 5,000 at five heads (`DESIGN.md`, Cloud host profile).
+  Raising it waits for PR 12's request counter and conditional requests.
 - 7: #502's calls 1 to 3 and 5, restated against this design, follow from the answers above
   (call 4 is settled).
 - Rows live in `plan/phase-2.md` under their own milestone (6), as the land and gate-architecture

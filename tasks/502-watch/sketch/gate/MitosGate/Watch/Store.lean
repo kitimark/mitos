@@ -12,7 +12,7 @@ owner login it was made for; a mismatch reads as a bad file.
   <git-common-dir>/mitos-watch/
     observed.json                       the `Shared` state, replaced whole by rename
     poll.lock                           the lease: `IO.FS.Handle.tryLock`, never replaced
-    consumers/<app>/<name>/state.json   the `ConsumerState`
+    consumers/<app>/<name>/state.json   the `ConsumerState`; the subscription in it is data only
     consumers/<app>/<name>/lock         an exclusive lock, held only to claim, to ack, and to save
                                         an offer, so every write of `state.json` follows a re-read
     consumers/<app>/<name>/claim        a random token; a newer wait of the same consumer replaces it
@@ -37,7 +37,8 @@ checks: `IO.FS.readFile` throws on bytes that are not UTF-8. The on-load checks 
 A file that fails any step is renamed to `*.bad.<r>` and read as absent: a bad `observed.json`
 makes a new generation, so every consumer gets a reset line; a bad `state.json` makes that consumer
 fresh, which tells it the current state. Nothing that did not read is ever trusted, and nothing is
-lost silently.
+lost silently. No file holds a setting: a lost state folder loses no subscription, because every
+wait names its own with its flags.
 
 A consumer without a usable state takes its mark from the shared state of each step:
 `Mark.fresh s.gen (since.getD s.feed.floor)` for a new consumer (`--since` applies only here), and
@@ -64,8 +65,8 @@ Every file carries `"version"`. A file with a newer version than this tool knows
 the wait exits 1 with `watch: cannot run: the state is newer than this tool; next: run
 .claude/scripts/watch.sh build`, so an old binary that a wait still runs never destroys a newer
 file. A file with an older version is read by that version's codec and written back in the new
-one, once. A new `state.json` is `Deliver.ConsumerState.fresh` with a random six-digit base drawn
-here (`randomBase`).
+one, once. A new `state.json` is `Deliver.ConsumerState.fresh` with the wait's subscription and a
+random six-digit base drawn here (`randomBase`).
 
 The codecs are tested, not proved (`Json` is `partial`); `gate/watch-test.sh` round-trips every
 fixture state and feeds damaged files and a newer version. Layout copies `Accept`'s file
@@ -139,6 +140,12 @@ def holdRunning (p : Paths) : IO IO.FS.Handle := do
 
 /-- `status`: a wait is running when an exclusive `tryLock` fails. -/
 def waitRunning (p : Paths) : IO Bool := panic! "not implemented"
+
+/-- `status` with no `--as`: every `consumers/<app>/<name>/` of this clone, with its state when
+`state.json` reads (`none` when it does not). Read-only: it takes no lock but `waitRunning`'s and
+sets no file aside, so `status` never changes what a wait finds. -/
+def callers (root : System.FilePath) : IO (List (Consumer × Option ConsumerState)) :=
+  panic! "not implemented"
 
 /-- A record needs the generation and poll count of `observed.json`. Before the clone's first wait
 there is none, so `own` warns on stderr that the record is dead and the echo will wake once

@@ -13,15 +13,15 @@ typed comment names none. The review routes (review comments, reviews) carry no 
 text anyone can type, so it never decides who spoke in an issue comment (#501).
 
 Two readers use this file, under different rules on purpose:
-* The watcher (`Wake.quiet`) hides a post only for the consumer whose app made it, or when that
-  consumer's class recorded its id. Typed words are never hidden, and the watcher never reads the
-  footer.
+* The watcher (`Wake.quiet`) hides a post only when its id is recorded. A post through the
+  caller's own app is the `peers` kind, which a subscription hears only when it asks. Typed words
+  are never hidden, and the watcher never reads the footer.
 * `pr-state.sh` asks `mitos-gate watch unanswered` which owner words still wait for an answer.
   There a post is classified as `land` classifies it (`Snapshot.speaks` and `Snapshot.answers` in
   `Snapshot/Fields.lean`), with one change, #501: typed words are words even when they end with a
   footer, and they never answer. `SpeaksAsLandUnlessTyped` and `AnswersAsLandUnlessTyped` tie the
   two rules, so gate/ holds one classifier with one stated exception, not two that disagree. Land
-  keeps the footer rule for typed words until the owner answers question 8b (PR 3c).
+  keeps the footer rule for typed words until PR 3c lands (question 8b, answered yes).
 
 Timing and counting stay those of `pr-state.sh`'s jq, not land's: a post's time is `created_at`
 (`submitted_at` for a review), a review counts only when it approves, requests changes or has a

@@ -130,8 +130,9 @@ inductive ItemKind
   deriving DecidableEq, Repr
 
 /-- One item of a post or close route that a reader could not read. It does not fail the poll. The
-feed keeps it, and each consumer whose scope covers its thread (or every consumer, when the thread
-is unknown) is told it once (`ARefusedItemIsTold`). -/
+feed keeps it, and each caller that hears its kind (`words`, or `pulls` for a close) on a scope that
+covers its thread, or on any scope when the thread is unknown, is told it once
+(`ARefusedItemIsTold`). -/
 structure Refused where
   kind : ItemKind
   id : Nat
