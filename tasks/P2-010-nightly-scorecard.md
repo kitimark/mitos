@@ -2,7 +2,7 @@
 
 phase: 2
 goal: `lake --dir eval/score exe mitos-score --all eval/fixtures [<baseline>]` prints one nightly scorecard: for each fixture and edge type the precision, recall, confirmed precision, inferred precision and most derivations; the most derivations any repo-level edge has, checked against the D1 threshold of 8; what changed against `<baseline>`, which is what `mitos-score --numbers eval/fixtures` printed on an earlier run, such as `main`'s; then every fixture's card. `mitos-score <fixture-dir>` prints exactly what it prints on `main`.
-statement: none (tooling task, nothing in `statements.lock`). Four scorer theorems, not locked: `Score.Nightly.derivations_keys`, `Score.Nightly.le_most`, `Score.Nightly.most_mem`, `Score.Nightly.changed_eq_nil`. Also 21 build-time `#guard` pins in the same file (G1 to G21 under `statements`)
+statement: none (tooling task, nothing in `statements.lock`). Four scorer theorems, not locked: `Score.Nightly.derivations_keys`, `Score.Nightly.le_most`, `Score.Nightly.most_mem`, `Score.Nightly.changed_eq_nil`. Also 21 build-time `#guard` pins in the same file (G1 to G21 under `statements`). The hardening follow-up for #552 (Hardening notes) adds `Score.Nightly.mem_tied`, the pins G22 to G28, and in `Score.lean` `Score.inert_safe`, `Score.inert_clean`, `Score.inert_injective` and `Score.inert_cases`
 touches: eval/score/Main.lean, eval/score/Score/Nightly.lean (new), tasks/P2-010-nightly-scorecard.md, ops/runs/
 must_not_touch: statements.lock, models.lock, gate/, eval/cheats/, models, eval/fixtures/, eval/score/Score.lean, eval/score/Score/GoMod.lean, eval/score/Policy.lean (if #332 has merged), eval/score/lakefile.toml, eval/score/lake-manifest.json, eval/score/lean-toolchain, examples/acme/, core/, eval/diff/, eval/mutants/, .github/, docs/, plan/, .claude/
 checks: start checks (S1, S2), the scorer builds with no warning (check 1), axioms (check 2), single-fixture cards unchanged (check 3), `--numbers` is N2 (check 4), `--all` is N3 (check 5), own baseline is N4 (check 6), moved baseline is N5 (check 7), errors and usage are N6 (check 8), scratch roots N7 to N12 (check 9), the real fixtures after P2-009a, N13 (check 10), wrong variants (check 11), changed paths (check 12), the run-log check (check 13), `plan-tasks.test.sh` (check 14), `gate` green in CI (check 15)
@@ -23,14 +23,14 @@ escalation: hint → automation → stronger model → pair → split → revisi
 - Landing this file. `.claude/scripts/plan-tasks.pending` lists `P2-010`, and `plan-tasks.test.sh` fails once a listed row has a task file with a Design block. So the PR that lands this design also deletes the line `P2-010` from that list. `.claude/` is the owner's path, so the owner merges that PR. The build PR stays agent-merged.
 
 ## Design
-Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file lists.
+Written once at plan time and amended in place. `touches` and `must_not_touch` above are its file lists. The hardening follow-up for #552 had its own file list, which includes `eval/score/Score.lean`. Where it changed an output, a pin or a rule, the text below is amended and says so, and Hardening notes records the whole change.
 
-depth: build. Under `types` are the whole of `eval/score/Score/Nightly.lean` and the whole diff of `eval/score/Main.lean`, with every proof and pin written in. The plan-time scratch build at `eac85d2` finished in 44 jobs without warnings. The merged scorer build kernel-checks the four theorems and evaluates all 21 `#guard`s. The build notes record N1 to N13 with the chain fixture present.
+depth: build. Under `types` are the whole of `eval/score/Score/Nightly.lean` and the whole diff of `eval/score/Main.lean` as #551 merged them, with every proof and pin written in. The plan-time scratch build at `eac85d2` finished in 44 jobs without warnings. The scorer build now kernel-checks five theorems in `Score/Nightly.lean` and evaluates all 28 `#guard`s (four theorems and 21 pins before the hardening follow-up). The build notes record N1 to N13 with the chain fixture present.
 
 revisit_when: re-check after #210 (P2-009a) merges. That also covers #204 (P2-001b), which P2-009a waits for. The re-check is S1 to S3 and N13. #332 changes no output here, whichever order it merges in (measured at 856832b).
 
 modules:
-- `eval/score/Score/Nightly.lean` *(new)*. It owns one topic, the nightly scorecard on top of one card: the derivation count per repo-level edge, the per-type counts and their check against the card's own text, the numbers file (three line kinds, written and read back), the line-set diff, the D1 line and the report. It copies the layout of `eval/score/Score/GoMod.lean`: imports, one namespace, `open Mitos`, definitions, theorems, then pins. Its helpers are `private`, so another file cannot reach them (measured: `#check @Score.Nightly.consistent` from a scratch file is an unknown identifier). It imports `Score`, and `Score.lean` does not import it, so there is no cycle and no edit to `Score.lean`. `Main.lean` imports it, so the default target `mitos-score` builds it with no lakefile change.
+- `eval/score/Score/Nightly.lean` *(new)*. It owns one topic, the nightly scorecard on top of one card: the derivation count per repo-level edge, the per-type counts and their check against the card's own text, the numbers file (three line kinds, written and read back), the line-set diff, the D1 line and the report. It copies the layout of `eval/score/Score/GoMod.lean`: imports, one namespace, `open Mitos`, definitions, theorems, then pins. Its helpers are `private`, so another file cannot reach them (measured: `#check @Score.Nightly.consistent` from a scratch file is an unknown identifier). It imports `Score`, and `Score.lean` does not import it, so there is no cycle and no edit to `Score.lean`. `Main.lean` imports it, so the default target `mitos-score` builds it with no lakefile change. Since the hardening follow-up the numbers file has a fourth line kind, `counts`, and the per-type counts and their row text live in `Score.lean` (`Scorecard.typeCounts`, `TypeCounts.row`, `TypeCounts.trustRow`), where `render` reads them too.
 - `eval/score/Main.lean`, 35 → 78 lines. It gains `scoreDir`, `fixtureName`, `scoreAll` (the walker over a fixtures root) and two modes, `--numbers` and `--all`. A lone argument that starts with `-` prints the usage. `sortPaths` and `loadRepos` keep every byte, and the single-fixture mode prints the same bytes.
 
 ### How the scorer works on `main` (what this row builds on)
@@ -48,20 +48,21 @@ lake --dir eval/score exe mitos-score --all eval/fixtures [n-before.tsv]  # the 
 ```
 
 - Every directory directly under the root is one fixture, taken in name order (`chain`, `gomod`, `toy` once P2-009a lands). No name is skipped and no list names them.
-- A fixture fails, and its card is replaced by `Scorer error: …`, when its `labels.tsv` is missing, its `repos/` is missing, a file cannot be read, `parseLabels` or `score` fails, or `Nightly.checked` finds a problem: the per-type counts disagree with the card's own rows, or one of its numbers lines would not read back (a tab inside an extracted key). The messages hold no path. The other fixtures still score and print.
-- `--all` prints, in this order: `## Nightly scorecard` with the fixture count and, when one failed, a bold line naming the failed fixtures; `### Every fixture`, one table row per fixture and edge type, then the D1 line; `### Against the baseline`; then each card or error, each after one empty line. A scored fixture's card is byte for byte what `mitos-score <fixture-dir>` prints (check 5).
+- A fixture fails, and its card is replaced by ``Scorer error: `…` `` (the error text is in a code span since the hardening follow-up), when its `labels.tsv` is missing, its `repos/` is missing, a file cannot be read, `parseLabels` or `score` fails, or `Nightly.checked` finds a problem: the per-type counts disagree with the card's own rows, or one of its numbers lines would not read back (a tab inside an extracted key). The messages hold no path. The other fixtures still score and print.
+- `--all` prints, in this order: `## Nightly scorecard` with the fixture count and, when one failed, a bold line naming the failed fixtures; `### Every fixture`, one table row per fixture and edge type, then the D1 line; `### Against the baseline`; then each card or error, each after one empty line. A scored fixture's card is byte for byte what `mitos-score <fixture-dir>` prints (check 5). Since the hardening follow-up the D1 line names every edge that has the top count, joined by `; `, in the order of the fixtures and then of each fixture's `edge` lines.
 - The numbers file has one line per record, tab-separated, and its first field names the kind:
 
 | Kind | Fields after the kind | One line per |
 |---|---|---|
+| `counts` | fixture, facts, requirements, provisions, bindings, unresolved requirements | fixture, before its other lines (since the hardening follow-up) |
 | `rates` | fixture, edge type, precision, recall, confirmed precision, inferred precision, most derivations | edge type of the card, in the card's order |
 | `edge` | fixture, the edge as the card prints it, `confirmed`, `inferred` or `not in the card`, derivations, edge identity | repo-level edge the resolver made, in its order |
 | `label` | fixture, the label as the card prints an edge, edge identity | label, in `labels.tsv` order |
 
-  The edge identity is a compact JSON array of the requiring repo, providing repo, kind, key and scope. Its strings are escaped so distinct keys stay distinct even when their card text is identical. The report shows the card text.
+  The edge identity is a compact JSON array of the requiring repo, providing repo, kind, key and scope. Its strings are escaped so distinct keys stay distinct. Since the hardening follow-up the report prints an edge or a label from this identity, through `renderEdge`, and not from the text its line carries.
 
   The ratio fields are `Score.ratio` strings such as `0.83 (5/6)` or `n/a`, so a count that moves shows even when the rounded ratio does not. `parseNumbers` reads only these kinds, each with its own field count, and `Nightly.checked` reads every line the run writes, so the writer must reproduce the exact list of lines after parsing.
-- "Against the baseline" is one of: `No baseline given, so nothing was compared.`; `No change against the baseline.` exactly when this run's lines and the baseline's, less the lines of any fixture that failed in this run, are the same set (`changed_eq_nil` applied to that filtered baseline); or the changes. For each fixture and edge type whose `rates` line changed, the baseline row and this run's row, with `none` on a side that has no such line. Then `**The hand labels changed.**` and each `label` line on one side only. Then each `edge` line on one side only. A fixture that failed in this run is left out of the comparison and, when the baseline holds lines for it, gets the line `` `<name>` was not scored in this run, so it is not compared. ``
+- "Against the baseline" is one of: `No baseline given, so nothing was compared.`; `No change against the baseline.` exactly when this run's lines and the baseline's, less the lines of any fixture that failed in this run, are the same set (`changed_eq_nil` applied to that filtered baseline); or the changes. For each fixture and edge type whose `rates` line changed, the baseline row and this run's row, with `none` on a side that has no such line. Then, since the hardening follow-up, a second table with the two rows of each fixture whose `counts` line changed. Then `**The hand labels changed.**` and each `label` line on one side only. Then each `edge` line on one side only. A fixture that failed in this run is left out of the comparison and, when the baseline holds lines for it, gets the line `` `<name>` was not scored in this run, so it is not compared. `` A baseline with no `counts` line at all was written before the hardening follow-up: this run's `counts` lines are then left out of the comparison, and the section ends with `The baseline has no fact counts, so they are not compared.`
 - Exit codes:
   - `<fixture-dir>`: as on `main`, and 2 for a lone argument that starts with `-`.
   - `--numbers`: 0 with every line on stdout; 1 with nothing on stdout and one `<fixture>: <error>` line on stderr per failed fixture, so a broken run cannot become the next baseline.
@@ -74,14 +75,14 @@ lake --dir eval/score exe mitos-score --all eval/fixtures [n-before.tsv]  # the 
 | #325 question | #332's answer | The opposite answer | What this row does | What depends on the answer |
 |---|---|---|---|---|
 | Q1, same-repo edges | kept, and a label makes one a hit | left out of the card | `derivations` counts every repo-level edge the resolver made (`derivations_keys`), so the D1 line and each type's "most derivations" are the same under both answers. An edge the card leaves out has the status `not in the card` in its `edge` line, and when it holds the most, the D1 line adds "which that fixture's card leaves out". | The card's own counts, and so the precision and recall in `rates`. N9 measures both answers. |
-| Q2, a label kind no fact has | `score` fails | it scores as a miss | Under #332 that fixture's card is `Scorer error: label kind "go-mod" is not among the extracted facts`, the bold line names it, `--all` exits 1 and `--numbers` prints nothing. Under the miss answer the fixture scores, with one more `rates` line (`go-mod/runtime`, `n/a`, `0.00 (0/1)`, `n/a`, `n/a`, `0`) and one more `label` line. | The exit code, and whether a typo shows as a failure or as a row. N12 measures both. |
+| Q2, a label kind no fact has | `score` fails | it scores as a miss | Under #332 that fixture's card is ``Scorer error: `label kind "go-mod" is not among the extracted facts` ``, the bold line names it, `--all` exits 1 and `--numbers` prints nothing. Under the miss answer the fixture scores, with one more `rates` line (`go-mod/runtime`, `n/a`, `0.00 (0/1)`, `n/a`, `n/a`, `0`) and one more `label` line. | The exit code, and whether a typo shows as a failure or as a row. N12 measures both. |
 | Q3, `go.mod` under `testdata/`, `.x/`, `_x/` | every `go.mod` is read | those directories are skipped | Nothing. `Score.GoMod.reads` decides. `loadRepos` reads every file, and the fixture walker skips no directory. | Only a fixture that has such a directory, and `main` has none. |
 
 ### How a builder goes wrong here
 - Adding a line to each card, or changing `render`. That moves the single-mode bytes that CI posts, P2-009b's F2 and F3, and #332's `native_decide` card theorems. The nightly output lives only in `--all` (N1, check 5).
 - Counting derivations only for the card's predicted keys (W1). The D1 number would then depend on Q1, and an edge that the scorer drops would hide its derivations from the D1 tripwire. `derivations_keys` stops proving.
 - Editing `Score.lean` to put edges or counts into `Scorecard`. That edit is outside the cell, and it collides with P2-009a's `collapse` edit and #332's edit of `score`.
-- Recounting the per-type numbers with a rule that differs from `render`'s (W5). G5 fails the build, and on a real fixture `Nightly.checked` fails it with "the nightly numbers disagree with the card".
+- Recounting the per-type numbers with a rule that differs from `render`'s (W5). G5 fails the build, and on a real fixture `Nightly.checked` fails it with "the nightly numbers disagree with the card". Since the hardening follow-up there is no second rule: `render` and `numbers` both read `Scorecard.typeCounts`, and a wrong count there moves the card's bytes, which `Policy`'s card theorems, G1 and N1 hold.
 - A one-sided diff (W2): `changed_eq_nil` stops proving, and a fixture or label that disappeared would not show.
 - `most` with `min` (W3), or a maximum that no edge has (W4): `le_most` or `most_mem` is false.
 - A baseline of numbers only. A label swap, one hard label out and one easy label in, keeps every count but raises recall. The `label` lines show which label moved (N10, W7).
@@ -96,7 +97,7 @@ lake --dir eval/score exe mitos-score --all eval/fixtures [n-before.tsv]  # the 
 
 types:
 - Inputs, unchanged on `main`: `Score.Scorecard` with the fields `facts`, `predicted` and `labels`; `Score.score`; `Scorecard.render`; `Score.edgeType`, `Score.renderEdge`, `Score.ratio` and `Score.statusName`; `Score.parseLabels`; `Score.SourceFile`; `Mitos.Impl.resolve : List Located → Resolution`; `Edge.repoKey`; `RepoKey`'s `DecidableEq`. P2-001b keeps every one of these (built at 3d939da), and so does #332 (built at 856832b).
-- `eval/score/Score/Nightly.lean`, the file in full:
+- `eval/score/Score/Nightly.lean`, the file in full as #551 merged it. Hardening notes lists what changed since:
 
 ```lean
 import Score
@@ -492,6 +493,7 @@ end Score.Nightly
 
 - The interface is `Score.Nightly.d1Threshold`, `derivations`, `most`, `numbers`, `parseNumbers`, `Result`, `checked`, `numbersAll`, `changed`, `summary`, `report` and the four theorems. `Main` uses `Result`, `checked`, `numbersAll`, `parseNumbers` and `report`. The rest is `private`.
 - `TypeCounts` holds one edge type's counts once, and both the `rates` line and the three card rows that `consistent` looks for are printed from it. `TypeCounts.cardLines` copies the row text of `Scorecard.render`, because `render` lives in `Score.lean`, outside this cell. G5 and `Nightly.checked` fail when the two disagree (R3).
+- Since the hardening follow-up: `TypeCounts` and `Scorecard.typeCounts` are public in `Score.lean`, `TypeCounts.cardLines` is gone, and `render` prints its rows through `TypeCounts.row` and `TypeCounts.trustRow`, which `consistent` looks for. The interface gains `Score.Nightly.tied` and `mem_tied`.
 
 statements:
 - `Score.Nightly.derivations_keys : (derivations c).map (·.1) = ((resolve c.facts).edges.map (·.repoKey)).eraseDups`. The count covers every repo-level edge the resolver made, each once, whatever the card keeps. Axioms `[propext, Quot.sound]`.
@@ -499,8 +501,15 @@ statements:
 - `Score.Nightly.most_mem : ds ≠ [] → ∃ d ∈ ds, d.2 = most ds`. The maximum is some edge's count, not a number above all of them. With `le_most` it fixes `most` exactly. Axioms `[propext, Quot.sound]`.
 - `Score.Nightly.changed_eq_nil : changed cur base = [] ↔ ∀ l, l ∈ cur ↔ l ∈ base`. The report says "No change against the baseline" exactly when this run and the baseline, less the lines of any fixture that failed in this run, hold the same lines. A line that appeared or disappeared always shows. Axioms `[propext, Classical.choice, Quot.sound]`.
 - All four are general, with no `decide` on strings, and CI's `checks` job kernel-checks them through `lake --dir eval/score build`.
+- From the hardening follow-up, also kernel-checked by that build:
+  - `Score.Nightly.mem_tied : k ∈ tied top ds ↔ (k, top) ∈ ds`. The D1 line lists exactly the edges whose count is the top one, each fixture's in the order `derivations` gives them. With `most_mem`, the list is not empty when a fixture has an edge. Axioms `[propext, Quot.sound]`.
+  - `Score.inert_safe : ∀ c ∈ (inert s).toList, c ∉ breaks`, where `breaks` is the backtick, the pipe, the line feed, the carriage return and `@`. It holds for every string. This is the property R6 asked for: text that went through `inert` cannot mention anyone, close a code span, add a table cell or start a line.
+  - `Score.inert_injective : inert s = inert t → s = t`. Two different names never print the same. `renderEdge` prints each name of an edge in its own code span, which `inert_safe` keeps closed, so two different edges print differently. That last step is an argument, not a theorem about `renderEdge`, and G21 pins it for the pair that collided on `main`.
+  - `Score.inert_clean`: a string with no backslash and none of those five characters prints unchanged. This is why the cards of `toy`, `chain` and `gomod` keep their bytes.
+  - `Score.inert_cases`: what each of the six characters prints as (`\x60`, `\x7c`, `\n`, `\x0d`, `\x40`, `\\`), and that `naïve-date` prints as it is. One `decide` case per character.
+  - The four `inert` theorems depend on `[propext, Classical.choice, Quot.sound]`.
 - The pins, in file order. Each is a `#guard` that the build evaluates, because string splitting and `render` do not reduce in the kernel (#332 needed `native_decide` for its card theorems). The pins that need a card run the real `score` on a two-repo toy fixture written in the file (`pinFiles n`: `a/deps.toy` with `n` lines `require x`, `b/PROVIDES` with `provide x`, one label `a` → `b`). The others use literal lines or a failed `Result`.
-  - G1: the three numbers lines of `pinFiles 2`, exactly (`rates … 2`, `edge … confirmed 2`, `label …`).
+  - G1: the numbers lines of `pinFiles 2`, exactly (`rates … 2`, `edge … confirmed 2`, `label …`). Since the hardening follow-up there are four, and the first is `counts pin 3 2 1 0 0`.
   - G2: those lines read back unchanged through `parseNumbers`.
   - G3, G4: a `rates` line with 4 fields and a line of an unknown kind are refused.
   - G5: `consistent` holds for the card `render` prints and fails against an empty card.
@@ -516,16 +525,24 @@ statements:
   - G18: `numbersAll` returns the error, not lines, when a fixture failed.
   - G19: the report names the absence of repo-level edges.
   - G20: the report identifies a maximum-count edge absent from the single-fixture card.
-  - G21: a label swap between two different repo keys with identical display text is reported on both sides while rates and predictions stay equal.
+  - G21: a label swap between two different repo keys with identical display text is reported on both sides while rates and predictions stay equal. Since the hardening follow-up the premise is gone: G21's two keys, which printed the same on `main`, now print differently, because each name is escaped inside its own code span. G21 pins that: `renderEdge old != renderEdge new`, the report has `label only in the baseline: <old>` and `label only in this run: <new>`, and the other lines stay equal. This is #552 item 3.
+  - G22: three fixtures, two of which hold three edges with the top count of 2. The D1 line lists all three, in fixture order and then edge order, joined by `; ` (R7).
+  - G23: a run with one more unresolved requirement than its baseline shows the counts table, with the baseline row and this run's row (R8).
+  - G24: a baseline written before the `counts` kind, given as literal text, is read by `parseNumbers`, equals this run's lines without the `counts` line, and the report says `No change against the baseline.` and then that the counts are not compared, with no `none` row (R8).
+  - G25: a fixture whose lines parse but do not read back as the same list fails with "the numbers lines of this fixture changed on readback". The input is an empty fixture whose name holds tabs and a line feed, chosen so that its one `counts` line reads back as two well-formed ones (#552 item 2).
+  - G26: the report built from names, keys, kinds, error text and baseline lines that hold a backtick, a pipe, a line feed, a carriage return, `@` and a backslash has exactly as many of each of the first five as the same report built from `x` and `y`. So no place that prints such text skips `inert` (R6).
+  - G27: the unresolved line of that report prints the hostile path escaped, text for text.
+  - G28: the edge identity of a hostile key parses back to the same key, which is what lets the report print from it.
 - Not pinned in the build, and checked by the builder's runs: each card inside `--all` equals the single-mode card (check 5), and the walker's fixed messages (N6).
 
 reuse: `Score.score`, `Scorecard`, `Scorecard.render`, `Score.edgeType`, `Score.renderEdge`, `Score.ratio`, `Score.statusName`, `Score.parseLabels` and `Score.SourceFile` unchanged; `loadRepos` and `sortPaths` in `Main.lean` unchanged; `Mitos.Impl.resolve`, `Edge.repoKey`; `List.countP`, `List.eraseDups`, `List.lookup`, `List.contains_eq_mem`, `List.filter_eq_nil_iff`, `Except.isOk`. The layout of `Score/GoMod.lean`. No new fixture directory and no lakefile change.
 
 fixtures: build and run everything at the head. Outputs are compared by sha256. Scratch roots live under `<scratch>/p2010-fx`, never in the repository. The root `two` is a copy of `eval/fixtures/gomod` and `eval/fixtures/toy` only, so N2 to N5 and N10 stay checkable after P2-009a adds `chain`.
 - N1, the single-fixture cards are unchanged. `mitos-score eval/fixtures/toy` hashes to `17c55e9cfa3a9db873c50c980cf2cbea62195fe2eebecde3edc0a13add38f21a` (P2-009b's F3) and `mitos-score eval/fixtures/gomod` to `889671a4d4c0eaed6b0680028ba965d63774aaaa48b7c070f860e3e5bade24cf` (F2), before and after the change, on all three bases.
-- N2, `mitos-score --numbers <r>/two` prints these 27 lines and exits 0 (sha256 `bb6f3e4d31015590ee88fb4eb2be92c3be7bcf387df7d910c9793962cd158dec`):
+- N2, `mitos-score --numbers <r>/two` prints these 29 lines and exits 0 (sha256 `86af9dd3c091b6fc8e1e57a2e33eb34a55e15d27279cbbe68f820856df417136`). Before the hardening follow-up it printed the 27 lines other than the two `counts` lines (sha256 `bb6f3e4d31015590ee88fb4eb2be92c3be7bcf387df7d910c9793962cd158dec`):
 
 ```
+counts	gomod	15	7	8	0	1
 rates	gomod	go-module/runtime	0.83 (5/6)	0.83 (5/6)	1.00 (4/4)	0.50 (1/2)	2
 edge	gomod	`app` → `lib` (go-module/runtime `example.com/lib`)	confirmed	1	["app","lib","go-module","example.com/lib","runtime"]
 edge	gomod	`app` → `log` (go-module/runtime `example.com/log`)	inferred	1	["app","log","go-module","example.com/log","runtime"]
@@ -539,6 +556,7 @@ label	gomod	`app` → `cli` (go-module/runtime `example.com/cli`)	["app","cli","
 label	gomod	`lib` → `util` (go-module/runtime `example.com/util`)	["lib","util","go-module","example.com/util","runtime"]
 label	gomod	`mono` → `lib` (go-module/runtime `example.com/lib`)	["mono","lib","go-module","example.com/lib","runtime"]
 label	gomod	`mono` → `util` (go-module/runtime `example.com/util`)	["mono","util","go-module","example.com/util","runtime"]
+counts	toy	11	7	4	0	2
 rates	toy	toy/runtime	0.71 (5/7)	0.83 (5/6)	1.00 (3/3)	0.50 (2/4)	1
 edge	toy	`app` → `lib-pad` (toy/runtime `left-pad`)	inferred	1	["app","lib-pad","toy","left-pad","runtime"]
 edge	toy	`app` → `pad-fork` (toy/runtime `left-pad`)	inferred	1	["app","pad-fork","toy","left-pad","runtime"]
@@ -555,7 +573,7 @@ label	toy	`web` → `date-lib` (toy/runtime `naïve-date`)	["web","date-lib","to
 label	toy	`web` → `ui-kit` (toy/runtime `ui-kit`)	["web","ui-kit","toy","ui-kit","runtime"]
 ```
 
-  Each number in a `rates` line is the one F2 or F3 prints, and `mono` → `lib` with 2 is P2-009b's F6.
+  Each number in a `rates` line is the one F2 or F3 prints, and `mono` → `lib` with 2 is P2-009b's F6. Each `counts` line holds the numbers of its card's first line: `15 facts (7 requirements, 8 provisions), … 1 requirements unresolved` for `gomod`, and `11 facts (7 requirements, 4 provisions), … 2 requirements unresolved` for `toy`.
 - N3, `mitos-score --all <r>/two` exits 0 (sha256 `c1226aa886ddd42f80151a396a8e8de5c6c6cbc6aa336814f4a4a86939944ae0`). It prints this summary, then an empty line and F2, then an empty line and F3:
 
 ```
@@ -578,7 +596,7 @@ No baseline given, so nothing was compared.
 ```
 
 - N4, a run against its own numbers. `--all <r>/two <r>/n.tsv`, where `n.tsv` is N2's output, prints N3 with `No change against the baseline.` in place of `No baseline given, so nothing was compared.`, and exits 0 (sha256 `4fe81f4dbf784f4a6f7a4522f01e92b6aaed5fbf6eca40dda1db828072507924`). This is the command-line form of `changed_eq_nil`.
-- N5, a moved baseline. `moved.tsv` is N2 with the gomod recall at `1.00 (6/6)`, `app` → `log` as `confirmed`, and a `chain` line that this tree lacks, as a baseline from after P2-009a would have against a tree before it (sha256 `43062bf21b671aece74bc63ca785f64e0d44373ad6fb4f451c28746a0071fda9`, command below). `--all <r>/two <r>/moved.tsv` exits 0 (sha256 `d7905796795257544ad2a496b092a631430dd7e20cf62702e57362747f07ed1e`), and its last section reads:
+- N5, a moved baseline. `moved.tsv` is N2 with the gomod recall at `1.00 (6/6)`, `app` → `log` as `confirmed`, and a `chain` line that this tree lacks, as a baseline from after P2-009a would have against a tree before it (sha256 `d9c54d27bb99d0a97fb0cf5f2a10789963bc1154809667aabb47fd890c65a89a` with N2's two `counts` lines, `43062bf21b671aece74bc63ca785f64e0d44373ad6fb4f451c28746a0071fda9` before them; command below). `--all <r>/two <r>/moved.tsv` exits 0 (sha256 `d7905796795257544ad2a496b092a631430dd7e20cf62702e57362747f07ed1e`), and its last section reads:
 
 ```
 ### Against the baseline
@@ -597,7 +615,7 @@ Repo-level edges that changed:
 
   The unchanged `toy` lines do not appear. A changed `rates` key shows both sides, a key that disappeared shows `none`, and a status move shows as the edge's two lines.
 - N6, errors and usage.
-  - The root `err` holds `bad` (label scope `prod`), `nolab` (no `labels.tsv`), `norepos` (no `repos/`) and `ok` (`a` → `b`, one hit). `--all <r>/err` exits 1 (sha256 `8648b35a03e935db6774a6b03e77737e13384176d7c284ed7def13186097337b`). It starts:
+  - The root `err` holds `bad` (label scope `prod`), `nolab` (no `labels.tsv`), `norepos` (no `repos/`) and `ok` (`a` → `b`, one hit). `--all <r>/err` exits 1 (sha256 `d763685424c5b0c34df3638912c3fc9de34a488c0f1630fcf7a1200fc8264c97`; `8648b35a03e935db6774a6b03e77737e13384176d7c284ed7def13186097337b` before the hardening follow-up put the three error texts in code spans). It starts:
 
 ```
 ## Nightly scorecard
@@ -620,14 +638,14 @@ No baseline given, so nothing was compared.
 
 ### Scorecard: fixture `bad`
 
-Scorer error: labels.tsv:1: unknown scope "prod"
+Scorer error: `labels.tsv:1: unknown scope "prod"`
 
 ### Scorecard: fixture `nolab`
 ```
 
-  and goes on with `Scorer error: labels.tsv is missing`, then `norepos` with `Scorer error: repos/ is missing`, then `ok`'s card.
+  and goes on with ``Scorer error: `labels.tsv is missing` ``, then `norepos` with ``Scorer error: `repos/ is missing` ``, then `ok`'s card.
   - `--numbers <r>/err` prints nothing on stdout, exits 1, and writes `bad: labels.tsv:1: unknown scope "prod"`, `nolab: labels.tsv is missing` and `norepos: repos/ is missing` to stderr.
-  - A baseline whose `rates` line has 7 fields makes `--all` print ``baseline line 1: a line of kind `rates` has 8 tab-separated fields, found 7`` and exit 1. A baseline line of kind `card` prints `baseline line 1: unknown line kind "card"` and exits 1.
+  - A baseline whose `rates` line has 7 fields makes `--all` print `baseline line 1: a line of kind rates has 8 tab-separated fields, found 7` and exit 1. (The message had backticks around the kind before the hardening follow-up. It lost them because the same message is printed inside a code span in N11.) A baseline line of kind `card` prints `baseline line 1: unknown line kind "card"` and exits 1.
   - `mitos-score --all`, `--all <root> a b`, `--numbers` and `-x` print the usage and exit 2. Without the guard, `-x` would try to read `-x/labels.tsv`.
 - N7, the D1 boundary. Fixture `many` has `a/deps.toy` with n lines `require x` and `b/PROVIDES` with `provide x`, which gives n records under one repo-level edge. With n = 8 (`<r>/d1-8`) the run prints ``Most derivations any repo-level edge has: 8, `a` → `b` (toy/runtime `x`) in fixture `many`. D1 reopens above 8.`` and no bold line (sha256 `c68c5d70c1f315bc41b8f6dddf6276f3cea183ea8ece970820dd648cb29939ec`). With n = 9 (`<r>/d1-9`) it prints the line with 9 and then ``**Above 8: D1 reopens (`plan/phase-2.md`, Scope decisions).**`` (sha256 `a6c12fd1d9a0bb9b570a6c1a80f34ce6b2454198609532fabb643dbccce8bd01`). Both exit 0.
 - N8, P2-009b's F6 reproduced: N2's `edge` line for `mono` → `lib` in `gomod` has status `confirmed` and derivation count `2`, and the `gomod` `rates` line ends with `2`. P2-001b's bound records count under the same rule (`countP` over every record with the key).
@@ -649,8 +667,8 @@ Scorer error: labels.tsv:1: unknown scope "prod"
 ```
 
   The recall that went up came from a label, and the report says which.
-- N11, a tab inside a key. Fixture `t` has `a/deps.toy` with `require p<TAB>q` and `b/PROVIDES` with `provide p<TAB>q`. `--all <r>/tab` exits 1 with ``Scorer error: a numbers line of this fixture would not read back (line 2: a line of kind `edge` has 6 tab-separated fields, found 7)`` (sha256 `9439a16b42fcf66fae9be3425f208d010b576b0a74e9fef3e9679f2a396da3b6`). `mitos-score <r>/tab/t` still prints its card and exits 0.
-- N12, Q2 both ways. `<r>/typo/ok` is `err/ok` with a second label of kind `go-mod`. On `main`, `--all <r>/typo` exits 0 (sha256 `4239227eeeebdf4acfa3b31a150bcbc9f2e8e665b3f98ba04e476be1bf4ff41d`), and `--numbers` prints one more `rates` line, for `go-mod/runtime` with the fields `n/a`, `0.00 (0/1)`, `n/a`, `n/a` and `0`, and one more `label` line, ``label<TAB>ok<TAB>`a` → `b` (go-mod/runtime `x`)<TAB>["a","b","go-mod","x","runtime"]``. With #332's files it exits 1 with `Scorer error: label kind "go-mod" is not among the extracted facts` and the bold line ``**Not every fixture scored (`ok`), …`` (sha256 `59e697fecaef8ffe61d0bd708a41666cb1d58c92a7c49bf663d3fc76b5a813e6`).
+- N11, a tab inside a key. Fixture `t` has `a/deps.toy` with `require p<TAB>q` and `b/PROVIDES` with `provide p<TAB>q`. `--all <r>/tab` exits 1 with ``Scorer error: `a numbers line of this fixture would not read back (line 3: a line of kind edge has 6 tab-separated fields, found 7)` `` (sha256 `8e07536a7ae48f93deaaa32d80f5ec0b55c2bb2da1e551a850bf40472a57bec1`). Before the hardening follow-up the text had no code span, said `line 2`, because no `counts` line came first, and had backticks around `edge` (sha256 `9439a16b42fcf66fae9be3425f208d010b576b0a74e9fef3e9679f2a396da3b6`). `mitos-score <r>/tab/t` still prints its card and exits 0.
+- N12, Q2 both ways. `<r>/typo/ok` is `err/ok` with a second label of kind `go-mod`. On `main`, `--all <r>/typo` exits 0 (sha256 `4239227eeeebdf4acfa3b31a150bcbc9f2e8e665b3f98ba04e476be1bf4ff41d`), and `--numbers` prints one more `rates` line, for `go-mod/runtime` with the fields `n/a`, `0.00 (0/1)`, `n/a`, `n/a` and `0`, and one more `label` line, ``label<TAB>ok<TAB>`a` → `b` (go-mod/runtime `x`)<TAB>["a","b","go-mod","x","runtime"]``. With #332's files it exits 1 with ``Scorer error: `label kind "go-mod" is not among the extracted facts` `` and the bold line ``**Not every fixture scored (`ok`), …`` (sha256 `b754961cacc06526438d605cad0e732d5c5f2f4475a478c967c64c435b2f279f`; `59e697fecaef8ffe61d0bd708a41666cb1d58c92a7c49bf663d3fc76b5a813e6` before the hardening follow-up put the error text in a code span).
 - N13, the chain fixture after P2-009a. `--numbers eval/fixtures` prints the `chain` lines first, with edge type `env/runtime` (P2-001b's deferral) and a `chain` `rates` line whose most derivations is at least 2 (the row's "a requirement that has two derivations"; P2-001b's `twoBindings`). The `gomod` and `toy` lines are N2's bytes, because P2-009a's `collapse` change cannot move them: each `toy` repo-level edge has one record, and `mono` → `lib`'s two records are both `confirmed` (P2-009b F6). `--all eval/fixtures` exits 0. The builder records the `chain` lines and the hashes of both commands in the build notes. A `chain` most of 1 means the count or the fixture lost a derivation: stop and report.
 - Commands for the scratch roots, from the repository root:
 
@@ -697,7 +715,7 @@ printf 'rates\tchain\tenv/runtime\t1.00 (2/2)\t1.00 (2/2)\t1.00 (2/2)\tn/a\t2\n'
 | W2 | `changed` keeps only `cur.filter (!base.contains ·)` | `changed_eq_nil` stops proving |
 | W3 | `most` with `min` | `le_most` is false and stops proving |
 | W4 | `most` adds 1 to the maximum | `most_mem` is false and stops proving (`le_most`'s proof also stops, though its statement still holds) |
-| W5 | `tp` counts the predicted edges that are not labelled | at least G1, G5 and G6 |
+| W5 | `tp` counts the predicted edges that are not labelled | at least G1, G5 and G6. Since the hardening follow-up, where the count is `Scorecard.typeCounts` in `Score.lean`: G1, G12, G24 and three card theorems in `Policy.lean`, and no longer G5 or G6, because `render` reads the same count |
 | W6 | `consistent` is `true` | G5 |
 | W7 | no "The hand labels changed." section | G13 |
 | W8 | with no baseline the report says "No change against the baseline." | G9 |
@@ -718,7 +736,7 @@ From the repository root, at the head after the last rebase. `<scratch>` is a fo
 
    Inspect the saved log on failure. A failed pin reports `Expression … did not evaluate to true`.
    If `main` emits a warning too, compare the diagnostics and record the shared warning in the build notes.
-2. A scratch `Axioms.lean`, never committed, with `import Score.Nightly` and `#print axioms` for each of the four theorems. `cd eval/score && lake env lean <scratch>/Axioms.lean` prints the axiom lists under `statements`, each a subset of `[propext, Classical.choice, Quot.sound]`.
+2. A scratch `Axioms.lean`, never committed, with `import Score.Nightly` and `#print axioms` for each of the four theorems, and for `mem_tied` and the four `inert` theorems since the hardening follow-up. `cd eval/score && lake env lean <scratch>/Axioms.lean` prints the axiom lists under `statements`, each a subset of `[propext, Classical.choice, Quot.sound]`.
 3. N1. In a detached worktree of `origin/main` (`git worktree add --detach <scratch>/p2010-main origin/main`, then `lake --dir eval/score build` in it), run `mitos-score eval/fixtures/toy`, `…/gomod` and, after P2-009a, `…/chain`, then the same at the head. Each pair is byte equal. Compare with the worktree, not with the hashes above, if `origin/main` has moved the scorer or the fixtures.
 4. N2: `--numbers $r/two | sha256sum`.
 5. N3: `--all $r/two | sha256sum`. Then check that the cards are the report's tail: `{ echo; mitos-score $r/two/gomod; echo; mitos-score $r/two/toy; } > c.md`, then `tail -c $(stat -c %s c.md) all.md | cmp - c.md`.
@@ -731,18 +749,18 @@ From the repository root, at the head after the last rebase. `<scratch>` is a fo
 12. `git diff --name-only origin/main...HEAD` prints only `eval/score/Main.lean`, `eval/score/Score/Nightly.lean`, `tasks/P2-010-nightly-scorecard.md` and files under `ops/runs/`.
 13. `lake exe mitos-gate runlog --head ops/runs`, and `git diff --name-status --no-renames origin/main...HEAD -- ops/runs ':!ops/runs/README.md'` shows only `A` lines.
 14. `.claude/scripts/plan-tasks.test.sh`. It passes once `P2-010` has left `plan-tasks.pending`, which the design-landing PR does.
-15. In CI, `checks` and `gate` are green. `checks` builds `eval/score`, so it kernel-checks the four theorems and runs G1 to G21, and the toy card it posts must read as on `main`.
+15. In CI, `checks` and `gate` are green. `checks` builds `eval/score`, so it kernel-checks the theorems and runs every pin (G1 to G28 since the hardening follow-up), and the toy card it posts must read as on `main`.
 
 ### Risks and stop conditions
 Risks:
-- R1. The numbers file is the baseline contract. A later change to its kinds or columns, or to `renderEdge`'s text, makes every line show as changed once, on the first run after it lands. That is honest, and it shows for one run only.
+- R1. The numbers file is the baseline contract. A later change to its kinds or columns, or to `renderEdge`'s text, makes every line show as changed once, on the first run after it lands. That is honest, and it shows for one run only. The `counts` kind of the hardening follow-up did not cost that run: against a baseline with no `counts` line, the counts are left out and the rest is compared (G24). The other direction does stop: a scorer from before that change reads a `counts` line as `unknown line kind "counts"` and exits 1, which matters only for a revert, or for a nightly dispatched on a branch from before it.
 - R2. A baseline edited by hand or rewritten to CRLF differs on every line, so every line shows as changed. A line of an unknown kind or with the wrong field count stops the run with exit 1.
-- R3. `TypeCounts.cardLines` copies the text of `render`'s three table rows. A later PR that changes those rows fails G5 in its own build, so it edits `cardLines` in the same PR, and its plan cell must name `eval/score/Score/Nightly.lean`. A shared count function needs `Score.lean` (follow-up).
+- R3. `TypeCounts.cardLines` copies the text of `render`'s three table rows. A later PR that changes those rows fails G5 in its own build, so it edits `cardLines` in the same PR, and its plan cell must name `eval/score/Score/Nightly.lean`. A shared count function needs `Score.lean` (follow-up). Settled by the hardening follow-up: `render` and `numbers` read `Scorecard.typeCounts`, and both print a row through `TypeCounts.row` and `trustRow`.
 - R4. The first nightly after this merges has no baseline and prints "No baseline given, so nothing was compared."
 - R5. `resolve` runs up to five times per fixture in `--all` (in `score`, in `checked` through `numbers`, and in `summary`'s `cur`, `top` and `at?`) and three times in `--numbers`. Measured over 3 runs each with the built binary: 6 to 7 ms for `--all` over two fixtures, 5 ms for one card. The reference resolver is O(n³) (P2-001b's deferrals), which is fine at fixture size.
-- R6. `renderEdge` prints keys raw inside code spans, and the nightly will be posted. A backtick or a newline in a key, or `@` in an error message, reaches the post as it is. The PR comment of the toy card has the same exposure today. Escaping belongs in `Score.lean` (follow-up).
-- R7. The D1 line names the first edge that has the top count. Other edges with the same count are not listed.
-- R8. Fact and unresolved counts are not in the numbers file. A change that only moves unresolved requirements shows in the card but not in the diff.
+- R6. `renderEdge` prints keys raw inside code spans, and the nightly will be posted. A backtick or a newline in a key, or `@` in an error message, reaches the post as it is. The PR comment of the toy card has the same exposure today. Escaping belongs in `Score.lean` (follow-up). Settled by the hardening follow-up: `Score.inert` and `inert_safe` (Hardening notes, with what it does not cover).
+- R7. The D1 line names the first edge that has the top count. Other edges with the same count are not listed. Settled by the hardening follow-up: the line lists every such edge (`mem_tied`, G22).
+- R8. Fact and unresolved counts are not in the numbers file. A change that only moves unresolved requirements shows in the card but not in the diff. Settled by the hardening follow-up: the `counts` line and its table in the diff (G23, G24).
 - R9. CI does not run `--all` or `--numbers` until P2-012. Until then, N1 to N13 are the builder's and the verifier's, and G1 to G21 are what CI runs.
 
 Stop conditions for the builder:
@@ -782,10 +800,10 @@ deferrals:
 - From P2-001b (#204): bound records count too. Followed by construction (`countP` over every record with the key). The sketch builds at 3d939da, and N1 to N5 are the same there.
 - From P2-009b (#211): `gomod` is one of every fixture, and its most is 2 (N2, N8). F2 and F3 stay the single-mode bytes (N1).
 - To #325 and #332: nothing to change; see the Q1 to Q3 table. If #332 merges first, N1 to N11 hold as measured, and N12 takes its #332 half.
-- To the PR's follow-up issue (no row), all minor:
-  - One count function in `Score.lean` that both `render` and `numbers` use, which retires `TypeCounts.cardLines` and `consistent` (R3). Revisit when `render` next changes.
-  - Escaping of keys and error text in the card and the report (R6). It needs `Score.lean` for the card.
-  - Fact and unresolved counts in the numbers file (R8), and every edge that ties for the most (R7).
+- To the PR's follow-up issue (#552, no row): none left. The hardening follow-up settled all four, and Hardening notes records them:
+  - R3, one count function in `Score.lean` that both `render` and `numbers` use. It retired `TypeCounts.cardLines`. `consistent` and G5 stay, because no pin is deleted: they still fail when `render` stops printing a row.
+  - R6, escaping of keys and error text in the card and the report.
+  - R8, fact and unresolved counts in the numbers file, and R7, every edge that ties for the most.
 
 owner_decisions:
 - Settled by the plan: this row's cells; an agent merges it; eval code only, with the wiring in P2-012; the D1 threshold of 8 (`plan/phase-2.md:110-111`); and that the numbers never fail a run while a scorer error does (`docs/process.md:190`).
@@ -847,6 +865,75 @@ label	chain	`web` → `logs` (env/runtime `LOG_SINK`)	["web","logs","env","LOG_S
 
 The nightly maximum is 2 for `web` → `orders` (env/runtime `DATABASE_URL`).
 
+## Hardening notes
+The follow-up for #552 items 1 to 3, built on `main` at `00fae4d`. It edits `eval/score/Score.lean` and `eval/score/Score/Nightly.lean`, and no fixture, label or workflow. Run log `ops/runs/2026-11-28/P2-scorecard-hardening-builder-1.json`. The same PR settles #549 items 2 and 3, recorded in `tasks/P2-009a-chain-fixture.md`.
+
+What it does:
+- R6, escaping. The property, stated first: no text that comes from a fixture, a label file or a baseline can put a backtick, a pipe, a line feed, a carriage return or an `@` into the card or the report. So such text cannot mention a user or a team, end the code span it is printed in, add a cell to a table row, or start a line. Starting a line is what a heading, a list item, an HTML block and a workflow command in CI's log each need, and CI prints the cards to its log and posts them as a comment.
+  - One function enforces it, `Score.inert`. It maps each of those five characters, and the backslash, to a fixed text (`\x60`, `\x7c`, `\n`, `\x0d`, `\x40`, `\\`) from one table, `Score.escapes`. `Score.code` is `inert` inside a code span. The line feed, the carriage return and the backslash get the text Lean's `repr` prints for them, and the other three the same `\xNN` form. So the toy card's line for the CRLF requirement, `"ui-kit\x0d"`, which `repr` printed on `main`, keeps its bytes.
+  - Proved for every string: `inert_safe`, `inert_injective` and `inert_clean` (under `statements`). `inert_cases` holds one case per character.
+  - Every place that prints such text calls `inert` or `code` once: the card's header, its table rows, `renderEdge`, the unresolved lines, the report's rows, its D1 line, its diff items and the error cards. G26 holds that none skips it.
+  - The numbers file keeps raw fixture names and edge types, because it is data and not Markdown. The third field of an `edge` or `label` line is the escaped text, and the identity field is JSON. The report prints an edge from the identity (`keyOf`, G28) and escapes every cell it copies from a line, so a baseline cannot inject text either.
+  - Error text is printed in a code span. It quotes label fields, such as an unknown scope, and a code span is the one place where escaped text cannot become a link or emphasis. This moves N6, N11 and N12.
+  - What the property does not cover. An edge type or a fixture name in a table cell is escaped but stands outside a code span, so the card's rows keep their bytes. In a scored card the edge type is a reader's own kind, because `score` refuses a label kind that no fact has, and the single-fixture card prints the name in a code span. So this reaches only the report's table cells: a fixture directory name, or a cell of a baseline, could show as emphasis or a bare link there, and could not mention, break the row or leave its cell. In an unresolved line, a key that holds a double quote, a tab or another control character prints as it is, where `repr` printed an escape on `main`, and no fixture has one. A tab in a key still fails the fixture (N11). What goes to stderr is not Markdown and is not escaped.
+- R3, one count. `Scorecard.factCounts` and `Scorecard.typeCounts` are in `Score.lean`. `render` prints its header from the first and its rows from the second, through `TypeCounts.row` and `TypeCounts.trustRow`, and `numbers` reads the same two. `TypeCounts.cardLines` is gone. `consistent`, G5 and the run-time check stay.
+- R7, ties. `tied top ds` is the edges of one fixture whose count is `top` (`mem_tied`), and the D1 line joins them over the fixtures with `; `. The line still starts `Most derivations any repo-level edge has: <n>, `, which is all the nightly step reads, so `.github/workflows/nightly.yml` needs no change. On `eval/fixtures` there is a real tie at 2.
+- R8, counts. The numbers file has one `counts` line per fixture. The report shows a counts table when one changed. A baseline with no `counts` line is still read (G24, and the command-line run below).
+- #552 item 2. G25 fails when the readback-equality check in `problem` answers `none`.
+- #552 item 3. Two edges or labels that differ in identity print differently, and the report prints each from its identity, so its two sides differ (G21, with the argument under `inert_injective`).
+- `parseNumbers`' field-count message lost the backticks around the kind, because it is printed inside a code span.
+
+Outputs, by sha256, with the scratch roots of `fixtures`. The first four rows and N3, N4, N5, N7, N9 and N10 are byte for byte what `main` prints, and every exit code is the same:
+
+| Output | `main` at `00fae4d` | Head | What moved |
+|---|---|---|---|
+| `toy` card | `17c55e9c…` | same | |
+| `gomod` card | `889671a4…` | same | |
+| `chain` card | `bfb01753…` | same | |
+| N3, N4, N5, N7-8, N7-9, N9, N10 | as under `fixtures` | same | |
+| N2 | `bb6f3e4d…` | `86af9dd3c091b6fc8e1e57a2e33eb34a55e15d27279cbbe68f820856df417136` | two `counts` lines |
+| N6-all | `8648b35a…` | `d763685424c5b0c34df3638912c3fc9de34a488c0f1630fcf7a1200fc8264c97` | three error texts in code spans |
+| N11 | `9439a16b…` | `8e07536a7ae48f93deaaa32d80f5ec0b55c2bb2da1e551a850bf40472a57bec1` | code span, `line 3`, no backticks around `edge` |
+| N12 | `59e697fe…` | `b754961cacc06526438d605cad0e732d5c5f2f4475a478c967c64c435b2f279f` | error text in a code span |
+| N13-numbers | `decac006…` | `94ef8bb3fd2f5d5f2f4ee737f38fc8df97a7153432337af55f1147a9306e102f` | three `counts` lines |
+| N13-all | `b0d59f2c…` | `67b97c5bb1d3685f918d9e73216c3cd6114e4fe1ecfbe1b04d7f1e70fea0faa4` | the D1 line |
+
+The three new lines of N13-numbers, each before its fixture's other lines, are `counts chain 14 4 5 5 1`, `counts gomod 15 7 8 0 1` and `counts toy 11 7 4 0 2`, tab-separated. The D1 line of N13-all now reads:
+
+```
+Most derivations any repo-level edge has: 2, `web` → `orders` (env/runtime `DATABASE_URL`) in fixture `chain`; `mono` → `lib` (go-module/runtime `example.com/lib`) in fixture `gomod`. D1 reopens above 8.
+```
+
+Runs of the built binary:
+- `--all eval/fixtures <main's --numbers output>` exits 0 and ends its baseline section with `No change against the baseline.` and `The baseline has no fact counts, so they are not compared.` Against its own `--numbers` output it prints `No change against the baseline.` alone.
+- `main`'s binary given the head's numbers prints `baseline line 1: unknown line kind "counts"` and exits 1 (R1).
+- A scratch root with a backtick, a pipe, `@` and a carriage return in a fixture name, a repo name, two keys and a label scope, and a second fixture whose name holds a line feed: `main`'s `--all` output has 12 `@` and 46 lines, and the head's has no `@` and 44 lines. Both exit 1, because two of its three fixtures fail.
+
+Wrong variants, each one edit built in the worktree and then put back. All 43 failed the build (exit 1):
+
+| Edit | What fails |
+|---|---|
+| the readback check in `problem` answers `none` | G25 |
+| one of the five characters has no row in `escapes` (five builds) | `escape_safe`, which `inert_safe` rests on, and `inert_cases` |
+| the backslash has no row | `keyed_ne_plain`, which `inert_injective` rests on, and `inert_cases` |
+| `inert` returns its input | `inert_safe`, `inert_clean`, `inert_injective`, `inert_cases` |
+| one print site prints raw text (20 builds: the card's header, a type row, a trust row, `renderEdge`'s repo, type and key, the unresolved path and key, the error card's name and text, a report row, the D1 line's fixture name, the failed names, the not-scored line, an item's name, status, count and unreadable line, an identity that does not parse, a label item printed from its line's text) | G26 each time, and G17 or G27 for three of them |
+| the D1 line names the first top edge only | G22 |
+| `tied` keeps one edge per fixture | `mem_tied`, G22 |
+| no `counts` line | G1, G23, G24, G25 |
+| `parseNumbers` refuses `counts` | G1 and fourteen more pins |
+| no counts table in the diff | G23 |
+| a baseline with no `counts` line is compared as if it had them | G24 |
+| W1 | `derivations_keys`, G20 |
+| W5 | G1, G12, G24 and three card theorems of `Policy.lean` |
+| W6 | G5 |
+| W7 | G13, G21 |
+| W11 | G18 |
+
+The other four of the 43 are the reader variants in `tasks/P2-009a-chain-fixture.md`.
+
+The build prints the one warning `main` prints, for `Mitos/Core/Graph.lean`. The axioms of the nine theorems are the lists under `statements`.
+
 ## Done when
 - [x] the builder's local checks and the verifier's sandboxed core checks passed, and `gate` is green
 - [x] N1 to N12 hold at the head, and N13's `chain` lines and hashes are in the build notes
@@ -854,6 +941,8 @@ The nightly maximum is 2 for `web` → `orders` (env/runtime `DATABASE_URL`).
 - [x] run-log record written (ops/runs/)
 
 ## Rationale
+
+This section is the design's reasoning as #551 merged it. The hardening follow-up retired two of the tradeoffs below: the copy of `render`'s row text (R3) and raw keys in the posted text (R6).
 
 ### Problem
 Exit criterion 5 needs three things on top of today's one-fixture card: every fixture in one report, a diff against `main`'s card, and the largest derivation count of any repo-level edge. This row may not edit `Score.lean`, and `Scorecard` holds collapsed keys and statuses, not edge records. `main`'s scorer is a different build from the head's, so a diff needs a file that an earlier run wrote. The single-fixture card is pinned three ways: by CI's post, by P2-009b's hashes and by #332's `native_decide` theorems. And the inputs are files any PR can change. A label deleted or swapped can raise recall with no change to the code, so the diff has to show the labels too.
