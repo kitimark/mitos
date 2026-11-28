@@ -410,7 +410,7 @@ shorter bound it is always stopped: always give `--max`.
 | Claude Code cloud (the baseline) | 2 minutes for a foreground command by default, 10 at most: pass the Bash `timeout` parameter of 600000 ms on every wait call. A command past its timeout is moved to the background, not stopped, so `timeout 590` inside the command is what ends the wait | 7 | the Claude GitHub App connection, so posts name `claude` |
 | Codex cloud | not stated on its pages; start with `timeout 360` | 4, a starting value | agent-phase GET to `api.github.com` and a read-only token (default 3c); until then no wait is possible in the agent phase, so do not wait. `build --fetch` in the agent phase also needs the release-asset host; the setup phase can fetch the tool, a cache of up to 12 hours |
 | Cursor cloud agents | not stated; start with `timeout 590` | 7, a starting value | its CI subscription off beside a wait |
-| Antigravity remote agents | not stated; start with `timeout 420` | 5, a starting value | stdin closed (`</dev/null`); the slug check before you post, since an OAuth post may name no app |
+| Antigravity remote agents | not stated; start with `timeout 420` | 5, a starting value | stdin closed (`</dev/null`); the slug check on your first issue comment, before you post another, since an OAuth post may name no app |
 | another host | its own | the largest the rule allows, a starting value | Setup's host checks |
 
 A starting value is not measured. If a wait is ever stopped at its bound, lower `--max` and say so
@@ -418,7 +418,9 @@ in your report.
 
 Your app name is the `performed_via_github_app.slug` GitHub shows on your issue comments. Codex's
 is `chatgpt-codex-connector`; for Cursor, Antigravity or another tool, read it off your first
-comment (`gh api repos/<owner>/<repo>/issues/comments/<id> --jq .performed_via_github_app.slug`).
+comment (`gh api repos/<owner>/<repo>/issues/comments/<id> --jq .performed_via_github_app.slug`),
+before you post another. If it is `null`, your posts name no app: post no other issue comment, and
+say so in your report.
 After two waits with CI still running, report "pushed, waiting on CI" and stop. The owner or the
 orchestrator then starts a new session with your report.
 
