@@ -28,6 +28,10 @@ cut_line: row 6 of `tasks/502-watch/PR-SEQUENCE.md`
 deferrals: from `tasks/502-watch.md` (deferrals): the reviews reader's refused items join the feed (with P2-016), and the `pulls/N` read before `gone` (with P2-016 and P2-020)
 owner_decisions: default 4
 
+### reshape
+Inputs for this row's build-depth upgrade, from the `/no-comments` pass over the sketch at 588dc1a (`tasks/502-watch/REVIEW-LOG.md`, Amendment 1). The Architect settles each one before the build. None is fixed in the sketch.
+- reshape (no-comments): `EntryKey.refused` (`Feed.lean`): the key has no time. That forces the dedupe rule in `Feed.add` (against the kept entries only) and the second telling a day later, after pruning. Put the time in the key, or restructure.
+
 ## Done when
 - [ ] row 6's Check column in `tasks/502-watch/PR-SEQUENCE.md` holds, and all `checks` pass locally
 - [ ] no `sorry`, no new axioms: `Watch.lean`'s audit ran and found a theorem for every statement

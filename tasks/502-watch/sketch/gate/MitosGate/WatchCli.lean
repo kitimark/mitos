@@ -3,18 +3,7 @@ import MitosGate.Watch
 import MitosGate.Watch.Gh
 import MitosGate.Watch.Store
 
-/-! UNCHECKED SKETCH (#502). `mitos-gate watch`: the four subcommands, and two for tests only.
-
-`import MitosGate.Watch` is load-bearing: `lakefile.toml` builds only what `gate/Main.lean`
-reaches, and there is no `gate/MitosGate.lean` root, so this import is what elaborates the axiom
-audit in `Watch.lean`, as `SnapshotCli.lean` imports `MitosGate.Snapshot`. `gate/watch-test.sh`
-checks the import and that `Watch.olean` exists after `lake build mitos-gate`.
-
-`gate/Main.lean` gains one import, one usage block and one arm, as `speech` has:
-
-  | "watch" :: rest => WatchCli.cli rest usage
-
-Usage block:
+/-! Usage:
 
   mitos-gate watch wait --state <dir> --repo <owner/name> --owner <login> --as <app>/<name>
       [--seen <n>] [--topics <kind>[,<kind>]...] [--on <n>[,<n>]...]
@@ -26,63 +15,24 @@ Usage block:
   mitos-gate watch status --state <dir> [--as <app>/<name>]
   mitos-gate watch unanswered --owner <login> [--issue-comments <file>]
       [--review-comments <file>] [--reviews <file>]
-  mitos-gate watch read <route> --owner <login> <file>          (tests only, from PR 4)
-  mitos-gate watch replay --owner <login> <dir>                  (tests only, from PR 6)
+  mitos-gate watch read <route> --owner <login> <file>          (tests only)
+  mitos-gate watch replay --owner <login> <dir>                  (tests only)
 
-`read` runs one route's reader on a captured answer and prints what it read, one item per line in
-a fixed form, then a `refused <kind> <id>: <why>` line per refused item; it exits 1 when the whole
-answer is refused. For `main` the file is the raw `--include` answer, CR bytes and all, and it runs
-`Gh.frame` first and prints the `Date` it read. `replay` folds `Shared.step` over the poll folders
-of `<dir>` in order (each holds one answer file per route, and a `runsAt` file is read only when
-`Plan.due` asks for it) and prints the health keys of each step's view. They are how
-`gate/watch-test.sh` runs the reader, framing and `history-84` cases from PR 4 and PR 6 on, before
-`wait` exists. Both are refused, exit 2, unless `MITOS_WATCH_TEST=1`, and they stay so after PR 8.
-
-`--topics`, `--on` and `--ride` are the wait's subscription (`Topic.lean`). Each takes one
-comma-separated list: kinds by `Kind.ofName?`, issue and pull request numbers, or `none` for
-`--ride`. Left out, a flag is at its default: every kind but `peers`, the whole repository, and
-`outside` riding. The trailer prints back each flag that is not at its default, so the root's
-trailer names none. The app part of `--as` only classifies posts (`Post.kind`); it selects nothing.
-
-`unanswered` takes no app flag: the answer apps are `Voice.answerApps`, the slugs of
-`Speech.apps`, so it stays in step with land. `--max` defaults to 27 minutes (`DESIGN.md`, Cloud
-host profile, for the bound). `--since` applies only to a consumer without state
-(`Store`); with a state, its acked mark decides, and a gap note covers what the feed lost. Callers use `.claude/scripts/watch.sh`, which fills
-`--state`, `--repo`, `--owner`, `--started` and `--tool-note`. `--now` and
-`--test-exit after-offer|in-lease|after-claim` are for tests only: both are refused unless
-`MITOS_WATCH_TEST=1`. Without `--now` every step reads the wall clock.
-
-Exit codes of `wait`, with what the caller does (PR 13 writes this into the rules):
-  0  a batch was delivered, or nothing changed until the deadline (one stdout line): run the text
-     after `next: ` exactly, `--seen` included
-  1  cannot run (one stdout line `watch: cannot run: <why>; next: <what>`): no re-arm at once; read
-     REST, then re-arm after 10 min with a Monitor whose command is `sleep 600; <the same wait>`
-  2  usage. For `wait` only, one stdout line first, `watch: usage: <why>; next: <what>`, in the
-     shape of the exit-1 line, so a Monitor wakes on a mistyped arm (`--ride words`, an unknown
-     kind, a bad `--on`); the usage text still goes to stderr (`waitUsage`). Run the same command
-     once in the foreground under `timeout 60` and read stderr, fix it, then re-arm
-  3  superseded by a newer wait of the same consumer (stderr only): do nothing. A Monitor that
-     ends with no stdout line: `watch status` says whether a wait of this consumer still runs.
-     If one does, do nothing, so a double arm never livelocks. If none does, run the same command
-     once in the foreground under `timeout 60` and read stderr before re-arming. The bound keeps
-     that run from being a full wait: a broken command fails within seconds, and a sound one
-     prints a batch or is stopped with no line, which loses nothing
-  4  blind: no fresh successful read; one stdout line: re-arm with the text after `next: `, and
-     read REST for anything urgent
-`own` exits 0 even when the record fails, with a warning on stderr, so `<write> && watch.sh own`
-never reports a write that succeeded as failed. `unanswered` exits 1 on any refusal; `pr-state.sh`
-then shows `?`, never "answered".
-
-Layout copies `SpeechCli.lean`: each subcommand has its own `Args` and `parse` in the shape of
-`SpeechCli.parse` (`List String → Args → Option Args`), which refuses a repeated or unknown flag; a
-usage error exits 2 (for `wait` through `waitUsage`), refused input exits 1 through `ciLine`. -/
+Exit codes of `wait`:
+  0  a batch was delivered, or nothing changed until the deadline (one stdout line)
+  1  cannot run (one stdout line `watch: cannot run: <why>; next: <what>`)
+  2  usage. For `wait` only, one stdout line first, `watch: usage: <why>; next: <what>`; the usage
+     text goes to stderr (`waitUsage`)
+  3  superseded by a newer wait of the same consumer (stderr only)
+  4  blind: no fresh successful read; one stdout line
+`own` exits 0 even when the record fails, with a warning on stderr. `unanswered` exits 1 on any
+refusal. -/
 
 namespace MitosGate.WatchCli
 
 open Lean (Json)
 open Watch
 
-/-- Every flag at most once. `--topics`, `--on` and `--ride` stay text until `flags?` reads them. -/
 structure WaitArgs where
   state : Option String := none
   repo : Option String := none
@@ -128,29 +78,20 @@ def consumer? (as : String) : Option Consumer := panic! "not implemented"
 splits at commas with no empty part; a kind reads through `Kind.ofName?`; `--ride none` is the
 empty list; `--on`'s numbers are positive decimals with no sign or leading zero, sorted, repeats
 dropped. Any other text is `none`, a usage error (exit 2). `Subscription.ofFlags?` then refuses a
-kind that cannot ride, so `--ride words` is exit 2 too. Tested, never proved: it is the text
-boundary (`TheTrailerFlagsReadBack` is stated over the typed flags). One `none` covers all three
-flags, so on `none` `wait` reads them one at a time (`flags? a.topics none none`, and so on) to
-name the flag in `waitUsage`'s `why`; a refusal of `ofFlags?` is always `--ride`'s. -/
+kind that cannot ride, so `--ride words` is exit 2 too. -/
 def flags? (topics on ride : Option String) : Option (List Flag) := panic! "not implemented"
 
-/-- A usage error of `wait`: one stdout line in the shape of the `cannot run` line, so a Monitor
-wakes on a mistyped arm, then the usage text on stderr, and exit 2. `why` is fixed words that name
-the flag (`--ride takes passed, failed, outside, alarms or none`), never the text the caller typed.
-The other subcommands print the usage text only. -/
 def waitUsage (why usage : String) : IO UInt32 := do
   IO.println s!"watch: usage: {why}; next: run the same command once in the foreground under timeout 60 and read stderr, fix it, then re-arm"
   IO.eprintln usage
   return 2
 
 def wallNow : IO Epoch := do
-  -- `Std.Time.Timestamp.now`, whole seconds since the epoch (PR 8 pins the accessor)
   panic! "not implemented"
 
 /-- One poll under the lease. Inside `Store.withLease` it reads `observed.json` again through
-`load`, and returns that state unchanged when a poll is no longer due (another waiter polled
-between this wait's read and its lease). Otherwise: `Plan.clock` first (`main`, whose `Date`
-header is `serverNow`), then `Plan.fixed` from `Feed.sinceAt serverNow`, then `Plan.perHead` of
+`load`, and returns that state unchanged when a poll is no longer due. Otherwise: `Plan.clock`
+first (`main`, whose `Date` header is `serverNow`), then `Plan.fixed` from `Feed.sinceAt serverNow`, then `Plan.perHead` of
 `Plan.heads` with `Plan.due`, the readers, `Shared.step` from the state it just read, then
 `Store.write`. A fixed route that fails, or a reader that refuses, fails the poll with the route's
 name and fixed words as its reason (`issueCommentsSince: reader refused`); a per-head failure fails
@@ -173,7 +114,7 @@ print the batch (or the quiet or blind line when the report is empty), and exit.
 end the stale-tool note goes to stderr. The whole body runs under `try ... catch`: an IO error that
 escapes (a full disk, a permission) prints one stdout line `watch: cannot run: the state folder
 failed: <fixed words>; next: read GitHub over REST yourself, then re-arm after 10 min (a Monitor
-running sleep 600 and then the same wait)` and exits 1, so a Monitor still wakes. The `running`
+running sleep 600 and then the same wait)` and exits 1. The `running`
 handle is unlocked as the last act. -/
 def wait (usage : String) (a : WaitArgs) : IO UInt32 := panic! "not implemented"
 
@@ -191,8 +132,8 @@ Without `--as`: one line per caller of this clone (`Store.callers`),
 `caller <app>/<name>: hears <kinds> on <items>[, riding <kinds>][ (catch-all)]; waiting|not waiting`
 (`state unreadable` in place of the subscription when its state does not read); then one
 `overlap: <app>/<name> and <app>/<name> both hear <kinds>` line for each pair whose `Topic.overlap`
-is not empty; then `watch: callers in other containers are not listed`. The overlap lines are a
-hint, tested by `gate/watch-test.sh`, never proved. `status` writes nothing. -/
+is not empty; then `watch: callers in other containers are not listed`. `status` writes
+nothing. -/
 def status (a : StatusArgs) : IO UInt32 := panic! "not implemented"
 
 /-- Prints `{"<thread>":[ids]}` on one line, threads and ids as numbers, or refuses with exit 1,

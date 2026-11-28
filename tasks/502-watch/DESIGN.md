@@ -59,7 +59,7 @@ Answered on 27 November:
   each topics independent." Each wait names its topic (Usage). The old yes or no is now one kind
   of a topic, `peers` (question 11).
 - **8a. pr-state's rule: yes.** Land's rule plus the #501 fix. Four classes change against today's
-  jq, each listed in `Voice.lean`.
+  jq, each listed in `tasks/502-watch.md` (modules, the Voice note).
 - **8b. land's rule: yes.** PR 3c is required, no longer optional. It changes `Snapshot/Types.lean`,
   `Snapshot/Fields.lean`, `Snapshot/Obs.lean` (with its proofs), the reader in `SnapshotCli` and
   the fixtures.

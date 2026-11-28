@@ -22,7 +22,7 @@ revisit_when: re-check after P2-013 (#562) and P2-025 (#574) merge.
 modules: `.claude/hooks/pr-state.sh`: its two jq classifiers (`full_thread_unanswered` and `owner_unanswered_by_thread`) give way to `mitos-gate watch unanswered` (`tasks/502-watch.md`, modules, last paragraph)
 types: the `unanswered` signature in `tasks/502-watch.md` (types): `{"<pr>":[<id>...]}` on stdout, exit 1 on any refusal
 statements: none here; it relies on the Voice statements that P2-013 proves
-reuse: the hook's own main-tool lookup (`main_tool ready`, `tool_bin`), as the sketch fragment shows
+reuse: the hook's own main-tool lookup, which it already makes for provenance (`MAIN_TOOL_READY_WAIT=0 main_tool ready ...`, `tool_bin`); the sketch fragment reads `$tool_bin`. The fetches stay as they are, and only the deciding moves to the tool. Two ordering changes in `pr-state.sh` come with it: the main-tool lookup moves above the per-PR loop, and the fetched files keep their raw pages (`--slurp` arrays), which the tool reads
 fixtures: row 3's `pr-state.test.sh` cases
 cut_line: row 3 of `tasks/502-watch/PR-SEQUENCE.md`
 deferrals: one owner default shared by `watch.sh`, `watch-github.sh` and `pr-state.sh` stays a follow-up (`tasks/502-watch.md`, deferrals)

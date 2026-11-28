@@ -29,6 +29,11 @@ cut_line: row 7b of `tasks/502-watch/PR-SEQUENCE.md`; the cut, `Moment`, `nextMo
 deferrals: from `tasks/502-watch.md` (deferrals): the `pulls/N` read before `gone` is told (with P2-016 and P2-018)
 owner_decisions: default 6 (`Rides.byDefault`: `outside` rides); questions 10 (`outside` already rides by default; the root may let `failed` and `alarms` ride too once a handler is named) and 11 (`peers` off by default), open on PR 0b
 
+### reshape
+Inputs for this row's build-depth upgrade, from the `/no-comments` pass over the sketch at 588dc1a (`tasks/502-watch/REVIEW-LOG.md`, Amendment 1). The Architect settles each one before the build. None is fixed in the sketch.
+- reshape (no-comments): `ConsumerState.fresh` (`Deliver.lean`): "the only constructor `Store` uses for a new state" is a convention that nothing enforces. Make the structure's constructor private.
+- reshape (no-comments): `waking` (`Deliver.lean`): the replay rule has no name (`if 1 ≤ r then ... t.topic m .nothing`: after a replay that was itself not taken, only what is new since that offer wakes, under the topic the offer was made under). Extract a named function.
+
 ## Done when
 - [ ] row 7b's Check column in `tasks/502-watch/PR-SEQUENCE.md` holds, and all `checks` pass locally
 - [ ] no `sorry`, no new axioms: `Watch.lean`'s audit ran and found a theorem for every statement

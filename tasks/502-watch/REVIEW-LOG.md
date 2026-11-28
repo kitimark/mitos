@@ -768,3 +768,109 @@ or restated: 129 stay (a fresh count of `def … : Prop` in `sketch/`), and the 
    totals: …" are two bullets, and a line "The statements by module:" now stands between the delta
    list and the per-module list. Item 4's fix, removing the blank line, would have joined the two
    lists into one.
+
+### `/no-comments` pass at 588dc1a
+
+The root ran the `/no-comments` pass over the diff at 588dc1a. The only code comments in the diff
+are in the reference sketch under `sketch/`, which is not built. The pass deleted 270 whole
+comments (264 in Lean, 6 in the two shell fragments) and trimmed about 19 comments it kept, in 18
+files. The root accepted every deletion and trim. A script that strips the comments from the old
+and the new file and compares what is left reports the same code in all 18 files. The sketch is
+now 2,648 lines of Lean (3,704 before), with the same 129 statements (`def … : Prop`) and the
+same 42 stub bodies.
+
+**What stayed.** A stub has no body to read, so its contract stays as its doc:
+- `Gh`: `frame`, `runRoute`. `Observe`: `closedPulls`, `issueComments`, `reviews`. `View`:
+  `Checks.of`, `ciHealth`, `View.of`. `Shared`: `Shared.nextAges`. `Deliver`: `facts`, `notes`.
+- `Store`: `randomHex`, `readOr`, `randomBase`, `withConsumer`, `claim`, `waitRunning`, `callers`,
+  `recordWrite`, `readRecords`.
+- `WatchCli`: `consumer?`, `flags?`, `pollOnce`, `wait`, `own`, `status`, `unanswered`, `read`,
+  `replay`.
+- The `Kind` doc, the module docs of `Render.lean` and `WatchCli.lean` (the line formats, the
+  usage and the exit codes), the usage header of `watch.sh` and the shellcheck `source`
+  directives.
+
+**Where the rules went.** The sketch now carries no design prose. A deleted comment that stated a
+rule, a limit, a deferral or a Lean or GitHub fact that no design file stated is now one line in
+`tasks/502-watch.md`: in "Notes by module" under modules (Route, Observe, Voice, View, Feed, Wake,
+Topic, Deliver, Render, Gh, Store, WatchCli), in a statement's gloss (SegmentsAreSafe, the three
+Voice proof hints, PrevReachesOnlyUnreadHeadsAndStarts, TheSameFactsTwiceAddNothing,
+TheTrailerFlagsReadBack, EchoAddsOnlyWhatWasWritten, ARecordIsSpentTwoPollsLater,
+EveryNotableChangeIsTold, ARefusedItemIsTold, EveryLineIsOneLine) or under "Lean lens fixes"
+(`setsid` and `Child.kill`, `O_CLOEXEC`, `WatchCli.wallNow`). The two ordering changes that the
+`pr-state.sh` fragment's comment named are in P2-014's `reuse` line.
+
+**Doc lines the deletion made wrong, fixed.**
+- `tasks/502-watch.md`: the sketch's size (3,700 lines, now 2,648); "the sketch already does" pass
+  600 lines for `Deliver.lean` (it is at 558); `Topic.lean` and `Wake.lean` "fill most of" their
+  budgets (220 of 320, 242 of 400); and the two `posts-336/` lines that sent the reader to
+  `Voice.lean` for the classes.
+- `DESIGN.md` (answer 8a), `HANDOVER.md` (the PR 3a brief and PR 2's tests) and `PR-SEQUENCE.md`
+  (row 3) sent the reader to `Voice.lean` for the four classes. They now name the Voice note.
+- The types line of `OwnedHead` said only `OwnedHead.of?` makes one. Flag 3 shows the constructor
+  is public, so the line says that and points at P2-016.
+
+**Entries above that name a deleted comment.** These entries are left as written. Where one names
+a docstring or a header that is gone, the same words are now in the place named here:
+- QuietEndAcksNothingUnshown's docstring (Lens findings, twice): the statement's gloss in the
+  Design block (statements, `Watch/Deliver.lean`, the `nextMove` group).
+- Round 1, item 2 (docstrings in `Voice.lean`, `Observe.lean` and `Deliver.lean`): the Voice and
+  Observe notes under modules, and ARefusedItemIsTold's gloss.
+- Round 1, item 11 (`Voice.lean`'s header): the Voice note under modules. `Render.lean`'s header,
+  which that item and round 3 item 1 name, stayed.
+- Round 1, item 16, and round 3, item 10 (TheTrailerFlagsReadBack's docstring): the statement's
+  gloss in the Design block (statements, `Watch/Topic.lean`).
+- Round 1, item 17 (the `notes` docstring): the docstring stayed, less its "not again" sentence,
+  which AChangedTopicIsTold's gloss in the Design block keeps.
+- Round 2, item 8 (EveryNotableChangeIsTold's docstring): the statement's gloss in the Design
+  block.
+- Round 2, item 10 (`Topic.overlap`'s docstring): the Topic note under modules.
+- Round 3, item 8 (`Deliver.lean`'s header): `DESIGN.md`'s coverage decision and the Design
+  block, which that item names beside it.
+- Round 3, item 16 (`status`'s docstring): it stayed.
+- Round 3, item 23 (the comment in `pr-state-unanswered.sh`): gone; default 3c in `DESIGN.md` and
+  the Design block says "decided".
+- Final check, item 8: `wait`'s docstring stayed. The sentence in `flags?`'s docstring about
+  reading the three flags one at a time is gone; P2-022's reshape line holds it (flag 19).
+
+**The 22 reshape flags.** The pass flagged 22 places where a comment was the only thing that held
+a rule in place. Each was checked against the sketch and is true. None is fixed in this PR,
+because the sketch is not built and each fix belongs to the row that writes the module. Each is
+one `reshape (no-comments):` line under "reshape" in that row's task file, as an input for the
+Architect's build-depth upgrade:
+- `tasks/P2-013-watch-voice.md` (PR 2): 1 the audit's `statements` fold in `Watch.lean`; 2
+  `WatchCli`'s `import MitosGate.Watch` as the only thing that builds the audit; 7 `Via.none` and
+  `Via.absent`; 8 `insertId` and `sortIds`; 21 one `Epoch` for the local clock and GitHub's.
+- `tasks/P2-016-watch-readers.md` (PR 4): 3 `OwnedHead`'s public constructor; 4
+  `Route.closedSince`'s name; 5 the order of `Plan.fixed` and `Plan.clock`; 6 `civil`.
+- `tasks/P2-017-watch-view.md` (PR 5): 9 `View.health`'s value type.
+- `tasks/P2-018-watch-feed.md` (PR 6): 12 `EntryKey.refused` has no time.
+- `tasks/P2-019-watch-wake.md` (PR 7a): 10 `Wake.passingConclusions` as strings; 11 the filler
+  results of `Change.kinds`.
+- `tasks/P2-020-watch-deliver-report.md` (PR 7b): 13 `ConsumerState.fresh`; 14 the replay rule
+  inside `waking`.
+- `tasks/P2-021-watch-deliver-move.md` (PR 7c): 15 `Deliver.cut`, which is the deferral that row
+  already has (an owned close or `gone` can be cut behind head lines), so the line says so and
+  adds nothing; 16 `freshSlack` and the `.sleep 2000` literal.
+- `tasks/P2-022-watch-io-shell.md` (PR 8): 17 `Store.withLease`; 18 `Store.holdRunning`; 19
+  `WatchCli.flags?`, which the Final check's item 8 above kept as it is, so the line names both
+  sides.
+- `tasks/P2-023-watch-shim.md` (PR 9): 20 the owner default in `watch.sh`, which is the deferral
+  the Design block already leaves to a follow-up issue, so the line says so and adds nothing; 22
+  the private-copy block of `watch.sh`.
+
+Flags 2, 8 and 22 need a file outside their row's `touches` (`lakefile.toml`, `DecideList`,
+`lib/main-tool.sh`). Their lines say so, and the upgrade settles how.
+
+**Four lines changed at 588dc1a beyond the arena's package.** The PR owner that pushed 588dc1a
+answered CodeRabbit's findings there. These changes were not in the package the arena judged and
+the rounds above verified, so they are named here:
+- Question 11 and the `peers` risk in `DESIGN.md`: a post through the Claude app is heard by a
+  Claude caller only when it asks for `peers`. Another app's caller hears it as `agents` by
+  default. Both passages said "a caller".
+- Owner decision 11 in the Design block: the same words now say a Claude agent.
+- The slug risk in `DESIGN.md`: it said `build --fetch` checks the slug. `build --fetch` prints
+  `unchecked` for it, as the host profile says, so the caller checks its own slug.
+- The end of `PR-SEQUENCE.md`: the package came out cut off in the middle of a word. Its last
+  paragraph and the "Gates before PR 15" section are back as `main` has them, and the sign-off
+  gate now says question 9 is answered and the owner signs off once the gates hold.
