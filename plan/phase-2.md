@@ -97,11 +97,16 @@ The owner's decisions on the draft are in
   Phase 2. It changes `Fact` for every plugin, so P2-001b re-accepts
   `examples/acme/accepted/ToyRequire.json`.
 - **Status rule:** an edge is `confirmed` only when nothing under its derivation is AI-proposed
-  and every derivation of its requirement reaches the same single provider; otherwise `inferred`
-  (`Spec.StatusHonest`). A requirement with a direct and a bound derivation to the same provider
-  is still `confirmed`. On Phase 1 inputs this agrees with Phase 1's "exactly one provider", and
-  P2-001a states it in this form. It refines owner decision 3 on #156, which said "exactly one
-  derivation" ([comment](https://github.com/kitimark/mitos/issues/156#issuecomment-6795388085)).
+  and every derivation of its requirement reaches the same single provision fact; otherwise
+  `inferred` (`Spec.StatusHonest`). "Provider" in this rule means the provision fact, not the
+  repo (owner ruling on #584,
+  [comment](https://github.com/kitimark/mitos/issues/584#issuecomment-7240096942)). A requirement
+  with a direct and a bound derivation to the same provision fact would still be `confirmed`, but
+  since the O1 ruling on #204 no input has both. A direct and a bound derivation to one provider
+  repo through two provision facts are both `inferred` (measured in P2-009a). On Phase 1 inputs
+  this agrees with Phase 1's "exactly one provider", and P2-001a states it in this form. It
+  refines owner decision 3 on #156, which said "exactly one derivation"
+  ([comment](https://github.com/kitimark/mitos/issues/156#issuecomment-6795388085)).
 - **Union view status:** in the scorecard, a repo-level edge is `confirmed` if any of its
   derivations is. Today `collapse` in `eval/score/Score.lean` marks it `inferred` if any is, so
   the `confirmed` numbers move from the Phase 1 baseline when P2-009a lands.
